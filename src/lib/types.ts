@@ -67,6 +67,7 @@ export type Requisition = {
   raisedById: string;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
   stage: string;
+  date: string;
   createdAt: any; // Firestore Timestamp
 };
 
@@ -76,3 +77,5 @@ export type SerialNumberConfig = {
   suffix: string;
   startingIndex: number;
 };
+
+    

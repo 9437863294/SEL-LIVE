@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -38,17 +38,20 @@ import type { Project, Department, Requisition, SerialNumberConfig } from '@/lib
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar } from './ui/calendar';
+import { cn } from '@/lib/utils';
 
 const initialNewRequestState = {
   projectId: '',
   departmentId: '',
   amount: '',
   description: '',
+  date: new Date(),
 };
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
-  const [timestamp, setTimestamp] = useState('');
   const [previewRequisitionId, setPreviewRequisitionId] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -81,12 +84,6 @@ export default function AllRequisitionsTab() {
   
   useEffect(() => {
     if (isNewRequestOpen) {
-      const now = new Date();
-      setTimestamp(now.toLocaleString('en-GB', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-      }));
-
       const generatePreviewId = async () => {
         try {
             const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
@@ -134,9 +131,15 @@ export default function AllRequisitionsTab() {
     fetchRequisitions();
   }, [toast]);
 
-  const handleInputChange = (field: keyof typeof newRequest, value: string) => {
+  const handleInputChange = (field: keyof Omit<typeof newRequest, 'date'>, value: string) => {
     setNewRequest(prev => ({ ...prev, [field]: value }));
   };
+
+  const handleDateChange = (date: Date | undefined) => {
+    if (date) {
+        setNewRequest(prev => ({ ...prev, date }));
+    }
+  }
 
   const handleCreateRequest = async () => {
     if (!newRequest.projectId || !newRequest.departmentId || !newRequest.amount) {
@@ -163,9 +166,12 @@ export default function AllRequisitionsTab() {
             
             return requisitionId;
         });
+        
+        const { date, ...restOfRequest } = newRequest;
 
         await addDoc(collection(db, 'requisitions'), {
-            ...newRequest,
+            ...restOfRequest,
+            date: format(date, 'yyyy-MM-dd'),
             requisitionId: newRequisitionId,
             amount: parseFloat(newRequest.amount),
             raisedBy: user?.name || 'Unknown User',
@@ -219,8 +225,29 @@ export default function AllRequisitionsTab() {
                             <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="timestamp">Timestamp</Label>
-                            <Input id="timestamp" type="text" value={timestamp} readOnly />
+                            <Label htmlFor="date">Date</Label>
+                             <Popover>
+                                <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                    "w-full justify-start text-left font-normal",
+                                    !newRequest.date && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {newRequest.date ? format(newRequest.date, "PPP") : <span>Pick a date</span>}
+                                </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={newRequest.date}
+                                    onSelect={handleDateChange}
+                                    initialFocus
+                                />
+                                </PopoverContent>
+                            </Popover>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="project">Project</Label>
@@ -292,7 +319,7 @@ export default function AllRequisitionsTab() {
               requisitions.map((req) => (
                 <TableRow key={req.id}>
                   <TableCell className="font-medium">{req.requisitionId}</TableCell>
-                  <TableCell>{req.createdAt.toString()}</TableCell>
+                  <TableCell>{format(new Date(req.date), 'dd MMM, yyyy')}</TableCell>
                   <TableCell>{getProjectName(req.projectId)}</TableCell>
                   <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
                   <TableCell>{req.raisedBy}</TableCell>
@@ -321,3 +348,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
