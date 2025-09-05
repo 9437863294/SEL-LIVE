@@ -147,13 +147,13 @@ const syncGreytHRFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
-    // 1. Fetch all category mappings
+    // 1. Fetch all category mappings first
     const { departments: departmentMap, designations: designationMap } = await fetchCategoryMappings(token, domain);
 
     // 2. Fetch all employee categories (which employee has which category ID)
     const employeeCategories = await fetchEmployeeCategories(token, domain);
     
-    // 3. Fetch all employees from GreytHR
+    // 3. Now, fetch all employees from GreytHR
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
     let page = 1;
     const size = 100;
