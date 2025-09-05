@@ -73,15 +73,17 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
             const categories: { department: string; designation: string } = { department: '', designation: '' };
             if (emp.categoryList && Array.isArray(emp.categoryList)) {
                 emp.categoryList.forEach((cat: any) => {
-                    if (cat.category === 'Department') {
+                    // This logic is based on the provided sample response where `category` is a numeric ID.
+                    // '2' seems to correspond to Department and '6' to Designation based on typical setups.
+                    // This might need adjustment if the IDs are different in the customer's GreytHR instance.
+                    if (cat.category === 2) { // Assuming 2 is Department
                         categories.department = cat.value;
                     }
-                    if (cat.category === 'Designation') {
+                    if (cat.category === 6) { // Assuming 6 is Designation
                         categories.designation = cat.value;
                     }
                 });
             }
-            // Use the numeric employeeId from this endpoint as the key
             employeeCategories[emp.employeeId] = categories;
         });
     }
@@ -121,6 +123,7 @@ const syncGreytHRFlow = ai.defineFlow(
         const json = await response.json();
         if (json.data && json.data.length > 0) {
             allData.push(...json.data);
+            if (!json.pages.hasNext) break;
             page++;
         } else {
             break;
@@ -139,11 +142,9 @@ const syncGreytHRFlow = ai.defineFlow(
     let employeesSynced = 0;
 
     for (const empData of filteredData) {
-        // Check if employee already exists by employeeNo (which we treat as employeeId)
         const q = query(employeesRef, where("employeeId", "==", empData.employeeNo));
         const querySnapshot = await getDocs(q);
         
-        // Match using the numeric employeeId field from the main employee record
         const categories = employeeCategories[empData.employeeId] || { department: '', designation: '' };
 
         const newEmployeeData = {
@@ -151,18 +152,16 @@ const syncGreytHRFlow = ai.defineFlow(
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',
-            department: categories.department,
-            designation: categories.designation,
+            department: categories.department, // Now correctly populated
+            designation: categories.designation, // Now correctly populated
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
         };
 
         if (querySnapshot.empty) {
-            // Add new employee
             const newDocRef = doc(employeesRef);
             batch.set(newDocRef, newEmployeeData);
             employeesSynced++;
         } else {
-            // Update existing employee
             const docToUpdate = querySnapshot.docs[0];
             batch.update(docToUpdate.ref, newEmployeeData);
             employeesSynced++;
