@@ -58,7 +58,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       }
     };
     
-    if (isOpen) {
+    if (isOpen && requisition) {
         fetchWorkflow();
     } else {
         // Reset state when dialog is closed
@@ -67,6 +67,13 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setActionComment('');
     }
   }, [requisition, isOpen, toast]);
+
+   useEffect(() => {
+    if (requisition && workflow) {
+      const step = workflow.find(s => s.id === requisition.currentStepId) || null;
+      setCurrentStep(step);
+    }
+  }, [requisition, workflow]);
   
   const handleAction = async (action: string) => {
     if (!user || !requisition || !workflow || !currentStep) return;
@@ -215,9 +222,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                               {index < requisition.history.length - 1 && <div className="w-px h-full bg-border grow" />}
                           </div>
                           <div className="pb-4">
-                              <div className="font-medium">{log.userName} <Badge variant="secondary">{log.action}</Badge></div>
-                              <div className="text-xs text-muted-foreground">{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</div>
-                              <p className="text-sm mt-1">{log.comment}</p>
+                              <div className="font-medium text-sm">
+                                  {log.stepName}: <Badge variant="secondary" className="font-normal">{log.action}</Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground">by {log.userName} on {log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</div>
+                              {log.comment && <p className="text-sm mt-1 bg-muted/50 p-2 rounded-md">{log.comment}</p>}
                           </div>
                       </div>
                   ))}
