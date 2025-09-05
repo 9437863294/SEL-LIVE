@@ -8,7 +8,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, where, doc } from 'firebase/firestore';
 
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
