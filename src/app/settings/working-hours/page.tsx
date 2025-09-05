@@ -171,91 +171,90 @@ export default function WorkingHoursPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Holidays</CardTitle>
-              <CardDescription>Manage company holidays.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Collapsible open={isAddHolidayOpen} onOpenChange={setIsAddHolidayOpen}>
+          <Collapsible open={isAddHolidayOpen} onOpenChange={setIsAddHolidayOpen}>
+            <CardHeader className="flex flex-row items-start justify-between">
+              <div>
+                <CardTitle>Holidays</CardTitle>
+                <CardDescription>Manage company holidays.</CardDescription>
+              </div>
               <CollapsibleTrigger asChild>
-                <div className="p-6 pt-2">
-                  <Button className="w-full">
-                    <Plus className="mr-2 h-4 w-4" /> Add Holiday
-                  </Button>
-                </div>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" /> Add Holiday
+                </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="px-6 pb-6 border-b">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="holiday-name">Holiday Name</Label>
-                    <Input id="holiday-name" value={newHolidayName} onChange={(e) => setNewHolidayName(e.target.value)} placeholder="e.g. New Year's Day" />
+            </CardHeader>
+            <CollapsibleContent>
+              <div className="px-6 pb-6 border-b">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="holiday-name">Holiday Name</Label>
+                      <Input id="holiday-name" value={newHolidayName} onChange={(e) => setNewHolidayName(e.target.value)} placeholder="e.g. New Year's Day" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !newHolidayDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {newHolidayDate ? format(newHolidayDate, "PPP") : <span>Pick a date</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={newHolidayDate}
+                            onSelect={setNewHolidayDate}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={resetHolidayForm}>Cancel</Button>
+                        <Button onClick={handleAddHoliday}>Add</Button>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !newHolidayDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {newHolidayDate ? format(newHolidayDate, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={newHolidayDate}
-                          onSelect={setNewHolidayDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={resetHolidayForm}>Cancel</Button>
-                      <Button onClick={handleAddHoliday}>Add</Button>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-            
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right w-[50px]">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={3} className="h-24 text-center"><Skeleton className="h-10 w-full" /></TableCell></TableRow>
-                ) : holidays.length > 0 ? (
-                  holidays.map(holiday => (
-                    <TableRow key={holiday.id}>
-                      <TableCell className="font-medium">{holiday.name}</TableCell>
-                      <TableCell>{format(new Date(holiday.date), 'dd MMM, yyyy')}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteHoliday(holiday.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
+              </div>
+            </CollapsibleContent>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24">No holidays added yet.</TableCell>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right w-[50px]">Action</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow><TableCell colSpan={3} className="h-24 text-center"><Skeleton className="h-10 w-full" /></TableCell></TableRow>
+                  ) : holidays.length > 0 ? (
+                    holidays.map(holiday => (
+                      <TableRow key={holiday.id}>
+                        <TableCell className="font-medium">{holiday.name}</TableCell>
+                        <TableCell>{format(new Date(holiday.date), 'dd MMM, yyyy')}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteHoliday(holiday.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center h-24">No holidays added yet.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Collapsible>
         </Card>
       </div>
     </div>
