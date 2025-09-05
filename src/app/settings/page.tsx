@@ -27,7 +27,7 @@ const settingsItems = [
 ];
 
 export default function SettingsPage() {
-  const [selected, setSelected] = useState('Manage Department');
+  const [selected, setSelected] = useState<string | null>(null);
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -39,22 +39,21 @@ export default function SettingsPage() {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
         {settingsItems.map((item) => {
+          const isSelected = selected === item.text;
           const card = (
             <Card
-              key={item.text}
               className={cn(
                 'flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer hover:shadow-lg',
-                selected === item.text
+                isSelected
                   ? 'border-primary ring-2 ring-primary text-primary'
                   : 'text-foreground/80 hover:border-primary/50'
               )}
-              onClick={() => setSelected(item.text)}
             >
               <CardContent className="p-0 flex flex-col items-center justify-center gap-2">
                 <item.icon
                   className={cn(
                     'h-10 w-10 mb-2',
-                    selected === item.text ? 'text-primary' : 'text-accent'
+                    isSelected ? 'text-primary' : 'text-accent'
                   )}
                 />
                 <span className="font-semibold">{item.text}</span>
@@ -64,12 +63,16 @@ export default function SettingsPage() {
 
           if (item.href && item.href !== '#') {
             return (
-              <Link href={item.href} key={item.text} className="no-underline">
+              <Link href={item.href} key={item.text} className="no-underline" onClick={() => setSelected(item.text)}>
                 {card}
               </Link>
             );
           }
-          return card;
+          return (
+            <div key={item.text} onClick={() => setSelected(item.text)}>
+              {card}
+            </div>
+          );
         })}
       </div>
     </div>
