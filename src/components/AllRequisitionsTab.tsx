@@ -32,6 +32,11 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal } from 'lucide-react';
 import { Textarea } from './ui/textarea';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import type { Project, Department } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+
 
 const requisitions = [
   {
@@ -84,6 +89,9 @@ const requisitions = [
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   const [currentDateTime, setCurrentDateTime] = useState({ date: '', time: '' });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isNewRequestOpen) {
@@ -94,6 +102,29 @@ export default function AllRequisitionsTab() {
       });
     }
   }, [isNewRequestOpen]);
+
+  useEffect(() => {
+    const fetchProjectsAndDepartments = async () => {
+      try {
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const projectsData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        setProjects(projectsData);
+        
+        const departmentsSnapshot = await getDocs(collection(db, 'departments'));
+        const departmentsData = departmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+        setDepartments(departmentsData);
+
+      } catch (error) {
+        console.error("Error fetching projects or departments: ", error);
+        toast({
+            title: 'Error',
+            description: 'Failed to load projects or departments.',
+            variant: 'destructive',
+        });
+      }
+    };
+    fetchProjectsAndDepartments();
+  }, [toast]);
 
   return (
     <div className="w-full">
@@ -136,8 +167,9 @@ export default function AllRequisitionsTab() {
                                     <SelectValue placeholder="Select Project" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="head-office">Head Office</SelectItem>
-                                    <SelectItem value="tpsodl">TPSODL</SelectItem>
+                                     {projects.map(project => (
+                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -148,9 +180,9 @@ export default function AllRequisitionsTab() {
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="hr">HR</SelectItem>
-                                    <SelectItem value="it">IT</SelectItem>
-                                    <SelectItem value="finance">Finance</SelectItem>
+                                    {departments.map(department => (
+                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
