@@ -14,10 +14,11 @@ import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
+  const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
 
   useEffect(() => {
     const fetchWorkflowAndUsers = async () => {
@@ -80,6 +82,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setCurrentStep(null);
         setActionComment('');
         setEnrichedSteps([]);
+        setIsWorkflowOpen(false);
     }
   }, [requisition, isOpen, toast]);
 
@@ -121,7 +124,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       });
       setEnrichedSteps(allStepsWithDetails);
     }
-  }, [requisition, workflow, users, isOpen]);
+   }, [requisition, workflow, users, isOpen]);
   
   const handleAction = async (action: string) => {
     if (!user || !requisition || !workflow || !currentStep) return;
@@ -222,81 +225,97 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 max-h-[70vh] overflow-y-auto p-4">
-            <div className="md:col-span-3 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Project</Label><p className="font-medium">{projectName}</p></div>
-                    <div><Label>Department</Label><p className="font-medium">{departmentName}</p></div>
-                    <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
-                    <div><Label>Date</Label><p className="font-medium">{requisition.date}</p></div>
-                </div>
-                <div>
-                    <Label>Description</Label>
-                    <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
-                </div>
-                <Separator />
-                {isActionAllowed && (
-                    <>
-                        <div>
-                            <Label>Action Comment</Label>
-                            <Textarea 
-                                placeholder="Add a comment for your action (optional)" 
-                                value={actionComment}
-                                onChange={(e) => setActionComment(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {currentStep?.actions.map(action => (
-                                <Button key={action} onClick={() => handleAction(action)} disabled={isLoading}>
-                                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                    {action}
-                                </Button>
-                            ))}
-                        </div>
-                    </>
-                )}
-            </div>
-            <div className="md:col-span-2">
-                <h3 className="font-semibold mb-2">Workflow Status</h3>
-                 <ScrollArea className="h-72">
-                    <Table className="text-xs">
-                         <TableHeader>
-                            <TableRow>
-                                <TableHead>Stage</TableHead>
-                                <TableHead>User</TableHead>
-                                <TableHead>Deadline</TableHead>
-                                <TableHead>Completed</TableHead>
-                                <TableHead>Status</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                        {enrichedSteps.length > 0 ? (
-                           enrichedSteps.map((step, index) => (
-                                <TableRow key={index}>
-                                    <TableCell className="font-medium">{step.name}</TableCell>
-                                    <TableCell>{step.assignedUserName}</TableCell>
-                                    <TableCell>{step.deadline}</TableCell>
-                                    <TableCell>{step.completionDate}</TableCell>
-                                    <TableCell>
-                                       <Badge variant={step.status === 'Completed' ? 'default' : 'secondary'}>{step.status}</Badge>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        ) : (
-                             <TableRow>
-                                <TableCell colSpan={5} className="text-center h-24">
-                                    {isLoading ? 'Loading workflow...' : 'No workflow data.'}
-                                </TableCell>
-                            </TableRow>
-                        )}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
-            </div>
+        <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
+          <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                  <div><Label>Project</Label><p className="font-medium">{projectName}</p></div>
+                  <div><Label>Department</Label><p className="font-medium">{departmentName}</p></div>
+                  <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
+                  <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
+              </div>
+              <div>
+                  <Label>Description</Label>
+                  <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
+              </div>
+              <Separator />
+              {isActionAllowed && (
+                  <>
+                      <div>
+                          <Label>Action Comment</Label>
+                          <Textarea 
+                              placeholder="Add a comment for your action (optional)" 
+                              value={actionComment}
+                              onChange={(e) => setActionComment(e.target.value)}
+                          />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                          {currentStep?.actions.map(action => (
+                              <Button key={action} onClick={() => handleAction(action)} disabled={isLoading}>
+                                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                  {action}
+                              </Button>
+                          ))}
+                      </div>
+                      <Separator />
+                  </>
+              )}
+               <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen}>
+                <CollapsibleTrigger asChild>
+                   <Button variant="ghost" className="w-full justify-between">
+                     View Workflow Status
+                     <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
+                   </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                   <ScrollArea className="h-72 mt-2 border rounded-md">
+                      <Table className="text-xs">
+                          <TableHeader>
+                              <TableRow>
+                                  <TableHead>Stage</TableHead>
+                                  <TableHead>User</TableHead>
+                                  <TableHead>Deadline</TableHead>
+                                  <TableHead>Completed</TableHead>
+                                  <TableHead>Status</TableHead>
+                              </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                          {enrichedSteps.length > 0 ? (
+                            enrichedSteps.map((step, index) => (
+                                  <TableRow key={index}>
+                                      <TableCell className="font-medium">{step.name}</TableCell>
+                                      <TableCell>{step.assignedUserName}</TableCell>
+                                      <TableCell>{step.deadline}</TableCell>
+                                      <TableCell>{step.completionDate}</TableCell>
+                                      <TableCell>
+                                        <Badge 
+                                          variant={
+                                            step.status === 'Completed' ? 'default' : 
+                                            step.status === 'Current' ? 'secondary' : 'outline'
+                                          }
+                                          className={step.status === 'Completed' ? 'bg-green-500 hover:bg-green-600' : ''}
+                                        >
+                                          {step.status}
+                                        </Badge>
+                                      </TableCell>
+                                  </TableRow>
+                              ))
+                          ) : (
+                              <TableRow>
+                                  <TableCell colSpan={5} className="text-center h-24">
+                                      {isLoading ? 'Loading workflow...' : 'No workflow data.'}
+                                  </TableCell>
+                              </TableRow>
+                          )}
+                          </TableBody>
+                      </Table>
+                  </ScrollArea>
+                </CollapsibleContent>
+              </Collapsible>
+          </div>
         </div>
         <DialogFooter>
           <DialogClose asChild>
