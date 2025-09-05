@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, BarChart2 } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -103,6 +103,12 @@ export default function Header() {
                     <UserIcon className="mr-2 h-4 w-4" />
                     <span>Profile</span>
                   </DropdownMenuItem>
+                  <Link href="/settings">
+                    <DropdownMenuItem>
+                        <Settings className="mr-2 h-4 w-4" />
+                        <span>Settings</span>
+                    </DropdownMenuItem>
+                  </Link>
                   <DropdownMenuItem onSelect={() => setIsChangePasswordOpen(true)}>
                     <Lock className="mr-2 h-4 w-4" />
                     <span>Change Password</span>
