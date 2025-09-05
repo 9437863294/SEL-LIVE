@@ -412,7 +412,7 @@ export default function AllRequisitionsTab() {
               <TableHead>Date</TableHead>
               <TableHead>Project</TableHead>
               <TableHead>Department</TableHead>
-              <TableHead>Raised By</TableHead>
+              <TableHead>Entered By</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Stage</TableHead>
