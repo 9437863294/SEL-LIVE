@@ -6,6 +6,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import Header from '@/components/Header';
 
 interface AuthContextType {
   user: User | null;
@@ -51,7 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user && !publicRoutes.includes(pathname)) {
+  const isPublicRoute = publicRoutes.includes(pathname);
+
+  if (!user && !isPublicRoute) {
     return (
        <div className="flex min-h-screen items-center justify-center bg-background">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -59,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  if (user && publicRoutes.includes(pathname)) {
+  if (user && isPublicRoute) {
     return (
        <div className="flex min-h-screen items-center justify-center bg-background">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -67,7 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  if (isPublicRoute) {
+     return <main>{children}</main>;
+  }
+
+
+  return (
+    <div className="relative flex min-h-screen flex-col bg-background">
+        <Header />
+        <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
+    </div>
+  )
 }
 
 export const useAuth = () => {
