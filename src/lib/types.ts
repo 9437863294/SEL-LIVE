@@ -31,6 +31,7 @@ export type User = {
     mobile: string;
     role: string; // Changed from 'Admin' | 'User' to string to support dynamic roles
     status: 'Active' | 'Inactive';
+    photoURL?: string;
 };
 
 export type Role = {

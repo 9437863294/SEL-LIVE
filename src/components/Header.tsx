@@ -1,7 +1,8 @@
+
 'use client';
 
 import Link from 'next/link';
-import { Bell, Settings, LogOut, Users } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -61,7 +62,7 @@ export default function Header() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <TooltipProvider>
             <span className="hidden sm:inline-block font-medium text-sm text-muted-foreground">{user?.name || 'User'}</span>
             
@@ -69,7 +70,7 @@ export default function Header() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="https-placeholder" alt="User avatar" />
+                    <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User avatar'} />
                     <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
                   </Avatar>
                 </Button>
@@ -84,10 +85,15 @@ export default function Header() {
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Users className="mr-2 h-4 w-4" />
-                  <span>Switch User</span>
-                </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <UserIcon className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <Lock className="mr-2 h-4 w-4" />
+                    <span>Change Password</span>
+                  </DropdownMenuItem>
+                 <DropdownMenuSeparator />
                  <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign Out</span>

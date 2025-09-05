@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: firebaseUser.uid,
             email: firebaseUser.email || '',
             name: firebaseUser.displayName || firebaseUser.email || 'User',
+            photoURL: firebaseUser.photoURL || undefined,
             // Fill with default values
             mobile: 'N/A',
             role: 'User',
