@@ -362,7 +362,7 @@ export default function AllRequisitionsTab() {
                                     )}
                                 />
                                 <div className="space-y-2">
-                                <FormLabel htmlFor="attachments">Attachments</FormLabel>
+                                <Label htmlFor="attachments">Attachments</Label>
                                 <Input id="attachments" type="file" multiple />
                                 </div>
                             </div>
