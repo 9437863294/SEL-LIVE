@@ -78,12 +78,20 @@ export type SerialNumberConfig = {
   startingIndex: number;
 };
 
+export type AmountBasedCondition = {
+  id: string;
+  type: 'Below' | 'Between' | 'Above';
+  amount1: number;
+  amount2?: number;
+  userId: string;
+};
+
 export type WorkflowStep = {
   id: string;
   name: string;
   tat: number; // Turnaround time in hours
   assignmentType: 'User-based' | 'Project-based' | 'Department-based' | 'Amount-based';
-  assignedTo: string[] | Record<string, string>; // string[] for user-based, Record for others
+  assignedTo: string[] | Record<string, string> | AmountBasedCondition[];
   actions: string[];
   upload: 'Required' | 'Not Required' | 'Optional';
 };

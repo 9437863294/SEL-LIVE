@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User, Project, Department } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -117,9 +117,14 @@ export default function WorkflowConfigurationPage() {
         setSteps(steps.map(step => {
             if (step.id === id) {
                 const updatedStep = { ...step, [field]: value };
-                // When changing assignment type, reset assignedTo
                 if (field === 'assignmentType') {
-                    updatedStep.assignedTo = Array.isArray(step.assignedTo) ? [] : {};
+                    if (value === 'Amount-based') {
+                        updatedStep.assignedTo = [{id: crypto.randomUUID(), type: 'Below', amount1: 0, userId: '' }];
+                    } else if (value === 'User-based') {
+                        updatedStep.assignedTo = [];
+                    } else {
+                        updatedStep.assignedTo = {};
+                    }
                 }
                 return updatedStep;
             }
@@ -144,6 +149,47 @@ export default function WorkflowConfigurationPage() {
                     ? [...step.actions, action]
                     : step.actions.filter(a => a !== action);
                 return { ...step, actions: newActions };
+            }
+            return step;
+        }));
+    };
+
+    const handleAmountConditionChange = (stepId: string, conditionId: string, field: keyof AmountBasedCondition, value: any) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const updatedAssignedTo = (step.assignedTo as AmountBasedCondition[]).map(cond => {
+                    if (cond.id === conditionId) {
+                        return { ...cond, [field]: value };
+                    }
+                    return cond;
+                });
+                return { ...step, assignedTo: updatedAssignedTo };
+            }
+            return step;
+        }));
+    };
+
+    const handleAddAmountCondition = (stepId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newCondition: AmountBasedCondition = {
+                    id: crypto.randomUUID(),
+                    type: 'Between',
+                    amount1: 0,
+                    amount2: 10000,
+                    userId: ''
+                };
+                return { ...step, assignedTo: [...(step.assignedTo as AmountBasedCondition[]), newCondition] };
+            }
+            return step;
+        }));
+    };
+
+    const handleDeleteAmountCondition = (stepId: string, conditionId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newAssignedTo = (step.assignedTo as AmountBasedCondition[]).filter(cond => cond.id !== conditionId);
+                return { ...step, assignedTo: newAssignedTo };
             }
             return step;
         }));
@@ -247,7 +293,7 @@ export default function WorkflowConfigurationPage() {
                                                 <div className="space-y-2">
                                                     <Label htmlFor={`assigned-user-${step.id}`}>Assigned User</Label>
                                                     <Select
-                                                        value={Array.isArray(step.assignedTo) ? step.assignedTo[0] || '' : ''}
+                                                        value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[0] || '' : ''}
                                                         onValueChange={(value) => handleStepChange(step.id, 'assignedTo', [value])}
                                                     >
                                                         <SelectTrigger id={`assigned-user-${step.id}`}>
@@ -333,6 +379,64 @@ export default function WorkflowConfigurationPage() {
                                                     </Card>
                                                 </div>
                                             )}
+
+                                            {step.assignmentType === 'Amount-based' && Array.isArray(step.assignedTo) && (
+                                                <div className="space-y-2">
+                                                    <Label>Assign Users per Amount Condition</Label>
+                                                    <Card className="p-4 mt-2 space-y-4">
+                                                        {(step.assignedTo as AmountBasedCondition[]).map(condition => (
+                                                            <div key={condition.id} className="flex items-center gap-2">
+                                                                <Select
+                                                                    value={condition.type}
+                                                                    onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'type', value)}
+                                                                >
+                                                                    <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="Below">Below</SelectItem>
+                                                                        <SelectItem value="Between">Between</SelectItem>
+                                                                        <SelectItem value="Above">Above</SelectItem>
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                <Input 
+                                                                    type="number"
+                                                                    className="w-24"
+                                                                    value={condition.amount1}
+                                                                    onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount1', e.target.valueAsNumber || 0)}
+                                                                />
+                                                                {condition.type === 'Between' && (
+                                                                    <>
+                                                                        <span>&</span>
+                                                                        <Input 
+                                                                            type="number"
+                                                                            className="w-24"
+                                                                            value={condition.amount2}
+                                                                            onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount2', e.target.valueAsNumber || 0)}
+                                                                        />
+                                                                    </>
+                                                                )}
+                                                                <Select
+                                                                    value={condition.userId}
+                                                                    onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)}
+                                                                >
+                                                                    <SelectTrigger><SelectValue placeholder="Select a user"/></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {users.map(user => (
+                                                                            <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                <Button variant="ghost" size="icon" onClick={() => handleDeleteAmountCondition(step.id, condition.id)}>
+                                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                                </Button>
+                                                            </div>
+                                                        ))}
+                                                        <Button variant="outline" size="sm" onClick={() => handleAddAmountCondition(step.id)}>
+                                                            <Plus className="mr-2 h-4 w-4" /> Add Condition
+                                                        </Button>
+                                                    </Card>
+                                                </div>
+                                            )}
+
 
                                             <div className="space-y-4">
                                                 <Label>Actions</Label>
