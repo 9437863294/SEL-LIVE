@@ -4,6 +4,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Clock, Users } from 'lucide-react';
+import AllRequisitionsTab from '@/components/AllRequisitionsTab';
 
 const stats = [
     { title: 'Pending Requisitions', value: '2', icon: Clock },
@@ -13,15 +14,15 @@ const stats = [
 export default function SiteFundRequisitionPage() {
   return (
     <div className="flex flex-col w-full">
-      <Tabs defaultValue="dashboard">
+      <Tabs defaultValue="all-requisitions">
         <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
             <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>
             <TabsTrigger value="all-requisitions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Requisitions</TabsTrigger>
             <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My Pending Tasks</TabsTrigger>
             <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
         </TabsList>
-        <TabsContent value="dashboard">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mt-6">
+        <TabsContent value="dashboard" className="mt-6">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                 {stats.map((stat, index) => (
                     <Card key={index}>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -35,14 +36,14 @@ export default function SiteFundRequisitionPage() {
                 ))}
             </div>
         </TabsContent>
-        <TabsContent value="all-requisitions">
-            <p className="text-muted-foreground mt-4">All requisitions will be listed here.</p>
+        <TabsContent value="all-requisitions" className="mt-6">
+           <AllRequisitionsTab />
         </TabsContent>
-        <TabsContent value="pending-tasks">
-            <p className="text-muted-foreground mt-4">Your pending tasks will be listed here.</p>
+        <TabsContent value="pending-tasks" className="mt-6">
+            <p className="text-muted-foreground">Your pending tasks will be listed here.</p>
         </TabsContent>
-        <TabsContent value="history">
-            <p className="text-muted-foreground mt-4">Your history will be shown here.</p>
+        <TabsContent value="history" className="mt-6">
+            <p className="text-muted-foreground">Your history will be shown here.</p>
         </TabsContent>
       </Tabs>
     </div>
