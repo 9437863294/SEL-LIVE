@@ -77,7 +77,7 @@ export default function ManageDepartmentPage() {
 
   useEffect(() => {
     fetchDepartments();
-  }, [toast]);
+  }, []);
 
   const resetAddDialog = () => {
     setNewDepartmentName('');
@@ -201,56 +201,55 @@ export default function ManageDepartmentPage() {
             <DialogHeader>
               <DialogTitle>Add New Department</DialogTitle>
               <DialogDescription>
-                Fill in the details for the new department.
+                Fill in the details to add a new department.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="add-name" className="text-right">
-                  Name
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-name">
+                  Department Name
                 </Label>
                 <Input
                   id="add-name"
                   value={newDepartmentName}
                   onChange={(e) => setNewDepartmentName(e.target.value)}
-                  className="col-span-3"
                   placeholder="e.g., Human Resources"
                 />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="add-status" className="text-right">
-                Status
-              </Label>
-              <Select
-                value={newDepartmentStatus}
-                onValueChange={(value: 'Active' | 'Inactive') => setNewDepartmentStatus(value)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="add-head" className="text-right">
-                Head
-              </Label>
-               <Select
-                value={newDepartmentHead}
-                onValueChange={(value: string) => setNewDepartmentHead(value)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="N/A">N/A</SelectItem>
-                  {/* You can map over users here in the future */}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-status">
+                  Status
+                </Label>
+                <Select
+                  value={newDepartmentStatus}
+                  onValueChange={(value: 'Active' | 'Inactive') => setNewDepartmentStatus(value)}
+                >
+                  <SelectTrigger id="add-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-head">
+                  Head of Department
+                </Label>
+                 <Select
+                  value={newDepartmentHead}
+                  onValueChange={(value: string) => setNewDepartmentHead(value)}
+                >
+                  <SelectTrigger id="add-head">
+                    <SelectValue placeholder="Select a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="N/A">N/A</SelectItem>
+                    {/* You can map over users here in the future */}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -380,5 +379,3 @@ export default function ManageDepartmentPage() {
     </div>
   );
 }
-
-    
