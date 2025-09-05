@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Plus, Trash2, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -14,12 +14,12 @@ import { collection, getDocs, addDoc, deleteDoc, doc, setDoc, getDoc } from 'fir
 import type { Holiday, WorkingHours } from '@/lib/types';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -38,7 +38,7 @@ export default function WorkingHoursPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [isHolidayDialogOpen, setIsHolidayDialogOpen] = useState(false);
+  const [isAddHolidayOpen, setIsAddHolidayOpen] = useState(false);
   const [newHolidayName, setNewHolidayName] = useState('');
   const [newHolidayDate, setNewHolidayDate] = useState<Date | undefined>();
 
@@ -64,10 +64,10 @@ export default function WorkingHoursPage() {
     Promise.all([fetchWorkingHours(), fetchHolidays()]).finally(() => setIsLoading(false));
   }, [fetchWorkingHours, fetchHolidays]);
   
-  const resetHolidayDialog = () => {
+  const resetHolidayForm = () => {
     setNewHolidayName('');
     setNewHolidayDate(undefined);
-    setIsHolidayDialogOpen(false);
+    setIsAddHolidayOpen(false);
   }
 
   const handleWorkingHoursChange = (day: string, field: 'isWorkDay' | 'startTime' | 'endTime', value: boolean | string) => {
@@ -98,7 +98,7 @@ export default function WorkingHoursPage() {
         date: format(newHolidayDate, 'yyyy-MM-dd'),
       });
       toast({ title: 'Success', description: `Holiday "${newHolidayName}" added.` });
-      resetHolidayDialog();
+      resetHolidayForm();
       fetchHolidays();
     } catch (error) {
       console.error("Error adding holiday: ", error);
@@ -176,55 +176,55 @@ export default function WorkingHoursPage() {
               <CardTitle>Holidays</CardTitle>
               <CardDescription>Manage company holidays.</CardDescription>
             </div>
-            <Dialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>Add Holiday</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-sm" onPointerDownOutside={(e) => e.preventDefault()}>
-                <DialogHeader>
-                  <DialogTitle>Add New Holiday</DialogTitle>
-                </DialogHeader>
-                 <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="holiday-name">Holiday Name</Label>
-                      <Input id="holiday-name" value={newHolidayName} onChange={(e) => setNewHolidayName(e.target.value)} placeholder="e.g. New Year's Day" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Date</Label>
-                       <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant={"outline"}
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !newHolidayDate && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {newHolidayDate ? format(newHolidayDate, "PPP") : <span>Pick a date</span>}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar
-                            mode="single"
-                            selected={newHolidayDate}
-                            onSelect={setNewHolidayDate}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
-                <DialogFooter className="justify-end sm:justify-end">
-                  <DialogClose asChild>
-                    <Button variant="outline" onClick={resetHolidayDialog}>Cancel</Button>
-                  </DialogClose>
-                  <Button onClick={handleAddHoliday}>Add</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </CardHeader>
           <CardContent className="p-0">
+            <Collapsible open={isAddHolidayOpen} onOpenChange={setIsAddHolidayOpen}>
+              <CollapsibleTrigger asChild>
+                <div className="p-6 pt-2">
+                  <Button className="w-full">
+                    <Plus className="mr-2 h-4 w-4" /> Add Holiday
+                  </Button>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-6 pb-6 border-b">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="holiday-name">Holiday Name</Label>
+                    <Input id="holiday-name" value={newHolidayName} onChange={(e) => setNewHolidayName(e.target.value)} placeholder="e.g. New Year's Day" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !newHolidayDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newHolidayDate ? format(newHolidayDate, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={newHolidayDate}
+                          onSelect={setNewHolidayDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={resetHolidayForm}>Cancel</Button>
+                      <Button onClick={handleAddHoliday}>Add</Button>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            
             <Table>
               <TableHeader>
                 <TableRow>
@@ -261,5 +261,3 @@ export default function WorkingHoursPage() {
     </div>
   );
 }
-
-    
