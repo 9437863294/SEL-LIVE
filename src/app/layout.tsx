@@ -25,10 +25,6 @@ export default function RootLayout({
       <body className={cn('font-body antialiased min-h-screen bg-background')}>
         <ModuleProvider>
           <div className="relative flex min-h-screen flex-col">
-            <Header />
-            <main className="flex-1 container mx-auto px-4 py-8">
-              {children}
-            </main>
           </div>
           <Toaster />
         </ModuleProvider>
