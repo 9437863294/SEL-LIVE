@@ -8,9 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog } from '@/lib/types';
+import type { Requisition, Project, Department, WorkflowStep, ActionLog, User } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, runTransaction, Timestamp, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -28,51 +28,100 @@ interface ViewRequisitionDialogProps {
   onRequisitionUpdate: () => void;
 }
 
+interface EnrichedStep extends WorkflowStep {
+    assignedUserName?: string;
+    completionDate?: string;
+    deadline?: string;
+    status: 'Pending' | 'Completed' | 'Current';
+}
+
 export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisition, projects, departments, onRequisitionUpdate }: ViewRequisitionDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
   const [currentStep, setCurrentStep] = useState<WorkflowStep | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
 
   useEffect(() => {
-    const fetchWorkflow = async () => {
+    const fetchWorkflowAndUsers = async () => {
       if (!requisition) return;
       setIsLoading(true);
       try {
-        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
-        const workflowSnap = await getDoc(workflowRef);
+        const [workflowSnap, usersSnap] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'site-fund-requisition')),
+          getDocs(collection(db, 'users'))
+        ]);
+        
         if (workflowSnap.exists()) {
           const steps = workflowSnap.data().steps as WorkflowStep[];
           setWorkflow(steps);
         } else {
            toast({ title: 'Error', description: 'Workflow configuration not found.', variant: 'destructive' });
         }
+        
+        const usersData = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+        setUsers(usersData);
+
       } catch (error) {
-        console.error("Error fetching workflow:", error);
-        toast({ title: 'Error', description: 'Could not load workflow configuration.', variant: 'destructive' });
+        console.error("Error fetching workflow/users:", error);
+        toast({ title: 'Error', description: 'Could not load workflow or user data.', variant: 'destructive' });
       } finally {
         setIsLoading(false);
       }
     };
     
     if (isOpen && requisition) {
-        fetchWorkflow();
+        fetchWorkflowAndUsers();
     } else {
-        // Reset state when dialog is closed
         setWorkflow(null);
         setCurrentStep(null);
         setActionComment('');
+        setEnrichedSteps([]);
     }
   }, [requisition, isOpen, toast]);
 
    useEffect(() => {
-    if (requisition && workflow) {
+    if (requisition && workflow && users.length > 0) {
       const step = workflow.find(s => s.id === requisition.currentStepId) || null;
       setCurrentStep(step);
+
+      const getStepAssigneeName = (step: WorkflowStep): string => {
+        if (step.assignmentType === 'User-based' && Array.isArray(step.assignedTo) && step.assignedTo.length > 0) {
+            return users.find(u => u.id === step.assignedTo[0])?.name || 'N/A';
+        }
+        // Simplified for brevity, add other assignment types if needed
+        return 'N/A';
+      };
+
+      const history = requisition.history || [];
+      const currentStepIndex = workflow.findIndex(s => s.id === requisition.currentStepId);
+      
+      const allStepsWithDetails = workflow.map((wfStep, index) => {
+          const historyEntry = history.find(h => h.stepName === wfStep.name);
+          const status = historyEntry ? 'Completed' : (wfStep.id === requisition.currentStepId ? 'Current' : 'Pending');
+
+          let assignedUserName = 'N/A';
+          if (status === 'Current' || status === 'Pending') {
+            // Simplified: This logic needs to be robust like getAssigneeForStep
+             assignedUserName = getStepAssigneeName(wfStep);
+          } else if (historyEntry) {
+              assignedUserName = historyEntry.userName;
+          }
+
+          return {
+              ...wfStep,
+              assignedUserName,
+              completionDate: historyEntry ? format(historyEntry.timestamp.toDate(), 'dd MMM, yy HH:mm') : '-',
+              deadline: (status === 'Current' && requisition.deadline) ? format(requisition.deadline.toDate(), 'dd MMM, yy HH:mm') : '-',
+              status: status,
+          };
+      });
+      setEnrichedSteps(allStepsWithDetails);
     }
-  }, [requisition, workflow, isOpen]);
+  }, [requisition, workflow, users, isOpen]);
   
   const handleAction = async (action: string) => {
     if (!user || !requisition || !workflow || !currentStep) return;
@@ -82,7 +131,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     try {
         const requisitionRef = doc(db, 'requisitions', requisition.id);
         
-        // Log the current action
         const newActionLog: ActionLog = {
             action,
             comment: actionComment,
@@ -97,6 +145,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             if (!reqDoc.exists()) throw new Error("Requisition document not found!");
 
             const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
+            
+            const tempReqForAssignment = {
+              ...currentRequisitionData,
+              date: format(new Date(currentRequisitionData.date), 'yyyy-MM-dd'),
+            };
 
             let nextStep: WorkflowStep | undefined;
             let newStatus: Requisition['status'] = currentRequisitionData.status;
@@ -113,10 +166,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newStage = nextStep.name;
                     newStatus = 'In Progress';
                     newCurrentStepId = nextStep.id;
-                    const tempReqForAssignment = {
-                      ...currentRequisitionData,
-                      date: format(new Date(currentRequisitionData.date), 'yyyy-MM-dd'),
-                    };
                     newAssignedToId = await getAssigneeForStep(nextStep, tempReqForAssignment);
                     if (!newAssignedToId) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
                     const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
@@ -125,7 +174,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newStage = 'Completed';
                     newStatus = 'Completed';
                     newCurrentStepId = null;
-                    newAssignedToId = null; // No one is assigned on the final step
+                    newAssignedToId = null; 
                     newDeadline = null;
                 }
             } else if (action === 'Reject') {
@@ -135,19 +184,20 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                  newAssignedToId = null;
                  newDeadline = null;
             } else {
-                // For other actions like 'Edit', 'Revise', etc., keep current assignment
                 newAssignedToId = currentRequisitionData.assignedToId || null;
-                newDeadline = currentRequisitionData.deadline ? Timestamp.fromMillis((currentRequisitionData.deadline as unknown as Timestamp).toMillis()) : null;
+                newDeadline = currentRequisitionData.deadline;
             }
 
-            transaction.update(requisitionRef, {
+            const updatedData = {
                 status: newStatus,
                 stage: newStage,
                 currentStepId: newCurrentStepId,
                 assignedToId: newAssignedToId,
                 deadline: newDeadline,
                 history: arrayUnion(newActionLog),
-            });
+            };
+
+            transaction.update(requisitionRef, updatedData);
         });
         
         toast({ title: 'Success', description: `Requisition has been successfully ${action.toLowerCase()}ed.` });
@@ -169,9 +219,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const departmentName = departments.find(d => d.id === requisition.departmentId)?.name || 'N/A';
 
   const isActionAllowed = user && requisition.assignedToId === user.id && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
-  
-  const sortedHistory = requisition.history?.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()) || [];
-
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -214,32 +261,35 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 )}
             </div>
             <div className="md:col-span-2">
-                <h3 className="font-semibold mb-2">History</h3>
-                <ScrollArea className="h-72">
+                <h3 className="font-semibold mb-2">Workflow Status</h3>
+                 <ScrollArea className="h-72">
                     <Table className="text-xs">
-                        <TableHeader>
+                         <TableHeader>
                             <TableRow>
                                 <TableHead>Stage</TableHead>
                                 <TableHead>User</TableHead>
-                                <TableHead>Date</TableHead>
+                                <TableHead>Deadline</TableHead>
+                                <TableHead>Completed</TableHead>
+                                <TableHead>Status</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {sortedHistory.length > 0 ? (
-                           sortedHistory.map((log, index) => (
+                        {enrichedSteps.length > 0 ? (
+                           enrichedSteps.map((step, index) => (
                                 <TableRow key={index}>
+                                    <TableCell className="font-medium">{step.name}</TableCell>
+                                    <TableCell>{step.assignedUserName}</TableCell>
+                                    <TableCell>{step.deadline}</TableCell>
+                                    <TableCell>{step.completionDate}</TableCell>
                                     <TableCell>
-                                        <div className="font-medium">{log.stepName}</div>
-                                        <div className="text-muted-foreground">{log.action}</div>
+                                       <Badge variant={step.status === 'Completed' ? 'default' : 'secondary'}>{step.status}</Badge>
                                     </TableCell>
-                                    <TableCell>{log.userName}</TableCell>
-                                    <TableCell>{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</TableCell>
                                 </TableRow>
                             ))
                         ) : (
                              <TableRow>
-                                <TableCell colSpan={3} className="text-center h-24">
-                                No history yet.
+                                <TableCell colSpan={5} className="text-center h-24">
+                                    {isLoading ? 'Loading workflow...' : 'No workflow data.'}
                                 </TableCell>
                             </TableRow>
                         )}

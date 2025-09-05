@@ -1,5 +1,6 @@
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -81,7 +82,7 @@ export type Requisition = {
   currentStepId?: string | null;
   assignedToId?: string | null;
   deadline?: any; // Firestore Timestamp
-  history?: ActionLog[];
+  history: ActionLog[];
 };
 
 export type SerialNumberConfig = {
