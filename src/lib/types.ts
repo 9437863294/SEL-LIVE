@@ -1,3 +1,4 @@
+
 export type Module = {
   id: string;
   title: string;
@@ -6,7 +7,7 @@ export type Module = {
 };
 
 export type Department = {
-  id: string;
+  id:string;
   name: string;
   head: string;
   status: 'Active' | 'Inactive';
@@ -30,4 +31,10 @@ export type User = {
     mobile: string;
     role: 'Admin' | 'User';
     status: 'Active' | 'Inactive';
+};
+
+export type Role = {
+  id: string;
+  name: string;
+  permissions: string;
 };

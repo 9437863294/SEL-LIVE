@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -21,7 +22,7 @@ const settingsItems = [
   { icon: Briefcase, text: 'Manage Vendor', href: '#' },
   { icon: Clock, text: 'Working Hrs', href: '#' },
   { icon: Users, text: 'User Management', href: '/settings/user-management' },
-  { icon: ShieldCheck, text: 'Role Management', href: '#' },
+  { icon: ShieldCheck, text: 'Role Management', href: '/settings/role-management' },
   { icon: Hash, text: 'Serial No. Config', href: '#' },
   { icon: Calculator, text: 'Import Config', href: '#' },
 ];
