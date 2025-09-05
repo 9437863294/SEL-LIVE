@@ -52,6 +52,7 @@ import { format } from 'date-fns';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 
 const formSchema = z.object({
@@ -165,56 +166,72 @@ export default function AllRequisitionsTab() {
   }, [toast]);
 
   const handleCreateRequest = async (values: z.infer<typeof formSchema>) => {
+    if (!user) {
+        toast({ title: 'Error', description: 'You must be logged in to create a request.', variant: 'destructive' });
+        return;
+    }
+
     try {
-        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+        // --- 1. Get Workflow and Determine First Step ---
+        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error("Workflow not configured for Site Fund Requisition.");
         
+        const steps = workflowSnap.data().steps as WorkflowStep[];
+        if (!steps || steps.length === 0) throw new Error("Workflow has no steps.");
+        
+        const firstStep = steps[0];
+
+        // --- 2. Create Temporary Requisition Object to Determine Assignee ---
+        const tempRequisition = {
+            ...values,
+            date: format(values.date, 'yyyy-MM-dd'),
+            raisedBy: user.name,
+            raisedById: user.id,
+            status: 'Pending' as const,
+            stage: firstStep.name,
+            requisitionId: 'temp', // temporary
+        };
+
+        // --- 3. Determine Assignee and Calculate Deadline ---
+        const assignedToId = await getAssigneeForStep(firstStep, tempRequisition);
+        if (!assignedToId) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
+        
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+
+        // --- 4. Generate Final Requisition ID in a Transaction ---
+        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
         const newRequisitionId = await runTransaction(db, async (transaction) => {
             const configDoc = await transaction.get(configRef);
-            if (!configDoc.exists()) {
-                throw new Error("Serial number configuration not found!");
-            }
+            if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
 
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
-            
             const formattedIndex = newIndex.toString().padStart(4, '0');
             const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
-
-            transaction.update(configRef, { startingIndex: newIndex + 1 });
             
+            transaction.update(configRef, { startingIndex: newIndex + 1 });
             return requisitionId;
         });
 
-        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
-        const workflowSnap = await getDoc(workflowRef);
-        let initialStage = 'Pending'; // Default stage
-        if (workflowSnap.exists()) {
-            const workflowData = workflowSnap.data();
-            const steps = workflowData.steps as WorkflowStep[];
-            if (steps && steps.length > 0) {
-                initialStage = steps[0].name;
-            }
-        }
-        
-        const { date, ...restOfRequest } = values;
-
-        await addDoc(collection(db, 'requisitions'), {
-            ...restOfRequest,
-            date: format(date, 'yyyy-MM-dd'),
+        // --- 5. Save the Final Requisition to Firestore ---
+        const finalRequisitionData = {
+            ...tempRequisition,
             requisitionId: newRequisitionId,
-            raisedBy: user?.name || 'Unknown User',
-            raisedById: user?.id,
-            status: 'Pending',
-            stage: initialStage,
             createdAt: serverTimestamp(),
-        });
+            currentStepId: firstStep.id,
+            assignedToId: assignedToId,
+            deadline: deadline,
+        };
+
+        await addDoc(collection(db, 'requisitions'), finalRequisitionData);
         
         toast({ title: 'Success', description: 'New fund requisition created.' });
         setIsNewRequestOpen(false);
         fetchRequisitions();
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating requisition:', error);
-        toast({ title: 'Error', description: 'Failed to create requisition.', variant: 'destructive' });
+        toast({ title: 'Error', description: error.message || 'Failed to create requisition.', variant: 'destructive' });
     }
   }
 
@@ -342,7 +359,7 @@ export default function AllRequisitionsTab() {
                                         <FormItem className="space-y-2">
                                             <FormLabel>Amount</FormLabel>
                                             <FormControl>
-                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} />
+                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>

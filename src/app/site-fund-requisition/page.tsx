@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Clock, Users } from 'lucide-react';
 import AllRequisitionsTab from '@/components/AllRequisitionsTab';
+import MyPendingTasksTab from '@/components/MyPendingTasksTab';
 
 const stats = [
     { title: 'Pending Requisitions', value: '2', icon: Clock },
@@ -40,7 +41,7 @@ export default function SiteFundRequisitionPage() {
            <AllRequisitionsTab />
         </TabsContent>
         <TabsContent value="pending-tasks" className="mt-6">
-            <p className="text-muted-foreground">Your pending tasks will be listed here.</p>
+            <MyPendingTasksTab />
         </TabsContent>
         <TabsContent value="history" className="mt-6">
             <p className="text-muted-foreground">Your history will be shown here.</p>
