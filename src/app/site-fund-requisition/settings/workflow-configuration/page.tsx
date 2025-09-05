@@ -3,29 +3,58 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Plus, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role } from '@/lib/types';
+import type { WorkflowStep, Role, User } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const initialSteps: WorkflowStep[] = [
-    { id: '1', name: 'Request Receiving', roles: [], tat: 1 },
-    { id: '2', name: 'Verification', roles: [], tat: 2 },
-    { id: '3', name: 'Approval of Payment', roles: [], tat: 1 },
+    { 
+        id: '1', 
+        name: 'Request Receiving', 
+        tat: 2,
+        assignmentType: 'User-based',
+        assignedTo: [],
+        actions: ['Complete', 'Edit'],
+        upload: 'Optional',
+    },
+    { 
+        id: '2', 
+        name: 'Verification', 
+        tat: 16, // 2 days
+        assignmentType: 'User-based',
+        assignedTo: [],
+        actions: [],
+        upload: 'Optional',
+    },
+    { 
+        id: '3', 
+        name: 'Approval of Payment', 
+        tat: 8, // 1 day
+        assignmentType: 'User-based',
+        assignedTo: [],
+        actions: [],
+        upload: 'Optional',
+    },
 ];
+
+const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified', 'Update Approved Amount'];
 
 export default function WorkflowConfigurationPage() {
     const { toast } = useToast();
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -37,6 +66,11 @@ export default function WorkflowConfigurationPage() {
                 const rolesSnapshot = await getDocs(collection(db, 'roles'));
                 const rolesData = rolesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
                 setRoles(rolesData);
+                
+                // Fetch users
+                const usersSnapshot = await getDocs(collection(db, 'users'));
+                const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+                setUsers(usersData);
                 
                 // Fetch workflow
                 const docRef = doc(db, 'workflows', 'site-fund-requisition');
@@ -60,8 +94,11 @@ export default function WorkflowConfigurationPage() {
         const newStep: WorkflowStep = {
             id: (steps.length + 1).toString(),
             name: `New Step ${steps.length + 1}`,
-            roles: [],
-            tat: 1,
+            tat: 8,
+            assignmentType: 'User-based',
+            assignedTo: [],
+            actions: [],
+            upload: 'Optional',
         };
         setSteps([...steps, newStep]);
     };
@@ -72,6 +109,18 @@ export default function WorkflowConfigurationPage() {
     
     const handleStepChange = (id: string, field: keyof WorkflowStep, value: any) => {
         setSteps(steps.map(step => step.id === id ? { ...step, [field]: value } : step));
+    };
+
+    const handleActionChange = (stepId: string, action: string, checked: boolean) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newActions = checked 
+                    ? [...step.actions, action]
+                    : step.actions.filter(a => a !== action);
+                return { ...step, actions: newActions };
+            }
+            return step;
+        }));
     };
 
     const handleSave = async () => {
@@ -113,9 +162,9 @@ export default function WorkflowConfigurationPage() {
                 <CardContent className="space-y-4">
                      {isLoading ? (
                         <div className="space-y-2">
-                           <Skeleton className="h-12 w-full" />
-                           <Skeleton className="h-12 w-full" />
-                           <Skeleton className="h-12 w-full" />
+                           <Skeleton className="h-24 w-full" />
+                           <Skeleton className="h-24 w-full" />
+                           <Skeleton className="h-24 w-full" />
                         </div>
                      ) : (
                         <Accordion type="multiple" className="w-full" defaultValue={steps.map(s => s.id)}>
@@ -131,41 +180,92 @@ export default function WorkflowConfigurationPage() {
                                         </Button>
                                     </div>
                                     <AccordionContent>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 border-t">
-                                            <div className="space-y-2">
-                                                <Label htmlFor={`step-name-${step.id}`}>Step Name</Label>
-                                                <Input 
-                                                    id={`step-name-${step.id}`}
-                                                    value={step.name} 
-                                                    onChange={(e) => handleStepChange(step.id, 'name', e.target.value)}
-                                                />
+                                        <div className="space-y-6 p-4 border-t">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`step-name-${step.id}`}>Step Name</Label>
+                                                    <Input 
+                                                        id={`step-name-${step.id}`}
+                                                        value={step.name} 
+                                                        onChange={(e) => handleStepChange(step.id, 'name', e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`tat-${step.id}`}>TAT (in hours)</Label>
+                                                    <Input 
+                                                        id={`tat-${step.id}`}
+                                                        type="number"
+                                                        value={step.tat} 
+                                                        onChange={(e) => handleStepChange(step.id, 'tat', parseInt(e.target.value) || 0)}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <Label htmlFor={`tat-${step.id}`}>TAT (in days)</Label>
-                                                <Input 
-                                                    id={`tat-${step.id}`}
-                                                    type="number"
-                                                    value={step.tat} 
-                                                    onChange={(e) => handleStepChange(step.id, 'tat', parseInt(e.target.value) || 0)}
-                                                />
-                                            </div>
-                                            <div className="md:col-span-2 space-y-2">
-                                                <Label>Assign To Roles</Label>
-                                                 <Select
-                                                    value={step.roles.join(',')}
-                                                    onValueChange={(value) => handleStepChange(step.id, 'roles', value.split(','))}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Select roles" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {roles.map(role => (
-                                                            <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <p className="text-xs text-muted-foreground">Multiple roles coming soon.</p>
 
+                                            <div className="space-y-4">
+                                                <Label>Assignment Type</Label>
+                                                <RadioGroup
+                                                    value={step.assignmentType}
+                                                    onValueChange={(value) => handleStepChange(step.id, 'assignmentType', value)}
+                                                    className="flex flex-wrap gap-4"
+                                                >
+                                                    {['User-based', 'Project-based', 'Department-based', 'Amount-based'].map(type => (
+                                                        <div key={type} className="flex items-center space-x-2">
+                                                            <RadioGroupItem value={type} id={`${step.id}-${type}`} />
+                                                            <Label htmlFor={`${step.id}-${type}`} className="font-normal">{type}</Label>
+                                                        </div>
+                                                    ))}
+                                                </RadioGroup>
+                                            </div>
+
+                                            {step.assignmentType === 'User-based' && (
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`assigned-user-${step.id}`}>Assigned User</Label>
+                                                    <Select
+                                                        value={step.assignedTo[0] || ''}
+                                                        onValueChange={(value) => handleStepChange(step.id, 'assignedTo', [value])}
+                                                    >
+                                                        <SelectTrigger id={`assigned-user-${step.id}`}>
+                                                            <SelectValue placeholder="Select a user" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {users.map(user => (
+                                                                <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-4">
+                                                <Label>Actions</Label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                    {allActions.map(action => (
+                                                        <div key={action} className="flex items-center space-x-2">
+                                                            <Checkbox
+                                                                id={`${step.id}-action-${action}`}
+                                                                checked={step.actions.includes(action)}
+                                                                onCheckedChange={(checked) => handleActionChange(step.id, action, !!checked)}
+                                                            />
+                                                            <Label htmlFor={`${step.id}-action-${action}`} className="font-normal">{action}</Label>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-2">
+                                                <Label>Upload</Label>
+                                                 <RadioGroup
+                                                    value={step.upload}
+                                                    onValueChange={(value) => handleStepChange(step.id, 'upload', value)}
+                                                    className="flex gap-4"
+                                                >
+                                                    {['Required', 'Not Required', 'Optional'].map(type => (
+                                                        <div key={type} className="flex items-center space-x-2">
+                                                            <RadioGroupItem value={type} id={`${step.id}-upload-${type}`} />
+                                                            <Label htmlFor={`${step.id}-upload-${type}`} className="font-normal">{type}</Label>
+                                                        </div>
+                                                    ))}
+                                                </RadioGroup>
                                             </div>
                                         </div>
                                     </AccordionContent>

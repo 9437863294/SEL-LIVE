@@ -81,6 +81,9 @@ export type SerialNumberConfig = {
 export type WorkflowStep = {
   id: string;
   name: string;
-  roles: string[];
-  tat: number; // Turnaround time in days
+  tat: number; // Turnaround time in hours
+  assignmentType: 'User-based' | 'Project-based' | 'Department-based' | 'Amount-based';
+  assignedTo: string[];
+  actions: string[];
+  upload: 'Required' | 'Not Required' | 'Optional';
 };
