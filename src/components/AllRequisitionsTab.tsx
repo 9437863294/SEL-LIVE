@@ -64,7 +64,7 @@ const requisitions = [
     department: 'HR',
     raisedBy: 'Ashish',
     description: 'gdfgd',
-    amount: '₹4,64,646.00',
+    amount: '-1.00',
     stage: 'Completed',
     status: 'Completed',
     attachments: 0,
@@ -88,7 +88,7 @@ const requisitions = [
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
-  const [currentDateTime, setCurrentDateTime] = useState({ date: '', time: '' });
+  const [timestamp, setTimestamp] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const { toast } = useToast();
@@ -96,10 +96,14 @@ export default function AllRequisitionsTab() {
   useEffect(() => {
     if (isNewRequestOpen) {
       const now = new Date();
-      setCurrentDateTime({
-        date: now.toLocaleDateString('en-GB'),
-        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-      });
+      setTimestamp(now.toLocaleString('en-GB', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }));
     }
   }, [isNewRequestOpen]);
 
@@ -151,14 +155,10 @@ export default function AllRequisitionsTab() {
                             Fill out the form to create a new fund request.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 py-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
                         <div className="space-y-2">
-                            <Label htmlFor="date">Date</Label>
-                            <Input id="date" type="text" value={currentDateTime.date} readOnly />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="time">Time</Label>
-                            <Input id="time" type="text" value={currentDateTime.time} readOnly />
+                            <Label htmlFor="timestamp">Timestamp</Label>
+                            <Input id="timestamp" type="text" value={timestamp} readOnly />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="project">Project</Label>
@@ -190,7 +190,7 @@ export default function AllRequisitionsTab() {
                             <Label htmlFor="amount">Amount</Label>
                             <Input id="amount" type="number" placeholder="Enter Amount" />
                         </div>
-                         <div className="md:col-span-2 lg:col-span-4 space-y-2">
+                         <div className="lg:col-span-3 space-y-2">
                             <Label htmlFor="description">Description</Label>
                             <Textarea id="description" placeholder="Enter a brief description" />
                         </div>
