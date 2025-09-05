@@ -1,4 +1,5 @@
+import ModuleDashboard from '@/components/ModuleDashboard';
 
 export default function Home() {
-  return null;
+  return <ModuleDashboard />;
 }
