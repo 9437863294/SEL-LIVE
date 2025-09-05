@@ -41,18 +41,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import ViewRequisitionDialog from './ViewRequisitionDialog';
 
 
 const formSchema = z.object({
@@ -66,6 +68,8 @@ const formSchema = z.object({
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [isEditRequestOpen, setIsEditRequestOpen] = useState(false);
+  const [editingRequisition, setEditingRequisition] = useState<Requisition | null>(null);
   const [previewRequisitionId, setPreviewRequisitionId] = useState('');
   const [timestamp, setTimestamp] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -74,6 +78,8 @@ export default function AllRequisitionsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
+  const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -140,6 +146,18 @@ export default function AllRequisitionsTab() {
       });
     }
   }, [isNewRequestOpen, form]);
+  
+  useEffect(() => {
+    if (isEditRequestOpen && editingRequisition) {
+      form.reset({
+        projectId: editingRequisition.projectId,
+        departmentId: editingRequisition.departmentId,
+        amount: editingRequisition.amount,
+        description: editingRequisition.description,
+        date: parseISO(editingRequisition.date),
+      });
+    }
+  }, [isEditRequestOpen, editingRequisition, form]);
 
   useEffect(() => {
     const fetchProjectsAndDepartments = async () => {
@@ -172,7 +190,6 @@ export default function AllRequisitionsTab() {
     }
 
     try {
-        // --- 1. Get Workflow and Determine First Step ---
         const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
         const workflowSnap = await getDoc(workflowRef);
         if (!workflowSnap.exists()) throw new Error("Workflow not configured for Site Fund Requisition.");
@@ -182,7 +199,6 @@ export default function AllRequisitionsTab() {
         
         const firstStep = steps[0];
 
-        // --- 2. Create Temporary Requisition Object to Determine Assignee ---
         const tempRequisition = {
             ...values,
             date: format(values.date, 'yyyy-MM-dd'),
@@ -190,16 +206,14 @@ export default function AllRequisitionsTab() {
             raisedById: user.id,
             status: 'Pending' as const,
             stage: firstStep.name,
-            requisitionId: 'temp', // temporary
+            requisitionId: 'temp', 
         };
 
-        // --- 3. Determine Assignee and Calculate Deadline ---
         const assignedToId = await getAssigneeForStep(firstStep, tempRequisition);
         if (!assignedToId) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
         
         const deadline = await calculateDeadline(new Date(), firstStep.tat);
 
-        // --- 4. Generate Final Requisition ID in a Transaction ---
         const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
         const newRequisitionId = await runTransaction(db, async (transaction) => {
             const configDoc = await transaction.get(configRef);
@@ -223,7 +237,6 @@ export default function AllRequisitionsTab() {
             stepName: 'Creation',
         };
 
-        // --- 5. Save the Final Requisition to Firestore ---
         const finalRequisitionData = {
             ...tempRequisition,
             requisitionId: newRequisitionId,
@@ -245,8 +258,168 @@ export default function AllRequisitionsTab() {
     }
   }
 
+  const handleEditRequest = async (values: z.infer<typeof formSchema>) => {
+    if (!editingRequisition) return;
+
+    try {
+      const requisitionRef = doc(db, 'requisitions', editingRequisition.id);
+      await updateDoc(requisitionRef, {
+        ...values,
+        date: format(values.date, 'yyyy-MM-dd'),
+      });
+      toast({ title: 'Success', description: 'Requisition updated.' });
+      setIsEditRequestOpen(false);
+      setEditingRequisition(null);
+      fetchRequisitions();
+    } catch (error: any) {
+      console.error('Error updating requisition:', error);
+      toast({ title: 'Error', description: 'Failed to update requisition.', variant: 'destructive' });
+    }
+  }
+
   const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || id;
   const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || id;
+
+  const openEditDialog = (req: Requisition) => {
+    setEditingRequisition(req);
+    setIsEditRequestOpen(true);
+  };
+  
+  const openViewDialog = (req: Requisition) => {
+    setSelectedRequisition(req);
+    setIsViewDialogOpen(true);
+  };
+
+  const renderForm = (onSubmit: (values: z.infer<typeof formSchema>) => void) => (
+     <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                <div className="space-y-2">
+                    <Label htmlFor="requisitionId">Request ID</Label>
+                    <Input id="requisitionId" type="text" value={editingRequisition?.requisitionId || previewRequisitionId} readOnly />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="timestamp">Timestamp</Label>
+                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt || timestamp} readOnly />
+                </div>
+                <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2 flex flex-col">
+                            <FormLabel>Date</FormLabel>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <FormControl>
+                                        <Button
+                                            variant={"outline"}
+                                            className={cn(
+                                            "w-full justify-start text-left font-normal",
+                                            !field.value && "text-muted-foreground"
+                                            )}
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                        </Button>
+                                    </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                />
+                                </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Project</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                    <SelectTrigger id="project">
+                                        <SelectValue placeholder="Select Project" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {projects.map(project => (
+                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="departmentId"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Department</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                    <SelectTrigger id="department">
+                                        <SelectValue placeholder="Select Department" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {departments.map(department => (
+                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Amount</FormLabel>
+                            <FormControl>
+                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                        <FormItem className="lg:col-span-3 space-y-2">
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <div className="space-y-2">
+                <Label htmlFor="attachments">Attachments</Label>
+                <Input id="attachments" type="file" multiple />
+                </div>
+            </div>
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit">{isEditRequestOpen ? 'Save Changes' : 'Create Request'}</Button>
+            </DialogFooter>
+        </form>
+    </Form>
+  );
 
   return (
     <div className="w-full">
@@ -273,134 +446,19 @@ export default function AllRequisitionsTab() {
                             Fill out the form to create a new fund request.
                         </DialogDescription>
                     </DialogHeader>
-                    <Form {...form}>
-                        <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="requisitionId">Request ID</Label>
-                                    <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="timestamp">Timestamp</Label>
-                                    <Input id="timestamp" type="text" value={timestamp} readOnly />
-                                </div>
-                                <FormField
-                                    control={form.control}
-                                    name="date"
-                                    render={({ field }) => (
-                                        <FormItem className="space-y-2 flex flex-col">
-                                            <FormLabel>Date</FormLabel>
-                                            <Popover>
-                                                <PopoverTrigger asChild>
-                                                    <FormControl>
-                                                        <Button
-                                                            variant={"outline"}
-                                                            className={cn(
-                                                            "w-full justify-start text-left font-normal",
-                                                            !field.value && "text-muted-foreground"
-                                                            )}
-                                                        >
-                                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                                        </Button>
-                                                    </FormControl>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-auto p-0">
-                                                <Calendar
-                                                    mode="single"
-                                                    selected={field.value}
-                                                    onSelect={field.onChange}
-                                                    initialFocus
-                                                />
-                                                </PopoverContent>
-                                            </Popover>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="projectId"
-                                    render={({ field }) => (
-                                        <FormItem className="space-y-2">
-                                            <FormLabel>Project</FormLabel>
-                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                <FormControl>
-                                                    <SelectTrigger id="project">
-                                                        <SelectValue placeholder="Select Project" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {projects.map(project => (
-                                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="departmentId"
-                                    render={({ field }) => (
-                                        <FormItem className="space-y-2">
-                                            <FormLabel>Department</FormLabel>
-                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                <FormControl>
-                                                    <SelectTrigger id="department">
-                                                        <SelectValue placeholder="Select Department" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {departments.map(department => (
-                                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="amount"
-                                    render={({ field }) => (
-                                        <FormItem className="space-y-2">
-                                            <FormLabel>Amount</FormLabel>
-                                            <FormControl>
-                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="description"
-                                    render={({ field }) => (
-                                        <FormItem className="lg:col-span-3 space-y-2">
-                                            <FormLabel>Description</FormLabel>
-                                            <FormControl>
-                                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <div className="space-y-2">
-                                <Label htmlFor="attachments">Attachments</Label>
-                                <Input id="attachments" type="file" multiple />
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <DialogClose asChild>
-                                    <Button type="button" variant="outline">Cancel</Button>
-                                </DialogClose>
-                                <Button type="submit">Create Request</Button>
-                            </DialogFooter>
-                        </form>
-                    </Form>
+                    {renderForm(handleCreateRequest)}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
+                <DialogContent className="sm:max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle>Edit Site Fund Requisition</DialogTitle>
+                        <DialogDescription>
+                            Make changes to the fund request below.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {renderForm(handleEditRequest)}
                 </DialogContent>
             </Dialog>
         </div>
@@ -436,9 +494,25 @@ export default function AllRequisitionsTab() {
                   <TableCell>{req.status}</TableCell>
                   <TableCell>N/A</TableCell>
                   <TableCell className="text-center">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                      </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          View Details
+                        </DropdownMenuItem>
+                        {req.stage === 'Request Receiving' && (
+                          <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))
@@ -452,8 +526,16 @@ export default function AllRequisitionsTab() {
           </TableBody>
         </Table>
       </div>
+      {selectedRequisition && (
+        <ViewRequisitionDialog
+            isOpen={isViewDialogOpen}
+            onOpenChange={setIsViewDialogOpen}
+            requisition={selectedRequisition}
+            projects={projects}
+            departments={departments}
+            onRequisitionUpdate={fetchRequisitions}
+        />
+      )}
     </div>
   );
 }
-
-    
