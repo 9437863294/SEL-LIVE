@@ -12,7 +12,7 @@ import { Timeline } from '@/components/ui/timeline';
 import { Badge } from '@/components/ui/badge';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, Timestamp, arrayUnion } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -62,29 +62,29 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     setIsLoading(true);
     
     try {
+        const requisitionRef = doc(db, 'requisitions', requisition.id);
+        
+        // Log the current action
+        const newActionLog: ActionLog = {
+            action,
+            comment: actionComment,
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: currentStep.name,
+        };
+
         await runTransaction(db, async (transaction) => {
-            const requisitionRef = doc(db, 'requisitions', requisition.id);
             const reqDoc = await transaction.get(requisitionRef);
             if (!reqDoc.exists()) throw new Error("Requisition document not found!");
 
             const currentRequisitionData = reqDoc.data() as Requisition;
-            
-            // Log the current action
-            const newActionLog: ActionLog = {
-                action,
-                comment: actionComment,
-                userId: user.id,
-                userName: user.name,
-                timestamp: serverTimestamp(),
-                stepName: currentStep.name,
-            };
-            const updatedHistory = [...(currentRequisitionData.history || []), newActionLog];
 
             let nextStep: WorkflowStep | undefined;
             let newStatus = currentRequisitionData.status;
             let newStage = currentRequisitionData.stage;
             let newAssignedToId: string | null = null;
-            let newDeadline: Date | null = null;
+            let newDeadline: Timestamp | null = null;
 
             if (action === 'Approve' || action === 'Complete' || action === 'Verified') {
                 const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
@@ -95,7 +95,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newStatus = 'In Progress';
                     newAssignedToId = await getAssigneeForStep(nextStep, currentRequisitionData);
                     if (!newAssignedToId) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
-                    newDeadline = await calculateDeadline(new Date(), nextStep.tat);
+                    const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
+                    newDeadline = Timestamp.fromDate(deadlineDate);
                 } else {
                     newStage = 'Completed';
                     newStatus = 'Completed';
@@ -110,7 +111,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             } else {
                 // For other actions like 'Edit', 'Revise', etc., keep current assignment
                 newAssignedToId = currentRequisitionData.assignedToId || null;
-                newDeadline = currentRequisitionData.deadline ? currentRequisitionData.deadline.toDate() : null;
+                newDeadline = currentRequisitionData.deadline ? currentRequisitionData.deadline : null;
             }
 
             transaction.update(requisitionRef, {
@@ -119,7 +120,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 currentStepId: nextStep?.id || null,
                 assignedToId: newAssignedToId,
                 deadline: newDeadline,
-                history: updatedHistory,
+                history: arrayUnion(newActionLog),
             });
         });
         
@@ -210,3 +211,4 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   );
 }
 
+    

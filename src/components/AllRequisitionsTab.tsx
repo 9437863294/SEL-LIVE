@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -219,7 +219,7 @@ export default function AllRequisitionsTab() {
             comment: 'Requisition created.',
             userId: user.id,
             userName: user.name,
-            timestamp: serverTimestamp(),
+            timestamp: Timestamp.now(),
             stepName: 'Creation',
         };
 
@@ -230,7 +230,7 @@ export default function AllRequisitionsTab() {
             createdAt: serverTimestamp(),
             currentStepId: firstStep.id,
             assignedToId: assignedToId,
-            deadline: deadline,
+            deadline: Timestamp.fromDate(deadline),
             history: [initialLog],
         };
 
@@ -455,3 +455,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
