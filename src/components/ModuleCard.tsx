@@ -50,28 +50,28 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       )}
       {...props}
     >
-      <CardHeader className="flex-row items-start gap-4 space-y-0 pb-4">
-        <div className="bg-primary/10 p-3 rounded-lg">
-           <Icon className="w-6 h-6 text-primary" />
+      <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
+        <div className="bg-primary/10 p-2 rounded-lg">
+           <Icon className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1">
-            <CardTitle className="text-lg font-bold">{module.title}</CardTitle>
-            <p className="text-sm text-muted-foreground pt-1">{module.content}</p>
+            <CardTitle className="text-base font-bold">{module.title}</CardTitle>
+            <p className="text-sm text-muted-foreground pt-1 line-clamp-2">{module.content}</p>
         </div>
-        <div className="flex items-center -mr-2 -mt-2">
+        <div className="flex items-center -mr-2 -mt-2 self-start">
              <div className="cursor-grab p-2 text-muted-foreground touch-none" aria-label="Drag to reorder">
                 <GripVertical className="h-5 w-5" />
             </div>
         </div>
       </CardHeader>
-      <CardContent className="mt-auto flex justify-end gap-2 pt-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsEditOpen(true)}>
+      <CardContent className="mt-auto flex justify-end gap-1 p-2 border-t">
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsEditOpen(true)}>
             <Edit className="h-4 w-4" />
             <span className="sr-only">Edit</span>
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive">
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
                 <Trash2 className="h-4 w-4" />
                 <span className="sr-only">Delete</span>
             </Button>
