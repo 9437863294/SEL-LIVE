@@ -141,20 +141,6 @@ export default function Header() {
               </TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                 <Link href="/settings">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-                      <Settings className="h-5 w-5" />
-                      <span className="sr-only">Settings</span>
-                    </Button>
-                  </Link>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Settings</p>
-              </TooltipContent>
-            </Tooltip>
-
           </TooltipProvider>
         </div>
       </div>
