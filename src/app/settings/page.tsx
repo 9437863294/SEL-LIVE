@@ -16,14 +16,14 @@ import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 const settingsItems = [
-  { icon: Briefcase, text: 'Manage Department' },
-  { icon: Construction, text: 'Manage Project' },
-  { icon: Briefcase, text: 'Manage Vendor' },
-  { icon: Clock, text: 'Working Hrs' },
-  { icon: Users, text: 'User Management' },
-  { icon: ShieldCheck, text: 'Role Management' },
-  { icon: Hash, text: 'Serial No. Config' },
-  { icon: Calculator, text: 'Import Config' },
+  { icon: Briefcase, text: 'Manage Department', href: '/settings/department' },
+  { icon: Construction, text: 'Manage Project', href: '#' },
+  { icon: Briefcase, text: 'Manage Vendor', href: '#' },
+  { icon: Clock, text: 'Working Hrs', href: '#' },
+  { icon: Users, text: 'User Management', href: '#' },
+  { icon: ShieldCheck, text: 'Role Management', href: '#' },
+  { icon: Hash, text: 'Serial No. Config', href: '#' },
+  { icon: Calculator, text: 'Import Config', href: '#' },
 ];
 
 export default function SettingsPage() {
@@ -38,28 +38,39 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-primary">Settings</h1>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-        {settingsItems.map((item) => (
-          <Card
-            key={item.text}
-            className={cn(
-              'flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer hover:shadow-lg',
-              selected === item.text
-                ? 'border-primary ring-2 ring-primary text-primary'
-                : 'text-foreground/80 hover:border-primary/50'
-            )}
-            onClick={() => setSelected(item.text)}
-          >
-            <CardContent className="p-0 flex flex-col items-center justify-center gap-2">
-              <item.icon
-                className={cn(
-                  'h-10 w-10 mb-2',
-                  selected === item.text ? 'text-primary' : 'text-accent'
-                )}
-              />
-              <span className="font-semibold">{item.text}</span>
-            </CardContent>
-          </Card>
-        ))}
+        {settingsItems.map((item) => {
+          const card = (
+            <Card
+              key={item.text}
+              className={cn(
+                'flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer hover:shadow-lg',
+                selected === item.text
+                  ? 'border-primary ring-2 ring-primary text-primary'
+                  : 'text-foreground/80 hover:border-primary/50'
+              )}
+              onClick={() => setSelected(item.text)}
+            >
+              <CardContent className="p-0 flex flex-col items-center justify-center gap-2">
+                <item.icon
+                  className={cn(
+                    'h-10 w-10 mb-2',
+                    selected === item.text ? 'text-primary' : 'text-accent'
+                  )}
+                />
+                <span className="font-semibold">{item.text}</span>
+              </CardContent>
+            </Card>
+          );
+
+          if (item.href && item.href !== '#') {
+            return (
+              <Link href={item.href} key={item.text} className="no-underline">
+                {card}
+              </Link>
+            );
+          }
+          return card;
+        })}
       </div>
     </div>
   );
