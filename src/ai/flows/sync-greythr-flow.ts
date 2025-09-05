@@ -50,43 +50,91 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-async function fetchEmployeeCategories(token: string, domain: string): Promise<Record<string, { department: string; designation: string }>> {
-    const url = "https://api.greythr.com/employee/v2/employees/categories";
+// Fetches the mapping of category IDs to human-readable names
+async function fetchCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
+    const url = `https://api.greythr.com/hr/v2/lov`;
     const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
             "ACCESS-TOKEN": token,
             "x-greythr-domain": domain,
+            "Content-Type": "application/json",
         },
+        body: JSON.stringify(["cat::Department", "cat::Designation"]),
     });
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to fetch employee categories: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to fetch category mappings: ${response.statusText} - ${errorText}`);
     }
 
     const json = await response.json();
-    const employeeCategories: Record<string, { department: string; designation: string }> = {};
+    const departments = new Map<number, string>();
+    const designations = new Map<number, string>();
 
-    if (json.data && Array.isArray(json.data)) {
-        json.data.forEach((emp: any) => {
-            const categories: { department: string; designation: string } = { department: '', designation: '' };
-            if (emp.categoryList && Array.isArray(emp.categoryList)) {
-                emp.categoryList.forEach((cat: any) => {
-                    // This logic is based on the provided sample response where `category` is a numeric ID.
-                    // '2' seems to correspond to Department and '6' to Designation based on typical setups.
-                    // This might need adjustment if the IDs are different in the customer's GreytHR instance.
-                    if (cat.category === 2) { // Assuming 2 is Department
-                        categories.department = cat.value;
-                    }
-                    if (cat.category === 6) { // Assuming 6 is Designation
-                        categories.designation = cat.value;
-                    }
-                });
-            }
-            employeeCategories[emp.employeeId] = categories;
+    if (json['cat::Department']) {
+        json['cat::Department'].forEach((dept: [number, string, any]) => {
+            departments.set(dept[0], dept[1]);
         });
     }
+    if (json['cat::Designation']) {
+        json['cat::Designation'].forEach((desg: [number, string, any]) => {
+            designations.set(desg[0], desg[1]);
+        });
+    }
+    
+    return { departments, designations };
+}
+
+
+// Fetches the assigned category IDs for each employee
+async function fetchEmployeeCategories(token: string, domain: string): Promise<Record<string, { departmentId?: number; designationId?: number }>> {
+    const baseUrl = `https://api.greythr.com/employee/v2/employees/categories`;
+    let page = 1;
+    const size = 100;
+    const allCategoriesData = [];
+
+    while (true) {
+        const url = `${baseUrl}?page=${page}&size=${size}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                "ACCESS-TOKEN": token,
+                "x-greythr-domain": domain,
+            },
+        });
+         if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch employee categories: ${response.statusText} - ${errorText}`);
+        }
+        const json = await response.json();
+        if (json.data && json.data.length > 0) {
+            allCategoriesData.push(...json.data);
+            if (!json.pages.hasNext) break;
+            page++;
+        } else {
+            break;
+        }
+    }
+
+    const employeeCategories: Record<string, { departmentId?: number; designationId?: number }> = {};
+    
+    allCategoriesData.forEach((emp: any) => {
+        const categories: { departmentId?: number; designationId?: number } = {};
+        if (emp.categoryList && Array.isArray(emp.categoryList)) {
+            emp.categoryList.forEach((cat: any) => {
+                // According to GreytHR API structure, `category: 2` is Department and `category: 6` is Designation
+                if (cat.category === 2) { 
+                    categories.departmentId = cat.value;
+                }
+                if (cat.category === 6) { 
+                    categories.designationId = cat.value;
+                }
+            });
+        }
+        employeeCategories[emp.employeeId] = categories;
+    });
+
     return employeeCategories;
 }
 
@@ -99,7 +147,13 @@ const syncGreytHRFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
-    // 1. Fetch all employees from GreytHR
+    // 1. Fetch all category mappings
+    const { departments: departmentMap, designations: designationMap } = await fetchCategoryMappings(token, domain);
+
+    // 2. Fetch all employee categories (which employee has which category ID)
+    const employeeCategories = await fetchEmployeeCategories(token, domain);
+    
+    // 3. Fetch all employees from GreytHR
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
     let page = 1;
     const size = 100;
@@ -130,13 +184,10 @@ const syncGreytHRFlow = ai.defineFlow(
         }
     }
 
-    // 2. Fetch all employee categories
-    const employeeCategories = await fetchEmployeeCategories(token, domain);
-
-    // 3. Filter employees
+    // 4. Filter employees
     const filteredData = allData.filter(employee => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
-    // 4. Write to Firestore
+    // 5. Write to Firestore
     const employeesRef = collection(db, 'employees');
     const batch = writeBatch(db);
     let employeesSynced = 0;
@@ -145,15 +196,17 @@ const syncGreytHRFlow = ai.defineFlow(
         const q = query(employeesRef, where("employeeId", "==", empData.employeeNo));
         const querySnapshot = await getDocs(q);
         
-        const categories = employeeCategories[empData.employeeId] || { department: '', designation: '' };
+        const assignedCategories = employeeCategories[empData.employeeId] || {};
+        const departmentName = assignedCategories.departmentId ? departmentMap.get(assignedCategories.departmentId) : '';
+        const designationName = assignedCategories.designationId ? designationMap.get(assignedCategories.designationId) : '';
 
         const newEmployeeData = {
             employeeId: empData.employeeNo,
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',
-            department: categories.department, // Now correctly populated
-            designation: categories.designation, // Now correctly populated
+            department: departmentName || '',
+            designation: designationName || '',
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
         };
 
