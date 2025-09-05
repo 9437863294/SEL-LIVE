@@ -3,3 +3,6 @@ export type { SuggestModuleTagsInput, SuggestModuleTagsOutput } from './flows/su
 
 export { validateModuleContent } from './flows/validate-module-content';
 export type { ValidateModuleContentInput, ValidateModuleContentOutput } from './flows/validate-module-content';
+
+export { syncGreytHR } from './flows/sync-greythr-flow';
+export type { SyncGreytHROutput } from './flows/sync-greythr-flow';

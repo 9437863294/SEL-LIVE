@@ -8,12 +8,16 @@ import {
   Upload,
   FileText,
   ArrowLeft,
-  RefreshCw
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { syncGreytHR } from '@/ai';
 
 interface EmployeeSettingsCardProps {
   item: {
@@ -21,10 +25,12 @@ interface EmployeeSettingsCardProps {
     text: string;
     description: string;
     href: string;
+    action?: () => void;
+    isLoading?: boolean;
   };
 }
 
-const employeeSettingsItems = [
+const employeeSettingsItemsBase = [
   { 
     icon: Users, 
     text: 'Manage Employee', 
@@ -48,14 +54,19 @@ const employeeSettingsItems = [
 function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
     const cardContent = (
          <Card
+            onClick={item.action}
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' ? (item.action ? 'cursor-pointer' : 'cursor-not-allowed opacity-60') : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-start gap-4 space-y-0 p-4">
                 <div className="bg-primary/10 p-3 rounded-lg">
-                <item.icon className="w-6 h-6 text-primary" />
+                  {item.isLoading ? (
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                  ) : (
+                    <item.icon className="w-6 h-6 text-primary" />
+                  )}
                 </div>
                 <div className="flex-1">
                     <CardTitle className="text-base font-bold">{item.text}</CardTitle>
@@ -64,7 +75,7 @@ function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
             </CardHeader>
         </Card>
     )
-
+    
     if (item.href === '#') {
         return <div className="h-full">{cardContent}</div>;
     }
@@ -78,6 +89,39 @@ function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
 
 
 export default function EmployeeSettingsPage() {
+  const { toast } = useToast();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await syncGreytHR();
+      if(result.success) {
+        toast({
+            title: 'Sync Successful',
+            description: result.message,
+        });
+      } else {
+        throw new Error(result.message);
+      }
+    } catch(error: any) {
+        console.error("Error syncing with GreytHR: ", error);
+        toast({
+            title: 'Sync Failed',
+            description: error.message || 'An unexpected error occurred.',
+            variant: 'destructive',
+        });
+    } finally {
+        setIsSyncing(false);
+    }
+  };
+
+  const employeeSettingsItems = employeeSettingsItemsBase.map(item => {
+    if (item.text === 'Sync with GreytHR') {
+      return { ...item, action: handleSync, isLoading: isSyncing };
+    }
+    return item;
+  });
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -97,3 +141,4 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
+
