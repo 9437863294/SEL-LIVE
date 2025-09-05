@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -40,12 +40,17 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const { user } = useAuth();
   const { toast } = useToast();
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
-  const [currentStep, setCurrentStep] = useState<WorkflowStep | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
   const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+
+  const currentStep = useMemo(() => {
+    if (!requisition || !workflow) return null;
+    return workflow.find(s => s.id === requisition.currentStepId) || null;
+  }, [requisition, workflow]);
+
 
   useEffect(() => {
     const fetchWorkflowAndUsers = async () => {
@@ -79,7 +84,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         fetchWorkflowAndUsers();
     } else {
         setWorkflow(null);
-        setCurrentStep(null);
         setActionComment('');
         setEnrichedSteps([]);
         setIsWorkflowOpen(false);
@@ -88,9 +92,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
    useEffect(() => {
     if (requisition && workflow && users.length > 0) {
-      const step = workflow.find(s => s.id === requisition.currentStepId) || null;
-      setCurrentStep(step);
-
+      
       const getStepAssigneeName = (step: WorkflowStep): string => {
         if (step.assignmentType === 'User-based' && Array.isArray(step.assignedTo) && step.assignedTo.length > 0) {
             return users.find(u => u.id === step.assignedTo[0])?.name || 'N/A';
@@ -103,21 +105,35 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       const currentStepIndex = workflow.findIndex(s => s.id === requisition.currentStepId);
       
       const allStepsWithDetails = workflow.map((wfStep, index) => {
-          const historyEntry = history.find(h => h.stepName === wfStep.name);
-          const status = historyEntry ? 'Completed' : (wfStep.id === requisition.currentStepId ? 'Current' : 'Pending');
+          const historyEntries = history.filter(h => h.stepName === wfStep.name);
+          const completionEntry = historyEntries.find(h => ['Complete', 'Approve', 'Verified', 'Update Approved Amount'].includes(h.action));
+          
+          let status: EnrichedStep['status'] = 'Pending';
+          if (wfStep.id === requisition.currentStepId) {
+            status = 'Current';
+          } else if (completionEntry) {
+            status = 'Completed';
+          } else if (currentStepIndex > -1 && index < currentStepIndex) {
+            // Steps before the current one must be completed.
+            status = 'Completed';
+          }
 
           let assignedUserName = 'N/A';
           if (status === 'Current' || status === 'Pending') {
             // Simplified: This logic needs to be robust like getAssigneeForStep
              assignedUserName = getStepAssigneeName(wfStep);
-          } else if (historyEntry) {
-              assignedUserName = historyEntry.userName;
+          } else if (completionEntry) {
+              assignedUserName = completionEntry.userName;
+          } else {
+            // Fallback for completed steps without a clear completion action in history
+            const lastEntry = historyEntries[historyEntries.length -1];
+            if(lastEntry) assignedUserName = lastEntry.userName;
           }
 
           return {
               ...wfStep,
               assignedUserName,
-              completionDate: historyEntry ? format(historyEntry.timestamp.toDate(), 'dd MMM, yy HH:mm') : '-',
+              completionDate: completionEntry ? format(completionEntry.timestamp.toDate(), 'dd MMM, yy HH:mm') : '-',
               deadline: (status === 'Current' && requisition.deadline) ? format(requisition.deadline.toDate(), 'dd MMM, yy HH:mm') : '-',
               status: status,
           };
@@ -225,13 +241,13 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
           <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div><Label>Project</Label><p className="font-medium">{projectName}</p></div>
                   <div><Label>Department</Label><p className="font-medium">{departmentName}</p></div>
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
@@ -241,9 +257,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <Label>Description</Label>
                   <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
               </div>
-              <Separator />
+
               {isActionAllowed && (
-                  <>
+                  <div className="space-y-4 pt-4 border-t">
                       <div>
                           <Label>Action Comment</Label>
                           <Textarea 
@@ -260,19 +276,19 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                               </Button>
                           ))}
                       </div>
-                      <Separator />
-                  </>
+                  </div>
               )}
-               <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen}>
+
+             <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen} className="border-t pt-2">
                 <CollapsibleTrigger asChild>
-                   <Button variant="ghost" className="w-full justify-between">
-                     View Workflow Status
+                   <Button variant="ghost" className="w-full justify-between px-2">
+                     Workflow Status
                      <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
                    </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                    <ScrollArea className="h-72 mt-2 border rounded-md">
-                      <Table className="text-xs">
+                      <Table>
                           <TableHeader>
                               <TableRow>
                                   <TableHead>Stage</TableHead>
@@ -317,7 +333,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
               </Collapsible>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
@@ -326,3 +342,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </Dialog>
   );
 }
+
+
+    
