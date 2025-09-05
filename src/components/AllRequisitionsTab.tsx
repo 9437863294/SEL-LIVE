@@ -290,17 +290,148 @@ export default function AllRequisitionsTab() {
     setIsViewDialogOpen(true);
   };
 
-  const renderForm = (onSubmit: (values: z.infer<typeof formSchema>) => void) => (
+  const renderNewForm = () => (
      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="requisitionId">Request ID</Label>
-                    <Input id="requisitionId" type="text" value={editingRequisition?.requisitionId || previewRequisitionId} readOnly />
+                    <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="timestamp">Timestamp</Label>
-                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt || timestamp} readOnly />
+                    <Input id="timestamp" type="text" value={timestamp} readOnly />
+                </div>
+                <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2 flex flex-col">
+                            <FormLabel>Date</FormLabel>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <FormControl>
+                                        <Button
+                                            variant={"outline"}
+                                            className={cn(
+                                            "w-full justify-start text-left font-normal",
+                                            !field.value && "text-muted-foreground"
+                                            )}
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                        </Button>
+                                    </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                />
+                                </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Project</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                    <SelectTrigger id="project">
+                                        <SelectValue placeholder="Select Project" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {projects.map(project => (
+                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="departmentId"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Department</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                    <SelectTrigger id="department">
+                                        <SelectValue placeholder="Select Department" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {departments.map(department => (
+                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                        <FormItem className="space-y-2">
+                            <FormLabel>Amount</FormLabel>
+                            <FormControl>
+                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                        <FormItem className="lg:col-span-3 space-y-2">
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <div className="space-y-2">
+                <Label htmlFor="attachments">Attachments</Label>
+                <Input id="attachments" type="file" multiple />
+                </div>
+            </div>
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit">Create Request</Button>
+            </DialogFooter>
+        </form>
+    </Form>
+  );
+  
+  const renderEditForm = () => (
+     <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleEditRequest)} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                <div className="space-y-2">
+                    <Label htmlFor="requisitionId">Request ID</Label>
+                    <Input id="requisitionId" type="text" value={editingRequisition?.requisitionId} readOnly />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="timestamp">Timestamp</Label>
+                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt} readOnly />
                 </div>
                 <FormField
                     control={form.control}
@@ -415,7 +546,7 @@ export default function AllRequisitionsTab() {
                 <DialogClose asChild>
                     <Button type="button" variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button type="submit">{isEditRequestOpen ? 'Save Changes' : 'Create Request'}</Button>
+                <Button type="submit">Save Changes</Button>
             </DialogFooter>
         </form>
     </Form>
@@ -446,7 +577,7 @@ export default function AllRequisitionsTab() {
                             Fill out the form to create a new fund request.
                         </DialogDescription>
                     </DialogHeader>
-                    {renderForm(handleCreateRequest)}
+                    {renderNewForm()}
                 </DialogContent>
             </Dialog>
 
@@ -458,7 +589,7 @@ export default function AllRequisitionsTab() {
                             Make changes to the fund request below.
                         </DialogDescription>
                     </DialogHeader>
-                    {renderForm(handleEditRequest)}
+                    {renderEditForm()}
                 </DialogContent>
             </Dialog>
         </div>
@@ -539,3 +670,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
