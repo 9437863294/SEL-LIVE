@@ -182,14 +182,14 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             <div className="md:col-span-2">
                 <h3 className="font-semibold mb-2">History</h3>
                 <Timeline>
-                  {requisition.history?.map((log, index) => (
+                  {requisition.history?.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()).map((log, index) => (
                       <div key={index} className="flex items-start gap-4">
                           <div className="flex flex-col items-center">
                               <div className="w-3 h-3 bg-primary rounded-full" />
                               {index < requisition.history.length - 1 && <div className="w-px h-full bg-border grow" />}
                           </div>
                           <div className="pb-4">
-                              <p className="font-medium">{log.userName} <Badge variant="secondary">{log.action}</Badge></p>
+                              <div className="font-medium">{log.userName} <Badge variant="secondary">{log.action}</Badge></div>
                               <p className="text-xs text-muted-foreground">{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</p>
                               <p className="text-sm mt-1">{log.comment}</p>
                           </div>
