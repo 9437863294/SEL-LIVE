@@ -129,13 +129,15 @@ export default function Header() {
             
             <Tooltip>
               <TooltipTrigger asChild>
-                 <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
-                  <BarChart2 className="h-5 w-5" />
-                  <span className="sr-only">Analytics</span>
-                </Button>
+                 <Link href="/site-fund-requisition/settings">
+                    <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
+                      <Settings className="h-5 w-5" />
+                      <span className="sr-only">Site Fund Requisition Settings</span>
+                    </Button>
+                  </Link>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Analytics</p>
+                <p>Site Fund Requisition Settings</p>
               </TooltipContent>
             </Tooltip>
 
