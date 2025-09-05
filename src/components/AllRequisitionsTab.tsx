@@ -45,7 +45,7 @@ import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
@@ -214,6 +214,15 @@ export default function AllRequisitionsTab() {
             return requisitionId;
         });
 
+        const initialLog: ActionLog = {
+            action: 'Created',
+            comment: 'Requisition created.',
+            userId: user.id,
+            userName: user.name,
+            timestamp: serverTimestamp(),
+            stepName: 'Creation',
+        };
+
         // --- 5. Save the Final Requisition to Firestore ---
         const finalRequisitionData = {
             ...tempRequisition,
@@ -222,6 +231,7 @@ export default function AllRequisitionsTab() {
             currentStepId: firstStep.id,
             assignedToId: assignedToId,
             deadline: deadline,
+            history: [initialLog],
         };
 
         await addDoc(collection(db, 'requisitions'), finalRequisitionData);
@@ -265,7 +275,7 @@ export default function AllRequisitionsTab() {
                     </DialogHeader>
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="requisitionId">Request ID</Label>
                                     <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />

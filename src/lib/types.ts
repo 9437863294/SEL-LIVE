@@ -56,6 +56,15 @@ export type Holiday = {
   date: string;
 };
 
+export type ActionLog = {
+  action: string;
+  comment: string;
+  userId: string;
+  userName: string;
+  timestamp: any; // Firestore Server Timestamp
+  stepName: string;
+};
+
 export type Requisition = {
   id: string;
   requisitionId: string;
@@ -69,9 +78,10 @@ export type Requisition = {
   stage: string;
   date: string;
   createdAt: any; // Firestore Timestamp
-  currentStepId?: string;
-  assignedToId?: string;
+  currentStepId?: string | null;
+  assignedToId?: string | null;
   deadline?: any; // Firestore Timestamp
+  history?: ActionLog[];
 };
 
 export type SerialNumberConfig = {
