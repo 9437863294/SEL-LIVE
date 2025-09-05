@@ -28,7 +28,7 @@ const settingsItems = [
     icon: GitMerge, 
     title: 'Workflow Configuration', 
     description: 'Set the steps, users, and TAT for the process.', 
-    href: '#' 
+    href: '/site-fund-requisition/settings/workflow-configuration' 
   },
 ];
 

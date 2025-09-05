@@ -78,4 +78,9 @@ export type SerialNumberConfig = {
   startingIndex: number;
 };
 
-    
+export type WorkflowStep = {
+  id: string;
+  name: string;
+  roles: string[];
+  tat: number; // Turnaround time in days
+};
