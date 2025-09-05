@@ -81,6 +81,7 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
                     }
                 });
             }
+            // Use the numeric employeeId from this endpoint as the key
             employeeCategories[emp.employeeId] = categories;
         });
     }
@@ -138,10 +139,11 @@ const syncGreytHRFlow = ai.defineFlow(
     let employeesSynced = 0;
 
     for (const empData of filteredData) {
-        // Check if employee already exists by employeeId
+        // Check if employee already exists by employeeNo (which we treat as employeeId)
         const q = query(employeesRef, where("employeeId", "==", empData.employeeNo));
         const querySnapshot = await getDocs(q);
-
+        
+        // Match using the numeric employeeId field from the main employee record
         const categories = employeeCategories[empData.employeeId] || { department: '', designation: '' };
 
         const newEmployeeData = {
