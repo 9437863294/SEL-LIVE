@@ -78,47 +78,9 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <span className="hidden sm:inline-block font-medium text-sm text-muted-foreground">{user?.name || 'User'}</span>
-          
           <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                 <Link href="/settings">
-                    <Button variant="ghost" size="icon" className="rounded-full">
-                      <Settings className="h-5 w-5" />
-                      <span className="sr-only">Settings</span>
-                    </Button>
-                  </Link>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Settings</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <Bell className="h-5 w-5" />
-                  <span className="sr-only">Notifications</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Notifications</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full" onClick={handleSignOut}>
-                  <LogOut className="h-5 w-5" />
-                  <span className="sr-only">Sign Out</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Sign Out</p>
-              </TooltipContent>
-            </Tooltip>
-          
+            <span className="hidden sm:inline-block font-medium text-sm text-muted-foreground">{user?.name || 'User'}</span>
+            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
@@ -142,10 +104,40 @@ export default function Header() {
                   <Users className="mr-2 h-4 w-4" />
                   <span>Switch User</span>
                 </DropdownMenuItem>
+                 <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign Out</span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </TooltipProvider>
 
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full">
+                  <Bell className="h-5 w-5" />
+                  <span className="sr-only">Notifications</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Notifications</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                 <Link href="/settings">
+                    <Button variant="ghost" size="icon" className="rounded-full">
+                      <Settings className="h-5 w-5" />
+                      <span className="sr-only">Settings</span>
+                    </Button>
+                  </Link>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Settings</p>
+              </TooltipContent>
+            </Tooltip>
+
+          </TooltipProvider>
         </div>
       </div>
     </header>
