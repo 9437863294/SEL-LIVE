@@ -17,7 +17,7 @@ import { useState } from 'react';
 
 const settingsItems = [
   { icon: Briefcase, text: 'Manage Department', href: '/settings/department' },
-  { icon: Construction, text: 'Manage Project', href: '#' },
+  { icon: Construction, text: 'Manage Project', href: '/settings/project' },
   { icon: Briefcase, text: 'Manage Vendor', href: '#' },
   { icon: Clock, text: 'Working Hrs', href: '#' },
   { icon: Users, text: 'User Management', href: '#' },
