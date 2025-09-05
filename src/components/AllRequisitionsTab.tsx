@@ -2,6 +2,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -21,8 +24,15 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -42,13 +52,15 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
 
-const initialNewRequestState = {
-  projectId: '',
-  departmentId: '',
-  amount: '',
-  description: '',
-  date: new Date(),
-};
+
+const formSchema = z.object({
+  projectId: z.string().min(1, { message: 'Project is required.' }),
+  departmentId: z.string().min(1, { message: 'Department is required.' }),
+  amount: z.coerce.number().min(1, { message: 'Amount must be greater than 0.' }),
+  description: z.string(),
+  date: z.date(),
+});
+
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -57,9 +69,19 @@ export default function AllRequisitionsTab() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [newRequest, setNewRequest] = useState(initialNewRequestState);
   const { toast } = useToast();
   const { user } = useAuth();
+  
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      projectId: '',
+      departmentId: '',
+      amount: 0,
+      description: '',
+      date: new Date(),
+    },
+  });
 
   const fetchRequisitions = async () => {
     setIsLoading(true);
@@ -82,30 +104,38 @@ export default function AllRequisitionsTab() {
     setIsLoading(false);
   };
   
+  const generatePreviewId = async () => {
+    try {
+        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+        const configDoc = await getDoc(configRef);
+        if (configDoc.exists()) {
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            const formattedIndex = newIndex.toString().padStart(4, '0');
+            const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+            setPreviewRequisitionId(requisitionId);
+        } else {
+            setPreviewRequisitionId('Configuration not found');
+        }
+    } catch (error) {
+        console.error("Error generating preview ID: ", error);
+        setPreviewRequisitionId('Error generating ID');
+        toast({ title: 'Error', description: 'Could not generate requisition ID preview.', variant: 'destructive' });
+    }
+  };
+
   useEffect(() => {
     if (isNewRequestOpen) {
-      const generatePreviewId = async () => {
-        try {
-            const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
-            const configDoc = await getDoc(configRef);
-            if (configDoc.exists()) {
-                const configData = configDoc.data() as SerialNumberConfig;
-                const newIndex = configData.startingIndex;
-                const formattedIndex = newIndex.toString().padStart(4, '0');
-                const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
-                setPreviewRequisitionId(requisitionId);
-            } else {
-                setPreviewRequisitionId('Configuration not found');
-            }
-        } catch (error) {
-            console.error("Error generating preview ID: ", error);
-            setPreviewRequisitionId('Error generating ID');
-            toast({ title: 'Error', description: 'Could not generate requisition ID preview.', variant: 'destructive' });
-        }
-      };
       generatePreviewId();
+      form.reset({
+        projectId: '',
+        departmentId: '',
+        amount: 0,
+        description: '',
+        date: new Date(),
+      });
     }
-  }, [isNewRequestOpen, toast]);
+  }, [isNewRequestOpen, form]);
 
   useEffect(() => {
     const fetchProjectsAndDepartments = async () => {
@@ -131,22 +161,7 @@ export default function AllRequisitionsTab() {
     fetchRequisitions();
   }, [toast]);
 
-  const handleInputChange = (field: keyof Omit<typeof newRequest, 'date'>, value: string) => {
-    setNewRequest(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleDateChange = (date: Date | undefined) => {
-    if (date) {
-        setNewRequest(prev => ({ ...prev, date }));
-    }
-  }
-
-  const handleCreateRequest = async () => {
-    if (!newRequest.projectId || !newRequest.departmentId || !newRequest.amount) {
-        toast({ title: 'Validation Error', description: 'Project, Department and Amount are required.', variant: 'destructive' });
-        return;
-    }
-
+  const handleCreateRequest = async (values: z.infer<typeof formSchema>) => {
     try {
         const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
         
@@ -167,13 +182,12 @@ export default function AllRequisitionsTab() {
             return requisitionId;
         });
         
-        const { date, ...restOfRequest } = newRequest;
+        const { date, ...restOfRequest } = values;
 
         await addDoc(collection(db, 'requisitions'), {
             ...restOfRequest,
             date: format(date, 'yyyy-MM-dd'),
             requisitionId: newRequisitionId,
-            amount: parseFloat(newRequest.amount),
             raisedBy: user?.name || 'Unknown User',
             raisedById: user?.id,
             status: 'Pending',
@@ -183,7 +197,6 @@ export default function AllRequisitionsTab() {
         
         toast({ title: 'Success', description: 'New fund requisition created.' });
         setIsNewRequestOpen(false);
-        setNewRequest(initialNewRequestState);
         fetchRequisitions();
     } catch (error) {
         console.error('Error creating requisition:', error);
@@ -219,81 +232,130 @@ export default function AllRequisitionsTab() {
                             Fill out the form to create a new fund request.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
-                         <div className="space-y-2">
-                            <Label htmlFor="requisitionId">Request ID</Label>
-                            <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="date">Date</Label>
-                             <Popover>
-                                <PopoverTrigger asChild>
-                                <Button
-                                    variant={"outline"}
-                                    className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !newRequest.date && "text-muted-foreground"
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="requisitionId">Request ID</Label>
+                                    <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
+                                </div>
+                                <FormField
+                                    control={form.control}
+                                    name="date"
+                                    render={({ field }) => (
+                                        <FormItem className="space-y-2 flex flex-col">
+                                            <FormLabel>Date</FormLabel>
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <FormControl>
+                                                        <Button
+                                                            variant={"outline"}
+                                                            className={cn(
+                                                            "w-full justify-start text-left font-normal",
+                                                            !field.value && "text-muted-foreground"
+                                                            )}
+                                                        >
+                                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                                        </Button>
+                                                    </FormControl>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={field.value}
+                                                    onSelect={field.onChange}
+                                                    initialFocus
+                                                />
+                                                </PopoverContent>
+                                            </Popover>
+                                            <FormMessage />
+                                        </FormItem>
                                     )}
-                                >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {newRequest.date ? format(newRequest.date, "PPP") : <span>Pick a date</span>}
-                                </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                    mode="single"
-                                    selected={newRequest.date}
-                                    onSelect={handleDateChange}
-                                    initialFocus
                                 />
-                                </PopoverContent>
-                            </Popover>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="project">Project</Label>
-                            <Select value={newRequest.projectId} onValueChange={(value) => handleInputChange('projectId', value)}>
-                                <SelectTrigger id="project">
-                                    <SelectValue placeholder="Select Project" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                     {projects.map(project => (
-                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                         <div className="space-y-2">
-                            <Label htmlFor="department">Department</Label>
-                             <Select value={newRequest.departmentId} onValueChange={(value) => handleInputChange('departmentId', value)}>
-                                <SelectTrigger id="department">
-                                    <SelectValue placeholder="Select Department" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {departments.map(department => (
-                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="amount">Amount</Label>
-                            <Input id="amount" type="number" placeholder="Enter Amount" value={newRequest.amount} onChange={(e) => handleInputChange('amount', e.target.value)} />
-                        </div>
-                         <div className="lg:col-span-3 space-y-2">
-                            <Label htmlFor="description">Description</Label>
-                            <Textarea id="description" placeholder="Enter a brief description" value={newRequest.description} onChange={(e) => handleInputChange('description', e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                           <Label htmlFor="attachments">Attachments</Label>
-                           <Input id="attachments" type="file" multiple />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <DialogClose asChild>
-                            <Button variant="outline">Cancel</Button>
-                        </DialogClose>
-                        <Button onClick={handleCreateRequest}>Create Request</Button>
-                    </DialogFooter>
+                                <FormField
+                                    control={form.control}
+                                    name="projectId"
+                                    render={({ field }) => (
+                                        <FormItem className="space-y-2">
+                                            <FormLabel>Project</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger id="project">
+                                                        <SelectValue placeholder="Select Project" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {projects.map(project => (
+                                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="departmentId"
+                                    render={({ field }) => (
+                                        <FormItem className="space-y-2">
+                                            <FormLabel>Department</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger id="department">
+                                                        <SelectValue placeholder="Select Department" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {departments.map(department => (
+                                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="amount"
+                                    render={({ field }) => (
+                                        <FormItem className="space-y-2">
+                                            <FormLabel>Amount</FormLabel>
+                                            <FormControl>
+                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="description"
+                                    render={({ field }) => (
+                                        <FormItem className="lg:col-span-3 space-y-2">
+                                            <FormLabel>Description</FormLabel>
+                                            <FormControl>
+                                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <div className="space-y-2">
+                                <FormLabel htmlFor="attachments">Attachments</FormLabel>
+                                <Input id="attachments" type="file" multiple />
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <DialogClose asChild>
+                                    <Button type="button" variant="outline">Cancel</Button>
+                                </DialogClose>
+                                <Button type="submit">Create Request</Button>
+                            </DialogFooter>
+                        </form>
+                    </Form>
                 </DialogContent>
             </Dialog>
         </div>
