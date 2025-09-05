@@ -38,3 +38,17 @@ export type Role = {
   name: string;
   permissions: Record<string, string[]>;
 };
+
+export type WorkingHours = {
+  [key: string]: {
+    isWorkDay: boolean;
+    startTime: string;
+    endTime: string;
+  }
+};
+
+export type Holiday = {
+  id: string;
+  name: string;
+  date: string;
+};
