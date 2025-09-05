@@ -50,24 +50,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  
-  const isPublic = publicRoutes.includes(pathname);
 
-  // If on a public route and not logged in, show the children (e.g., login page)
-  if (isPublic && !user) {
-    return <>{children}</>;
+  // If we are on a public route and not logged in, or on a private route and logged in, show the children.
+  // Otherwise, the useEffect above is handling the redirect, so we show a loader to prevent content flash.
+  if ((publicRoutes.includes(pathname) && !user) || (!publicRoutes.includes(pathname) && user)) {
+     return <>{children}</>;
   }
 
-  // If on a private route and logged in, show the children (e.g., dashboard)
-  if (!isPublic && user) {
-    return <>{children}</>;
-  }
-
-  // In all other cases (e.g., loading, or redirecting), show a loader to prevent flashes of content.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <Loader2 className="h-12 w-12 animate-spin text-primary" />
-    </div>
+     <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+     </div>
   );
 }
 
