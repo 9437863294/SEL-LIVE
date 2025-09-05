@@ -29,7 +29,7 @@ export type User = {
     name: string;
     email: string;
     mobile: string;
-    role: 'Admin' | 'User';
+    role: string; // Changed from 'Admin' | 'User' to string to support dynamic roles
     status: 'Active' | 'Inactive';
 };
 

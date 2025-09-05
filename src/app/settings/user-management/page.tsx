@@ -11,9 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import type { User } from '@/lib/types';
+import { db, auth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import type { User, Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -21,14 +22,16 @@ import { Badge } from '@/components/ui/badge';
 const initialNewUserState = {
   name: '',
   email: '',
+  password: '',
   mobile: 'N/A',
-  role: 'User' as 'Admin' | 'User',
+  role: '',
   status: 'Active' as 'Active' | 'Inactive',
 };
 
 export default function ManageUserPage() {
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [newUser, setNewUser] = useState(initialNewUserState);
@@ -37,20 +40,28 @@ export default function ManageUserPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const fetchUsers = async () => {
+  const fetchUsersAndRoles = async () => {
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'users'));
+      const usersQuerySnapshot = await getDocs(collection(db, 'users'));
       const usersData: User[] = [];
-      querySnapshot.forEach((doc) => {
+      usersQuerySnapshot.forEach((doc) => {
         usersData.push({ id: doc.id, ...doc.data() } as User);
       });
       setUsers(usersData);
+
+      const rolesQuerySnapshot = await getDocs(collection(db, 'roles'));
+      const rolesData: Role[] = [];
+      rolesQuerySnapshot.forEach((doc) => {
+        rolesData.push({ id: doc.id, ...doc.data() } as Role);
+      });
+      setRoles(rolesData);
+
     } catch (error) {
-      console.error("Error fetching users: ", error);
+      console.error("Error fetching data: ", error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch users.',
+        description: 'Failed to fetch users or roles.',
         variant: 'destructive',
       });
     }
@@ -58,7 +69,7 @@ export default function ManageUserPage() {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsersAndRoles();
   }, []);
   
   const handleInputChange = (field: keyof typeof newUser, value: string) => {
@@ -75,27 +86,42 @@ export default function ManageUserPage() {
   }
 
   const handleAddUser = async () => {
-    if (!newUser.name.trim() || !newUser.email.trim()) {
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim() || !newUser.role) {
       toast({
         title: 'Validation Error',
-        description: 'Name and email cannot be empty.',
+        description: 'Name, email, password, and role cannot be empty.',
         variant: 'destructive',
       });
       return;
     }
     try {
-      await addDoc(collection(db, 'users'), newUser);
+      // Step 1: Create user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
+      const authUser = userCredential.user;
+
+      // Step 2: Store additional details in Firestore
+      const userData = {
+        name: newUser.name,
+        email: newUser.email,
+        mobile: newUser.mobile,
+        role: newUser.role,
+        status: newUser.status,
+      };
+      
+      // Use the UID from Auth as the document ID in Firestore
+      await setDoc(doc(db, 'users', authUser.uid), userData);
+
       toast({
         title: 'Success',
-        description: `User "${newUser.name}" added.`,
+        description: `User "${newUser.name}" created and saved.`,
       });
       resetAddDialog();
-      fetchUsers(); 
-    } catch (error) {
+      fetchUsersAndRoles(); 
+    } catch (error: any) {
       console.error("Error adding user: ", error);
       toast({
-        title: 'Error',
-        description: 'Failed to add user.',
+        title: 'Error creating user',
+        description: error.message || 'An unexpected error occurred.',
         variant: 'destructive',
       });
     }
@@ -111,7 +137,6 @@ export default function ManageUserPage() {
   
     try {
       const userRef = doc(db, 'users', editingUser.id);
-      // Create a copy of editingUser and remove the id field before updating
       const { id, ...dataToUpdate } = editingUser;
       await updateDoc(userRef, dataToUpdate);
       toast({
@@ -120,7 +145,7 @@ export default function ManageUserPage() {
       });
       setIsEditDialogOpen(false);
       setEditingUser(null);
-      fetchUsers();
+      fetchUsersAndRoles();
     } catch (error) {
       console.error('Error updating user: ', error);
       toast({
@@ -154,7 +179,7 @@ export default function ManageUserPage() {
             <DialogHeader>
               <DialogTitle>Add New User</DialogTitle>
               <DialogDescription>
-                Fill in the details to add a new user.
+                Fill in the details to add a new user. A password is required for authentication.
               </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
@@ -167,16 +192,21 @@ export default function ManageUserPage() {
                     <Input id="email" type="email" placeholder="e.g. john@example.com" value={newUser.email} onChange={(e) => handleInputChange('email', e.target.value)} />
                 </div>
                 <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input id="password" type="password" placeholder="Enter a strong password" value={newUser.password} onChange={(e) => handleInputChange('password', e.target.value)} />
+                </div>
+                <div className="space-y-2">
                     <Label htmlFor="mobile">Mobile No</Label>
                     <Input id="mobile" placeholder="e.g. N/A" value={newUser.mobile} onChange={(e) => handleInputChange('mobile', e.target.value)} />
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="role">Role</Label>
                     <Select value={newUser.role} onValueChange={(value) => handleSelectChange('role', value)}>
-                        <SelectTrigger id="role"><SelectValue /></SelectTrigger>
+                        <SelectTrigger id="role"><SelectValue placeholder="Select a role" /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="Admin">Admin</SelectItem>
-                            <SelectItem value="User">User</SelectItem>
+                          {roles.map(role => (
+                            <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
+                          ))}
                         </SelectContent>
                     </Select>
                 </div>
@@ -262,7 +292,7 @@ export default function ManageUserPage() {
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
-              Update the details of the user.
+              Update the details of the user. Note: Email and password cannot be changed from this dialog.
             </DialogDescription>
           </DialogHeader>
           {editingUser && (
@@ -273,7 +303,7 @@ export default function ManageUserPage() {
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editEmail">Email</Label>
-                    <Input id="editEmail" type="email" value={editingUser.email} onChange={(e) => setEditingUser({...editingUser, email: e.target.value})} />
+                    <Input id="editEmail" type="email" value={editingUser.email} disabled />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editMobile">Mobile No</Label>
@@ -281,11 +311,12 @@ export default function ManageUserPage() {
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editRole">Role</Label>
-                    <Select value={editingUser.role} onValueChange={(value: 'Admin' | 'User') => setEditingUser({...editingUser, role: value})}>
+                    <Select value={editingUser.role} onValueChange={(value: string) => setEditingUser({...editingUser, role: value})}>
                         <SelectTrigger id="editRole"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="Admin">Admin</SelectItem>
-                            <SelectItem value="User">User</SelectItem>
+                            {roles.map(role => (
+                              <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                 </div>
