@@ -342,7 +342,7 @@ export default function AllRequisitionsTab() {
                                         <FormItem className="space-y-2">
                                             <FormLabel>Amount</FormLabel>
                                             <FormControl>
-                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
