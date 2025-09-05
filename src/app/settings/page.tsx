@@ -32,7 +32,7 @@ const settingsItems = [
   { icon: Clock, text: 'Working Hrs', href: '/settings/working-hours' },
   { icon: Users, text: 'User Management', href: '/settings/user-management' },
   { icon: ShieldCheck, text: 'Role Management', href: '/settings/role-management' },
-  { icon: Hash, text: 'Serial No. Config', href: '#' },
+  { icon: Hash, text: 'Serial No. Config', href: '/settings/serial-no-configuration' },
   { icon: Calculator, text: 'Import Config', href: '#' },
 ];
 

@@ -68,3 +68,10 @@ export type Requisition = {
   stage: string;
   createdAt: any; // Firestore Timestamp
 };
+
+export type SerialNumberConfig = {
+  prefix: string;
+  format: string;
+  suffix: string;
+  startingIndex: number;
+};
