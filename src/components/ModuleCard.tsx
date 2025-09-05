@@ -5,7 +5,7 @@ import { useModules } from '@/context/ModuleContext';
 import type { Module } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { GripVertical, Trash2, Edit, icons } from 'lucide-react';
+import { GripVertical, Trash2, Edit, icons, FileText } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
