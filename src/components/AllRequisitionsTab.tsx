@@ -240,7 +240,7 @@ export default function AllRequisitionsTab() {
         const finalRequisitionData = {
             ...tempRequisition,
             requisitionId: newRequisitionId,
-            createdAt: serverTimestamp(),
+            createdAt: Timestamp.now(),
             currentStepId: firstStep.id,
             assignedToId: assignedToId,
             deadline: Timestamp.fromDate(deadline),
