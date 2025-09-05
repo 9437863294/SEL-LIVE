@@ -32,9 +32,9 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Project, Department, Requisition } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
@@ -124,8 +124,30 @@ export default function AllRequisitionsTab() {
     }
 
     try {
-        const docRef = await addDoc(collection(db, 'requisitions'), {
+        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+        
+        const newRequisitionId = await runTransaction(db, async (transaction) => {
+            const configDoc = await transaction.get(configRef);
+            if (!configDoc.exists()) {
+                throw new Error("Serial number configuration not found!");
+            }
+
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            
+            // Format the index with leading zeros if needed (assuming 4 digits for now)
+            const formattedIndex = newIndex.toString().padStart(4, '0');
+            const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+
+            // Increment the starting index for the next requisition
+            transaction.update(configRef, { startingIndex: newIndex + 1 });
+            
+            return requisitionId;
+        });
+
+        await addDoc(collection(db, 'requisitions'), {
             ...newRequest,
+            requisitionId: newRequisitionId,
             amount: parseFloat(newRequest.amount),
             raisedBy: user?.name || 'Unknown User',
             raisedById: user?.id,
@@ -247,7 +269,7 @@ export default function AllRequisitionsTab() {
             {requisitions.length > 0 ? (
               requisitions.map((req) => (
                 <TableRow key={req.id}>
-                  <TableCell className="font-medium">{req.id.substring(0, 8)}...</TableCell>
+                  <TableCell className="font-medium">{req.requisitionId}</TableCell>
                   <TableCell>{req.createdAt.toString()}</TableCell>
                   <TableCell>{getProjectName(req.projectId)}</TableCell>
                   <TableCell>{getDepartmentName(req.departmentId)}</TableCell>

@@ -58,6 +58,7 @@ export type Holiday = {
 
 export type Requisition = {
   id: string;
+  requisitionId: string;
   projectId: string;
   departmentId: string;
   amount: number;
