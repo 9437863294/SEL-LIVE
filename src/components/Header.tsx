@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Bell, Settings, LogOut, User as UserIcon, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,12 +19,14 @@ import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -57,9 +60,6 @@ export default function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center px-4">
         <div className="mr-auto flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2">
-            
-          </Link>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -89,7 +89,7 @@ export default function Header() {
                     <UserIcon className="mr-2 h-4 w-4" />
                     <span>Profile</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setIsChangePasswordOpen(true)}>
                     <Lock className="mr-2 h-4 w-4" />
                     <span>Change Password</span>
                   </DropdownMenuItem>
@@ -130,6 +130,7 @@ export default function Header() {
           </TooltipProvider>
         </div>
       </div>
+      <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
     </header>
   );
 }
