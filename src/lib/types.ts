@@ -4,6 +4,7 @@ export type Module = {
   title: string;
   content: string;
   tags: string[];
+  icon: string;
 };
 
 export type Department = {

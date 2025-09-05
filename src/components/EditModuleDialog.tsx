@@ -17,6 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 const formSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters long.'),
   content: z.string().min(10, 'Content must be at least 10 characters long.'),
+  icon: z.string().min(1, 'Icon name is required.'),
 });
 
 interface EditModuleDialogProps {
@@ -34,6 +35,7 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
     defaultValues: {
       title: '',
       content: '',
+      icon: '',
     },
   });
   
@@ -42,6 +44,7 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
         form.reset({
             title: module.title,
             content: module.content,
+            icon: module.icon,
         });
     }
   }, [module, form, isOpen]);
@@ -79,6 +82,14 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
                     <FormItem>
                       <FormLabel>Content</FormLabel>
                       <FormControl><Textarea {...field} rows={5} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField control={form.control} name="icon" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Icon</FormLabel>
+                      <FormControl><Input {...field} placeholder="e.g., Landmark" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

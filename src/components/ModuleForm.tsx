@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useCallback } from 'react';
@@ -20,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 const formSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters long.'),
   content: z.string().min(10, 'Content must be at least 10 characters long.'),
+  icon: z.string().min(1, 'Icon name is required.'),
   tags: z.array(z.string()).default([]),
 });
 
@@ -36,7 +38,7 @@ export default function ModuleForm() {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { title: '', content: '', tags: [] },
+    defaultValues: { title: '', content: '', icon: 'FileText', tags: [] },
   });
   
   const { fields, append, remove } = useFieldArray({
@@ -133,6 +135,14 @@ export default function ModuleForm() {
                     <FormItem>
                       <FormLabel>Content</FormLabel>
                       <FormControl><Textarea placeholder="Start writing your module content here..." {...field} rows={10} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                 <FormField control={form.control} name="icon" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Icon Name</FormLabel>
+                      <FormControl><Input placeholder="e.g., Landmark" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

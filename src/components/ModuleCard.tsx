@@ -5,7 +5,7 @@ import { useModules } from '@/context/ModuleContext';
 import type { Module } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote, Edit } from 'lucide-react';
+import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote, Edit, icons } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,18 +27,17 @@ interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
     isDragging?: boolean;
 }
 
-const iconMap: { [key: string]: React.ElementType } = {
-  'Site Fund Requisition': Landmark,
-  'Daily Requisition': FileText,
-  'Utility Module': LayoutGrid,
-  'Bank Balance': Banknote,
-  'Daily Requisition 2': FileText,
+const LucideIcon = ({ name, ...props }: { name: string } & React.ComponentProps<(typeof icons)[keyof typeof icons]>) => {
+  const Icon = icons[name as keyof typeof icons];
+  if (!Icon) {
+    return <FileText {...props} />; // Fallback icon
+  }
+  return <Icon {...props} />;
 };
 
 
 export default function ModuleCard({ module, isDragging, ...props }: ModuleCardProps) {
   const { deleteModule } = useModules();
-  const Icon = iconMap[module.title] || FileText;
   const [isEditOpen, setIsEditOpen] = useState(false);
 
   return (
@@ -52,7 +51,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
     >
       <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
         <div className="bg-primary/10 p-2 rounded-lg">
-           <Icon className="w-5 h-5 text-primary" />
+           <LucideIcon name={module.icon} className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1">
             <CardTitle className="text-base font-bold">{module.title}</CardTitle>
