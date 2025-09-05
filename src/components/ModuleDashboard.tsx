@@ -1,16 +1,32 @@
 
+
 'use client';
 
 import { useState, useCallback } from 'react';
-import Link from 'next/link';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
-import { Button } from './ui/button';
 import { Skeleton } from './ui/skeleton';
+import { useAuth } from './auth/AuthProvider';
+
+const defaultModules = [
+  { id: '1', title: 'Site Fund Requisition', content: 'Handle site fund requests and approvals.', tags: [] },
+  { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [] },
+  { id: '3', title: 'Daily Requisition 2', content: 'This is a new module.', tags: [] },
+  { id: '4', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [] },
+  { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [] },
+];
 
 export default function ModuleDashboard() {
-  const { modules, updateModuleOrder, isLoading } = useModules();
+  const { modules, updateModuleOrder, isLoading, setModules } = useModules();
+  const { user } = useAuth();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+
+  // Set default modules if none exist
+  useState(() => {
+    if (!isLoading && modules.length === 0) {
+      setModules(defaultModules);
+    }
+  });
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
@@ -25,48 +41,53 @@ export default function ModuleDashboard() {
     e.preventDefault();
     if (draggedItemId === null || draggedItemId === targetId) return;
 
-    const draggedIndex = modules.findIndex((m) => m.id === draggedItemId);
-    const targetIndex = modules.findIndex((m) => m.id === targetId);
+    const currentModules = modules.length > 0 ? modules : defaultModules;
+    const draggedIndex = currentModules.findIndex((m) => m.id === draggedItemId);
+    const targetIndex = currentModules.findIndex((m) => m.id === targetId);
 
     if (draggedIndex === -1 || targetIndex === -1) return;
 
-    const newModules = [...modules];
+    const newModules = [...currentModules];
     const [draggedItem] = newModules.splice(draggedIndex, 1);
     newModules.splice(targetIndex, 0, draggedItem);
     updateModuleOrder(newModules);
-  }, [draggedItemId, modules, updateModuleOrder]);
+  }, [draggedItemId, modules, defaultModules, updateModuleOrder]);
   
   const handleDragEnd = useCallback(() => {
     setDraggedItemId(null);
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-56 rounded-lg" />
-        ))}
-      </div>
-    );
-  }
-
-  if (modules.length === 0) {
-    return null;
-  }
+  const currentModules = modules.length > 0 ? modules : defaultModules;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" onDragOver={handleDragOver}>
-      {modules.map((module) => (
-        <ModuleCard
-          key={module.id}
-          module={module}
-          draggable
-          onDragStart={(e) => handleDragStart(e, module.id)}
-          onDrop={(e) => handleDrop(e, module.id)}
-          onDragEnd={handleDragEnd}
-          isDragging={draggedItemId === module.id}
-        />
-      ))}
+    <div className="flex flex-col gap-8">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Welcome Back, {user?.name || 'User'}</h1>
+      </div>
+       {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" onDragOver={handleDragOver}>
+            {currentModules.map((module) => (
+              <ModuleCard
+                key={module.id}
+                module={module}
+                draggable
+                onDragStart={(e) => handleDragStart(e, module.id)}
+                onDrop={(e) => handleDrop(e, module.id)}
+                onDragEnd={handleDragEnd}
+                isDragging={draggedItemId === module.id}
+              />
+            ))}
+          </div>
+        )}
+         <footer className="text-center text-muted-foreground text-sm mt-auto py-4">
+            Copyright © 2025 SEL. All Rights Reserved.
+        </footer>
     </div>
   );
 }

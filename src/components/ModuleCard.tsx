@@ -1,11 +1,11 @@
+
 'use client';
 
 import { useModules } from '@/context/ModuleContext';
 import type { Module } from '@/lib/types';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,55 +24,41 @@ interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
     isDragging?: boolean;
 }
 
+const iconMap: { [key: string]: React.ElementType } = {
+  'Site Fund Requisition': Landmark,
+  'Daily Requisition': FileText,
+  'Utility Module': LayoutGrid,
+  'Bank Balance': Banknote,
+  'Daily Requisition 2': FileText,
+};
+
+
 export default function ModuleCard({ module, isDragging, ...props }: ModuleCardProps) {
   const { deleteModule } = useModules();
+  const Icon = iconMap[module.title] || FileText;
 
   return (
     <Card
       className={cn(
-        "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg", 
+        "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50", 
         isDragging ? 'opacity-30 scale-95 shadow-2xl ring-2 ring-primary' : 'opacity-100 scale-100'
       )}
       {...props}
     >
-      <CardHeader className="flex flex-row items-start justify-between pb-4">
-        <CardTitle className="text-lg font-semibold flex-1 pr-4">{module.title}</CardTitle>
+      <CardHeader className="flex-row items-start gap-4 space-y-0 pb-4">
+        <div className="bg-primary/10 p-3 rounded-lg">
+           <Icon className="w-6 h-6 text-primary" />
+        </div>
+        <div className="flex-1">
+            <CardTitle className="text-lg font-bold">{module.title}</CardTitle>
+            <p className="text-sm text-muted-foreground pt-1">{module.content}</p>
+        </div>
         <div className="flex items-center -mr-2 -mt-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                  <span className="sr-only">Delete module</span>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the module "{module.title}".
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => deleteModule(module.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <div className="cursor-grab p-2 text-muted-foreground touch-none" aria-label="Drag to reorder">
+             <div className="cursor-grab p-2 text-muted-foreground touch-none" aria-label="Drag to reorder">
                 <GripVertical className="h-5 w-5" />
             </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-grow pb-4">
-        <p className="text-sm text-muted-foreground line-clamp-3">{module.content}</p>
-      </CardContent>
-      <CardFooter>
-        <div className="flex flex-wrap gap-1">
-          {module.tags.length > 0 ? module.tags.map((tag) => (
-            <Badge key={tag} variant="secondary">{tag}</Badge>
-          )) : <p className="text-xs text-muted-foreground italic">No tags</p>}
-        </div>
-      </CardFooter>
     </Card>
   );
 }

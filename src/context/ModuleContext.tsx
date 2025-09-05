@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { ReactNode } from 'react';
@@ -6,6 +7,7 @@ import type { Module } from '@/lib/types';
 
 interface ModuleContextType {
   modules: Module[];
+  setModules: React.Dispatch<React.SetStateAction<Module[]>>;
   addModule: (module: Omit<Module, 'id'>) => void;
   deleteModule: (id: string) => void;
   updateModuleOrder: (modules: Module[]) => void;
@@ -56,7 +58,7 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
     setModules(newOrder);
   }, []);
   
-  const value = { modules, addModule, deleteModule, updateModuleOrder, isLoading };
+  const value = { modules, setModules, addModule, deleteModule, updateModuleOrder, isLoading };
 
   return <ModuleContext.Provider value={value}>{children}</ModuleContext.Provider>;
 }
