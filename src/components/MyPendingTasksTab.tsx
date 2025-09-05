@@ -53,13 +53,11 @@ export default function MyPendingTasksTab() {
       const querySnapshot = await getDocs(q);
       const tasksData = querySnapshot.docs.map(doc => {
         const data = doc.data();
-        const deadline = data.deadline ? data.deadline.toDate() : null;
 
         return {
           id: doc.id,
           ...data,
           date: format(new Date(data.date), 'dd MMM, yyyy'),
-          deadline: deadline ? format(deadline, 'dd MMM, yyyy HH:mm') : 'N/A',
         } as Requisition;
       });
       setTasks(tasksData);
@@ -87,9 +85,9 @@ export default function MyPendingTasksTab() {
 
   const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || id;
   
-  const getDeadlineBadgeVariant = (deadline: string | undefined): "default" | "secondary" | "destructive" => {
-    if (!deadline || deadline === 'N/A') return "secondary";
-    const deadlineDate = new Date(deadline);
+  const getDeadlineBadgeVariant = (deadline: any): "default" | "secondary" | "destructive" => {
+    if (!deadline) return "secondary";
+    const deadlineDate = deadline.toDate();
     const now = new Date();
     const diff = deadlineDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -134,7 +132,11 @@ export default function MyPendingTasksTab() {
                   <TableCell>{task.amount.toLocaleString()}</TableCell>
                   <TableCell>{task.stage}</TableCell>
                   <TableCell>
-                    <Badge variant={getDeadlineBadgeVariant(task.deadline as string)}>{task.deadline}</Badge>
+                    {task.deadline ? (
+                       <Badge variant={getDeadlineBadgeVariant(task.deadline)}>{format(task.deadline.toDate(), 'dd MMM, yyyy HH:mm')}</Badge>
+                    ) : (
+                      'N/A'
+                    )}
                   </TableCell>
                   <TableCell className="text-center">
                     <Button variant="outline" size="sm" onClick={() => handleViewDetails(task)}>View Details</Button>
