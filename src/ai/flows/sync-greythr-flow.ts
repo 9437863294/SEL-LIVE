@@ -160,7 +160,7 @@ const syncGreytHRFlow = ai.defineFlow(
     const allData = [];
 
     while (true) {
-        const url = `${baseUrl}?page=${page}&size=${size}`;
+        const url = `${baseUrl}?page=${page}&size=${size}&state=CURRENT`;
         const response = await fetch(url, {
             method: 'GET',
             headers: {
