@@ -20,13 +20,16 @@ async function getWorkingHours(): Promise<WorkingHours> {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data && data.schedule) {
-            workingHoursCache = data.schedule;
-            return workingHoursCache!;
+        // Handle both the new structure { schedule: {...} } and the old flat structure
+        const schedule = data.schedule || data;
+        if (schedule && typeof schedule === 'object' && 'Monday' in schedule) {
+            workingHoursCache = schedule as WorkingHours;
+            return workingHoursCache;
         }
     }
     throw new Error("Working hours not configured or in the wrong format.");
 }
+
 
 async function getHolidays(): Promise<Holiday[]> {
     if (holidaysCache) return holidaysCache;
