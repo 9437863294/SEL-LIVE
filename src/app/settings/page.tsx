@@ -12,9 +12,17 @@ import {
   Hash,
   Calculator,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+
+interface SettingsCardProps {
+  item: {
+    icon: LucideIcon;
+    text: string;
+    href: string;
+  };
+}
 
 const settingsItems = [
   { icon: Briefcase, text: 'Manage Department', href: '/settings/department' },
@@ -27,54 +35,53 @@ const settingsItems = [
   { icon: Calculator, text: 'Import Config', href: '#' },
 ];
 
+function SettingsCard({ item }: SettingsCardProps) {
+    const cardContent = (
+         <Card
+            className={cn(
+                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
+                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+            )}
+            >
+            <CardHeader className="flex-row items-center gap-4 space-y-0 pb-4">
+                <div className="bg-primary/10 p-3 rounded-lg">
+                <item.icon className="w-6 h-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                </div>
+            </CardHeader>
+        </Card>
+    )
+
+    if (item.href === '#') {
+        return <div className="h-full">{cardContent}</div>;
+    }
+    
+    return (
+       <Link href={item.href} className="no-underline h-full">
+            {cardContent}
+        </Link>
+    )
+}
+
+
 export default function SettingsPage() {
-  const [selected, setSelected] = useState<string | null>(null);
 
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center gap-2">
         <Link href="/">
-          <Home className="h-6 w-6 text-primary" />
+            <Button variant="ghost" size="icon">
+                <Home className="h-6 w-6" />
+            </Button>
         </Link>
-        <h1 className="text-2xl font-bold text-primary">Settings</h1>
+        <h1 className="text-2xl font-bold">Settings</h1>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-        {settingsItems.map((item) => {
-          const isSelected = selected === item.text;
-          const card = (
-            <Card
-              className={cn(
-                'flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer hover:shadow-lg',
-                isSelected
-                  ? 'border-primary ring-2 ring-primary text-primary'
-                  : 'text-foreground/80 hover:border-primary/50'
-              )}
-            >
-              <CardContent className="p-0 flex flex-col items-center justify-center gap-2">
-                <item.icon
-                  className={cn(
-                    'h-10 w-10 mb-2',
-                    isSelected ? 'text-primary' : 'text-accent'
-                  )}
-                />
-                <span className="font-semibold">{item.text}</span>
-              </CardContent>
-            </Card>
-          );
-
-          if (item.href && item.href !== '#') {
-            return (
-              <Link href={item.href} key={item.text} className="no-underline" onClick={() => setSelected(item.text)}>
-                {card}
-              </Link>
-            );
-          }
-          return (
-            <div key={item.text} onClick={() => setSelected(item.text)}>
-              {card}
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {settingsItems.map((item) => (
+          <SettingsCard key={item.text} item={item} />
+        ))}
       </div>
     </div>
   );
