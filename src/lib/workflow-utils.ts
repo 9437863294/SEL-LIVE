@@ -19,10 +19,13 @@ async function getWorkingHours(): Promise<WorkingHours> {
     const docRef = doc(db, 'settings', 'workingHours');
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-        workingHoursCache = docSnap.data().schedule;
-        return workingHoursCache!;
+        const data = docSnap.data();
+        if (data && data.schedule) {
+            workingHoursCache = data.schedule;
+            return workingHoursCache!;
+        }
     }
-    throw new Error("Working hours not configured.");
+    throw new Error("Working hours not configured or in the wrong format.");
 }
 
 async function getHolidays(): Promise<Holiday[]> {
