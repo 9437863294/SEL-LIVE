@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import type { Requisition, Project, Department } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 
 export default function MyPendingTasksTab() {
   const { user } = useAuth();
@@ -44,21 +45,26 @@ export default function MyPendingTasksTab() {
         const q = query(
           collection(db, 'requisitions'),
           where('assignedToId', '==', user.id),
-          where('status', 'in', ['Pending', 'In Progress']), // Or whatever active statuses you use
-          orderBy('deadline', 'asc')
+          where('status', 'in', ['Pending', 'In Progress'])
         );
 
         const querySnapshot = await getDocs(q);
         const tasksData = querySnapshot.docs.map(doc => {
           const data = doc.data();
+          const deadline = data.deadline ? data.deadline.toDate() : null;
+
           return {
             id: doc.id,
             ...data,
             date: format(new Date(data.date), 'dd MMM, yyyy'),
-            deadline: data.deadline ? format(data.deadline.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+            deadline: deadline ? format(deadline, 'dd MMM, yyyy HH:mm') : 'N/A',
           } as Requisition;
         });
-        setTasks(tasksData);
+        setTasks(tasksData.sort((a, b) => {
+            if (!a.deadline || a.deadline === 'N/A') return 1;
+            if (!b.deadline || b.deadline === 'N/A') return -1;
+            return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+        }));
 
       } catch (error) {
         console.error("Error fetching pending tasks: ", error);
@@ -76,7 +82,6 @@ export default function MyPendingTasksTab() {
   }, [user, toast]);
 
   const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || id;
-  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || id;
   
   const getDeadlineBadgeVariant = (deadline: string | undefined): "default" | "secondary" | "destructive" => {
     if (!deadline || deadline === 'N/A') return "secondary";
