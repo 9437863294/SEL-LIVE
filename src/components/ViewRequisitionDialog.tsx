@@ -38,6 +38,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   useEffect(() => {
     const fetchWorkflow = async () => {
       if (!requisition) return;
+      setIsLoading(true);
       try {
         const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
         const workflowSnap = await getDoc(workflowRef);
@@ -46,14 +47,26 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
           setWorkflow(steps);
           const step = steps.find(s => s.id === requisition.currentStepId) || null;
           setCurrentStep(step);
+        } else {
+           toast({ title: 'Error', description: 'Workflow configuration not found.', variant: 'destructive' });
         }
       } catch (error) {
         console.error("Error fetching workflow:", error);
         toast({ title: 'Error', description: 'Could not load workflow configuration.', variant: 'destructive' });
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchWorkflow();
-  }, [requisition, toast]);
+    
+    if (isOpen) {
+        fetchWorkflow();
+    } else {
+        // Reset state when dialog is closed
+        setWorkflow(null);
+        setCurrentStep(null);
+        setActionComment('');
+    }
+  }, [requisition, isOpen, toast]);
   
   const handleAction = async (action: string) => {
     if (!user || !requisition || !workflow || !currentStep) return;
@@ -77,7 +90,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             const reqDoc = await transaction.get(requisitionRef);
             if (!reqDoc.exists()) throw new Error("Requisition document not found!");
 
-            const currentRequisitionData = reqDoc.data() as Requisition;
+            const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
 
             let nextStep: WorkflowStep | undefined;
             let newStatus: Requisition['status'] = currentRequisitionData.status;
@@ -86,7 +99,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             let newAssignedToId: string | null = null;
             let newDeadline: Timestamp | null = null;
 
-            if (action === 'Approve' || action === 'Complete' || action === 'Verified') {
+            if (action === 'Approve' || action === 'Complete' || action === 'Verified' || action === 'Update Approved Amount') {
                 const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
                 nextStep = workflow[currentStepIndex + 1];
 
@@ -94,7 +107,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newStage = nextStep.name;
                     newStatus = 'In Progress';
                     newCurrentStepId = nextStep.id;
-                    newAssignedToId = await getAssigneeForStep(nextStep, currentRequisitionData);
+                    const tempReqForAssignment = {
+                      ...currentRequisitionData,
+                      date: format(new Date(currentRequisitionData.date), 'yyyy-MM-dd'),
+                    };
+                    newAssignedToId = await getAssigneeForStep(nextStep, tempReqForAssignment);
                     if (!newAssignedToId) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
                     const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
                     newDeadline = Timestamp.fromDate(deadlineDate);
@@ -130,7 +147,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         toast({ title: 'Success', description: `Requisition has been successfully ${action.toLowerCase()}ed.` });
         onRequisitionUpdate();
         onOpenChange(false);
-        setActionComment('');
 
     } catch (error: any) {
         console.error("Error processing action:", error);
@@ -145,6 +161,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
   const projectName = projects.find(p => p.id === requisition.projectId)?.projectName || 'N/A';
   const departmentName = departments.find(d => d.id === requisition.departmentId)?.name || 'N/A';
+
+  const isActionAllowed = user && requisition.assignedToId === user.id && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -165,22 +184,26 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
                 </div>
                 <Separator />
-                 <div>
-                    <Label>Action Comment</Label>
-                    <Textarea 
-                        placeholder="Add a comment for your action (optional)" 
-                        value={actionComment}
-                        onChange={(e) => setActionComment(e.target.value)}
-                    />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {currentStep?.actions.map(action => (
-                        <Button key={action} onClick={() => handleAction(action)} disabled={isLoading}>
-                            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            {action}
-                        </Button>
-                    ))}
-                </div>
+                {isActionAllowed && (
+                    <>
+                        <div>
+                            <Label>Action Comment</Label>
+                            <Textarea 
+                                placeholder="Add a comment for your action (optional)" 
+                                value={actionComment}
+                                onChange={(e) => setActionComment(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {currentStep?.actions.map(action => (
+                                <Button key={action} onClick={() => handleAction(action)} disabled={isLoading}>
+                                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    {action}
+                                </Button>
+                            ))}
+                        </div>
+                    </>
+                )}
             </div>
             <div className="md:col-span-2">
                 <h3 className="font-semibold mb-2">History</h3>
