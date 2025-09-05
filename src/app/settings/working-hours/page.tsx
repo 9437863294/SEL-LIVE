@@ -178,9 +178,9 @@ export default function WorkingHoursPage() {
             </div>
             <Dialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen}>
               <DialogTrigger asChild>
-                <Button><Plus className="mr-2 h-4 w-4" /> Add Holiday</Button>
+                <Button>Add Holiday</Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]" onPointerDownOutside={(e) => e.preventDefault()}>
+              <DialogContent className="sm:max-w-sm" onPointerDownOutside={(e) => e.preventDefault()}>
                 <DialogHeader>
                   <DialogTitle>Add New Holiday</DialogTitle>
                 </DialogHeader>
@@ -215,7 +215,7 @@ export default function WorkingHoursPage() {
                       </Popover>
                     </div>
                   </div>
-                <DialogFooter>
+                <DialogFooter className="justify-end sm:justify-end">
                   <DialogClose asChild>
                     <Button variant="outline" onClick={resetHolidayDialog}>Cancel</Button>
                   </DialogClose>
@@ -261,3 +261,5 @@ export default function WorkingHoursPage() {
     </div>
   );
 }
+
+    
