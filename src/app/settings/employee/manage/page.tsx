@@ -81,10 +81,11 @@ export default function ManageEmployeePage() {
   
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
+      const departmentFilter = filters.department === 'unassigned' ? !emp.department : emp.department === filters.department;
       return (
         (filters.employeeId === '' || emp.employeeId.toLowerCase().includes(filters.employeeId.toLowerCase())) &&
         (filters.name === '' || emp.name.toLowerCase().includes(filters.name.toLowerCase())) &&
-        (filters.department === 'all' || emp.department === filters.department) &&
+        (filters.department === 'all' || departmentFilter) &&
         (filters.status === 'all' || emp.status === filters.status)
       );
     });
@@ -165,7 +166,7 @@ export default function ManageEmployeePage() {
                 <SelectContent>
                     <SelectItem value="all">All Departments</SelectItem>
                     {departments.map(dept => <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>)}
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
                 </SelectContent>
             </Select>
             <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
