@@ -5,7 +5,7 @@ import { useModules } from '@/context/ModuleContext';
 import type { Module } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote } from 'lucide-react';
+import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote, Edit } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +18,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
+import { EditModuleDialog } from './EditModuleDialog';
+
 
 interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
     module: Module;
@@ -36,8 +39,10 @@ const iconMap: { [key: string]: React.ElementType } = {
 export default function ModuleCard({ module, isDragging, ...props }: ModuleCardProps) {
   const { deleteModule } = useModules();
   const Icon = iconMap[module.title] || FileText;
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   return (
+    <>
     <Card
       className={cn(
         "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50", 
@@ -59,6 +64,35 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
             </div>
         </div>
       </CardHeader>
+      <CardContent className="mt-auto flex justify-end gap-2 pt-2">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsEditOpen(true)}>
+            <Edit className="h-4 w-4" />
+            <span className="sr-only">Edit</span>
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
+                <span className="sr-only">Delete</span>
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the
+                "{module.title}" module.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => deleteModule(module.id)}>Continue</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardContent>
     </Card>
+    <EditModuleDialog isOpen={isEditOpen} onOpenChange={setIsEditOpen} module={module} />
+    </>
   );
 }

@@ -10,6 +10,7 @@ interface ModuleContextType {
   setModules: React.Dispatch<React.SetStateAction<Module[]>>;
   addModule: (module: Omit<Module, 'id'>) => void;
   deleteModule: (id: string) => void;
+  updateModule: (id: string, updatedModule: Module) => void;
   updateModuleOrder: (modules: Module[]) => void;
   isLoading: boolean;
 }
@@ -54,11 +55,15 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
     setModules((prev) => prev.filter((module) => module.id !== id));
   }, []);
 
+  const updateModule = useCallback((id: string, updatedModule: Module) => {
+    setModules((prev) => prev.map((module) => (module.id === id ? updatedModule : module)));
+  }, []);
+
   const updateModuleOrder = useCallback((newOrder: Module[]) => {
     setModules(newOrder);
   }, []);
   
-  const value = { modules, setModules, addModule, deleteModule, updateModuleOrder, isLoading };
+  const value = { modules, setModules, addModule, deleteModule, updateModule, updateModuleOrder, isLoading };
 
   return <ModuleContext.Provider value={value}>{children}</ModuleContext.Provider>;
 }
