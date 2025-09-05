@@ -49,6 +49,7 @@ const initialNewRequestState = {
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   const [timestamp, setTimestamp] = useState('');
+  const [previewRequisitionId, setPreviewRequisitionId] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
@@ -67,7 +68,6 @@ export default function AllRequisitionsTab() {
         return { 
           id: doc.id, 
           ...data,
-          // Convert Firestore Timestamp to a readable string
           createdAt: data.createdAt ? format(data.createdAt.toDate(), 'PPpp') : 'N/A',
         } as Requisition;
       });
@@ -86,8 +86,29 @@ export default function AllRequisitionsTab() {
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       }));
+
+      const generatePreviewId = async () => {
+        try {
+            const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+            const configDoc = await getDoc(configRef);
+            if (configDoc.exists()) {
+                const configData = configDoc.data() as SerialNumberConfig;
+                const newIndex = configData.startingIndex;
+                const formattedIndex = newIndex.toString().padStart(4, '0');
+                const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+                setPreviewRequisitionId(requisitionId);
+            } else {
+                setPreviewRequisitionId('Configuration not found');
+            }
+        } catch (error) {
+            console.error("Error generating preview ID: ", error);
+            setPreviewRequisitionId('Error generating ID');
+            toast({ title: 'Error', description: 'Could not generate requisition ID preview.', variant: 'destructive' });
+        }
+      };
+      generatePreviewId();
     }
-  }, [isNewRequestOpen]);
+  }, [isNewRequestOpen, toast]);
 
   useEffect(() => {
     const fetchProjectsAndDepartments = async () => {
@@ -135,11 +156,9 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             
-            // Format the index with leading zeros if needed (assuming 4 digits for now)
             const formattedIndex = newIndex.toString().padStart(4, '0');
             const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
 
-            // Increment the starting index for the next requisition
             transaction.update(configRef, { startingIndex: newIndex + 1 });
             
             return requisitionId;
@@ -154,13 +173,12 @@ export default function AllRequisitionsTab() {
             status: 'Pending',
             stage: 'HOD Approval',
             createdAt: serverTimestamp(),
-            // attachments can be handled here later
         });
         
         toast({ title: 'Success', description: 'New fund requisition created.' });
         setIsNewRequestOpen(false);
         setNewRequest(initialNewRequestState);
-        fetchRequisitions(); // Refresh data
+        fetchRequisitions();
     } catch (error) {
         console.error('Error creating requisition:', error);
         toast({ title: 'Error', description: 'Failed to create requisition.', variant: 'destructive' });
@@ -196,6 +214,10 @@ export default function AllRequisitionsTab() {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+                         <div className="space-y-2">
+                            <Label htmlFor="requisitionId">Request ID</Label>
+                            <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="timestamp">Timestamp</Label>
                             <Input id="timestamp" type="text" value={timestamp} readOnly />
