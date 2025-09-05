@@ -59,13 +59,14 @@ const formSchema = z.object({
   departmentId: z.string().min(1, { message: 'Department is required.' }),
   amount: z.coerce.number().min(1, { message: 'Amount must be greater than 0.' }),
   description: z.string(),
-  date: z.date(),
+  date: z.date({ required_error: "A date is required."}),
 });
 
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   const [previewRequisitionId, setPreviewRequisitionId] = useState('');
+  const [timestamp, setTimestamp] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
@@ -128,6 +129,7 @@ export default function AllRequisitionsTab() {
   useEffect(() => {
     if (isNewRequestOpen) {
       generatePreviewId();
+      setTimestamp(format(new Date(), 'PPpp'));
       form.reset({
         projectId: '',
         departmentId: '',
@@ -239,6 +241,10 @@ export default function AllRequisitionsTab() {
                                 <div className="space-y-2">
                                     <Label htmlFor="requisitionId">Request ID</Label>
                                     <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="timestamp">Timestamp</Label>
+                                    <Input id="timestamp" type="text" value={timestamp} readOnly />
                                 </div>
                                 <FormField
                                     control={form.control}
@@ -411,5 +417,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-
-    
