@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -95,7 +95,7 @@ export default function AllRequisitionsTab() {
   const fetchRequisitions = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
+      const q = collection(db, 'requisitions');
       const querySnapshot = await getDocs(q);
       const requisitionsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
@@ -104,6 +104,12 @@ export default function AllRequisitionsTab() {
           ...data,
           createdAt: data.createdAt ? format(data.createdAt.toDate(), 'PPpp') : 'N/A',
         } as Requisition;
+      });
+      // Sort by createdAt timestamp descending
+      requisitionsData.sort((a, b) => {
+        const dateA = a.createdAt && a.createdAt !== 'N/A' ? parseISO(new Date(a.createdAt).toISOString()) : new Date(0);
+        const dateB = b.createdAt && b.createdAt !== 'N/A' ? parseISO(new Date(b.createdAt).toISOString()) : new Date(0);
+        return dateB.getTime() - dateA.getTime();
       });
       setRequisitions(requisitionsData);
     } catch (error) {
@@ -670,5 +676,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-
-    
