@@ -14,7 +14,7 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center">
-        <div className="mr-4 flex items-center gap-4">
+        <div className="mr-auto flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -35,7 +35,7 @@ export default function Header() {
           </Link>
         </div>
 
-        <div className="ml-auto flex items-center gap-4">
+        <div className="flex items-center gap-4">
           <span className="hidden sm:inline-block font-medium">Super User</span>
           <Button variant="ghost" size="icon" className="rounded-full">
             <Bell className="h-5 w-5" />
