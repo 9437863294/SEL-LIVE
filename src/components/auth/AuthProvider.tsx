@@ -52,11 +52,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
   
   const isPublic = publicRoutes.includes(pathname);
-  if (isPublic && !user) {
+  if ((isPublic && !user) || (!isPublic && user)) {
     return <>{children}</>;
   }
-  if (!isPublic && user) {
-     return <>{children}</>;
+
+  // If we are on a public route and logged in, or on a private route and logged out,
+  // the redirection useEffect above will handle it. In the meantime, we can show a loader
+  // to prevent brief flashes of incorrect content.
+  if ((isPublic && user) || (!isPublic && !user)) {
+     return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return null;
