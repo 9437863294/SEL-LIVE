@@ -1,6 +1,7 @@
 
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -25,6 +26,17 @@ export type Project = {
   location: string;
   siteInCharge: string;
   status: 'Active' | 'Inactive';
+};
+
+export type Employee = {
+    id: string;
+    employeeId: string;
+    name: string;
+    email: string;
+    phone: string;
+    department: string;
+    designation: string;
+    status: 'Active' | 'Inactive';
 };
 
 export type User = {
