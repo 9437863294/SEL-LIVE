@@ -39,11 +39,14 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Badge } from '@/components/ui/badge';
 
 const permissionModules = {
-  'Site Fund Requisition': [
-    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
-    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
-    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
-  ]
+  'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
+  'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
+  'Manage Vendor': ['View', 'Add', 'Edit', 'Delete'],
+  'Working Hrs': ['View', 'Edit'],
+  'User Management': ['View', 'Add', 'Edit', 'Delete'],
+  'Role Management': ['View', 'Add', 'Edit', 'Delete'],
+  'Serial No. Config': ['View', 'Edit'],
+  'Import Config': ['View', 'Edit'],
 };
 
 const initialNewRoleState = {
@@ -160,7 +163,13 @@ export default function ManageRolePage() {
   };
   
   const openEditDialog = (role: Role) => {
-    setEditingRole(role);
+    // Ensure the editing role has all modules from permissionModules
+    const completePermissions = Object.keys(permissionModules).reduce((acc, moduleName) => {
+        acc[moduleName] = role.permissions?.[moduleName] || [];
+        return acc;
+    }, {} as Record<string, string[]>);
+    
+    setEditingRole({ ...role, permissions: completePermissions });
     setIsEditDialogOpen(true);
   };
   
@@ -206,10 +215,10 @@ export default function ManageRolePage() {
         <Label>Permissions</Label>
         <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
         <Card className="mt-2">
-          <CardContent className="p-4">
-             <Accordion type="single" collapsible defaultValue="item-0">
+          <CardContent className="p-4 max-h-[50vh] overflow-y-auto">
+             <Accordion type="multiple" defaultValue={Object.keys(permissionModules)}>
               {Object.entries(permissionModules).map(([moduleName, permissions], index) => (
-                <AccordionItem value={`item-${index}`} key={moduleName}>
+                <AccordionItem value={moduleName} key={moduleName}>
                   <AccordionTrigger className="font-medium text-base">
                     {moduleName}
                   </AccordionTrigger>
@@ -306,14 +315,12 @@ export default function ManageRolePage() {
                     <TableCell className="text-sm">
                       <div className="flex flex-col gap-2 items-start">
                         {role.permissions && Object.entries(role.permissions).map(([moduleName, perms]) => (
-                           <div key={moduleName}>
-                              <span className="font-medium">{moduleName}:</span>
-                              {perms.length > 0 ? (
-                                <span className="text-muted-foreground ml-2">{perms.join(', ')}</span>
-                              ) : (
-                                <span className="text-muted-foreground ml-2 italic">No permissions</span>
-                              )}
-                           </div>
+                          perms.length > 0 && (
+                             <div key={moduleName}>
+                                <span className="font-medium">{moduleName}:</span>
+                                  <span className="text-muted-foreground ml-2">{perms.join(', ')}</span>
+                             </div>
+                           )
                         ))}
                       </div>
                     </TableCell>
