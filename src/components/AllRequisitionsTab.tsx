@@ -38,53 +38,7 @@ import type { Project, Department } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 
-const requisitions = [
-  {
-    id: 'SEL\\SFR\\2025-26\\0017',
-    date: '01/09/2025',
-    time: '4:19 PM',
-    deadlineDate: '01/09/2025',
-    deadlineTime: '6:19 PM',
-    project: 'Head Office',
-    department: 'HR',
-    raisedBy: 'ashish',
-    description: 'kjfhehf',
-    amount: '₹4,654.00',
-    stage: 'Request Receiving',
-    status: 'Pending',
-    attachments: 0,
-  },
-  {
-    id: 'SEL\\SFR\\2025-26\\0016',
-    date: '30/08/2025',
-    time: '11:14 PM',
-    deadlineDate: 'N/A',
-    deadlineTime: '',
-    project: 'TPSODL',
-    department: 'HR',
-    raisedBy: 'Ashish',
-    description: 'gdfgd',
-    amount: '-1.00',
-    stage: 'Completed',
-    status: 'Completed',
-    attachments: 0,
-  },
-  {
-    id: 'SEL\\SFR\\2025-26\\0015',
-    date: '30/08/2025',
-    time: '9:57 PM',
-    deadlineDate: '01/09/2025',
-    deadlineTime: '11:30 AM',
-    project: 'Head Office',
-    department: 'HR',
-    raisedBy: 'Ashish',
-    description: 'gfeagsdg',
-    amount: '₹10,00,000.00',
-    stage: 'Request Receiving',
-    status: 'Pending',
-    attachments: 0,
-  },
-];
+const requisitions: any[] = [];
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -227,32 +181,40 @@ export default function AllRequisitionsTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {requisitions.map((req) => (
-              <TableRow key={req.id}>
-                <TableCell className="font-medium">{req.id}</TableCell>
-                <TableCell>
-                  <div>{req.date}</div>
-                  <div className="text-xs text-muted-foreground">{req.time}</div>
-                </TableCell>
-                <TableCell>
-                  <div>{req.deadlineDate}</div>
-                   {req.deadlineTime && <div className="text-xs text-muted-foreground">{req.deadlineTime}</div>}
-                </TableCell>
-                <TableCell>{req.project}</TableCell>
-                <TableCell>{req.department}</TableCell>
-                <TableCell>{req.raisedBy}</TableCell>
-                <TableCell>{req.description}</TableCell>
-                <TableCell>{req.amount}</TableCell>
-                <TableCell>{req.stage}</TableCell>
-                <TableCell>{req.status}</TableCell>
-                <TableCell>{req.attachments}</TableCell>
-                <TableCell className="text-center">
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+            {requisitions.length > 0 ? (
+              requisitions.map((req) => (
+                <TableRow key={req.id}>
+                  <TableCell className="font-medium">{req.id}</TableCell>
+                  <TableCell>
+                    <div>{req.date}</div>
+                    <div className="text-xs text-muted-foreground">{req.time}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div>{req.deadlineDate}</div>
+                    {req.deadlineTime && <div className="text-xs text-muted-foreground">{req.deadlineTime}</div>}
+                  </TableCell>
+                  <TableCell>{req.project}</TableCell>
+                  <TableCell>{req.department}</TableCell>
+                  <TableCell>{req.raisedBy}</TableCell>
+                  <TableCell>{req.description}</TableCell>
+                  <TableCell>{req.amount}</TableCell>
+                  <TableCell>{req.stage}</TableCell>
+                  <TableCell>{req.status}</TableCell>
+                  <TableCell>{req.attachments}</TableCell>
+                  <TableCell className="text-center">
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={12} className="text-center h-24">
+                  No requisitions found.
                 </TableCell>
               </TableRow>
-            ))}
+            )}
           </TableBody>
         </Table>
       </div>
