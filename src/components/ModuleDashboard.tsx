@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useCallback } from 'react';
@@ -50,15 +51,7 @@ export default function ModuleDashboard() {
   }
 
   if (modules.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/30 py-20 text-center">
-        <h2 className="text-2xl font-semibold mb-2">Your Module Hub is Empty</h2>
-        <p className="text-muted-foreground mb-4">Get started by creating your first module.</p>
-        <Button asChild>
-          <Link href="/create">Create New Module</Link>
-        </Button>
-      </div>
-    );
+    return null;
   }
 
   return (
