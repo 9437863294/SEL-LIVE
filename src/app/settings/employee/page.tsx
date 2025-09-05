@@ -15,9 +15,13 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { syncGreytHR } from '@/ai';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { formatDistanceToNow } from 'date-fns';
+
 
 interface EmployeeSettingsCardProps {
   item: {
@@ -27,6 +31,7 @@ interface EmployeeSettingsCardProps {
     href: string;
     action?: () => void;
     isLoading?: boolean;
+    lastSynced?: string | null;
   };
 }
 
@@ -34,13 +39,13 @@ const employeeSettingsItemsBase = [
   { 
     icon: Users, 
     text: 'Manage Employee', 
-    description: 'Add, edit, and view employee details.',
+    description: 'View, filter, and edit employee details.',
     href: '/settings/employee/manage' 
   },
   { 
     icon: RefreshCw, 
     text: 'Sync with GreytHR',
-    description: 'Bulk upload employee data from a file.',
+    description: 'Sync employee data from GreytHR.',
     href: '#' 
   },
   { 
@@ -71,6 +76,11 @@ function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
                 <div className="flex-1">
                     <CardTitle className="text-base font-bold">{item.text}</CardTitle>
                     <CardDescription className="mt-1 text-sm">{item.description}</CardDescription>
+                     {item.lastSynced && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                            Last synced: {item.lastSynced}
+                        </p>
+                    )}
                 </div>
             </CardHeader>
         </Card>
@@ -91,6 +101,26 @@ function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
 export default function EmployeeSettingsPage() {
   const { toast } = useToast();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+
+  const fetchLastSynced = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'employeeSync');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.lastSynced) {
+                setLastSynced(formatDistanceToNow(new Date(data.lastSynced), { addSuffix: true }));
+            }
+        }
+      } catch (error) {
+        console.error("Failed to fetch last sync time:", error);
+      }
+  };
+  
+  useEffect(() => {
+    fetchLastSynced();
+  }, []);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -101,6 +131,7 @@ export default function EmployeeSettingsPage() {
             title: 'Sync Successful',
             description: result.message,
         });
+        fetchLastSynced(); // Refresh the last synced time
       } else {
         throw new Error(result.message);
       }
@@ -118,7 +149,7 @@ export default function EmployeeSettingsPage() {
 
   const employeeSettingsItems = employeeSettingsItemsBase.map(item => {
     if (item.text === 'Sync with GreytHR') {
-      return { ...item, action: handleSync, isLoading: isSyncing };
+      return { ...item, action: handleSync, isLoading: isSyncing, lastSynced: lastSynced };
     }
     return item;
   });
@@ -141,4 +172,3 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
-

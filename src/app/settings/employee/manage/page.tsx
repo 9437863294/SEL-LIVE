@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,11 +34,17 @@ export default function ManageEmployeePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [newEmployee, setNewEmployee] = useState(initialNewEmployeeState);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  
+  const [filters, setFilters] = useState({
+      employeeId: '',
+      name: '',
+      department: 'all',
+      status: 'all',
+  });
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -69,45 +75,20 @@ export default function ManageEmployeePage() {
     fetchData();
   }, []);
 
-  const handleInputChange = (field: keyof typeof newEmployee, value: string) => {
-    setNewEmployee(prev => ({ ...prev, [field]: value }));
+  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
   };
   
-  const handleSelectChange = (field: keyof typeof newEmployee, value: string) => {
-    setNewEmployee(prev => ({ ...prev, [field]: value as any }));
-  };
-  
-  const resetAddDialog = () => {
-    setNewEmployee(initialNewEmployeeState);
-    setIsAddDialogOpen(false);
-  }
-
-  const handleAddEmployee = async () => {
-    if (!newEmployee.name.trim() || !newEmployee.email.trim() || !newEmployee.employeeId.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Employee ID, Name, and Email cannot be empty.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    try {
-      await addDoc(collection(db, 'employees'), newEmployee);
-      toast({
-        title: 'Success',
-        description: `Employee "${newEmployee.name}" added.`,
-      });
-      resetAddDialog();
-      fetchData(); 
-    } catch (error) {
-      console.error("Error adding employee: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to add employee.',
-        variant: 'destructive',
-      });
-    }
-  };
+  const filteredEmployees = useMemo(() => {
+    return employees.filter(emp => {
+      return (
+        (filters.employeeId === '' || emp.employeeId.toLowerCase().includes(filters.employeeId.toLowerCase())) &&
+        (filters.name === '' || emp.name.toLowerCase().includes(filters.name.toLowerCase())) &&
+        (filters.department === 'all' || emp.department === filters.department) &&
+        (filters.status === 'all' || emp.status === filters.status)
+      );
+    });
+  }, [employees, filters]);
   
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -138,13 +119,9 @@ export default function ManageEmployeePage() {
     }
   };
 
-  const getDepartmentName = (id: string) => {
-    return departments.find(d => d.id === id)?.name || 'N/A';
-  }
-
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full max-w-7xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/settings/employee">
@@ -165,11 +142,44 @@ export default function ManageEmployeePage() {
                 </div>
             </TooltipTrigger>
             <TooltipContent>
-                <p>Employee data will be synced from GreytHR.</p>
+                <p>Employee data is synced from GreytHR.</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>
+
+       <Card className="mb-6">
+        <CardContent className="p-4 flex flex-wrap items-center gap-4">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search Employee ID..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
+            </div>
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search Name..." className="pl-8 w-full sm:w-48" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
+            </div>
+            <Select value={filters.department} onValueChange={value => handleFilterChange('department', value)}>
+                <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {departments.map(dept => <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>)}
+                    <SelectItem value="">Unassigned</SelectItem>
+                </SelectContent>
+            </Select>
+            <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
+                <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+            </Select>
+        </CardContent>
+       </Card>
 
       <Card>
         <CardContent className="p-0">
@@ -188,7 +198,7 @@ export default function ManageEmployeePage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
+                Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-32" /></TableCell>
@@ -202,15 +212,15 @@ export default function ManageEmployeePage() {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : employees.length > 0 ? (
-                employees.map((emp) => (
+              ) : filteredEmployees.length > 0 ? (
+                filteredEmployees.map((emp) => (
                   <TableRow key={emp.id}>
                     <TableCell className="font-medium">{emp.employeeId}</TableCell>
                     <TableCell>{emp.name}</TableCell>
                     <TableCell>{emp.email}</TableCell>
                     <TableCell>{emp.phone}</TableCell>
-                    <TableCell>{getDepartmentName(emp.department)}</TableCell>
-                    <TableCell>{emp.designation}</TableCell>
+                    <TableCell>{emp.department || 'N/A'}</TableCell>
+                    <TableCell>{emp.designation || 'N/A'}</TableCell>
                     <TableCell>{emp.status}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)}>Edit</Button>
@@ -258,10 +268,10 @@ export default function ManageEmployeePage() {
                 <div className="space-y-2">
                     <Label htmlFor="editDepartment">Department</Label>
                     <Select value={editingEmployee.department} onValueChange={(value) => setEditingEmployee({...editingEmployee, department: value})}>
-                        <SelectTrigger id="editDepartment"><SelectValue /></SelectTrigger>
+                        <SelectTrigger id="editDepartment"><SelectValue placeholder="Select Department" /></SelectTrigger>
                         <SelectContent>
                             {departments.map(dept => (
-                              <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                              <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>

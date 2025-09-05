@@ -8,7 +8,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where, doc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, where, doc, setDoc } from 'firebase/firestore';
 
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
@@ -222,6 +222,10 @@ const syncGreytHRFlow = ai.defineFlow(
     }
 
     await batch.commit();
+
+    // 6. Update last sync time
+    const settingsRef = doc(db, 'settings', 'employeeSync');
+    await setDoc(settingsRef, { lastSynced: new Date().toISOString() });
 
     return { 
         success: true, 
