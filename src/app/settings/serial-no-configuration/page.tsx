@@ -61,7 +61,7 @@ export default function SerialNoConfigurationPage() {
         };
 
         fetchConfig();
-    }, [selectedModule, toast]);
+    }, [selectedModule]);
 
     const handleSave = async () => {
         if (!selectedModule) {
