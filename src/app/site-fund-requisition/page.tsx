@@ -1,9 +1,50 @@
 
+'use client';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Clock, Users } from 'lucide-react';
+
+const stats = [
+    { title: 'Pending Requisitions', value: '2', icon: Clock },
+    { title: 'Total Completed', value: '1', icon: Users }
+];
+
 export default function SiteFundRequisitionPage() {
   return (
-    <div>
-      <h1 className="text-3xl font-bold">Site Fund Requisition</h1>
-      <p className="text-muted-foreground">This page is under construction.</p>
+    <div className="flex flex-col w-full">
+      <Tabs defaultValue="dashboard">
+        <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
+            <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>
+            <TabsTrigger value="all-requisitions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Requisitions</TabsTrigger>
+            <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My Pending Tasks</TabsTrigger>
+            <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mt-6">
+                {stats.map((stat, index) => (
+                    <Card key={index}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                            <stat.icon className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stat.value}</div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+        </TabsContent>
+        <TabsContent value="all-requisitions">
+            <p className="text-muted-foreground mt-4">All requisitions will be listed here.</p>
+        </TabsContent>
+        <TabsContent value="pending-tasks">
+            <p className="text-muted-foreground mt-4">Your pending tasks will be listed here.</p>
+        </TabsContent>
+        <TabsContent value="history">
+            <p className="text-muted-foreground mt-4">Your history will be shown here.</p>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

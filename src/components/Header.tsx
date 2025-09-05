@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bell, Settings, LogOut, User as UserIcon, Lock } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, BarChart2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
+import { cn } from '@/lib/utils';
 
 export default function Header() {
   const pathname = usePathname();
@@ -46,7 +47,6 @@ export default function Header() {
     }
   };
 
-  // Do not render header on login page
   if (pathname === '/login') {
     return null;
   }
@@ -55,20 +55,34 @@ export default function Header() {
     if (!name) return 'U';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   }
+  
+  const getPageTitle = () => {
+    if (pathname.startsWith('/site-fund-requisition')) return 'Site Fund Requisition';
+    if (pathname.startsWith('/settings')) return 'Settings';
+    return '';
+  }
+  
+  const pageTitle = getPageTitle();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center px-4">
-        <div className="mr-auto flex items-center gap-4">
+      <div className="flex h-16 items-center px-4 md:px-6">
+        <div className="flex items-center gap-4">
+            <Link href="/">
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Home className="h-5 w-5" />
+              </Button>
+            </Link>
+            {pageTitle && <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>}
         </div>
+
 
         <div className="ml-auto flex items-center gap-2">
           <TooltipProvider>
-            <span className="hidden sm:inline-block font-medium text-sm text-muted-foreground">{user?.name || 'User'}</span>
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
+                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User avatar'} />
                     <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
@@ -103,7 +117,7 @@ export default function Header() {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
                   <Bell className="h-5 w-5" />
                   <span className="sr-only">Notifications</span>
                 </Button>
@@ -112,11 +126,23 @@ export default function Header() {
                 <p>Notifications</p>
               </TooltipContent>
             </Tooltip>
+            
+            <Tooltip>
+              <TooltipTrigger asChild>
+                 <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
+                  <BarChart2 className="h-5 w-5" />
+                  <span className="sr-only">Analytics</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Analytics</p>
+              </TooltipContent>
+            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
                  <Link href="/settings">
-                    <Button variant="ghost" size="icon" className="rounded-full">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
                       <Settings className="h-5 w-5" />
                       <span className="sr-only">Settings</span>
                     </Button>

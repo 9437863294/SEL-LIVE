@@ -60,34 +60,26 @@ export default function ModuleDashboard() {
   const currentModules = modules.length > 0 ? modules : defaultModules;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Welcome Back, {user?.name || 'User'}</h1>
-      </div>
-       {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 5 }).map((_, i) => (
+    <div className="flex flex-col gap-8 h-full">
+       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" onDragOver={handleDragOver}>
+        {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-28 rounded-xl" />
-            ))}
-          </div>
+            ))
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" onDragOver={handleDragOver}>
-            {currentModules.map((module) => (
-              <ModuleCard
-                key={module.id}
-                module={module}
-                draggable
-                onDragStart={(e) => handleDragStart(e, module.id)}
-                onDrop={(e) => handleDrop(e, module.id)}
-                onDragEnd={handleDragEnd}
-                isDragging={draggedItemId === module.id}
-              />
-            ))}
-          </div>
+          currentModules.map((module) => (
+            <ModuleCard
+              key={module.id}
+              module={module}
+              draggable
+              onDragStart={(e) => handleDragStart(e, module.id)}
+              onDrop={(e) => handleDrop(e, module.id)}
+              onDragEnd={handleDragEnd}
+              isDragging={draggedItemId === module.id}
+            />
+          ))
         )}
-         <footer className="text-center text-muted-foreground text-sm mt-auto py-4">
-            Copyright © 2025 SEL. All Rights Reserved.
-        </footer>
+       </div>
     </div>
   );
 }

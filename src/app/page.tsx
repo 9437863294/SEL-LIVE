@@ -1,10 +1,19 @@
 
+
 import ModuleDashboard from '@/components/ModuleDashboard';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function Home() {
   return (
     <div className="flex flex-col min-h-full">
-        <ModuleDashboard />
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Welcome Back!</h1>
+        <p className="text-muted-foreground">Here are your available modules.</p>
+      </div>
+      <ModuleDashboard />
+      <footer className="text-center text-muted-foreground text-sm mt-auto py-4">
+          Copyright © 2025 SEL. All Rights Reserved.
+      </footer>
     </div>
   );
 }
