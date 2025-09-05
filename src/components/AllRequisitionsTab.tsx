@@ -32,31 +32,59 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Project, Department } from '@/lib/types';
+import type { Project, Department, Requisition } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from './auth/AuthProvider';
+import { format } from 'date-fns';
 
-
-const requisitions: any[] = [];
+const initialNewRequestState = {
+  projectId: '',
+  departmentId: '',
+  amount: '',
+  description: '',
+};
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   const [timestamp, setTimestamp] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [newRequest, setNewRequest] = useState(initialNewRequestState);
   const { toast } = useToast();
+  const { user } = useAuth();
 
+  const fetchRequisitions = async () => {
+    setIsLoading(true);
+    try {
+      const q = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const requisitionsData = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          ...data,
+          // Convert Firestore Timestamp to a readable string
+          createdAt: data.createdAt ? format(data.createdAt.toDate(), 'PPpp') : 'N/A',
+        } as Requisition;
+      });
+      setRequisitions(requisitionsData);
+    } catch (error) {
+      console.error("Error fetching requisitions: ", error);
+      toast({ title: 'Error', description: 'Failed to fetch requisitions.', variant: 'destructive' });
+    }
+    setIsLoading(false);
+  };
+  
   useEffect(() => {
     if (isNewRequestOpen) {
       const now = new Date();
       setTimestamp(now.toLocaleString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
       }));
     }
   }, [isNewRequestOpen]);
@@ -82,7 +110,43 @@ export default function AllRequisitionsTab() {
       }
     };
     fetchProjectsAndDepartments();
+    fetchRequisitions();
   }, [toast]);
+
+  const handleInputChange = (field: keyof typeof newRequest, value: string) => {
+    setNewRequest(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateRequest = async () => {
+    if (!newRequest.projectId || !newRequest.departmentId || !newRequest.amount) {
+        toast({ title: 'Validation Error', description: 'Project, Department and Amount are required.', variant: 'destructive' });
+        return;
+    }
+
+    try {
+        const docRef = await addDoc(collection(db, 'requisitions'), {
+            ...newRequest,
+            amount: parseFloat(newRequest.amount),
+            raisedBy: user?.name || 'Unknown User',
+            raisedById: user?.id,
+            status: 'Pending',
+            stage: 'HOD Approval',
+            createdAt: serverTimestamp(),
+            // attachments can be handled here later
+        });
+        
+        toast({ title: 'Success', description: 'New fund requisition created.' });
+        setIsNewRequestOpen(false);
+        setNewRequest(initialNewRequestState);
+        fetchRequisitions(); // Refresh data
+    } catch (error) {
+        console.error('Error creating requisition:', error);
+        toast({ title: 'Error', description: 'Failed to create requisition.', variant: 'destructive' });
+    }
+  }
+
+  const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || id;
+  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || id;
 
   return (
     <div className="w-full">
@@ -116,7 +180,7 @@ export default function AllRequisitionsTab() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="project">Project</Label>
-                            <Select>
+                            <Select value={newRequest.projectId} onValueChange={(value) => handleInputChange('projectId', value)}>
                                 <SelectTrigger id="project">
                                     <SelectValue placeholder="Select Project" />
                                 </SelectTrigger>
@@ -129,7 +193,7 @@ export default function AllRequisitionsTab() {
                         </div>
                          <div className="space-y-2">
                             <Label htmlFor="department">Department</Label>
-                             <Select>
+                             <Select value={newRequest.departmentId} onValueChange={(value) => handleInputChange('departmentId', value)}>
                                 <SelectTrigger id="department">
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
@@ -142,11 +206,11 @@ export default function AllRequisitionsTab() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="amount">Amount</Label>
-                            <Input id="amount" type="number" placeholder="Enter Amount" />
+                            <Input id="amount" type="number" placeholder="Enter Amount" value={newRequest.amount} onChange={(e) => handleInputChange('amount', e.target.value)} />
                         </div>
                          <div className="lg:col-span-3 space-y-2">
                             <Label htmlFor="description">Description</Label>
-                            <Textarea id="description" placeholder="Enter a brief description" />
+                            <Textarea id="description" placeholder="Enter a brief description" value={newRequest.description} onChange={(e) => handleInputChange('description', e.target.value)} />
                         </div>
                         <div className="space-y-2">
                            <Label htmlFor="attachments">Attachments</Label>
@@ -157,7 +221,7 @@ export default function AllRequisitionsTab() {
                         <DialogClose asChild>
                             <Button variant="outline">Cancel</Button>
                         </DialogClose>
-                        <Button onClick={() => setIsNewRequestOpen(false)}>Create Request</Button>
+                        <Button onClick={handleCreateRequest}>Create Request</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -168,7 +232,6 @@ export default function AllRequisitionsTab() {
             <TableRow className="bg-muted/50">
               <TableHead>Request ID</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Deadline</TableHead>
               <TableHead>Project</TableHead>
               <TableHead>Department</TableHead>
               <TableHead>Raised By</TableHead>
@@ -184,23 +247,16 @@ export default function AllRequisitionsTab() {
             {requisitions.length > 0 ? (
               requisitions.map((req) => (
                 <TableRow key={req.id}>
-                  <TableCell className="font-medium">{req.id}</TableCell>
-                  <TableCell>
-                    <div>{req.date}</div>
-                    <div className="text-xs text-muted-foreground">{req.time}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{req.deadlineDate}</div>
-                    {req.deadlineTime && <div className="text-xs text-muted-foreground">{req.deadlineTime}</div>}
-                  </TableCell>
-                  <TableCell>{req.project}</TableCell>
-                  <TableCell>{req.department}</TableCell>
+                  <TableCell className="font-medium">{req.id.substring(0, 8)}...</TableCell>
+                  <TableCell>{req.createdAt.toString()}</TableCell>
+                  <TableCell>{getProjectName(req.projectId)}</TableCell>
+                  <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
                   <TableCell>{req.raisedBy}</TableCell>
                   <TableCell>{req.description}</TableCell>
-                  <TableCell>{req.amount}</TableCell>
+                  <TableCell>{req.amount.toLocaleString()}</TableCell>
                   <TableCell>{req.stage}</TableCell>
                   <TableCell>{req.status}</TableCell>
-                  <TableCell>{req.attachments}</TableCell>
+                  <TableCell>N/A</TableCell>
                   <TableCell className="text-center">
                       <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreHorizontal className="h-4 w-4" />
@@ -210,7 +266,7 @@ export default function AllRequisitionsTab() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={12} className="text-center h-24">
+                <TableCell colSpan={11} className="text-center h-24">
                   No requisitions found.
                 </TableCell>
               </TableRow>

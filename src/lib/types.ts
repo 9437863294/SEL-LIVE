@@ -1,4 +1,5 @@
 
+
 export type Module = {
   id: string;
   title: string;
@@ -53,4 +54,17 @@ export type Holiday = {
   id: string;
   name: string;
   date: string;
+};
+
+export type Requisition = {
+  id: string;
+  projectId: string;
+  departmentId: string;
+  amount: number;
+  description: string;
+  raisedBy: string;
+  raisedById: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
+  stage: string;
+  createdAt: any; // Firestore Timestamp
 };
