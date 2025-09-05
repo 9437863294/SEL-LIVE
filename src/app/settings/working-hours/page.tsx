@@ -46,7 +46,13 @@ export default function WorkingHoursPage() {
     const docRef = doc(db, 'settings', 'workingHours');
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      setWorkingHours(docSnap.data() as WorkingHours);
+      const data = docSnap.data();
+      if(data.schedule) {
+        setWorkingHours(data.schedule);
+      } else {
+        // Fallback for old data structure
+        setWorkingHours(data as WorkingHours);
+      }
     }
   }, []);
 
@@ -79,7 +85,7 @@ export default function WorkingHoursPage() {
 
   const handleSaveWorkingHours = async () => {
     try {
-      await setDoc(doc(db, 'settings', 'workingHours'), workingHours);
+      await setDoc(doc(db, 'settings', 'workingHours'), { schedule: workingHours });
       toast({ title: 'Success', description: 'Working hours have been saved.' });
     } catch (error) {
       console.error("Error saving working hours: ", error);
