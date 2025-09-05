@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -83,6 +83,17 @@ const requisitions = [
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [currentDateTime, setCurrentDateTime] = useState({ date: '', time: '' });
+
+  useEffect(() => {
+    if (isNewRequestOpen) {
+      const now = new Date();
+      setCurrentDateTime({
+        date: now.toLocaleDateString('en-GB'),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+      });
+    }
+  }, [isNewRequestOpen]);
 
   return (
     <div className="w-full">
@@ -109,7 +120,15 @@ export default function AllRequisitionsTab() {
                             Fill out the form to create a new fund request.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 py-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="date">Date</Label>
+                            <Input id="date" type="text" value={currentDateTime.date} readOnly />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="time">Time</Label>
+                            <Input id="time" type="text" value={currentDateTime.time} readOnly />
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="project">Project</Label>
                             <Select>
@@ -139,13 +158,13 @@ export default function AllRequisitionsTab() {
                             <Label htmlFor="amount">Amount</Label>
                             <Input id="amount" type="number" placeholder="Enter Amount" />
                         </div>
-                         <div className="md:col-span-2 lg:col-span-3 space-y-2">
-                            <Label htmlFor="description">Description</Label>
-                            <Textarea id="description" placeholder="Enter a brief description" />
-                        </div>
-                         <div className="space-y-2">
+                        <div className="space-y-2">
                             <Label htmlFor="deadline">Deadline</Label>
                             <Input id="deadline" type="datetime-local" />
+                        </div>
+                         <div className="md:col-span-2 lg:col-span-4 space-y-2">
+                            <Label htmlFor="description">Description</Label>
+                            <Textarea id="description" placeholder="Enter a brief description" />
                         </div>
                         <div className="space-y-2">
                            <Label htmlFor="attachments">Attachments</Label>
