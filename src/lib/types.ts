@@ -4,3 +4,10 @@ export type Module = {
   content: string;
   tags: string[];
 };
+
+export type Department = {
+  id: string;
+  name: string;
+  head: string;
+  status: 'Active' | 'Inactive';
+};
