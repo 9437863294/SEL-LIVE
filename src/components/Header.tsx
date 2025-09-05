@@ -36,13 +36,6 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Button asChild>
-            <Link href="/create">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Create New
-            </Link>
-          </Button>
-
           <span className="hidden sm:inline-block font-medium">Super User</span>
           <Button variant="ghost" size="icon" className="rounded-full">
             <Bell className="h-5 w-5" />
