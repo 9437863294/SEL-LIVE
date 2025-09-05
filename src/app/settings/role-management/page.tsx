@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const permissionModules = {
   'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
@@ -312,17 +313,26 @@ export default function ManageRolePage() {
                 roles.map((role) => (
                   <TableRow key={role.id}>
                     <TableCell className="font-medium">{role.name}</TableCell>
-                    <TableCell className="text-sm">
-                      <div className="flex flex-col gap-2 items-start">
-                        {role.permissions && Object.entries(role.permissions).map(([moduleName, perms]) => (
-                          perms.length > 0 && (
-                             <div key={moduleName}>
-                                <span className="font-medium">{moduleName}:</span>
-                                  <span className="text-muted-foreground ml-2">{perms.join(', ')}</span>
-                             </div>
-                           )
-                        ))}
-                      </div>
+                    <TableCell>
+                      <TooltipProvider>
+                        <div className="flex flex-wrap gap-1">
+                          {role.permissions && Object.entries(role.permissions).map(([moduleName, perms]) => (
+                            perms.length > 0 && (
+                              <Tooltip key={moduleName}>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="secondary" className="cursor-default">{moduleName} ({perms.length})</Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="font-medium">{moduleName}</p>
+                                  <ul className="list-disc pl-4 text-muted-foreground">
+                                    {perms.map(p => <li key={p}>{p}</li>)}
+                                  </ul>
+                                </TooltipContent>
+                              </Tooltip>
+                            )
+                          ))}
+                        </div>
+                      </TooltipProvider>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(role)}>Edit</Button>
