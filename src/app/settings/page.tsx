@@ -20,7 +20,7 @@ const settingsItems = [
   { icon: Construction, text: 'Manage Project', href: '/settings/project' },
   { icon: Briefcase, text: 'Manage Vendor', href: '#' },
   { icon: Clock, text: 'Working Hrs', href: '#' },
-  { icon: Users, text: 'User Management', href: '#' },
+  { icon: Users, text: 'User Management', href: '/settings/user-management' },
   { icon: ShieldCheck, text: 'Role Management', href: '#' },
   { icon: Hash, text: 'Serial No. Config', href: '#' },
   { icon: Calculator, text: 'Import Config', href: '#' },

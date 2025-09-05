@@ -22,3 +22,12 @@ export type Project = {
   siteInCharge: string;
   status: 'Active' | 'Inactive';
 };
+
+export type User = {
+    id: string;
+    name: string;
+    email: string;
+    mobile: string;
+    role: 'Admin' | 'User';
+    status: 'Active' | 'Inactive';
+};
