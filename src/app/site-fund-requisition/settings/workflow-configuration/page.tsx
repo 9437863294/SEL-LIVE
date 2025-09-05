@@ -10,13 +10,15 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
 
 const initialSteps: WorkflowStep[] = [
     { 
@@ -55,39 +57,43 @@ export default function WorkflowConfigurationPage() {
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        const fetchWorkflowAndRoles = async () => {
+        const fetchData = async () => {
             setIsLoading(true);
             try {
-                // Fetch roles
-                const rolesSnapshot = await getDocs(collection(db, 'roles'));
-                const rolesData = rolesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
-                setRoles(rolesData);
-                
-                // Fetch users
-                const usersSnapshot = await getDocs(collection(db, 'users'));
-                const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-                setUsers(usersData);
+                // Fetch roles, users, projects, departments
+                const [rolesSnap, usersSnap, projectsSnap, deptsSnap] = await Promise.all([
+                    getDocs(collection(db, 'roles')),
+                    getDocs(collection(db, 'users')),
+                    getDocs(collection(db, 'projects')),
+                    getDocs(collection(db, 'departments'))
+                ]);
+                setRoles(rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role)));
+                setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+                setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+                setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
                 
                 // Fetch workflow
-                const docRef = doc(db, 'workflows', 'site-fund-requisition');
-                const docSnap = await getDoc(docRef);
+                const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+                const workflowSnap = await getDoc(workflowRef);
 
-                if (docSnap.exists() && docSnap.data().steps.length > 0) {
-                    setSteps(docSnap.data().steps);
+                if (workflowSnap.exists() && workflowSnap.data().steps.length > 0) {
+                    setSteps(workflowSnap.data().steps);
                 } else {
                     setSteps(initialSteps);
                 }
             } catch (error) {
                 console.error("Error fetching data: ", error);
-                toast({ title: 'Error', description: 'Failed to fetch workflow configuration.', variant: 'destructive' });
+                toast({ title: 'Error', description: 'Failed to fetch configuration data.', variant: 'destructive' });
             }
             setIsLoading(false);
         };
-        fetchWorkflowAndRoles();
+        fetchData();
     }, [toast]);
     
     const handleAddStep = () => {
@@ -108,7 +114,27 @@ export default function WorkflowConfigurationPage() {
     };
     
     const handleStepChange = (id: string, field: keyof WorkflowStep, value: any) => {
-        setSteps(steps.map(step => step.id === id ? { ...step, [field]: value } : step));
+        setSteps(steps.map(step => {
+            if (step.id === id) {
+                const updatedStep = { ...step, [field]: value };
+                // When changing assignment type, reset assignedTo
+                if (field === 'assignmentType') {
+                    updatedStep.assignedTo = Array.isArray(step.assignedTo) ? [] : {};
+                }
+                return updatedStep;
+            }
+            return step;
+        }));
+    };
+    
+    const handleAssignmentDetailChange = (stepId: string, detailKey: string, userId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newAssignedTo = { ...(step.assignedTo as Record<string, string>), [detailKey]: userId };
+                return { ...step, assignedTo: newAssignedTo };
+            }
+            return step;
+        }));
     };
 
     const handleActionChange = (stepId: string, action: string, checked: boolean) => {
@@ -221,7 +247,7 @@ export default function WorkflowConfigurationPage() {
                                                 <div className="space-y-2">
                                                     <Label htmlFor={`assigned-user-${step.id}`}>Assigned User</Label>
                                                     <Select
-                                                        value={step.assignedTo[0] || ''}
+                                                        value={Array.isArray(step.assignedTo) ? step.assignedTo[0] || '' : ''}
                                                         onValueChange={(value) => handleStepChange(step.id, 'assignedTo', [value])}
                                                     >
                                                         <SelectTrigger id={`assigned-user-${step.id}`}>
@@ -233,6 +259,78 @@ export default function WorkflowConfigurationPage() {
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
+                                                </div>
+                                            )}
+
+                                            {step.assignmentType === 'Project-based' && (
+                                                <div className="space-y-2">
+                                                    <Label>Assign Users per Project</Label>
+                                                    <Card className="mt-2">
+                                                        <Table>
+                                                            <TableHeader>
+                                                                <TableRow>
+                                                                    <TableHead>Project Name</TableHead>
+                                                                    <TableHead>Assigned User</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {projects.map(project => (
+                                                                    <TableRow key={project.id}>
+                                                                        <TableCell>{project.projectName}</TableCell>
+                                                                        <TableCell>
+                                                                            <Select
+                                                                                value={(step.assignedTo as Record<string, string>)[project.id] || ''}
+                                                                                onValueChange={(value) => handleAssignmentDetailChange(step.id, project.id, value)}
+                                                                            >
+                                                                                <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {users.map(user => (
+                                                                                        <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </Card>
+                                                </div>
+                                            )}
+
+                                            {step.assignmentType === 'Department-based' && (
+                                                 <div className="space-y-2">
+                                                    <Label>Assign Users per Department</Label>
+                                                    <Card className="mt-2">
+                                                        <Table>
+                                                            <TableHeader>
+                                                                <TableRow>
+                                                                    <TableHead>Department Name</TableHead>
+                                                                    <TableHead>Assigned User</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {departments.map(dept => (
+                                                                    <TableRow key={dept.id}>
+                                                                        <TableCell>{dept.name}</TableCell>
+                                                                        <TableCell>
+                                                                            <Select
+                                                                                value={(step.assignedTo as Record<string, string>)[dept.id] || ''}
+                                                                                onValueChange={(value) => handleAssignmentDetailChange(step.id, dept.id, value)}
+                                                                            >
+                                                                                <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {users.map(user => (
+                                                                                        <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </Card>
                                                 </div>
                                             )}
 

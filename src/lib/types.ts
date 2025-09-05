@@ -83,7 +83,7 @@ export type WorkflowStep = {
   name: string;
   tat: number; // Turnaround time in hours
   assignmentType: 'User-based' | 'Project-based' | 'Department-based' | 'Amount-based';
-  assignedTo: string[];
+  assignedTo: string[] | Record<string, string>; // string[] for user-based, Record for others
   actions: string[];
   upload: 'Required' | 'Not Required' | 'Optional';
 };
