@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push('/');
     }
   }, [user, loading, router, pathname]);
-
+  
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -51,17 +51,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // If we are on a public route and not logged in, or on a private route and logged in, show the children.
-  // Otherwise, the useEffect above is handling the redirect, so we show a loader to prevent content flash.
-  if ((publicRoutes.includes(pathname) && !user) || (!publicRoutes.includes(pathname) && user)) {
-     return <>{children}</>;
+  if (!user && !publicRoutes.includes(pathname)) {
+    return (
+       <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+       </div>
+    );
   }
 
-  return (
-     <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-     </div>
-  );
+  if (user && publicRoutes.includes(pathname)) {
+    return (
+       <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+       </div>
+    );
+  }
+
+  return <>{children}</>;
 }
 
 export const useAuth = () => {
