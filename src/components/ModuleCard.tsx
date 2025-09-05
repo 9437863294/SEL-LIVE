@@ -5,7 +5,7 @@ import { useModules } from '@/context/ModuleContext';
 import type { Module } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { GripVertical, Trash2, Landmark, FileText, LayoutGrid, Banknote, Edit, icons } from 'lucide-react';
+import { GripVertical, Trash2, Edit, icons } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +18,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState }from 'react';
 import { EditModuleDialog } from './EditModuleDialog';
+import Link from 'next/link';
 
 
 interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -40,8 +41,16 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
   const { deleteModule } = useModules();
   const [isEditOpen, setIsEditOpen] = useState(false);
 
-  return (
-    <>
+  const slugify = (text: string) => {
+    return text.toString().toLowerCase()
+      .replace(/\s+/g, '-')           // Replace spaces with -
+      .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+      .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+      .replace(/^-+/, '')             // Trim - from start of text
+      .replace(/-+$/, '');            // Trim - from end of text
+  }
+
+  const CardContentWrapper = ({ children }: { children: React.ReactNode }) => (
     <Card
       className={cn(
         "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50", 
@@ -49,6 +58,12 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       )}
       {...props}
     >
+      {children}
+    </Card>
+  );
+
+  const cardInnerContent = (
+    <>
       <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
         <div className="bg-primary/10 p-2 rounded-lg">
            <LucideIcon name={module.icon} className="w-5 h-5 text-primary" />
@@ -64,13 +79,18 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         </div>
       </CardHeader>
       <CardContent className="mt-auto flex justify-end gap-1 p-2 border-t">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsEditOpen(true)}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
             <Edit className="h-4 w-4" />
             <span className="sr-only">Edit</span>
         </Button>
-        <AlertDialog>
+        <AlertDialog onOpenChange={(open) => {
+          // Prevent dialog from opening when card is clicked.
+          if (open) {
+            props.onClick?.(null as any); // a bit of a hack to stop propagation
+          }
+        }}>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
                 <Trash2 className="h-4 w-4" />
                 <span className="sr-only">Delete</span>
             </Button>
@@ -90,8 +110,17 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
           </AlertDialogContent>
         </AlertDialog>
       </CardContent>
-    </Card>
-    <EditModuleDialog isOpen={isEditOpen} onOpenChange={setIsEditOpen} module={module} />
+    </>
+  );
+
+  return (
+    <>
+      <Link href={`/${slugify(module.title)}`} className="no-underline h-full">
+        <CardContentWrapper>
+          {cardInnerContent}
+        </CardContentWrapper>
+      </Link>
+      <EditModuleDialog isOpen={isEditOpen} onOpenChange={setIsEditOpen} module={module} />
     </>
   );
 }
