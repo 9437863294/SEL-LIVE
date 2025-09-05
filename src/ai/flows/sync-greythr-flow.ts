@@ -50,6 +50,43 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
+async function fetchEmployeeCategories(token: string, domain: string): Promise<Record<string, { department: string; designation: string }>> {
+    const url = "https://api.greythr.com/employee/v2/employees/categories";
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            "ACCESS-TOKEN": token,
+            "x-greythr-domain": domain,
+        },
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch employee categories: ${response.statusText} - ${errorText}`);
+    }
+
+    const json = await response.json();
+    const employeeCategories: Record<string, { department: string; designation: string }> = {};
+
+    if (json.data && Array.isArray(json.data)) {
+        json.data.forEach((emp: any) => {
+            const categories: { department: string; designation: string } = { department: '', designation: '' };
+            if (emp.categoryList && Array.isArray(emp.categoryList)) {
+                emp.categoryList.forEach((cat: any) => {
+                    if (cat.category === 'Department') {
+                        categories.department = cat.value;
+                    }
+                    if (cat.category === 'Designation') {
+                        categories.designation = cat.value;
+                    }
+                });
+            }
+            employeeCategories[emp.employeeId] = categories;
+        });
+    }
+    return employeeCategories;
+}
+
 const syncGreytHRFlow = ai.defineFlow(
   {
     name: 'syncGreytHRFlow',
@@ -58,12 +95,13 @@ const syncGreytHRFlow = ai.defineFlow(
   async () => {
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
+    
+    // 1. Fetch all employees from GreytHR
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
     let page = 1;
     const size = 100;
     const allData = [];
 
-    // 1. Fetch all employees from GreytHR
     while (true) {
         const url = `${baseUrl}?page=${page}&size=${size}`;
         const response = await fetch(url, {
@@ -88,10 +126,13 @@ const syncGreytHRFlow = ai.defineFlow(
         }
     }
 
-    // 2. Filter employees
+    // 2. Fetch all employee categories
+    const employeeCategories = await fetchEmployeeCategories(token, domain);
+
+    // 3. Filter employees
     const filteredData = allData.filter(employee => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
-    // 3. Write to Firestore
+    // 4. Write to Firestore
     const employeesRef = collection(db, 'employees');
     const batch = writeBatch(db);
     let employeesSynced = 0;
@@ -101,13 +142,15 @@ const syncGreytHRFlow = ai.defineFlow(
         const q = query(employeesRef, where("employeeId", "==", empData.employeeNo));
         const querySnapshot = await getDocs(q);
 
+        const categories = employeeCategories[empData.employeeId] || { department: '', designation: '' };
+
         const newEmployeeData = {
             employeeId: empData.employeeNo,
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',
-            department: '', // This needs to be mapped from categories or another source
-            designation: '', // This also needs mapping
+            department: categories.department,
+            designation: categories.designation,
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
         };
 
