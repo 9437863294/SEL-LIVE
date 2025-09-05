@@ -1,8 +1,8 @@
 
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
-import Header from '@/components/Header';
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from '@/lib/utils';
 import { AuthProvider } from '@/components/auth/AuthProvider';
