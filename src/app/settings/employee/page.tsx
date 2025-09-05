@@ -8,7 +8,7 @@ import {
   Upload,
   FileText,
   ArrowLeft,
-  CloudSync
+  RefreshCw
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -32,7 +32,7 @@ const employeeSettingsItems = [
     href: '/settings/employee/manage' 
   },
   { 
-    icon: CloudSync, 
+    icon: RefreshCw, 
     text: 'Sync with GreytHR',
     description: 'Bulk upload employee data from a file.',
     href: '#' 
@@ -97,4 +97,3 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
-
