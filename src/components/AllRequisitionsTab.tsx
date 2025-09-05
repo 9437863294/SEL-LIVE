@@ -190,10 +190,6 @@ export default function AllRequisitionsTab() {
                             <Label htmlFor="amount">Amount</Label>
                             <Input id="amount" type="number" placeholder="Enter Amount" />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="deadline">Deadline</Label>
-                            <Input id="deadline" type="datetime-local" />
-                        </div>
                          <div className="md:col-span-2 lg:col-span-4 space-y-2">
                             <Label htmlFor="description">Description</Label>
                             <Textarea id="description" placeholder="Enter a brief description" />
