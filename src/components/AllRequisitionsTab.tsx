@@ -45,7 +45,7 @@ import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Project, Department, Requisition, SerialNumberConfig } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
@@ -184,6 +184,17 @@ export default function AllRequisitionsTab() {
             
             return requisitionId;
         });
+
+        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+        const workflowSnap = await getDoc(workflowRef);
+        let initialStage = 'Pending'; // Default stage
+        if (workflowSnap.exists()) {
+            const workflowData = workflowSnap.data();
+            const steps = workflowData.steps as WorkflowStep[];
+            if (steps && steps.length > 0) {
+                initialStage = steps[0].name;
+            }
+        }
         
         const { date, ...restOfRequest } = values;
 
@@ -194,7 +205,7 @@ export default function AllRequisitionsTab() {
             raisedBy: user?.name || 'Unknown User',
             raisedById: user?.id,
             status: 'Pending',
-            stage: 'HOD Approval',
+            stage: initialStage,
             createdAt: serverTimestamp(),
         });
         
