@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Timeline } from '@/components/ui/timeline';
 import { Badge } from '@/components/ui/badge';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog } from '@/lib/types';
 import { db } from '@/lib/firebase';
@@ -17,6 +16,8 @@ import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { ScrollArea } from './ui/scroll-area';
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -45,8 +46,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         if (workflowSnap.exists()) {
           const steps = workflowSnap.data().steps as WorkflowStep[];
           setWorkflow(steps);
-          const step = steps.find(s => s.id === requisition.currentStepId) || null;
-          setCurrentStep(step);
         } else {
            toast({ title: 'Error', description: 'Workflow configuration not found.', variant: 'destructive' });
         }
@@ -73,7 +72,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       const step = workflow.find(s => s.id === requisition.currentStepId) || null;
       setCurrentStep(step);
     }
-  }, [requisition, workflow]);
+  }, [requisition, workflow, isOpen]);
   
   const handleAction = async (action: string) => {
     if (!user || !requisition || !workflow || !currentStep) return;
@@ -138,7 +137,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             } else {
                 // For other actions like 'Edit', 'Revise', etc., keep current assignment
                 newAssignedToId = currentRequisitionData.assignedToId || null;
-                newDeadline = currentRequisitionData.deadline ? Timestamp.fromMillis(currentRequisitionData.deadline.toMillis()) : null;
+                newDeadline = currentRequisitionData.deadline ? Timestamp.fromMillis((currentRequisitionData.deadline as unknown as Timestamp).toMillis()) : null;
             }
 
             transaction.update(requisitionRef, {
@@ -170,6 +169,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const departmentName = departments.find(d => d.id === requisition.departmentId)?.name || 'N/A';
 
   const isActionAllowed = user && requisition.assignedToId === user.id && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+  
+  const sortedHistory = requisition.history?.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()) || [];
 
 
   return (
@@ -214,26 +215,37 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             </div>
             <div className="md:col-span-2">
                 <h3 className="font-semibold mb-2">History</h3>
-                <Timeline>
-                  {requisition.history?.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()).map((log, index) => (
-                      <div key={index} className="flex items-start gap-4">
-                          <div className="flex flex-col items-center">
-                              <div className="w-3 h-3 bg-primary rounded-full" />
-                              {index < requisition.history.length - 1 && <div className="w-px h-full bg-border grow" />}
-                          </div>
-                          <div className="pb-4">
-                              <div className="font-medium text-sm">
-                                  {log.stepName}: <Badge variant="secondary" className="font-normal">{log.action}</Badge>
-                              </div>
-                              <div className="text-xs text-muted-foreground">by {log.userName} on {log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</div>
-                              {log.comment && <p className="text-sm mt-1 bg-muted/50 p-2 rounded-md">{log.comment}</p>}
-                          </div>
-                      </div>
-                  ))}
-                  {!requisition.history && (
-                    <p className="text-sm text-muted-foreground">No history yet.</p>
-                  )}
-                </Timeline>
+                <ScrollArea className="h-72">
+                    <Table className="text-xs">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Stage</TableHead>
+                                <TableHead>User</TableHead>
+                                <TableHead>Date</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {sortedHistory.length > 0 ? (
+                           sortedHistory.map((log, index) => (
+                                <TableRow key={index}>
+                                    <TableCell>
+                                        <div className="font-medium">{log.stepName}</div>
+                                        <div className="text-muted-foreground">{log.action}</div>
+                                    </TableCell>
+                                    <TableCell>{log.userName}</TableCell>
+                                    <TableCell>{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</TableCell>
+                                </TableRow>
+                            ))
+                        ) : (
+                             <TableRow>
+                                <TableCell colSpan={3} className="text-center h-24">
+                                No history yet.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
             </div>
         </div>
         <DialogFooter>
