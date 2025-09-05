@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Timeline } from '@/components/ui/timeline';
@@ -81,8 +80,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             const currentRequisitionData = reqDoc.data() as Requisition;
 
             let nextStep: WorkflowStep | undefined;
-            let newStatus = currentRequisitionData.status;
+            let newStatus: Requisition['status'] = currentRequisitionData.status;
             let newStage = currentRequisitionData.stage;
+            let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
             let newAssignedToId: string | null = null;
             let newDeadline: Timestamp | null = null;
 
@@ -93,6 +93,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 if (nextStep) {
                     newStage = nextStep.name;
                     newStatus = 'In Progress';
+                    newCurrentStepId = nextStep.id;
                     newAssignedToId = await getAssigneeForStep(nextStep, currentRequisitionData);
                     if (!newAssignedToId) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
                     const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
@@ -100,24 +101,26 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 } else {
                     newStage = 'Completed';
                     newStatus = 'Completed';
-                    newAssignedToId = null;
+                    newCurrentStepId = null;
+                    newAssignedToId = null; // No one is assigned on the final step
                     newDeadline = null;
                 }
             } else if (action === 'Reject') {
                  newStage = 'Rejected';
                  newStatus = 'Rejected';
+                 newCurrentStepId = null;
                  newAssignedToId = null;
                  newDeadline = null;
             } else {
                 // For other actions like 'Edit', 'Revise', etc., keep current assignment
                 newAssignedToId = currentRequisitionData.assignedToId || null;
-                newDeadline = currentRequisitionData.deadline ? currentRequisitionData.deadline : null;
+                newDeadline = currentRequisitionData.deadline ? Timestamp.fromMillis(currentRequisitionData.deadline.toMillis()) : null;
             }
 
             transaction.update(requisitionRef, {
                 status: newStatus,
                 stage: newStage,
-                currentStepId: nextStep?.id || null,
+                currentStepId: newCurrentStepId,
                 assignedToId: newAssignedToId,
                 deadline: newDeadline,
                 history: arrayUnion(newActionLog),
@@ -190,7 +193,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                           </div>
                           <div className="pb-4">
                               <div className="font-medium">{log.userName} <Badge variant="secondary">{log.action}</Badge></div>
-                              <p className="text-xs text-muted-foreground">{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</p>
+                              <div className="text-xs text-muted-foreground">{log.timestamp ? format(log.timestamp.toDate(), 'dd MMM, yy HH:mm') : ''}</div>
                               <p className="text-sm mt-1">{log.comment}</p>
                           </div>
                       </div>
@@ -210,5 +213,3 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </Dialog>
   );
 }
-
-    
