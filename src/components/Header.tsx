@@ -73,7 +73,7 @@ export default function Header() {
               <path d="M12 18v-6" />
               <path d="M9 15h6" />
             </svg>
-            <span className="font-bold text-lg">Module Hub</span>
+            
           </Link>
         </div>
 
