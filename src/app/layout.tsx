@@ -1,9 +1,11 @@
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
 import Header from '@/components/Header';
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from '@/lib/utils';
+import { AuthProvider } from '@/components/auth/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'Module Hub',
@@ -23,13 +25,15 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className={cn('font-body antialiased min-h-screen bg-background')}>
-        <ModuleProvider>
-          <div className="relative flex min-h-screen flex-col">
-            <Header />
-            <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
-          </div>
-          <Toaster />
-        </ModuleProvider>
+        <AuthProvider>
+          <ModuleProvider>
+            <div className="relative flex min-h-screen flex-col">
+              <Header />
+              <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
+            </div>
+            <Toaster />
+          </ModuleProvider>
+        </AuthProvider>
       </body>
     </html>
   );
