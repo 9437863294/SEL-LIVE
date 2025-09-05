@@ -16,6 +16,7 @@ import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase
 import type { Employee, Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const initialNewEmployeeState = {
   employeeId: '',
@@ -153,71 +154,21 @@ export default function ManageEmployeePage() {
           </Link>
           <h1 className="text-2xl font-bold">Manage Employee</h1>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Employee
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>Add New Employee</DialogTitle>
-              <DialogDescription>
-                Fill in the details for the new employee.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="employeeId">Employee ID</Label>
-                    <Input id="employeeId" placeholder="e.g. SEL-EMP-001" value={newEmployee.employeeId} onChange={(e) => handleInputChange('employeeId', e.target.value)} />
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+                <div className="inline-block">
+                    <Button disabled>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Employee
+                    </Button>
                 </div>
-                <div className="space-y-2">
-                    <Label htmlFor="name">Name</Label>
-                    <Input id="name" placeholder="e.g. Jane Smith" value={newEmployee.name} onChange={(e) => handleInputChange('name', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="e.g. jane@example.com" value={newEmployee.email} onChange={(e) => handleInputChange('email', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" placeholder="e.g. 9876543210" value={newEmployee.phone} onChange={(e) => handleInputChange('phone', e.target.value)} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
-                    <Select value={newEmployee.department} onValueChange={(value) => handleSelectChange('department', value)}>
-                        <SelectTrigger id="department"><SelectValue placeholder="Select a department" /></SelectTrigger>
-                        <SelectContent>
-                          {departments.map(dept => (
-                            <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="designation">Designation</Label>
-                    <Input id="designation" placeholder="e.g. Project Manager" value={newEmployee.designation} onChange={(e) => handleInputChange('designation', e.target.value)} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={newEmployee.status} onValueChange={(value) => handleSelectChange('status', value)}>
-                        <SelectTrigger id="status"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleAddEmployee}>Add Employee</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </TooltipTrigger>
+            <TooltipContent>
+                <p>Employee data will be synced from GreytHR.</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       <Card>

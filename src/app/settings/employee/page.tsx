@@ -7,7 +7,8 @@ import {
   Users,
   Upload,
   FileText,
-  ArrowLeft
+  ArrowLeft,
+  CloudSync
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -31,8 +32,8 @@ const employeeSettingsItems = [
     href: '/settings/employee/manage' 
   },
   { 
-    icon: Upload, 
-    text: 'Import Employee',
+    icon: CloudSync, 
+    text: 'Sync with GreytHR',
     description: 'Bulk upload employee data from a file.',
     href: '#' 
   },
