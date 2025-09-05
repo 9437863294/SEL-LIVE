@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -34,11 +34,24 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import type { Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+
+const permissionModules = {
+  'Site Fund Requisition': [
+    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
+    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
+    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
+  ]
+};
 
 const initialNewRoleState = {
   name: '',
-  permissions: '',
+  permissions: Object.keys(permissionModules).reduce((acc, module) => {
+    acc[module] = [];
+    return acc;
+  }, {} as Record<string, string[]>),
 };
 
 export default function ManageRolePage() {
@@ -46,7 +59,7 @@ export default function ManageRolePage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [newRole, setNewRole] = useState(initialNewRoleState);
+  const [newRole, setNewRole] = useState<{name: string, permissions: Record<string, string[]>}>(JSON.parse(JSON.stringify(initialNewRoleState)));
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const [editingRole, setEditingRole] = useState<Role | null>(null);
@@ -76,20 +89,36 @@ export default function ManageRolePage() {
     fetchRoles();
   }, []);
   
-  const handleInputChange = (field: keyof typeof newRole, value: string) => {
-    setNewRole(prev => ({ ...prev, [field]: value }));
-  };
-  
   const resetAddDialog = () => {
-    setNewRole(initialNewRoleState);
+    setNewRole(JSON.parse(JSON.stringify(initialNewRoleState)));
     setIsAddDialogOpen(false);
   }
 
+  const handlePermissionChange = (
+    setState: React.Dispatch<React.SetStateAction<any>>,
+    moduleName: string, 
+    permission: string, 
+    isChecked: boolean
+  ) => {
+    setState((prevState: any) => {
+      const newPermissions = { ...prevState.permissions };
+      const currentPermissions = newPermissions[moduleName] || [];
+      if (isChecked) {
+        if (!currentPermissions.includes(permission)) {
+          newPermissions[moduleName] = [...currentPermissions, permission];
+        }
+      } else {
+        newPermissions[moduleName] = currentPermissions.filter((p: string) => p !== permission);
+      }
+      return { ...prevState, permissions: newPermissions };
+    });
+  };
+
   const handleAddRole = async () => {
-    if (!newRole.name.trim() || !newRole.permissions.trim()) {
+    if (!newRole.name.trim()) {
       toast({
         title: 'Validation Error',
-        description: 'Role Name and Permissions cannot be empty.',
+        description: 'Role Name cannot be empty.',
         variant: 'destructive',
       });
       return;
@@ -159,6 +188,56 @@ export default function ManageRolePage() {
     }
   };
 
+  const renderPermissionsForm = (
+    roleData: { name: string; permissions: Record<string, string[]> },
+    setData: React.Dispatch<React.SetStateAction<any>>
+  ) => (
+    <div className="space-y-4">
+      <div>
+        <Label htmlFor="roleName">Role Name</Label>
+        <Input 
+          id="roleName" 
+          value={roleData.name} 
+          onChange={(e) => setData({ ...roleData, name: e.target.value })} 
+          className="mt-1"
+        />
+      </div>
+      <div>
+        <Label>Permissions</Label>
+        <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
+        <Card className="mt-2">
+          <CardContent className="p-4">
+             <Accordion type="single" collapsible defaultValue="item-0">
+              {Object.entries(permissionModules).map(([moduleName, permissions], index) => (
+                <AccordionItem value={`item-${index}`} key={moduleName}>
+                  <AccordionTrigger className="font-medium text-base">
+                    {moduleName}
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {permissions.map((permission) => (
+                        <div key={permission} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`${roleData.name}-${moduleName}-${permission}`}
+                            checked={roleData.permissions?.[moduleName]?.includes(permission)}
+                            onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
+                          />
+                          <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight">
+                            {permission}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -178,22 +257,15 @@ export default function ManageRolePage() {
               Add New Role
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-xl" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogContent className="sm:max-w-4xl" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>Add New Role</DialogTitle>
               <DialogDescription>
                 Define a new role and its permissions.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="roleName">Role Name</Label>
-                    <Input id="roleName" placeholder="e.g. Admin, Editor" value={newRole.name} onChange={(e) => handleInputChange('name', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="permissions">Permissions</Label>
-                    <Textarea id="permissions" placeholder="Describe permissions, separated by |" value={newRole.permissions} onChange={(e) => handleInputChange('permissions', e.target.value)} rows={4}/>
-                </div>
+            <div className="py-4">
+              {renderPermissionsForm(newRole, setNewRole)}
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -231,7 +303,20 @@ export default function ManageRolePage() {
                 roles.map((role) => (
                   <TableRow key={role.id}>
                     <TableCell className="font-medium">{role.name}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm whitespace-pre-wrap break-words max-w-md">{role.permissions}</TableCell>
+                    <TableCell className="text-sm">
+                      <div className="flex flex-col gap-2 items-start">
+                        {role.permissions && Object.entries(role.permissions).map(([moduleName, perms]) => (
+                           <div key={moduleName}>
+                              <span className="font-medium">{moduleName}:</span>
+                              {perms.length > 0 ? (
+                                <span className="text-muted-foreground ml-2">{perms.join(', ')}</span>
+                              ) : (
+                                <span className="text-muted-foreground ml-2 italic">No permissions</span>
+                              )}
+                           </div>
+                        ))}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(role)}>Edit</Button>
                       <Button variant="destructive" size="sm" onClick={() => handleDeleteRole(role.id)}>Delete</Button>
@@ -251,23 +336,16 @@ export default function ManageRolePage() {
       </Card>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Edit Role</DialogTitle>
             <DialogDescription>
-              Update the details of the role.
+              Update the role name and permissions.
             </DialogDescription>
           </DialogHeader>
           {editingRole && (
-            <div className="space-y-4 py-4">
-                 <div className="space-y-2">
-                    <Label htmlFor="editRoleName">Role Name</Label>
-                    <Input id="editRoleName" value={editingRole.name} onChange={(e) => setEditingRole({...editingRole, name: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editPermissions">Permissions</Label>
-                    <Textarea id="editPermissions" value={editingRole.permissions} onChange={(e) => setEditingRole({...editingRole, permissions: e.target.value})} rows={4} />
-                </div>
+            <div className="py-4">
+              {renderPermissionsForm(editingRole, setEditingRole)}
             </div>
           )}
           <DialogFooter>
