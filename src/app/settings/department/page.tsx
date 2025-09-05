@@ -44,6 +44,8 @@ export default function ManageDepartmentPage() {
   
   // State for Add Dialog
   const [newDepartmentName, setNewDepartmentName] = useState('');
+  const [newDepartmentStatus, setNewDepartmentStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [newDepartmentHead, setNewDepartmentHead] = useState('N/A');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   // State for Edit Dialog
@@ -75,7 +77,14 @@ export default function ManageDepartmentPage() {
 
   useEffect(() => {
     fetchDepartments();
-  }, []);
+  }, [toast]);
+
+  const resetAddDialog = () => {
+    setNewDepartmentName('');
+    setNewDepartmentStatus('Active');
+    setNewDepartmentHead('N/A');
+    setIsAddDialogOpen(false);
+  }
 
   const handleAddDepartment = async () => {
     if (!newDepartmentName.trim()) {
@@ -89,15 +98,14 @@ export default function ManageDepartmentPage() {
     try {
       await addDoc(collection(db, 'departments'), {
         name: newDepartmentName,
-        head: 'N/A',
-        status: 'Active',
+        head: newDepartmentHead,
+        status: newDepartmentStatus,
       });
       toast({
         title: 'Success',
         description: `Department "${newDepartmentName}" added.`,
       });
-      setNewDepartmentName('');
-      setIsAddDialogOpen(false);
+      resetAddDialog();
       fetchDepartments(); // Refresh the list
     } catch (error) {
       console.error("Error adding department: ", error);
@@ -189,27 +197,64 @@ export default function ManageDepartmentPage() {
               Add Department
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[425px]" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>Add New Department</DialogTitle>
+              <DialogDescription>
+                Fill in the details for the new department.
+              </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-6 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
+                <Label htmlFor="add-name" className="text-right">
                   Name
                 </Label>
                 <Input
-                  id="name"
+                  id="add-name"
                   value={newDepartmentName}
                   onChange={(e) => setNewDepartmentName(e.target.value)}
                   className="col-span-3"
                   placeholder="e.g., Human Resources"
                 />
               </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="add-status" className="text-right">
+                Status
+              </Label>
+              <Select
+                value={newDepartmentStatus}
+                onValueChange={(value: 'Active' | 'Inactive') => setNewDepartmentStatus(value)}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="add-head" className="text-right">
+                Head
+              </Label>
+               <Select
+                value={newDepartmentHead}
+                onValueChange={(value: string) => setNewDepartmentHead(value)}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="N/A">N/A</SelectItem>
+                  {/* You can map over users here in the future */}
+                </SelectContent>
+              </Select>
+            </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
+                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
               </DialogClose>
               <Button onClick={handleAddDepartment}>Add Department</Button>
             </DialogFooter>
@@ -232,8 +277,12 @@ export default function ManageDepartmentPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={4}>
-                      <Skeleton className="h-8 w-full" />
+                    <TableCell><Skeleton className="h-5 w-3/4" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-1/2" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-1/4" /></TableCell>
+                    <TableCell className="text-right space-x-2">
+                       <Skeleton className="h-8 w-16 inline-block" />
+                       <Skeleton className="h-8 w-16 inline-block" />
                     </TableCell>
                   </TableRow>
                 ))
@@ -331,3 +380,5 @@ export default function ManageDepartmentPage() {
     </div>
   );
 }
+
+    
