@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -133,6 +133,20 @@ export default function Header() {
               </TooltipContent>
             </Tooltip>
             
+            <Tooltip>
+              <TooltipTrigger asChild>
+                 <Link href="#">
+                    <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
+                      <FileText className="h-5 w-5" />
+                      <span className="sr-only">Reports</span>
+                    </Button>
+                  </Link>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Reports</p>
+              </TooltipContent>
+            </Tooltip>
+
             <Tooltip>
               <TooltipTrigger asChild>
                  <Link href="/site-fund-requisition/settings">
