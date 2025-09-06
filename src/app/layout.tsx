@@ -21,13 +21,11 @@ function ThemedBody({ children }: { children: React.ReactNode }) {
 
     return (
         <body className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
-            <Suspense fallback={
-                <div className="flex min-h-screen items-center justify-center bg-background">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                </div>
-            }>
-                {children}
-            </Suspense>
+            <div className="relative flex min-h-screen flex-col bg-background">
+                <Header />
+                <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
+            </div>
+            <Toaster />
         </body>
     )
 }
@@ -37,11 +35,7 @@ function RootLayoutComponent({ children }: { children: React.ReactNode }) {
         <AuthProvider>
             <ModuleProvider>
                 <ThemedBody>
-                     <div className="relative flex min-h-screen flex-col bg-background">
-                        <Header />
-                        <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
-                    </div>
-                    <Toaster />
+                    {children}
                 </ThemedBody>
             </ModuleProvider>
         </AuthProvider>
@@ -60,7 +54,15 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
       </head>
-      <RootLayoutComponent>{children}</RootLayoutComponent>
+      <Suspense fallback={
+          <body className='font-body antialiased'>
+              <div className="flex min-h-screen items-center justify-center bg-background">
+                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              </div>
+          </body>
+      }>
+        <RootLayoutComponent>{children}</RootLayoutComponent>
+      </Suspense>
     </html>
   );
 }

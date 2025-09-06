@@ -80,32 +80,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, router, pathname]);
   
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-      </div>
-    );
-  }
 
   const isPublicRoute = publicRoutes.includes(pathname);
-
-  if ((!user && !isPublicRoute) || (user && isPublicRoute)) {
-    return (
-       <div className="flex min-h-screen items-center justify-center bg-background">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-       </div>
-    );
-  }
-  
-  if (isPublicRoute) {
-     return <main>{children}</main>;
-  }
-
+  const isRedirecting = (!user && !isPublicRoute) || (user && isPublicRoute);
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUserData }}>
-        {children}
+      {loading || isRedirecting ? null : children}
     </AuthContext.Provider>
   )
 }
