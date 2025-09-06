@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,13 +14,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { usePathname, useRouter } from 'next/navigation';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { cn } from '@/lib/utils';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+
 
 export default function Header() {
   const pathname = usePathname();
@@ -28,6 +30,25 @@ export default function Header() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'requisitions'),
+      where('assignedToId', '==', user.id),
+      where('status', 'in', ['Pending', 'In Progress'])
+    );
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      setPendingTasksCount(querySnapshot.size);
+    }, (error) => {
+      console.error("Error fetching pending tasks count:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const handleSignOut = async () => {
     try {
@@ -123,8 +144,14 @@ export default function Header() {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full">
                   <Bell className="h-5 w-5" />
+                  {pendingTasksCount > 0 && (
+                    <span className="absolute top-0 right-0 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                  )}
                   <span className="sr-only">Notifications</span>
                 </Button>
               </TooltipTrigger>
