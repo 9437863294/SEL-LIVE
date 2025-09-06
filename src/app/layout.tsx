@@ -1,5 +1,4 @@
 
-
 import type { Metadata } from 'next';
 import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
@@ -22,7 +21,13 @@ function ThemedBody({ children }: { children: React.ReactNode }) {
 
     return (
         <body className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
-            {children}
+            <Suspense fallback={
+                <div className="flex min-h-screen items-center justify-center bg-background">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                </div>
+            }>
+                {children}
+            </Suspense>
         </body>
     )
 }
@@ -55,13 +60,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
       </head>
-        <Suspense fallback={
-            <div className="flex min-h-screen items-center justify-center bg-background">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            </div>
-        }>
-            <RootLayoutComponent>{children}</RootLayoutComponent>
-        </Suspense>
+      <RootLayoutComponent>{children}</RootLayoutComponent>
     </html>
   );
 }
