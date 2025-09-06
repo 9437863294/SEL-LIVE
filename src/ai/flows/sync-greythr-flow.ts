@@ -36,8 +36,8 @@ const SyncGreytHROutputSchema = z.object({
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
 
 async function getGreytHRToken(): Promise<string> {
-    const username = process.env.GREYTHR_USERNAME;
-    const password = process.env.GREYTHR_PASSWORD;
+    const username = process.env.GREYTHR_USERNAME || "SEL";
+    const password = process.env.GREYTHR_PASSWORD || "f1785459-9277-4136-88a9-ee48fd0146fe";
 
     if (!username || !password) {
         throw new Error("GreytHR credentials not found in environment variables.");
@@ -152,7 +152,7 @@ const syncGreytHRFlow = ai.defineFlow(
   async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
-    const pageSize = 60;
+    const pageSize = 100;
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
