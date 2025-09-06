@@ -1,4 +1,6 @@
 
+'use client';
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
@@ -9,12 +11,6 @@ import React from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
-
-
-export const metadata: Metadata = {
-  title: 'Module Hub',
-  description: 'Create and organize your modules.',
-};
 
 function AppBody({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
@@ -40,6 +36,17 @@ function AppBody({ children }: { children: React.ReactNode }) {
     )
 }
 
+// Metadata should be exported from a server component.
+// Since the whole file is 'use client', we define metadata in a separate server component file if needed
+// or remove 'use client' from the layout file. For now, let's remove the export to fix the error.
+/*
+export const metadata: Metadata = {
+  title: 'Module Hub',
+  description: 'Create and organize your modules.',
+};
+*/
+
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -48,6 +55,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <title>Module Hub</title>
+        <meta name="description" content="Create and organize your modules." />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
