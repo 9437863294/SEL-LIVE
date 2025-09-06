@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview A flow to fetch position details for a single employee from GreytHR.
+ * @fileOverview A flow to fetch all employee position details from GreytHR with pagination.
  */
 
 import { ai } from '@/ai/genkit';
@@ -16,17 +16,24 @@ const PositionDetailSchema = z.object({
     effectiveTo: z.string().nullable(),
 });
 
-const GetEmployeePositionDetailsInputSchema = z.object({
-  employeeId: z.string().describe("The ID of the employee to fetch details for."),
+const EmployeePositionSchema = z.object({
+    employeeId: z.number(),
+    categoryList: z.array(PositionDetailSchema),
 });
-export type GetEmployeePositionDetailsInput = z.infer<typeof GetEmployeePositionDetailsInputSchema>;
 
-const GetEmployeePositionDetailsOutputSchema = z.object({
+const GetAllEmployeePositionsInputSchema = z.object({
+  page: z.number().optional().default(1),
+});
+export type GetAllEmployeePositionsInput = z.infer<typeof GetAllEmployeePositionsInputSchema>;
+
+const GetAllEmployeePositionsOutputSchema = z.object({
     success: z.boolean(),
     message: z.string(),
-    details: z.array(PositionDetailSchema).optional(),
+    data: z.array(EmployeePositionSchema).optional(),
+    hasNextPage: z.boolean().optional(),
+    currentPage: z.number().optional(),
 });
-export type GetEmployeePositionDetailsOutput = z.infer<typeof GetEmployeePositionDetailsOutputSchema>;
+export type GetAllEmployeePositionsOutput = z.infer<typeof GetAllEmployeePositionsOutputSchema>;
 
 
 async function getGreytHRToken(): Promise<string> {
@@ -61,17 +68,18 @@ async function getGreytHRToken(): Promise<string> {
 }
 
 
-const getEmployeePositionDetailsFlow = ai.defineFlow(
+const getAllEmployeePositionsFlow = ai.defineFlow(
   {
-    name: 'getEmployeePositionDetailsFlow',
-    inputSchema: GetEmployeePositionDetailsInputSchema,
-    outputSchema: GetEmployeePositionDetailsOutputSchema,
+    name: 'getAllEmployeePositionsFlow',
+    inputSchema: GetAllEmployeePositionsInputSchema,
+    outputSchema: GetAllEmployeePositionsOutputSchema,
   },
-  async ({ employeeId }) => {
+  async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
+    const pageSize = 25;
     
-    const url = `https://api.greythr.com/employee/v2/employees/${employeeId}/categories`;
+    const url = `https://api.greythr.com/employee/v2/employees/categories?page=${page}&size=${pageSize}`;
 
     const response = await fetch(url, {
         method: 'GET',
@@ -86,17 +94,21 @@ const getEmployeePositionDetailsFlow = ai.defineFlow(
         throw new Error(`Failed to fetch position details: ${response.statusText} - ${errorText}`);
     }
 
-    const details = await response.json();
+    const json = await response.json();
+    const positionsData = json.data || [];
+    const pageInfo = json.pages || {};
 
     return { 
         success: true, 
         message: 'Successfully fetched position details.',
-        details: details,
+        data: positionsData,
+        hasNextPage: pageInfo.hasNext,
+        currentPage: page,
     };
   }
 );
 
 
-export async function getEmployeePositionDetails(input: GetEmployeePositionDetailsInput): Promise<GetEmployeePositionDetailsOutput> {
-  return getEmployeePositionDetailsFlow(input);
+export async function getAllEmployeePositions(input: GetAllEmployeePositionsInput): Promise<GetAllEmployeePositionsOutput> {
+  return getAllEmployeePositionsFlow(input);
 }

@@ -1,52 +1,34 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { getEmployeePositionDetails } from '@/ai';
+import { getAllEmployeePositions } from '@/ai';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import type { EmployeePosition } from '@/lib/types';
 
-interface PositionDetail {
-    id: number;
-    category: number;
-    value: number;
-    effectiveFrom: string;
-    effectiveTo: string | null;
-}
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
-  const [employeeId, setEmployeeId] = useState('');
-  const [details, setDetails] = useState<PositionDetail[]>([]);
+  const [positions, setPositions] = useState<EmployeePosition[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
-  const handleFetchDetails = async () => {
-    if (!employeeId.trim()) {
-      toast({
-        title: 'Employee ID required',
-        description: 'Please enter an employee ID.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  const fetchPositions = async (page: number) => {
     setIsLoading(true);
-    setDetails([]);
-    setSearched(true);
     try {
-      const result = await getEmployeePositionDetails({ employeeId });
-      if (result.success && result.details) {
-        setDetails(result.details);
-        toast({
-          title: 'Success',
-          description: `Found ${result.details.length} position records.`,
-        });
+      const result = await getAllEmployeePositions({ page });
+      if (result.success && result.data) {
+        setPositions(result.data);
+        setCurrentPage(result.currentPage ?? 1);
+        setHasNextPage(result.hasNextPage ?? false);
       } else {
         throw new Error(result.message);
       }
@@ -61,91 +43,93 @@ export default function EmployeePositionDetailsPage() {
     }
   };
 
+  useEffect(() => {
+    fetchPositions(1);
+  }, []);
+
   return (
-    <div className="w-full max-w-4xl mx-auto">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/settings/employee">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">Employee Position Details</h1>
+    <div className="w-full max-w-6xl mx-auto">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+            <Link href="/settings/employee">
+            <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+            </Button>
+            </Link>
+            <div>
+                <h1 className="text-2xl font-bold">All Employee Position Details</h1>
+                <p className="text-muted-foreground">Browse position details for all employees from GreytHR.</p>
+            </div>
+        </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Fetch Details</CardTitle>
-          <CardDescription>Enter an Employee ID to get their position details from GreytHR.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex w-full max-w-sm items-center space-x-2">
-            <div className="grid flex-1 gap-2">
-                <Label htmlFor="employeeId" className="sr-only">Employee ID</Label>
-                <Input 
-                    id="employeeId" 
-                    placeholder="Enter Employee ID" 
-                    value={employeeId}
-                    onChange={(e) => setEmployeeId(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleFetchDetails()}
-                />
-            </div>
-            <Button onClick={handleFetchDetails} disabled={isLoading}>
-                {isLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                    <Search className="mr-2 h-4 w-4" />
-                )}
-                Fetch
-            </Button>
-          </div>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee ID</TableHead>
+                <TableHead>Position Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 10 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                  </TableRow>
+                ))
+              ) : positions.length > 0 ? (
+                positions.map(pos => (
+                  <TableRow key={pos.employeeId}>
+                    <TableCell className="font-medium align-top">{pos.employeeId}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-2">
+                        {pos.categoryList.map(cat => (
+                            <div key={cat.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-2 rounded-md bg-muted/50">
+                                <Badge variant="secondary">ID: {cat.id}</Badge>
+                                <span className="text-sm">Category: <Badge>{cat.category}</Badge></span>
+                                <span className="text-sm">Value: <Badge>{cat.value}</Badge></span>
+                                <span className="text-sm">From: {cat.effectiveFrom}</span>
+                                <span className="text-sm">To: {cat.effectiveTo || 'N/A'}</span>
+                           </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={2} className="text-center h-24">
+                    No position details found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
-      
-      {searched && (
-         <Card className="mt-6">
-            <CardHeader>
-                <CardTitle>Results for Employee: {employeeId}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>ID</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Value</TableHead>
-                            <TableHead>Effective From</TableHead>
-                            <TableHead>Effective To</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading ? (
-                             <TableRow>
-                                <TableCell colSpan={5} className="h-24 text-center">
-                                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                                </TableCell>
-                            </TableRow>
-                        ) : details.length > 0 ? (
-                           details.map(detail => (
-                               <TableRow key={detail.id}>
-                                   <TableCell>{detail.id}</TableCell>
-                                   <TableCell>{detail.category}</TableCell>
-                                   <TableCell>{detail.value}</TableCell>
-                                   <TableCell>{detail.effectiveFrom}</TableCell>
-                                   <TableCell>{detail.effectiveTo || 'N/A'}</TableCell>
-                               </TableRow>
-                           ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={5} className="text-center h-24">
-                                    No position details found for this employee.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </CardContent>
-         </Card>
-      )}
+      <div className="flex items-center justify-end space-x-2 py-4">
+        <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchPositions(currentPage - 1)}
+            disabled={currentPage <= 1 || isLoading}
+        >
+            <ArrowLeftIcon className="mr-2 h-4 w-4" />
+            Previous
+        </Button>
+        <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchPositions(currentPage + 1)}
+            disabled={!hasNextPage || isLoading}
+        >
+            Next
+            <ArrowRight className="ml-2 h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }

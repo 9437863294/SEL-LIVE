@@ -2,6 +2,7 @@
 
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -120,4 +121,17 @@ export type WorkflowStep = {
   assignedTo: string[] | Record<string, string> | AmountBasedCondition[];
   actions: string[];
   upload: 'Required' | 'Not Required' | 'Optional';
+};
+
+export type PositionDetail = {
+    id: number;
+    category: number;
+    value: number;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+};
+
+export type EmployeePosition = {
+    employeeId: number;
+    categoryList: PositionDetail[];
 };
