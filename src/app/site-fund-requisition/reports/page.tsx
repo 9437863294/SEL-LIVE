@@ -27,7 +27,7 @@ const reportItems = [
   { 
     icon: PieChart, 
     title: 'Planned vs Actual', 
-    description: 'Compare planned requisition amounts against actual approved amounts.', 
+    description: 'Compare planned requisition amounts against actual approved amounts.',
     href: '#' 
   },
 ];
@@ -65,7 +65,7 @@ function ReportCard({ item }: ReportCardProps) {
 
 export default function ReportsPage() {
   return (
-    <div className="w-full max-w-6xl mx-auto pr-14">
+    <div className="w-full max-w-4xl mx-auto pr-4">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/site-fund-requisition">
           <Button variant="ghost" size="icon">
@@ -74,7 +74,7 @@ export default function ReportsPage() {
         </Link>
         <h1 className="text-2xl font-bold">Reports</h1>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {reportItems.map((item) => (
           <ReportCard key={item.title} item={item} />
         ))}
