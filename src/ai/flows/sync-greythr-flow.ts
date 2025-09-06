@@ -36,15 +36,20 @@ async function getGreytHRToken(): Promise<string> {
     if (!username || !password || !domain) {
         throw new Error("GreytHR credentials or domain not found in environment variables.");
     }
-
-    const encodedCredentials = Buffer.from(`${username}:${password}`).toString('base64');
-    const url = `https://${domain}/uas/v1/oauth2/client-token`;
+    
+    const url = `https://api.greythr.com/login`;
 
     const response = await fetch(url, {
         method: 'POST',
         headers: {
-            "Authorization": `Basic ${encodedCredentials}`
+            "Content-Type": "application/json",
+            "x-greythr-domain": domain,
         },
+        body: JSON.stringify({
+            username: username,
+            password: password,
+            domain: domain,
+        }),
     });
 
     if (!response.ok) {
@@ -59,6 +64,7 @@ async function getGreytHRToken(): Promise<string> {
         throw new Error("Access Token not found in GreytHR response.");
     }
 }
+
 
 // Fetches the mapping of category IDs to human-readable names
 async function fetchCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
