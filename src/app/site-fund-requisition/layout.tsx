@@ -30,7 +30,7 @@ export default function SiteFundRequisitionLayout({
       >
         <TooltipProvider delayDuration={0}>
           <div className="flex-1 p-2">
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col items-center gap-1">
               {navItems.map(item => (
                 <Tooltip key={item.label}>
                     <TooltipTrigger asChild>
@@ -39,11 +39,13 @@ export default function SiteFundRequisitionLayout({
                             variant="ghost"
                             className={cn(
                                 "w-full justify-start",
-                                isExpanded ? "px-3" : "h-10 w-10 p-0 justify-center"
+                                !isExpanded && "h-10 w-10 p-0"
                             )}
                          >
-                            <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
-                            <span className={cn(!isExpanded && "sr-only")}>{item.label}</span>
+                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
+                                <span className={cn(!isExpanded && "sr-only")}>{item.label}</span>
+                            </div>
                          </Button>
                        </Link>
                     </TooltipTrigger>
@@ -63,7 +65,7 @@ export default function SiteFundRequisitionLayout({
                 variant="ghost"
                 className={cn(
                     "w-full justify-start",
-                    isExpanded ? "px-3" : "h-10 w-10 p-0 justify-center"
+                    !isExpanded && "h-10 w-10 p-0 justify-center"
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
@@ -80,9 +82,9 @@ export default function SiteFundRequisitionLayout({
         </div>
 
       </aside>
-      <div className={cn("flex-1 transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
+      <main className={cn("flex-1 transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
         {children}
-      </div>
+      </main>
     </div>
   );
 }
