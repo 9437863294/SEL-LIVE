@@ -1,8 +1,9 @@
 
 'use client';
 
+import { useState, useEffect } from 'next';
 import Link from 'next/link';
-import { ArrowLeft, Home } from 'lucide-react';
+import { ArrowLeft, Home, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -26,14 +27,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-const summaryStats = [
-  { title: 'Total Requisitions', value: '3' },
-  { title: 'Total Amount', value: '₹14,69,300' },
-  { title: 'Cancelled', value: '0' },
-  { title: 'Balance', value: '₹10,04,654' },
-  { title: 'Approved', value: '₹4,64,646' },
-];
+import { db } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import type { Requisition } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const stepWiseData = [
   {
@@ -50,7 +47,52 @@ const stepWiseData = [
   },
 ];
 
+interface SummaryStats {
+    totalRequisitions: number;
+    totalAmount: number;
+    cancelled: number;
+    approved: number;
+    balance: number;
+}
+
 export default function SiteFundSummaryPage() {
+  const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSummaryData = async () => {
+        setIsLoading(true);
+        try {
+            const querySnapshot = await getDocs(collection(db, 'requisitions'));
+            const requisitions = querySnapshot.docs.map(doc => doc.data() as Requisition);
+            
+            const totalRequisitions = requisitions.length;
+            const totalAmount = requisitions.reduce((sum, req) => sum + req.amount, 0);
+            const cancelled = requisitions.filter(req => req.status === 'Rejected').length;
+            const approved = requisitions
+                .filter(req => req.status === 'Completed' || req.status === 'Approved')
+                .reduce((sum, req) => sum + req.amount, 0);
+            const balance = totalAmount - approved;
+            
+            setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
+        } catch (error) {
+            console.error("Error fetching summary data: ", error);
+            // Handle error, e.g., show a toast notification
+        }
+        setIsLoading(false);
+    };
+    
+    fetchSummaryData();
+  }, []);
+
+  const statsToDisplay = [
+      { title: 'Total Requisitions', value: summaryStats?.totalRequisitions.toLocaleString() },
+      { title: 'Total Amount', value: `₹${summaryStats?.totalAmount.toLocaleString()}` },
+      { title: 'Cancelled', value: summaryStats?.cancelled.toLocaleString() },
+      { title: 'Balance', value: `₹${summaryStats?.balance.toLocaleString()}` },
+      { title: 'Approved', value: `₹${summaryStats?.approved.toLocaleString()}` },
+  ];
+
   return (
     <div className="flex flex-col w-full pr-14">
       <div className="mb-6 flex items-center justify-between">
@@ -121,18 +163,31 @@ export default function SiteFundSummaryPage() {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
-        {summaryStats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="p-4">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              <p className="text-2xl font-bold">{stat.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {isLoading ? (
+            Array.from({ length: 5 }).map((_, index) => (
+                <Card key={index}>
+                    <CardHeader className="p-4">
+                        <Skeleton className="h-4 w-3/4" />
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                        <Skeleton className="h-8 w-1/2" />
+                    </CardContent>
+                </Card>
+            ))
+        ) : (
+            statsToDisplay.map((stat) => (
+              <Card key={stat.title}>
+                <CardHeader className="p-4">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {stat.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                </CardContent>
+              </Card>
+            ))
+        )}
       </div>
 
       <div className="mb-6">
