@@ -4,10 +4,12 @@ import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from '@/lib/utils';
-import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
-import { Loader2 } from 'lucide-react';
+import { AuthProvider } from '@/components/auth/AuthProvider';
 import React from 'react';
 import Header from '@/components/Header';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { Loader2 } from 'lucide-react';
+
 
 export const metadata: Metadata = {
   title: 'Module Hub',
@@ -16,27 +18,25 @@ export const metadata: Metadata = {
 
 function AppBody({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
-    const themeColor = user?.theme?.color || 'blue';
+    const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
 
     if (loading) {
         return (
-            <body className='font-body antialiased'>
-                <div className="flex min-h-screen items-center justify-center bg-background">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                </div>
-            </body>
+            <div className="flex min-h-screen items-center justify-center bg-background">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
         )
     }
 
     return (
-        <body className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
+        <div className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
             <div className="relative flex min-h-screen flex-col bg-background">
                 <Header />
                 <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
             </div>
             <Toaster />
-        </body>
+        </div>
     )
 }
 
@@ -52,11 +52,13 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
       </head>
-      <AuthProvider>
-        <ModuleProvider>
-            <AppBody>{children}</AppBody>
-        </ModuleProvider>
-      </AuthProvider>
+      <body>
+        <AuthProvider>
+          <ModuleProvider>
+              <AppBody>{children}</AppBody>
+          </ModuleProvider>
+        </AuthProvider>
+      </body>
     </html>
   );
 }

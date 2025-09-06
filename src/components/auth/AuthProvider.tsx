@@ -82,11 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
 
   const isPublicRoute = publicRoutes.includes(pathname);
-  const isRedirecting = (!user && !isPublicRoute) || (user && isPublicRoute);
+  const showLoader = loading && !isPublicRoute
+  const showChildren = !loading && ((user && !isPublicRoute) || (!user && isPublicRoute));
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUserData }}>
-      {isRedirecting ? null : children}
+        {showLoader ? (
+            <div className="flex min-h-screen items-center justify-center bg-background">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
+        ) : showChildren ? (
+            children
+        ) : null}
     </AuthContext.Provider>
   )
 }
