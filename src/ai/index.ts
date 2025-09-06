@@ -9,3 +9,6 @@ export type { SyncGreytHROutput, SyncGreytHRInput } from './flows/sync-greythr-f
 
 export { syncGreytHRCategories } from './flows/sync-categories-flow';
 export type { SyncCategoriesOutput } from './flows/sync-categories-flow';
+
+export { getEmployeePositionDetails } from './flows/get-employee-position-details-flow';
+export type { GetEmployeePositionDetailsInput, GetEmployeePositionDetailsOutput } from './flows/get-employee-position-details-flow';

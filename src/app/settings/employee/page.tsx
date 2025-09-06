@@ -61,7 +61,7 @@ const employeeSettingsItemsBase = [
     icon: Briefcase,
     text: 'Employee Position Details',
     description: 'Get position details for an employee.',
-    href: '#'
+    href: '/settings/employee/position-details'
   },
   { 
     icon: FileText, 
