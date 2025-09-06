@@ -152,7 +152,7 @@ const syncGreytHRFlow = ai.defineFlow(
   async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
-    const pageSize = 100;
+    const pageSize = 25;
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
