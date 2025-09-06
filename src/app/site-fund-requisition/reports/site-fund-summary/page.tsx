@@ -31,7 +31,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getAssigneeForStep } from '@/lib/workflow-utils';
+import { calculateDeadline, getAssigneeForStep } from '@/lib/workflow-utils';
 
 
 interface SummaryStats {
@@ -47,7 +47,7 @@ interface StepWiseReportData {
         [userName: string]: {
             total: number;
             completed: number;
-            onTime: number; // Placeholder for future logic
+            onTime: number; 
             rejected: number;
         }
     }
@@ -145,6 +145,8 @@ export default function SiteFundSummaryPage() {
 
     const report: StepWiseReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
+    const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
+
 
     // Initialize report structure
     workflow.steps.forEach(step => {
@@ -159,45 +161,75 @@ export default function SiteFundSummaryPage() {
             report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
         }
     };
+    
+    const isCompletionAction = (action: string) => ['approve', 'complete', 'verified', 'update approved amount'].includes(action.toLowerCase());
 
     filteredRequisitions.forEach(req => {
         const history: ActionLog[] = req.history || [];
-        const processedSteps = new Set<string>(); // Tracks steps already counted for total for this req
+        const processedStepsForTotal = new Set<string>();
 
-        // Process history for completions and rejections first
-        history.forEach(log => {
-            const userName = userMap.get(log.userId) || log.userName || 'Unknown User';
-            initializeUserInStep(log.stepName, userName);
+        // Pass 1: Determine who was assigned what and when
+        const stepAssignments: Record<string, { userId: string, timestamp: Date }> = {};
+        let previousStepCompletionTime = req.createdAt.toDate();
 
-            if (log.action.toLowerCase() === 'reject') {
-                report[log.stepName][userName].rejected++;
-                report[log.stepName][userName].completed++;
-            } else if (['approve', 'complete', 'verified', 'update approved amount'].includes(log.action.toLowerCase())) {
-                 report[log.stepName][userName].completed++;
-            }
-        });
-
-        // Determine total counts based on assignment history and current state
         workflow.steps.forEach((step, index) => {
-            const stepWasReached = history.some(h => h.stepName === step.name) || (req.currentStepId === step.id);
-            if (stepWasReached) {
-                const historyForStep = history.filter(h => h.stepName === step.name);
-                let assigneeId = null;
-
-                if (historyForStep.length > 0) {
-                     // The user who last acted on this step is considered the assignee for historical records
-                    assigneeId = historyForStep[historyForStep.length - 1].userId;
-                } else if (req.currentStepId === step.id) {
-                    assigneeId = req.assignedToId;
-                }
-                
+             const stepReached = history.some(h => h.stepName === step.name) || req.currentStepId === step.id;
+             if (stepReached) {
+                const assigneeId = req.history.find(h => h.stepName === step.name)?.userId || req.assignedToId;
                 if(assigneeId) {
-                    const userName = userMap.get(assigneeId) || 'Unknown User';
-                    initializeUserInStep(step.name, userName);
-                    if (!processedSteps.has(step.name)) {
-                        report[step.name][userName].total++;
-                        processedSteps.add(step.name);
+                   stepAssignments[step.name] = { userId: assigneeId, timestamp: previousStepCompletionTime };
+                   const completionLog = history.find(h => h.stepName === step.name && isCompletionAction(h.action));
+                   if(completionLog) {
+                       previousStepCompletionTime = completionLog.timestamp.toDate();
+                   }
+                }
+             }
+        });
+        
+         // Add current assignment if not completed
+        if (req.currentStepId && req.status !== 'Completed' && req.status !== 'Rejected') {
+            const currentStep = workflow.steps.find(s => s.id === req.currentStepId);
+            if(currentStep && req.assignedToId) {
+                 stepAssignments[currentStep.name] = { userId: req.assignedToId, timestamp: previousStepCompletionTime };
+            }
+        }
+        
+        // Pass 2: Calculate stats based on assignments and history
+        Object.keys(stepAssignments).forEach(stepName => {
+            const { userId } = stepAssignments[stepName];
+            const userName = userMap.get(userId) || 'Unknown User';
+            
+            initializeUserInStep(stepName, userName);
+            
+            // Increment total for the user assigned to this step
+            if(!processedStepsForTotal.has(stepName)){
+                report[stepName][userName].total++;
+                processedStepsForTotal.add(stepName);
+            }
+            
+            const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
+            const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
+
+            if (completionLog) {
+                report[stepName][userName].completed++;
+                
+                const stepConfig = stepMap.get(stepName);
+                if (stepConfig) {
+                    const stepStartTime = stepAssignments[stepName].timestamp;
+                    const deadline = new Date(stepStartTime.getTime() + stepConfig.tat * 60 * 60 * 1000);
+                    const completionTime = completionLog.timestamp.toDate();
+                    
+                    if(completionTime <= deadline) {
+                        report[stepName][userName].onTime++;
                     }
+                }
+            }
+            
+            if (rejectionLog) {
+                report[stepName][userName].rejected++;
+                 // In some workflows, a rejection might also count as "completed" from the user's queue.
+                if(!completionLog) {
+                   report[stepName][userName].completed++;
                 }
             }
         });
