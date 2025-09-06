@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUserData }}>
-      {loading || isRedirecting ? null : children}
+      {isRedirecting ? null : children}
     </AuthContext.Provider>
   )
 }

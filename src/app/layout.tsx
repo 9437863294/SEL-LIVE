@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { cn } from '@/lib/utils';
 import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
-import React, { Suspense } from 'react';
+import React from 'react';
 import Header from '@/components/Header';
 
 export const metadata: Metadata = {
@@ -14,10 +14,20 @@ export const metadata: Metadata = {
   description: 'Create and organize your modules.',
 };
 
-function ThemedBody({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
+function AppBody({ children }: { children: React.ReactNode }) {
+    const { user, loading } = useAuth();
     const themeColor = user?.theme?.color || 'blue';
     const themeFont = user?.theme?.font || 'inter';
+
+    if (loading) {
+        return (
+            <body className='font-body antialiased'>
+                <div className="flex min-h-screen items-center justify-center bg-background">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                </div>
+            </body>
+        )
+    }
 
     return (
         <body className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
@@ -27,18 +37,6 @@ function ThemedBody({ children }: { children: React.ReactNode }) {
             </div>
             <Toaster />
         </body>
-    )
-}
-
-function RootLayoutComponent({ children }: { children: React.ReactNode }) {
-    return (
-        <AuthProvider>
-            <ModuleProvider>
-                <ThemedBody>
-                    {children}
-                </ThemedBody>
-            </ModuleProvider>
-        </AuthProvider>
     )
 }
 
@@ -54,15 +52,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
       </head>
-      <Suspense fallback={
-          <body className='font-body antialiased'>
-              <div className="flex min-h-screen items-center justify-center bg-background">
-                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
-              </div>
-          </body>
-      }>
-        <RootLayoutComponent>{children}</RootLayoutComponent>
-      </Suspense>
+      <AuthProvider>
+        <ModuleProvider>
+            <AppBody>{children}</AppBody>
+        </ModuleProvider>
+      </AuthProvider>
     </html>
   );
 }
