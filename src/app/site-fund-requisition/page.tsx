@@ -14,7 +14,7 @@ const stats = [
 
 export default function SiteFundRequisitionPage() {
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full pr-14">
       <Tabs defaultValue="all-requisitions">
         <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
             <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>

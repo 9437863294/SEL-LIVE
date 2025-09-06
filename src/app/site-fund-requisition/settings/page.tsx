@@ -65,7 +65,7 @@ function SettingsCard({ item }: SettingsCardProps) {
 
 export default function SiteFundRequisitionSettingsPage() {
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full max-w-6xl mx-auto pr-14">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/site-fund-requisition">
           <Button variant="ghost" size="icon">

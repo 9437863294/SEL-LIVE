@@ -210,7 +210,7 @@ export default function WorkflowConfigurationPage() {
     };
 
     return (
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full max-w-4xl mx-auto pr-14">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/site-fund-requisition/settings">

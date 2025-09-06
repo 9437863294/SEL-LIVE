@@ -132,34 +132,6 @@ export default function Header() {
                 <p>Notifications</p>
               </TooltipContent>
             </Tooltip>
-            
-            <Tooltip>
-              <TooltipTrigger asChild>
-                 <Link href="#">
-                    <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
-                      <FileText className="h-5 w-5" />
-                      <span className="sr-only">Reports</span>
-                    </Button>
-                  </Link>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Reports</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                 <Link href="/site-fund-requisition/settings">
-                    <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", { 'hidden': pageTitle !== 'Site Fund Requisition' })}>
-                      <Settings className="h-5 w-5" />
-                      <span className="sr-only">Site Fund Requisition Settings</span>
-                    </Button>
-                  </Link>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Site Fund Requisition Settings</p>
-              </TooltipContent>
-            </Tooltip>
 
           </TooltipProvider>
         </div>
