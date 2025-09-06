@@ -65,7 +65,7 @@ function ReportCard({ item }: ReportCardProps) {
 
 export default function ReportsPage() {
   return (
-    <div className="w-full max-w-4xl pr-4">
+    <div className="w-full max-w-lg pr-4">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/site-fund-requisition">
           <Button variant="ghost" size="icon">
