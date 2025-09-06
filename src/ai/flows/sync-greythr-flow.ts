@@ -20,16 +20,13 @@ const EmployeeDataSchema = z.object({
     status: z.string(),
 });
 
-const SyncGreytHRInputSchema = z.object({
-  page: z.number().optional().default(1),
-});
+const SyncGreytHRInputSchema = z.object({});
 export type SyncGreytHRInput = z.infer<typeof SyncGreytHRInputSchema>;
 
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
   employees: z.array(EmployeeDataSchema).optional(),
-  hasNextPage: z.boolean().optional(),
 });
 
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
@@ -65,6 +62,64 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
+async function fetchAllPages(url: string, token: string, domain: string) {
+    let page = 1;
+    const size = 100;
+    let allData: any[] = [];
+  
+    while (true) {
+        const paginatedUrl = `${url}?page=${page}&size=${size}&state=CURRENT`;
+        const response = await fetch(paginatedUrl, {
+            method: 'GET',
+            headers: {
+                "ACCESS-TOKEN": token,
+                "x-greythr-domain": domain,
+            },
+        });
+  
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch data from ${url}: ${response.statusText} - ${errorText}`);
+        }
+  
+        const json = await response.json();
+        const data = json.data || [];
+        
+        if (data.length > 0) {
+            allData = allData.concat(data);
+            page++;
+        } else {
+            break;
+        }
+    }
+    return allData;
+}
+
+
+async function fetchCategoryMappings(token: string, domain: string): Promise<Map<string, { department: string; designation: string }>> {
+    const categoriesUrl = "https://api.greythr.com/employee/v2/employees/categories";
+    const allCategories = await fetchAllPages(categoriesUrl, token, domain);
+
+    const categoryMappings = new Map<string, { department: string; designation: string }>();
+
+    allCategories.forEach((emp: any) => {
+        let department = 'N/A';
+        let designation = 'N/A';
+        if (emp.categoryList) {
+            for (const category of emp.categoryList) {
+                if (category.category === 'Department') {
+                    department = category.value;
+                }
+                if (category.category === 'Designation') {
+                    designation = category.value;
+                }
+            }
+        }
+        categoryMappings.set(emp.employeeId, { department, designation });
+    });
+    return categoryMappings;
+}
+
 
 const syncGreytHRFlow = ai.defineFlow(
   {
@@ -72,42 +127,28 @@ const syncGreytHRFlow = ai.defineFlow(
     inputSchema: SyncGreytHRInputSchema,
     outputSchema: SyncGreytHROutputSchema,
   },
-  async ({ page = 1 }) => {
+  async () => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
     
-    const baseUrl = "https://api.greythr.com/employee/v2/employees";
-    const size = 100;
-
-    const url = `${baseUrl}?page=${page}&size=${size}&state=CURRENT`;
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            "ACCESS-TOKEN": token,
-            "x-greythr-domain": domain,
-        },
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch employees: ${response.statusText} - ${errorText}`);
-    }
-
-    const json = await response.json();
-    const allData = json.data || [];
+    const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
-    const hasNextPage = allData.length === size;
+    const [allEmployeeData, categoryMappings] = await Promise.all([
+      fetchAllPages(employeesUrl, token, domain),
+      fetchCategoryMappings(token, domain),
+    ]);
 
-    const filteredData = allData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
+    const filteredData = allEmployeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
     const employeesToReturn = filteredData.map((empData: any) => {
+        const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
         return {
             employeeId: empData.employeeNo,
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',
-            department: 'N/A', // Temporarily removed
-            designation: 'N/A', // Temporarily removed
+            department: cats.department,
+            designation: cats.designation,
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
         };
     });
@@ -117,9 +158,8 @@ const syncGreytHRFlow = ai.defineFlow(
 
     return { 
         success: true, 
-        message: `Successfully fetched page ${page} with ${employeesToReturn.length} employees.`,
+        message: `Successfully fetched ${employeesToReturn.length} employees.`,
         employees: employeesToReturn,
-        hasNextPage: hasNextPage
     };
   }
 );

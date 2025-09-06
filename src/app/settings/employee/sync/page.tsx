@@ -3,14 +3,14 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, doc, getDocs, query, where, setDoc } from 'firebase/firestore';
+import { collection, writeBatch, doc, getDocs, query, where } from 'firebase/firestore';
 import { syncGreytHR } from '@/ai';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
@@ -33,19 +33,15 @@ export default function SyncEmployeePage() {
   const [fetchedEmployees, setFetchedEmployees] = useState<FetchedEmployee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [importProgress, setImportProgress] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
 
-  const handleFetch = async (page: number) => {
+  const handleFetch = async () => {
     setIsFetching(true);
     setFetchedEmployees([]);
     setSelectedEmployeeIds([]);
     try {
-      const result = await syncGreytHR({ page });
+      const result = await syncGreytHR({});
       if (result.success && result.employees) {
         setFetchedEmployees(result.employees);
-        setHasNextPage(result.hasNextPage || false);
-        setCurrentPage(page);
         setStep('fetched');
         toast({
           title: 'Fetch Successful',
@@ -151,7 +147,7 @@ export default function SyncEmployeePage() {
                 <CardDescription>Fetch the latest employee data from GreytHR to preview before importing.</CardDescription>
             </CardHeader>
             <CardContent>
-                <Button onClick={() => handleFetch(1)} disabled={isFetching} size="lg">
+                <Button onClick={handleFetch} disabled={isFetching} size="lg">
                     {isFetching ? (
                         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     ) : (
@@ -171,22 +167,13 @@ export default function SyncEmployeePage() {
                         <CardTitle>Review & Select Employees</CardTitle>
                         <CardDescription>{fetchedEmployees.length} employees fetched. Select who to import.</CardDescription>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button onClick={() => handleFetch(currentPage - 1)} disabled={currentPage <= 1 || isFetching}>
-                            <ChevronLeft className="h-4 w-4" /> Previous
-                        </Button>
-                        <span className="text-sm font-medium">Page {currentPage}</span>
-                        <Button onClick={() => handleFetch(currentPage + 1)} disabled={!hasNextPage || isFetching}>
-                            Next <ChevronRight className="h-4 w-4" />
-                        </Button>
-                        <Button onClick={handleImport} disabled={employeesToImport.length === 0}>
-                            Import ({employeesToImport.length}) Selected
-                        </Button>
-                    </div>
+                    <Button onClick={handleImport} disabled={employeesToImport.length === 0}>
+                        Import ({employeesToImport.length}) Selected
+                    </Button>
                 </div>
             </CardHeader>
             <CardContent>
-                 <div className="border rounded-lg overflow-hidden">
+                 <div className="border rounded-lg overflow-hidden max-h-[60vh] overflow-y-auto">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -199,8 +186,8 @@ export default function SyncEmployeePage() {
                                 </TableHead>
                                 <TableHead>Employee ID</TableHead>
                                 <TableHead>Name</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Phone</TableHead>
+                                <TableHead>Department</TableHead>
+                                <TableHead>Designation</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -221,8 +208,8 @@ export default function SyncEmployeePage() {
                                         </TableCell>
                                         <TableCell>{emp.employeeId}</TableCell>
                                         <TableCell>{emp.name}</TableCell>
-                                        <TableCell>{emp.email}</TableCell>
-                                        <TableCell>{emp.phone}</TableCell>
+                                        <TableCell>{emp.department}</TableCell>
+                                        <TableCell>{emp.designation}</TableCell>
                                     </TableRow>
                                 ))
                              ) : (
