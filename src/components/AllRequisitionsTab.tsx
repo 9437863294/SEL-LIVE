@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2 } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -76,6 +76,7 @@ export default function AllRequisitionsTab() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
@@ -194,7 +195,7 @@ export default function AllRequisitionsTab() {
         toast({ title: 'Error', description: 'You must be logged in to create a request.', variant: 'destructive' });
         return;
     }
-
+    setIsSubmitting(true);
     try {
         const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
         const workflowSnap = await getDoc(workflowRef);
@@ -261,6 +262,8 @@ export default function AllRequisitionsTab() {
     } catch (error: any) {
         console.error('Error creating requisition:', error);
         toast({ title: 'Error', description: error.message || 'Failed to create requisition.', variant: 'destructive' });
+    } finally {
+        setIsSubmitting(false);
     }
   }
 
@@ -421,7 +424,10 @@ export default function AllRequisitionsTab() {
                 <DialogClose asChild>
                     <Button type="button" variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button type="submit">Create Request</Button>
+                <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Create Request
+                </Button>
             </DialogFooter>
         </form>
     </Form>
@@ -676,3 +682,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
