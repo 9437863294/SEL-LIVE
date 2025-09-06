@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getAssigneeForStep } from '@/lib/workflow-utils';
@@ -73,11 +73,11 @@ export default function SiteFundSummaryPage() {
     const fetchSummaryData = async () => {
         setIsLoading(true);
         try {
-            const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowSnapshot] = await Promise.all([
+            const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
                 getDocs(collection(db, 'requisitions')),
                 getDocs(collection(db, 'projects')),
                 getDocs(collection(db, 'users')),
-                getDocs(collection(db, 'workflows'))
+                getDoc(doc(db, 'workflows', 'site-fund-requisition'))
             ]);
             
             const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
@@ -87,9 +87,8 @@ export default function SiteFundSummaryPage() {
             setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
             setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
             
-            const sfrWorkflow = workflowSnapshot.docs.find(doc => doc.id === 'site-fund-requisition')?.data();
-            if(sfrWorkflow) {
-              setWorkflow(sfrWorkflow as { steps: WorkflowStep[] });
+            if(workflowDoc.exists()) {
+              setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
             }
 
         } catch (error) {
@@ -146,59 +145,63 @@ export default function SiteFundSummaryPage() {
 
     const report: StepWiseReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
-    const allUserNames = users.map(u => u.name);
 
-    // Initialize report structure for all possible users and steps
+    // Initialize report structure
     workflow.steps.forEach(step => {
         report[step.name] = {};
-        allUserNames.forEach(userName => {
-            report[step.name][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
-        });
     });
 
-    const processRequisition = async (req: Requisition) => {
-        const history: ActionLog[] = req.history || [];
-        
-        // Determine all assignees for all steps for this requisition
-        for (const step of workflow.steps) {
-            try {
-                const assigneeId = await getAssigneeForStep(step, req);
-                if (assigneeId) {
-                    const userName = userMap.get(assigneeId);
-                    if (userName && report[step.name]) {
-                        // Increment total count for the assigned user at this step
-                        report[step.name][userName].total++;
-                    }
-                }
-            } catch (error) {
-                console.warn(`Could not determine assignee for req ${req.requisitionId} at step ${step.name}:`, error);
-            }
+    const initializeUserInStep = (stepName: string, userName: string) => {
+        if (!report[stepName]) {
+            report[stepName] = {};
         }
+        if (!report[stepName][userName]) {
+            report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+        }
+    };
 
-        // Process history for completed and rejected counts
-        history.forEach(h => {
-            const stepName = h.stepName;
-            const userName = h.userName || userMap.get(h.userId) || 'Unknown User';
+    filteredRequisitions.forEach(req => {
+        const history: ActionLog[] = req.history || [];
+        const processedSteps = new Set<string>(); // Tracks steps already counted for total for this req
 
-            if (report[stepName] && report[stepName][userName]) {
-                const action = h.action.toLowerCase();
-                const completionActions = ['approve', 'complete', 'verified', 'update approved amount', 'reject'];
+        // Process history for completions and rejections first
+        history.forEach(log => {
+            const userName = userMap.get(log.userId) || log.userName || 'Unknown User';
+            initializeUserInStep(log.stepName, userName);
 
-                if (completionActions.includes(action)) {
-                    report[stepName][userName].completed++;
-                    if (action === 'reject') {
-                        report[stepName][userName].rejected++;
+            if (log.action.toLowerCase() === 'reject') {
+                report[log.stepName][userName].rejected++;
+                report[log.stepName][userName].completed++;
+            } else if (['approve', 'complete', 'verified', 'update approved amount'].includes(log.action.toLowerCase())) {
+                 report[log.stepName][userName].completed++;
+            }
+        });
+
+        // Determine total counts based on assignment history and current state
+        workflow.steps.forEach((step, index) => {
+            const stepWasReached = history.some(h => h.stepName === step.name) || (req.currentStepId === step.id);
+            if (stepWasReached) {
+                const historyForStep = history.filter(h => h.stepName === step.name);
+                let assigneeId = null;
+
+                if (historyForStep.length > 0) {
+                     // The user who last acted on this step is considered the assignee for historical records
+                    assigneeId = historyForStep[historyForStep.length - 1].userId;
+                } else if (req.currentStepId === step.id) {
+                    assigneeId = req.assignedToId;
+                }
+                
+                if(assigneeId) {
+                    const userName = userMap.get(assigneeId) || 'Unknown User';
+                    initializeUserInStep(step.name, userName);
+                    if (!processedSteps.has(step.name)) {
+                        report[step.name][userName].total++;
+                        processedSteps.add(step.name);
                     }
                 }
             }
         });
-    };
-
-    // Note: Since getAssigneeForStep can be async, this memo will not work as expected
-    // if getAssigneeForStep actually performs async operations.
-    // This is a simplification assuming getAssigneeForStep is effectively synchronous for this context.
-    // For a truly async operation, the report generation would need to be moved to a useEffect hook.
-    filteredRequisitions.forEach(processRequisition);
+    });
 
     return report;
 }, [filteredRequisitions, workflow, users]);
@@ -347,7 +350,7 @@ export default function SiteFundSummaryPage() {
         ) : (
           workflow?.steps.map((step) => {
               const stepData = stepWiseReport[step.name];
-              if (!stepData || Object.keys(stepData).length === 0) {
+              if (!stepData || Object.keys(stepData).every(userName => stepData[userName].total === 0)) {
                 return null; 
               }
               return (
