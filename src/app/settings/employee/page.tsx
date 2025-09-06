@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   RefreshCw,
   Loader2,
+  Tags,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -47,6 +48,12 @@ const employeeSettingsItemsBase = [
     text: 'Sync with GreytHR',
     description: 'Sync employee data from GreytHR.',
     href: '#' 
+  },
+  { 
+    icon: Tags, 
+    text: 'Manage Category', 
+    description: 'View synced departments and designations.',
+    href: '/settings/employee/category' 
   },
   { 
     icon: FileText, 
@@ -172,3 +179,5 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
+
+    

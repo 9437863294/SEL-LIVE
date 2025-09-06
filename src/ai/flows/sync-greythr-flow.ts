@@ -50,9 +50,10 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-// Fetches the mapping of category IDs to human-readable names
-async function fetchCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
+// Fetches the mapping of category IDs to human-readable names and stores them
+async function fetchAndStoreCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
     const url = `https://api.greythr.com/hr/v2/lov`;
+    const categoryTypes = ["cat::Department", "cat::Designation"];
     const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -60,7 +61,7 @@ async function fetchCategoryMappings(token: string, domain: string): Promise<{ d
             "x-greythr-domain": domain,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify(["cat::Department", "cat::Designation"]),
+        body: JSON.stringify(categoryTypes),
     });
 
     if (!response.ok) {
@@ -69,20 +70,28 @@ async function fetchCategoryMappings(token: string, domain: string): Promise<{ d
     }
 
     const json = await response.json();
+    const batch = writeBatch(db);
+    const categoriesRef = collection(db, 'categories');
+    
     const departments = new Map<number, string>();
     const designations = new Map<number, string>();
 
     if (json['cat::Department']) {
         json['cat::Department'].forEach((dept: [number, string, any]) => {
             departments.set(dept[0], dept[1]);
+            const docRef = doc(categoriesRef, `department_${dept[0]}`);
+            batch.set(docRef, { id: dept[0], name: dept[1], type: 'Department' });
         });
     }
     if (json['cat::Designation']) {
         json['cat::Designation'].forEach((desg: [number, string, any]) => {
             designations.set(desg[0], desg[1]);
+            const docRef = doc(categoriesRef, `designation_${desg[0]}`);
+            batch.set(docRef, { id: desg[0], name: desg[1], type: 'Designation' });
         });
     }
     
+    await batch.commit();
     return { departments, designations };
 }
 
@@ -146,7 +155,7 @@ const syncGreytHRFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
-    const { departments: departmentMap, designations: designationMap } = await fetchCategoryMappings(token, domain);
+    const { departments: departmentMap, designations: designationMap } = await fetchAndStoreCategoryMappings(token, domain);
 
     const employeeCategories = await fetchEmployeeCategories(token, domain);
     
@@ -232,3 +241,5 @@ const syncGreytHRFlow = ai.defineFlow(
 export async function syncGreytHR(): Promise<SyncGreytHROutput> {
   return syncGreytHRFlow();
 }
+
+    
