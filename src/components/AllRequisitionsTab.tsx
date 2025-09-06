@@ -85,7 +85,7 @@ export default function AllRequisitionsTab() {
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [showMyRequests, setShowMyRequests] = useState(false);
+  const [showMyRequests, setShowMyRequests] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   
   const form = useForm<z.infer<typeof formSchema>>({
