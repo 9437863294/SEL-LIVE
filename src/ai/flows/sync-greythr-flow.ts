@@ -37,14 +37,13 @@ export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
 async function getGreytHRToken(): Promise<string> {
     const username = process.env.GREYTHR_USERNAME;
     const password = process.env.GREYTHR_PASSWORD;
-    const domain = process.env.GREYTHR_DOMAIN;
 
-    if (!username || !password || !domain) {
-        throw new Error("GreytHR credentials or domain not found in environment variables.");
+    if (!username || !password) {
+        throw new Error("GreytHR credentials not found in environment variables.");
     }
     
     const encodedCredentials = Buffer.from(`${username}:${password}`).toString('base64');
-    const url = `https://${domain}/uas/v1/oauth2/client-token`;
+    const url = "https://siddhartha.greythr.com/uas/v1/oauth2/client-token";
 
     const response = await fetch(url, {
         method: 'POST',
@@ -75,7 +74,7 @@ const syncGreytHRFlow = ai.defineFlow(
   },
   async ({ page = 1 }) => {
     const token = await getGreytHRToken();
-    const domain = process.env.GREYTHR_DOMAIN!;
+    const domain = "siddhartha.greythr.com";
     
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
     const size = 100;
