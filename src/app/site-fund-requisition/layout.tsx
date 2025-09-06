@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 
 const navItems = [
-    { href: '#', icon: FileText, label: 'Reports' },
+    { href: '/site-fund-requisition/reports', icon: FileText, label: 'Reports' },
     { href: '/site-fund-requisition/settings', icon: Settings, label: 'Settings' }
 ];
 
