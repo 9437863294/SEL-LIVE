@@ -12,6 +12,7 @@ import {
   Loader2,
   Tags,
   DownloadCloud,
+  Briefcase,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -55,6 +56,12 @@ const employeeSettingsItemsBase = [
     text: 'Manage Category', 
     description: 'View synced departments and designations.',
     href: '/settings/employee/category' 
+  },
+  { 
+    icon: Briefcase,
+    text: 'Employee Position Details',
+    description: 'Get position details for an employee.',
+    href: '#'
   },
   { 
     icon: FileText, 
