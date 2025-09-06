@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 const PositionDetailSchema = z.object({
     id: z.number(),
-    category: z.number(),
+    category: z.string(), // Changed to string to hold the name
     value: z.number(),
     effectiveFrom: z.string(),
     effectiveTo: z.string().nullable(),
@@ -67,6 +67,31 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
+async function fetchAllCategories(token: string, domain: string): Promise<Map<number, string>> {
+    const url = "https://api.greythr.com/hr/v2/categories";
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            "ACCESS-TOKEN": token,
+            "x-greythr-domain": domain,
+        },
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch all categories: ${response.statusText} - ${errorText}`);
+    }
+
+    const categoriesData = await response.json();
+    const categoryMap = new Map<number, string>();
+    if (categoriesData && Array.isArray(categoriesData)) {
+        categoriesData.forEach(category => {
+            categoryMap.set(category.id, category.name);
+        });
+    }
+    return categoryMap;
+}
+
 
 const getAllEmployeePositionsFlow = ai.defineFlow(
   {
@@ -80,28 +105,40 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
     const pageSize = 25;
     
     const url = `https://api.greythr.com/employee/v2/employees/categories?page=${page}&size=${pageSize}`;
+    
+    const [positionsResponse, categoryMap] = await Promise.all([
+      fetch(url, {
+          method: 'GET',
+          headers: {
+              "ACCESS-TOKEN": token,
+              "x-greythr-domain": domain,
+          },
+      }),
+      fetchAllCategories(token, domain)
+    ]);
 
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            "ACCESS-TOKEN": token,
-            "x-greythr-domain": domain,
-        },
-    });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch position details: ${response.statusText} - ${errorText}`);
+    if (!positionsResponse.ok) {
+        const errorText = await positionsResponse.text();
+        throw new Error(`Failed to fetch position details: ${positionsResponse.statusText} - ${errorText}`);
     }
 
-    const json = await response.json();
+    const json = await positionsResponse.json();
     const positionsData = json.data || [];
     const pageInfo = json.pages || {};
+    
+    const transformedData = positionsData.map((empPos: any) => ({
+      ...empPos,
+      categoryList: empPos.categoryList.map((cat: any) => ({
+        ...cat,
+        category: categoryMap.get(cat.category) || `ID: ${cat.category}`,
+      }))
+    }));
 
     return { 
         success: true, 
         message: 'Successfully fetched position details.',
-        data: positionsData,
+        data: transformedData,
         hasNextPage: pageInfo.hasNext,
         currentPage: page,
     };

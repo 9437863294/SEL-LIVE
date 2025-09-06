@@ -3,6 +3,7 @@
 
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -125,7 +126,7 @@ export type WorkflowStep = {
 
 export type PositionDetail = {
     id: number;
-    category: number;
+    category: string;
     value: number;
     effectiveFrom: string;
     effectiveTo: string | null;
