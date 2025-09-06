@@ -67,7 +67,7 @@ async function fetchCategoryMappings(token: string, domain: string): Promise<{ d
     const response = await fetch(url, {
         method: 'POST',
         headers: {
-            "ACCESS-TOKEN": token,
+            "Authorization": `Bearer ${token}`,
             "x-greythr-domain": domain,
             "Content-Type": "application/json",
         },
@@ -118,7 +118,7 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                "ACCESS-TOKEN": token,
+                "Authorization": `Bearer ${token}`,
                 "x-greythr-domain": domain,
             },
         });
@@ -179,7 +179,7 @@ const syncGreytHRFlow = ai.defineFlow(
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                "ACCESS-TOKEN": token,
+                "Authorization": `Bearer ${token}`,
                 "x-greythr-domain": domain,
             },
         });
