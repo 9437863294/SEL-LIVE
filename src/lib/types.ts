@@ -4,6 +4,7 @@
 
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -80,6 +81,11 @@ export type ActionLog = {
   stepName: string;
 };
 
+export type Attachment = {
+  name: string;
+  url: string;
+};
+
 export type Requisition = {
   id: string;
   requisitionId: string;
@@ -97,6 +103,7 @@ export type Requisition = {
   assignedToId?: string | null;
   deadline?: any; // Firestore Timestamp
   history: ActionLog[];
+  attachments?: Attachment[];
 };
 
 export type SerialNumberConfig = {

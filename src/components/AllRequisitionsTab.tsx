@@ -41,11 +41,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2 } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog } from '@/lib/types';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format, parseISO } from 'date-fns';
@@ -63,6 +64,7 @@ const formSchema = z.object({
   amount: z.coerce.number().min(1, { message: 'Amount must be greater than 0.' }),
   description: z.string(),
   date: z.date({ required_error: "A date is required."}),
+  attachments: z.custom<FileList>().optional(),
 });
 
 
@@ -81,6 +83,7 @@ export default function AllRequisitionsTab() {
   const { user } = useAuth();
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -151,6 +154,7 @@ export default function AllRequisitionsTab() {
         description: '',
         date: new Date(),
       });
+      setSelectedFiles([]);
     }
   }, [isNewRequestOpen, form]);
   
@@ -189,6 +193,12 @@ export default function AllRequisitionsTab() {
     fetchProjectsAndDepartments();
     fetchRequisitions();
   }, [toast]);
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+        setSelectedFiles(Array.from(e.target.files));
+      }
+  };
 
   const handleCreateRequest = async (values: z.infer<typeof formSchema>) => {
     if (!user) {
@@ -234,6 +244,16 @@ export default function AllRequisitionsTab() {
             transaction.update(configRef, { startingIndex: newIndex + 1 });
             return requisitionId;
         });
+        
+        const attachmentUrls: Attachment[] = [];
+        if (selectedFiles.length > 0) {
+          for (const file of selectedFiles) {
+              const storageRef = ref(storage, `requisitions/${newRequisitionId}/${file.name}`);
+              await uploadBytes(storageRef, file);
+              const downloadURL = await getDownloadURL(storageRef);
+              attachmentUrls.push({ name: file.name, url: downloadURL });
+          }
+        }
 
         const initialLog: ActionLog = {
             action: 'Created',
@@ -252,6 +272,7 @@ export default function AllRequisitionsTab() {
             assignedToId: assignedToId,
             deadline: Timestamp.fromDate(deadline),
             history: [initialLog],
+            attachments: attachmentUrls,
         };
 
         await addDoc(collection(db, 'requisitions'), finalRequisitionData);
@@ -415,9 +436,34 @@ export default function AllRequisitionsTab() {
                         </FormItem>
                     )}
                 />
-                <div className="space-y-2">
-                <Label htmlFor="attachments">Attachments</Label>
-                <Input id="attachments" type="file" multiple />
+                <div className="lg:col-span-3 space-y-2">
+                  <Label htmlFor="attachments">Attachments</Label>
+                  <FormControl>
+                      <Input id="attachments" type="file" multiple onChange={handleFileChange} className="hidden" />
+                  </FormControl>
+                   <label htmlFor="attachments" className="flex items-center justify-center w-full h-32 px-4 transition bg-background border-2 border-gray-300 border-dashed rounded-md appearance-none cursor-pointer hover:border-gray-400 focus:outline-none">
+                        <span className="flex items-center space-x-2">
+                            <UploadCloud className="w-6 h-6 text-gray-600" />
+                            <span className="font-medium text-gray-600">
+                                Drop files to Attach, or <span className="text-blue-600 underline">browse</span>
+                            </span>
+                        </span>
+                    </label>
+                   {selectedFiles.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                            {selectedFiles.map((file, i) => (
+                                <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                                    <div className="flex items-center gap-2">
+                                        <FileIcon className="w-4 h-4" />
+                                        <span className="text-sm">{file.name}</span>
+                                    </div>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
             <DialogFooter>
@@ -635,7 +681,7 @@ export default function AllRequisitionsTab() {
                   <TableCell>{req.amount.toLocaleString()}</TableCell>
                   <TableCell>{req.stage}</TableCell>
                   <TableCell>{req.status}</TableCell>
-                  <TableCell>N/A</TableCell>
+                  <TableCell>{req.attachments?.length || 0}</TableCell>
                   <TableCell className="text-center">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -682,5 +728,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-
-    

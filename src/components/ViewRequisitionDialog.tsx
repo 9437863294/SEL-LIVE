@@ -14,11 +14,12 @@ import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2, ChevronDown } from 'lucide-react';
+import { Loader2, ChevronDown, Paperclip, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
+import Link from 'next/link';
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -258,6 +259,27 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
               </div>
 
+              {requisition.attachments && requisition.attachments.length > 0 && (
+                <div>
+                  <Label>Attachments</Label>
+                  <div className="mt-2 space-y-2">
+                    {requisition.attachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                         <div className="flex items-center gap-2">
+                           <Paperclip className="h-4 w-4" />
+                           <span className="text-sm font-medium">{file.name}</span>
+                         </div>
+                         <Button asChild variant="outline" size="sm">
+                           <Link href={file.url} target="_blank" rel="noopener noreferrer">
+                              <Download className="mr-2 h-4 w-4" /> Download
+                           </Link>
+                         </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {isActionAllowed && (
                   <div className="space-y-4 pt-4 border-t">
                       <div>
@@ -342,6 +364,3 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </Dialog>
   );
 }
-
-
-    
