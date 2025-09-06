@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,11 @@ export default function EmployeePositionDetailsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Employee ID</TableHead>
-                <TableHead>Position Details</TableHead>
+                <TableHead>Position ID</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead>Effective From</TableHead>
+                <TableHead>Effective To</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -77,31 +81,35 @@ export default function EmployeePositionDetailsPage() {
                 Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : positions.length > 0 ? (
                 positions.map(pos => (
-                  <TableRow key={pos.employeeId}>
-                    <TableCell className="font-medium align-top">{pos.employeeId}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-2">
-                        {pos.categoryList.map(cat => (
-                            <div key={cat.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-2 rounded-md bg-muted/50">
-                                <Badge variant="secondary">ID: {cat.id}</Badge>
-                                <span className="text-sm">Category: <Badge>{cat.category}</Badge></span>
-                                <span className="text-sm">Value: <Badge>{cat.value}</Badge></span>
-                                <span className="text-sm">From: {cat.effectiveFrom}</span>
-                                <span className="text-sm">To: {cat.effectiveTo || 'N/A'}</span>
-                           </div>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                   <Fragment key={pos.employeeId}>
+                    {pos.categoryList.map((cat, index) => (
+                      <TableRow key={cat.id}>
+                        {index === 0 && (
+                          <TableCell rowSpan={pos.categoryList.length} className="font-medium align-top">
+                            {pos.employeeId}
+                          </TableCell>
+                        )}
+                        <TableCell>{cat.id}</TableCell>
+                        <TableCell><Badge>{cat.category}</Badge></TableCell>
+                        <TableCell><Badge variant="secondary">{cat.value}</Badge></TableCell>
+                        <TableCell>{cat.effectiveFrom}</TableCell>
+                        <TableCell>{cat.effectiveTo || 'N/A'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center h-24">
+                  <TableCell colSpan={6} className="text-center h-24">
                     No position details found.
                   </TableCell>
                 </TableRow>
