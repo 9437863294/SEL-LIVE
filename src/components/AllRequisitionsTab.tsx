@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment } from '@/lib/types';
@@ -56,6 +56,7 @@ import { cn } from '@/lib/utils';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
+import { Switch } from './ui/switch';
 
 
 const formSchema = z.object({
@@ -84,6 +85,8 @@ export default function AllRequisitionsTab() {
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [showMyRequests, setShowMyRequests] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -99,21 +102,14 @@ export default function AllRequisitionsTab() {
   const fetchRequisitions = async () => {
     setIsLoading(true);
     try {
-      const q = collection(db, 'requisitions');
+      const q = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       const requisitionsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return { 
           id: doc.id, 
           ...data,
-          createdAt: data.createdAt ? format(data.createdAt.toDate(), 'PPpp') : 'N/A',
         } as Requisition;
-      });
-      // Sort by createdAt timestamp descending
-      requisitionsData.sort((a, b) => {
-        const dateA = a.createdAt && a.createdAt !== 'N/A' ? parseISO(new Date(a.createdAt).toISOString()) : new Date(0);
-        const dateB = b.createdAt && b.createdAt !== 'N/A' ? parseISO(new Date(b.createdAt).toISOString()) : new Date(0);
-        return dateB.getTime() - dateA.getTime();
       });
       setRequisitions(requisitionsData);
     } catch (error) {
@@ -122,6 +118,17 @@ export default function AllRequisitionsTab() {
     }
     setIsLoading(false);
   };
+  
+  const displayedRequisitions = useMemo(() => {
+    let filtered = requisitions;
+    if (showMyRequests) {
+      filtered = filtered.filter(req => req.raisedById === user?.id);
+    }
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(req => req.status === statusFilter);
+    }
+    return filtered;
+  }, [requisitions, showMyRequests, statusFilter, user]);
   
   const generatePreviewId = async () => {
     try {
@@ -481,7 +488,7 @@ export default function AllRequisitionsTab() {
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="timestamp">Timestamp</Label>
-                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt} readOnly />
+                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt ? format(editingRequisition.createdAt.toDate(), 'PPpp') : ''} readOnly />
                 </div>
                 <FormField
                     control={form.control}
@@ -605,15 +612,24 @@ export default function AllRequisitionsTab() {
   return (
     <div className="w-full">
         <div className="flex justify-end items-center gap-4 mb-4">
-             <Select>
+             <div className="flex items-center space-x-2">
+                <Switch 
+                    id="my-requests-switch" 
+                    checked={showMyRequests}
+                    onCheckedChange={setShowMyRequests}
+                />
+                <Label htmlFor="my-requests-switch">My Requests Only</Label>
+            </div>
+             <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="In Progress">In Progress</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
+                    <SelectItem value="Rejected">Rejected</SelectItem>
                 </SelectContent>
             </Select>
             <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
@@ -661,8 +677,8 @@ export default function AllRequisitionsTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {requisitions.length > 0 ? (
-              requisitions.map((req) => (
+            {displayedRequisitions.length > 0 ? (
+              displayedRequisitions.map((req) => (
                 <TableRow key={req.id}>
                   <TableCell className="font-medium">{req.requisitionId}</TableCell>
                   <TableCell>{format(new Date(req.date), 'dd MMM, yyyy')}</TableCell>
