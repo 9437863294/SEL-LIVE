@@ -1,52 +1,56 @@
-
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Clock, Users } from 'lucide-react';
-import AllRequisitionsTab from '@/components/AllRequisitionsTab';
-import MyPendingTasksTab from '@/components/MyPendingTasksTab';
+import { SiteFundDashboard } from '@/components/site-fund-dashboard';
+import { useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import { useRouter } from 'next/navigation';
+import { Skeleton } from '@/components/ui/skeleton';
 
-const stats = [
-    { title: 'Pending Requisitions', value: '2', icon: Clock },
-    { title: 'Total Completed', value: '1', icon: Users }
-];
 
 export default function SiteFundRequisitionPage() {
-  return (
-    <div className="flex flex-col w-full pr-14">
-      <Tabs defaultValue="all-requisitions">
-        <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
-            <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>
-            <TabsTrigger value="all-requisitions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Requisitions</TabsTrigger>
-            <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My Pending Tasks</TabsTrigger>
-            <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
-        </TabsList>
-        <TabsContent value="dashboard" className="mt-6">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                {stats.map((stat, index) => (
-                    <Card key={index}>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                            <stat.icon className="h-4 w-4 text-muted-foreground" />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{stat.value}</div>
-                        </CardContent>
-                    </Card>
-                ))}
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+        if (!currentUser) {
+            router.replace('/login');
+        } else {
+            setLoading(false);
+        }
+    });
+
+    return () => {
+        unsubscribeAuth();
+    };
+  }, [router]);
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="sticky top-0 z-10 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+                <div className="flex items-center gap-4">
+                    <Skeleton className="h-8 w-8" />
+                    <Skeleton className="h-6 w-48" />
+                </div>
+                <div className="flex items-center gap-4">
+                    <Skeleton className="h-8 w-8" />
+                    <Skeleton className="h-8 w-8" />
+                </div>
             </div>
-        </TabsContent>
-        <TabsContent value="all-requisitions" className="mt-6">
-           <AllRequisitionsTab />
-        </TabsContent>
-        <TabsContent value="pending-tasks" className="mt-6">
-            <MyPendingTasksTab />
-        </TabsContent>
-        <TabsContent value="history" className="mt-6">
-            <p className="text-muted-foreground">Your history will be shown here.</p>
-        </TabsContent>
-      </Tabs>
+        </header>
+        <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+            <Skeleton className="h-[500px] w-full" />
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+        <SiteFundDashboard />
     </div>
   );
 }
