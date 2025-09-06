@@ -20,13 +20,17 @@ const EmployeeDataSchema = z.object({
     status: z.string(),
 });
 
-const SyncGreytHRInputSchema = z.object({});
+const SyncGreytHRInputSchema = z.object({
+    page: z.number().optional().default(1),
+});
 export type SyncGreytHRInput = z.infer<typeof SyncGreytHRInputSchema>;
 
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
   employees: z.array(EmployeeDataSchema).optional(),
+  hasNextPage: z.boolean().optional(),
+  currentPage: z.number().optional(),
 });
 
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
@@ -60,6 +64,24 @@ async function getGreytHRToken(): Promise<string> {
     } else {
         throw new Error("Access Token not found in GreytHR response.");
     }
+}
+
+async function fetchPage(url: string, token: string, domain: string, page: number, size = 100) {
+    const paginatedUrl = `${url}?page=${page}&size=${size}&state=CURRENT`;
+    const response = await fetch(paginatedUrl, {
+        method: 'GET',
+        headers: {
+            "ACCESS-TOKEN": token,
+            "x-greythr-domain": domain,
+        },
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch data from ${url}: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
 }
 
 async function fetchAllPages(url: string, token: string, domain: string) {
@@ -127,18 +149,22 @@ const syncGreytHRFlow = ai.defineFlow(
     inputSchema: SyncGreytHRInputSchema,
     outputSchema: SyncGreytHROutputSchema,
   },
-  async () => {
+  async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
+    const pageSize = 60;
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
-    const [allEmployeeData, categoryMappings] = await Promise.all([
-      fetchAllPages(employeesUrl, token, domain),
+    const [employeePageJson, categoryMappings] = await Promise.all([
+      fetchPage(employeesUrl, token, domain, page, pageSize),
       fetchCategoryMappings(token, domain),
     ]);
+    
+    const employeeData = employeePageJson.data || [];
+    const hasNextPage = employeeData.length === pageSize;
 
-    const filteredData = allEmployeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
+    const filteredData = employeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
     const employeesToReturn = filteredData.map((empData: any) => {
         const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
@@ -160,6 +186,8 @@ const syncGreytHRFlow = ai.defineFlow(
         success: true, 
         message: `Successfully fetched ${employeesToReturn.length} employees.`,
         employees: employeesToReturn,
+        hasNextPage: hasNextPage,
+        currentPage: page,
     };
   }
 );

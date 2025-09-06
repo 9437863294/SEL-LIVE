@@ -3,7 +3,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox } from 'lucide-react';
+import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox, ArrowRight, ArrowLeft as ArrowLeftIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,19 +33,23 @@ export default function SyncEmployeePage() {
   const [fetchedEmployees, setFetchedEmployees] = useState<FetchedEmployee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [importProgress, setImportProgress] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
-  const handleFetch = async () => {
+  const handleFetch = async (page = 1) => {
     setIsFetching(true);
     setFetchedEmployees([]);
     setSelectedEmployeeIds([]);
     try {
-      const result = await syncGreytHR({});
+      const result = await syncGreytHR({ page });
       if (result.success && result.employees) {
         setFetchedEmployees(result.employees);
         setStep('fetched');
+        setCurrentPage(result.currentPage ?? 1);
+        setHasNextPage(result.hasNextPage ?? false);
         toast({
           title: 'Fetch Successful',
-          description: result.message,
+          description: `${result.message} (Page ${result.currentPage})`,
         });
       } else {
         throw new Error(result.message || 'An unknown error occurred during fetch.');
@@ -147,7 +151,7 @@ export default function SyncEmployeePage() {
                 <CardDescription>Fetch the latest employee data from GreytHR to preview before importing.</CardDescription>
             </CardHeader>
             <CardContent>
-                <Button onClick={handleFetch} disabled={isFetching} size="lg">
+                <Button onClick={() => handleFetch(1)} disabled={isFetching} size="lg">
                     {isFetching ? (
                         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     ) : (
@@ -220,6 +224,26 @@ export default function SyncEmployeePage() {
                         </TableBody>
                     </Table>
                  </div>
+                 <div className="flex items-center justify-end space-x-2 py-4">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFetch(currentPage - 1)}
+                        disabled={currentPage <= 1 || isFetching}
+                    >
+                        <ArrowLeftIcon className="mr-2 h-4 w-4" />
+                        Previous
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFetch(currentPage + 1)}
+                        disabled={!hasNextPage || isFetching}
+                    >
+                        Next
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                </div>
             </CardContent>
         </Card>
       )}
