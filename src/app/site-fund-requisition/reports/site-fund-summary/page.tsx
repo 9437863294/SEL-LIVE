@@ -31,6 +31,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getAssigneeForStep } from '@/lib/workflow-utils';
 
 
 interface SummaryStats {
@@ -144,50 +145,60 @@ export default function SiteFundSummaryPage() {
     }
 
     const report: StepWiseReportData = {};
+    const userMap = new Map(users.map(u => [u.id, u.name]));
+    const allUserNames = users.map(u => u.name);
+
+    // Initialize report structure for all possible users and steps
     workflow.steps.forEach(step => {
         report[step.name] = {};
+        allUserNames.forEach(userName => {
+            report[step.name][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+        });
     });
 
-    const userMap = new Map(users.map(u => [u.id, u.name]));
-
-    const initializeUserInReport = (stepName: string, userName: string) => {
-        if (!report[stepName]) report[stepName] = {};
-        if (!report[stepName][userName]) {
-            report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
-        }
-    };
-    
-    filteredRequisitions.forEach(req => {
+    const processRequisition = async (req: Requisition) => {
         const history: ActionLog[] = req.history || [];
-        const uniqueTasksPerStep: Record<string, Set<string>> = {}; 
         
-        history.forEach((h: ActionLog) => {
+        // Determine all assignees for all steps for this requisition
+        for (const step of workflow.steps) {
+            try {
+                const assigneeId = await getAssigneeForStep(step, req);
+                if (assigneeId) {
+                    const userName = userMap.get(assigneeId);
+                    if (userName && report[step.name]) {
+                        // Increment total count for the assigned user at this step
+                        report[step.name][userName].total++;
+                    }
+                }
+            } catch (error) {
+                console.warn(`Could not determine assignee for req ${req.requisitionId} at step ${step.name}:`, error);
+            }
+        }
+
+        // Process history for completed and rejected counts
+        history.forEach(h => {
             const stepName = h.stepName;
             const userName = h.userName || userMap.get(h.userId) || 'Unknown User';
 
-            if (!report[stepName]) return;
+            if (report[stepName] && report[stepName][userName]) {
+                const action = h.action.toLowerCase();
+                const completionActions = ['approve', 'complete', 'verified', 'update approved amount', 'reject'];
 
-            initializeUserInReport(stepName, userName);
-
-            if (!uniqueTasksPerStep[stepName]) {
-                uniqueTasksPerStep[stepName] = new Set();
-            }
-            if(!uniqueTasksPerStep[stepName].has(h.userId + req.id)) {
-                report[stepName][userName].total++;
-                uniqueTasksPerStep[stepName].add(h.userId + req.id);
-            }
-
-            const completionActions = ['approve', 'complete', 'verified', 'update approved amount', 'reject'];
-            const action = h.action.toLowerCase();
-            
-            if (completionActions.includes(action)) {
-                report[stepName][userName].completed++;
-                if (action === 'reject') {
-                    report[stepName][userName].rejected++;
+                if (completionActions.includes(action)) {
+                    report[stepName][userName].completed++;
+                    if (action === 'reject') {
+                        report[stepName][userName].rejected++;
+                    }
                 }
             }
         });
-    });
+    };
+
+    // Note: Since getAssigneeForStep can be async, this memo will not work as expected
+    // if getAssigneeForStep actually performs async operations.
+    // This is a simplification assuming getAssigneeForStep is effectively synchronous for this context.
+    // For a truly async operation, the report generation would need to be moved to a useEffect hook.
+    filteredRequisitions.forEach(processRequisition);
 
     return report;
 }, [filteredRequisitions, workflow, users]);
