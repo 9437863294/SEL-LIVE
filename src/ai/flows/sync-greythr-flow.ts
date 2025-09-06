@@ -152,7 +152,7 @@ const syncGreytHRFlow = ai.defineFlow(
   async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
-    const pageSize = 60;
+    const pageSize = 100;
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
@@ -162,7 +162,7 @@ const syncGreytHRFlow = ai.defineFlow(
     ]);
     
     const employeeData = employeePageJson.data || [];
-    const hasNextPage = employeeData.length === pageSize;
+    const hasNextPage = employeeData.length > 0;
 
     const filteredData = employeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
