@@ -37,13 +37,13 @@ async function getGreytHRToken(): Promise<string> {
         throw new Error("GreytHR credentials or domain not found in environment variables.");
     }
     
-    const url = `https://api.greythr.com/login`;
+    // Corrected URL to be domain-specific.
+    const url = `https://${domain}.greythr.com/v2/login`;
 
     const response = await fetch(url, {
         method: 'POST',
         headers: {
             "Content-Type": "application/json",
-            "x-greythr-domain": domain,
         },
         body: JSON.stringify({
             username: username,
