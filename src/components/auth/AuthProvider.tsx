@@ -6,7 +6,6 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import Header from '@/components/Header';
 import { doc, getDoc } from 'firebase/firestore';
 import type { User } from '@/lib/types';
 
@@ -100,10 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ user, loading }}>
-        <div className="relative flex min-h-screen flex-col bg-background">
-            <Header />
-            <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
-        </div>
+        {children}
     </AuthContext.Provider>
   )
 }
