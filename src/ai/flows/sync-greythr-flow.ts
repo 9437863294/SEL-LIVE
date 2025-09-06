@@ -48,7 +48,6 @@ async function getGreytHRToken(): Promise<string> {
         body: JSON.stringify({
             username: username,
             password: password,
-            domain: domain,
         }),
     });
 
