@@ -22,7 +22,7 @@ const reportItems = [
     icon: BarChart3, 
     title: 'Site Fund Summary', 
     description: 'View a summary of all requisitions, including totals and step-wise reports.', 
-    href: '#' 
+    href: '/site-fund-requisition/reports/site-fund-summary' 
   },
   { 
     icon: PieChart, 
