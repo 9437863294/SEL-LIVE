@@ -7,7 +7,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
 
 const SyncCategoriesOutputSchema = z.object({
   success: z.boolean(),
@@ -49,38 +49,26 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-async function fetchAllCategories(token: string, domain: string) {
-    const url = "https://api.greythr.com/employee/v2/employees/categories";
-    let page = 1;
-    const size = 100;
-    let allCategories: any[] = [];
-  
-    while (true) {
-        const paginatedUrl = `${url}?page=${page}&size=${size}`;
-        const response = await fetch(paginatedUrl, {
-            method: 'GET',
-            headers: {
-                "ACCESS-TOKEN": token,
-                "x-greythr-domain": domain,
-            },
-        });
-  
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to fetch categories: ${response.statusText} - ${errorText}`);
-        }
-  
-        const json = await response.json();
-        const data = json.data || [];
-        
-        if (data.length > 0) {
-            allCategories = allCategories.concat(data);
-            page++;
-        } else {
-            break;
-        }
+async function fetchGreytHRCategoriesData(token: string, domain: string): Promise<any> {
+    const url = "https://api.greythr.com/hr/v2/lov";
+    const body = JSON.stringify(["cat::Department", "cat::Designation"]);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            "ACCESS-TOKEN": token,
+            "x-greythr-domain": domain,
+            "Content-Type": "application/json",
+        },
+        body: body,
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch categories from LOV endpoint: ${response.statusText} - ${errorText}`);
     }
-    return allCategories;
+
+    return response.json();
 }
 
 const syncGreytHRCategoriesFlow = ai.defineFlow(
@@ -92,33 +80,34 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
     
-    const allCategoryData = await fetchAllCategories(token, domain);
+    const categoryData = await fetchGreytHRCategoriesData(token, domain);
 
     const departments = new Map<number, string>();
     const designations = new Map<number, string>();
 
-    allCategoryData.forEach(emp => {
-      if (emp.categoryList) {
-        emp.categoryList.forEach((cat: any) => {
-          if (cat.category === 'Department' && !departments.has(cat.id)) {
-            departments.set(cat.id, cat.value);
-          }
-          if (cat.category === 'Designation' && !designations.has(cat.id)) {
-            designations.set(cat.id, cat.value);
-          }
+    if (categoryData['cat::Department']) {
+        categoryData['cat::Department'].forEach((dept: [number, string, any]) => {
+            departments.set(dept[0], dept[1]);
         });
-      }
-    });
+    }
+
+    if (categoryData['cat::Designation']) {
+        categoryData['cat::Designation'].forEach((desg: [number, string, any]) => {
+            designations.set(desg[0], desg[1]);
+        });
+    }
 
     const categoriesRef = collection(db, 'categories');
     
     // Clear existing categories
     const existingCategoriesSnap = await getDocs(query(categoriesRef));
-    const deleteBatch = writeBatch(db);
-    existingCategoriesSnap.forEach(doc => {
-        deleteBatch.delete(doc.ref);
-    });
-    await deleteBatch.commit();
+    if (!existingCategoriesSnap.empty) {
+        const deleteBatch = writeBatch(db);
+        existingCategoriesSnap.forEach(doc => {
+            deleteBatch.delete(doc.ref);
+        });
+        await deleteBatch.commit();
+    }
     
     // Add new categories
     const addBatch = writeBatch(db);
