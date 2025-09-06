@@ -439,16 +439,8 @@ export default function AllRequisitionsTab() {
                 <div className="lg:col-span-3 space-y-2">
                   <Label htmlFor="attachments">Attachments</Label>
                   <FormControl>
-                      <Input id="attachments" type="file" multiple onChange={handleFileChange} className="hidden" />
+                      <Input id="attachments" type="file" multiple onChange={handleFileChange} />
                   </FormControl>
-                   <label htmlFor="attachments" className="flex items-center justify-center w-full h-32 px-4 transition bg-background border-2 border-gray-300 border-dashed rounded-md appearance-none cursor-pointer hover:border-gray-400 focus:outline-none">
-                        <span className="flex items-center space-x-2">
-                            <UploadCloud className="w-6 h-6 text-gray-600" />
-                            <span className="font-medium text-gray-600">
-                                Drop files to Attach, or <span className="text-blue-600 underline">browse</span>
-                            </span>
-                        </span>
-                    </label>
                    {selectedFiles.length > 0 && (
                         <div className="mt-2 space-y-2">
                             {selectedFiles.map((file, i) => (
@@ -728,3 +720,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
