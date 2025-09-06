@@ -5,33 +5,44 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { syncGreytHRCategories } from '@/ai';
 
 interface Category {
     id: number;
     name: string;
-    type: 'Department' | 'Designation';
+    type: string;
 }
 
 export default function ManageCategoryPage() {
   const { toast } = useToast();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesByType, setCategoriesByType] = useState<Record<string, Category[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const fetchCategories = async () => {
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'categories'));
-      const categoriesData: Category[] = querySnapshot.docs.map(doc => doc.data() as Category);
-      setCategories(categoriesData);
+      const q = query(collection(db, 'categories'), orderBy('type'), orderBy('name'));
+      const querySnapshot = await getDocs(q);
+      const categoriesData = querySnapshot.docs.map(doc => doc.data() as Category);
+      
+      const grouped = categoriesData.reduce((acc, category) => {
+        const { type } = category;
+        if (!acc[type]) {
+          acc[type] = [];
+        }
+        acc[type].push(category);
+        return acc;
+      }, {} as Record<string, Category[]>);
+
+      setCategoriesByType(grouped);
     } catch (error) {
       console.error("Error fetching categories: ", error);
       toast({
@@ -45,16 +56,19 @@ export default function ManageCategoryPage() {
 
   useEffect(() => {
     fetchCategories();
-  }, [toast]);
+  }, []);
   
   const handleSync = async () => {
     setIsSyncing(true);
     try {
       const result = await syncGreytHRCategories();
       if (result.success) {
+        const countSummary = Object.entries(result.counts)
+          .map(([key, value]) => `${value} ${key}s`)
+          .join(', ');
         toast({
             title: 'Sync Successful',
-            description: `Synced ${result.departmentCount} departments and ${result.designationCount} designations.`,
+            description: `Synced: ${countSummary || 'No new data.'}`,
         });
         fetchCategories(); // Refresh the list
       } else {
@@ -71,18 +85,14 @@ export default function ManageCategoryPage() {
     }
   };
 
-
-  const departments = categories.filter(c => c.type === 'Department').sort((a, b) => a.name.localeCompare(b.name));
-  const designations = categories.filter(c => c.type === 'Designation').sort((a, b) => a.name.localeCompare(b.name));
-
-  const renderTable = (data: Category[], title: string) => (
+  const renderTable = (data: Category[]) => (
     <Card>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
-              <TableHead>{title} Name</TableHead>
+              <TableHead>Name</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -103,7 +113,7 @@ export default function ManageCategoryPage() {
             ) : (
               <TableRow>
                 <TableCell colSpan={2} className="text-center h-24">
-                  No {title.toLowerCase()} found.
+                  No items found.
                 </TableCell>
               </TableRow>
             )}
@@ -134,18 +144,33 @@ export default function ManageCategoryPage() {
         </Button>
       </div>
       
-      <Tabs defaultValue="departments">
-        <TabsList>
-            <TabsTrigger value="departments">Departments ({departments.length})</TabsTrigger>
-            <TabsTrigger value="designations">Designations ({designations.length})</TabsTrigger>
-        </TabsList>
-        <TabsContent value="departments" className="mt-4">
-            {renderTable(departments, 'Department')}
-        </TabsContent>
-        <TabsContent value="designations" className="mt-4">
-            {renderTable(designations, 'Designation')}
-        </TabsContent>
-      </Tabs>
+      {isLoading ? (
+         <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+        </div>
+      ) : Object.keys(categoriesByType).length > 0 ? (
+        <Accordion type="multiple" defaultValue={Object.keys(categoriesByType)}>
+          {Object.entries(categoriesByType).map(([type, categories]) => (
+            <AccordionItem value={type} key={type}>
+              <AccordionTrigger className="text-lg font-medium">
+                {type} ({categories.length})
+              </AccordionTrigger>
+              <AccordionContent className="p-1">
+                {renderTable(categories)}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      ) : (
+        <Card className="text-center py-12">
+            <CardContent>
+                <p className="text-muted-foreground">No categories found.</p>
+                <p className="text-muted-foreground text-sm">Try syncing from GreytHR to get started.</p>
+            </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

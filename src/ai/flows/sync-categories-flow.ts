@@ -1,7 +1,8 @@
+
 'use server';
 
 /**
- * @fileOverview A flow to sync category data (departments and designations) from GreytHR to Firestore.
+ * @fileOverview A flow to sync all category data from GreytHR to Firestore.
  */
 
 import { ai } from '@/ai/genkit';
@@ -9,11 +10,18 @@ import { z } from 'zod';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
 
+const allCategoryTypes = [
+    "cat::Department", "cat::Designation", "cat::Grade", "cat::Location",
+    "cat::Company", "cat::Project Name", "cat::Project Division", 
+    "cat::Cost Center", "cat::COST CENTER CODE", "cat::Shift", "cat::EMPLOYEE TYPE"
+];
+
+const CategoryCountSchema = z.record(z.string(), z.number());
+
 const SyncCategoriesOutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
-  departmentCount: z.number(),
-  designationCount: z.number(),
+  counts: CategoryCountSchema,
 });
 
 export type SyncCategoriesOutput = z.infer<typeof SyncCategoriesOutputSchema>;
@@ -51,7 +59,7 @@ async function getGreytHRToken(): Promise<string> {
 
 async function fetchGreytHRCategoriesData(token: string, domain: string): Promise<any> {
     const url = "https://api.greythr.com/hr/v2/lov";
-    const body = JSON.stringify(["cat::Department", "cat::Designation"]);
+    const body = JSON.stringify(allCategoryTypes);
 
     const response = await fetch(url, {
         method: 'POST',
@@ -82,21 +90,6 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
     
     const categoryData = await fetchGreytHRCategoriesData(token, domain);
 
-    const departments = new Map<number, string>();
-    const designations = new Map<number, string>();
-
-    if (categoryData['cat::Department']) {
-        categoryData['cat::Department'].forEach((dept: [number, string, any]) => {
-            departments.set(dept[0], dept[1]);
-        });
-    }
-
-    if (categoryData['cat::Designation']) {
-        categoryData['cat::Designation'].forEach((desg: [number, string, any]) => {
-            designations.set(desg[0], desg[1]);
-        });
-    }
-
     const categoriesRef = collection(db, 'categories');
     
     // Clear existing categories
@@ -111,22 +104,26 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
     
     // Add new categories
     const addBatch = writeBatch(db);
-    departments.forEach((name, id) => {
-        const docRef = doc(categoriesRef); // Auto-generate document ID
-        addBatch.set(docRef, { id, name, type: 'Department' });
-    });
-    designations.forEach((name, id) => {
-        const docRef = doc(categoriesRef); // Auto-generate document ID
-        addBatch.set(docRef, { id, name, type: 'Designation' });
-    });
+    const counts: Record<string, number> = {};
+
+    for (const catKey of allCategoryTypes) {
+        const categoryName = catKey.replace('cat::', '');
+        const data = categoryData[catKey];
+        if (data) {
+            counts[categoryName] = data.length;
+            data.forEach((item: [number, string, any]) => {
+                const docRef = doc(categoriesRef); // Auto-generate document ID
+                addBatch.set(docRef, { id: item[0], name: item[1], type: categoryName });
+            });
+        }
+    }
     
     await addBatch.commit();
 
     return { 
         success: true, 
-        message: 'Successfully synced categories.',
-        departmentCount: departments.size,
-        designationCount: designations.size,
+        message: 'Successfully synced all categories.',
+        counts: counts,
     };
   }
 );
