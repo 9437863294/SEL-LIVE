@@ -185,8 +185,8 @@ export default function SyncEmployeePage() {
                                 </TableHead>
                                 <TableHead>Employee ID</TableHead>
                                 <TableHead>Name</TableHead>
-                                <TableHead>Department</TableHead>
-                                <TableHead>Designation</TableHead>
+                                <TableHead>Email</TableHead>
+                                <TableHead>Phone</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -201,8 +201,8 @@ export default function SyncEmployeePage() {
                                         </TableCell>
                                         <TableCell>{emp.employeeId}</TableCell>
                                         <TableCell>{emp.name}</TableCell>
-                                        <TableCell>{emp.department}</TableCell>
-                                        <TableCell>{emp.designation}</TableCell>
+                                        <TableCell>{emp.email}</TableCell>
+                                        <TableCell>{emp.phone}</TableCell>
                                     </TableRow>
                                 ))
                              ) : (
