@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Users, Search } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,7 +16,6 @@ import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase
 import type { Employee, Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const initialNewEmployeeState = {
   employeeId: '',
@@ -34,6 +33,7 @@ export default function ManageEmployeePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  const [newEmployee, setNewEmployee] = useState(initialNewEmployeeState);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -120,6 +120,64 @@ export default function ManageEmployeePage() {
     }
   };
 
+  const handleInputChange = (field: keyof typeof newEmployee, value: string) => {
+    setNewEmployee(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSelectChange = (field: keyof typeof newEmployee, value: string) => {
+    setNewEmployee(prev => ({ ...prev, [field]: value as any }));
+  };
+
+  const resetAddDialog = () => {
+    setNewEmployee(initialNewEmployeeState);
+    setIsAddDialogOpen(false);
+  };
+
+  const handleAddEmployee = async () => {
+    if (!newEmployee.employeeId.trim() || !newEmployee.name.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Employee ID and Name cannot be empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'employees'), newEmployee);
+      toast({
+        title: 'Success',
+        description: `Employee "${newEmployee.name}" added.`,
+      });
+      resetAddDialog();
+      fetchData();
+    } catch (error) {
+      console.error("Error adding employee: ", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add employee.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteEmployee = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "employees", id));
+      toast({
+        title: "Success",
+        description: "Employee deleted successfully.",
+      });
+      fetchData(); // Refresh the list
+    } catch (error) {
+      console.error("Error deleting employee: ", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete employee.",
+        variant: "destructive",
+      });
+    }
+  };
+
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -132,21 +190,69 @@ export default function ManageEmployeePage() {
           </Link>
           <h1 className="text-2xl font-bold">Manage Employee</h1>
         </div>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-                <div className="inline-block">
-                    <Button disabled>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Employee
-                    </Button>
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Employee
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add New Employee</DialogTitle>
+              <DialogDescription>
+                Fill in the details to add a new employee.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                    <Label htmlFor="addEmployeeId">Employee ID</Label>
+                    <Input id="addEmployeeId" value={newEmployee.employeeId} onChange={(e) => handleInputChange('employeeId', e.target.value)} />
                 </div>
-            </TooltipTrigger>
-            <TooltipContent>
-                <p>Employee data is synced from GreytHR.</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+                <div className="space-y-2">
+                    <Label htmlFor="addName">Name</Label>
+                    <Input id="addName" value={newEmployee.name} onChange={(e) => handleInputChange('name', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addEmail">Email</Label>
+                    <Input id="addEmail" type="email" value={newEmployee.email} onChange={(e) => handleInputChange('email', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addPhone">Phone Number</Label>
+                    <Input id="addPhone" value={newEmployee.phone} onChange={(e) => handleInputChange('phone', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addDepartment">Department</Label>
+                    <Select value={newEmployee.department} onValueChange={(value) => handleSelectChange('department', value)}>
+                        <SelectTrigger id="addDepartment"><SelectValue placeholder="Select Department" /></SelectTrigger>
+                        <SelectContent>
+                            {departments.map(dept => (
+                              <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addDesignation">Designation</Label>
+                    <Input id="addDesignation" value={newEmployee.designation} onChange={(e) => handleInputChange('designation', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addStatus">Status</Label>
+                    <Select value={newEmployee.status} onValueChange={(value: 'Active' | 'Inactive') => handleSelectChange('status', value)}>
+                        <SelectTrigger id="addStatus"><SelectValue/></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="Active">Active</SelectItem>
+                            <SelectItem value="Inactive">Inactive</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button variant="outline" onClick={resetAddDialog}>Cancel</Button></DialogClose>
+              <Button onClick={handleAddEmployee}>Add Employee</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
        <Card className="mb-6">
@@ -208,7 +314,8 @@ export default function ManageEmployeePage() {
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
+                       <Skeleton className="h-8 w-16 inline-block" />
                        <Skeleton className="h-8 w-16 inline-block" />
                     </TableCell>
                   </TableRow>
@@ -223,8 +330,9 @@ export default function ManageEmployeePage() {
                     <TableCell>{emp.department || 'N/A'}</TableCell>
                     <TableCell>{emp.designation || 'N/A'}</TableCell>
                     <TableCell>{emp.status}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)}><Trash2 className="h-4 w-4" /></Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -302,3 +410,5 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
+
+    
