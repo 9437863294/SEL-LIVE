@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'next';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Home, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,23 +29,9 @@ import {
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import type { Requisition } from '@/lib/types';
+import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-
-const stepWiseData = [
-  {
-    title: 'Request Receiving',
-    data: [{ user: 'Super User', total: 1, done: 1, onTime: 0, rejected: 0 }],
-  },
-  {
-    title: 'Verification',
-    data: [{ user: 'Super User', total: 1, done: 1, onTime: 0, rejected: 0 }],
-  },
-  {
-    title: 'Approval of Payment',
-    data: [{ user: 'Super User', total: 1, done: 1, onTime: 0, rejected: 0 }],
-  },
-];
+import { useAuth } from '@/components/auth/AuthProvider';
 
 interface SummaryStats {
     totalRequisitions: number;
@@ -55,26 +41,57 @@ interface SummaryStats {
     balance: number;
 }
 
+interface StepWiseReportData {
+    [stepName: string]: {
+        [userName: string]: {
+            total: number;
+            completed: number;
+            onTime: number;
+            rejected: number;
+        }
+    }
+}
+
 export default function SiteFundSummaryPage() {
   const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [allRequisitions, setAllRequisitions] = useState<Requisition[]>([]);
+  const [filteredRequisitions, setFilteredRequisitions] = useState<Requisition[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
+  const { user } = useAuth();
+
+  const [filters, setFilters] = useState({
+      year: 'all',
+      month: 'all',
+      project: 'all',
+      applicant: 'all',
+  });
 
   useEffect(() => {
     const fetchSummaryData = async () => {
         setIsLoading(true);
         try {
-            const querySnapshot = await getDocs(collection(db, 'requisitions'));
-            const requisitions = querySnapshot.docs.map(doc => doc.data() as Requisition);
+            const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowSnapshot] = await Promise.all([
+                getDocs(collection(db, 'requisitions')),
+                getDocs(collection(db, 'projects')),
+                getDocs(collection(db, 'users')),
+                getDocs(collection(db, 'workflows'))
+            ]);
             
-            const totalRequisitions = requisitions.length;
-            const totalAmount = requisitions.reduce((sum, req) => sum + req.amount, 0);
-            const cancelled = requisitions.filter(req => req.status === 'Rejected').length;
-            const approved = requisitions
-                .filter(req => req.status === 'Completed' || req.status === 'Approved')
-                .reduce((sum, req) => sum + req.amount, 0);
-            const balance = totalAmount - approved;
+            const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
+            setAllRequisitions(requisitionsData);
+            setFilteredRequisitions(requisitionsData);
+
+            setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+            setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
             
-            setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
+            const sfrWorkflow = workflowSnapshot.docs.find(doc => doc.id === 'site-fund-requisition')?.data();
+            if(sfrWorkflow) {
+              setWorkflow(sfrWorkflow as { steps: WorkflowStep[] });
+            }
+
         } catch (error) {
             console.error("Error fetching summary data: ", error);
             // Handle error, e.g., show a toast notification
@@ -84,13 +101,125 @@ export default function SiteFundSummaryPage() {
     
     fetchSummaryData();
   }, []);
+  
+   useEffect(() => {
+        let items = allRequisitions;
+
+        if (filters.year !== 'all') {
+            items = items.filter(req => new Date(req.date).getFullYear().toString() === filters.year);
+        }
+        if (filters.month !== 'all') {
+            items = items.filter(req => (new Date(req.date).getMonth() + 1).toString() === filters.month);
+        }
+        if (filters.project !== 'all') {
+            items = items.filter(req => req.projectId === filters.project);
+        }
+        if (filters.applicant !== 'all') {
+            items = items.filter(req => req.raisedById === filters.applicant);
+        }
+        
+        setFilteredRequisitions(items);
+    }, [filters, allRequisitions]);
+
+
+  useEffect(() => {
+        if (isLoading) return;
+        const totalRequisitions = filteredRequisitions.length;
+        const totalAmount = filteredRequisitions.reduce((sum, req) => sum + req.amount, 0);
+        const cancelled = filteredRequisitions.filter(req => req.status === 'Rejected').length;
+        const approved = filteredRequisitions
+            .filter(req => req.status === 'Completed' || req.status === 'Approved')
+            .reduce((sum, req) => sum + req.amount, 0);
+        const balance = totalAmount - approved;
+        
+        setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
+  }, [filteredRequisitions, isLoading]);
+  
+  const stepWiseReport = useMemo((): StepWiseReportData => {
+    if (!workflow || !users.length || !filteredRequisitions.length) {
+        return {};
+    }
+
+    const report: StepWiseReportData = {};
+    workflow.steps.forEach(step => {
+        report[step.name] = {};
+    });
+
+    const userMap = new Map(users.map(u => [u.id, u.name]));
+
+    const initializeUserInReport = (stepName: string, userName: string) => {
+        if (!report[stepName]) report[stepName] = {};
+        if (!report[stepName][userName]) {
+            report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+        }
+    };
+    
+    filteredRequisitions.forEach(req => {
+        const history: ActionLog[] = req.history || [];
+        const uniqueTasksPerStep: Record<string, Set<string>> = {}; // { stepName: Set(userId) }
+        
+        history.forEach((h: ActionLog) => {
+            const stepName = h.stepName;
+            const userName = h.userName || userMap.get(h.userId) || 'Unknown User';
+
+            if (!report[stepName]) return; // Skip if step from history is not in current workflow
+
+            initializeUserInReport(stepName, userName);
+
+            // Increment total tasks for the user in that step if it's the first time we see this task for them.
+            if (!uniqueTasksPerStep[stepName]) {
+                uniqueTasksPerStep[stepName] = new Set();
+            }
+            if(!uniqueTasksPerStep[stepName].has(h.userId)) {
+                report[stepName][userName].total++;
+                uniqueTasksPerStep[stepName].add(h.userId);
+            }
+
+            // Check for completion/rejection
+            const completionActions = ['approve', 'complete', 'verified', 'update approved amount'];
+            const action = h.action.toLowerCase();
+            
+            if (completionActions.includes(action) || action === 'rejected') {
+                report[stepName][userName].completed++;
+                if (action === 'rejected') {
+                    report[stepName][userName].rejected++;
+                }
+            }
+        });
+    });
+
+    return report;
+}, [filteredRequisitions, workflow, users]);
+
+
+  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
+      const unique = (arr: any[]) => [...new Set(arr)];
+      switch (key) {
+          case 'year':
+              return unique(allRequisitions.map(r => new Date(r.date).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
+          case 'month':
+              return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
+          case 'project':
+              return projects.filter(p => allRequisitions.some(r => r.projectId === p.id));
+          case 'applicant':
+              return users.filter(u => allRequisitions.some(r => r.raisedById === u.id));
+      }
+  }
+
+  const handleFilterChange = (filterName: string, value: string) => {
+      setFilters(prev => ({ ...prev, [filterName]: value }));
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
+  }
 
   const statsToDisplay = [
       { title: 'Total Requisitions', value: summaryStats?.totalRequisitions.toLocaleString() },
-      { title: 'Total Amount', value: `₹${summaryStats?.totalAmount.toLocaleString()}` },
+      { title: 'Total Amount', value: formatCurrency(summaryStats?.totalAmount || 0) },
       { title: 'Cancelled', value: summaryStats?.cancelled.toLocaleString() },
-      { title: 'Balance', value: `₹${summaryStats?.balance.toLocaleString()}` },
-      { title: 'Approved', value: `₹${summaryStats?.approved.toLocaleString()}` },
+      { title: 'Balance', value: formatCurrency(summaryStats?.balance || 0) },
+      { title: 'Approved', value: formatCurrency(summaryStats?.approved || 0) },
   ];
 
   return (
@@ -116,45 +245,49 @@ export default function SiteFundSummaryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
             <div className="space-y-1">
               <p className="text-sm font-medium">Year</p>
-              <Select defaultValue="all">
+              <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Years</SelectItem>
+                   {getFilterOptions('year').map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">Month</p>
-              <Select defaultValue="all">
+              <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Months</SelectItem>
+                  {getFilterOptions('month').map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">Project</p>
-              <Select defaultValue="all">
+              <Select value={filters.project} onValueChange={(val) => handleFilterChange('project', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Projects</SelectItem>
+                  {getFilterOptions('project').map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">Applicant</p>
-              <Select defaultValue="all">
+              <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Applicants" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Applicants</SelectItem>
+                  {getFilterOptions('applicant').map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -195,37 +328,49 @@ export default function SiteFundSummaryPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {stepWiseData.map((step) => (
-          <Card key={step.title}>
-            <CardHeader className="p-4 bg-muted/50">
-              <CardTitle className="text-base text-center">{step.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Done</TableHead>
-                    <TableHead>On Time</TableHead>
-                    <TableHead>Rejected</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {step.data.map((row, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{row.user}</TableCell>
-                      <TableCell>{row.total}</TableCell>
-                      <TableCell>{row.done}</TableCell>
-                      <TableCell>{row.onTime}</TableCell>
-                      <TableCell>{row.rejected}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        ))}
+        {isLoading ? (
+          Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
+        ) : (
+          workflow?.steps.map((step) => {
+              const stepData = stepWiseReport[step.name];
+              if (!stepData || Object.keys(stepData).length === 0) {
+                return null; // Don't render card if no data for this step
+              }
+              return (
+              <Card key={step.name}>
+                <CardHeader className="p-4 bg-muted/50">
+                  <CardTitle className="text-base text-center">{step.name}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Done</TableHead>
+                        <TableHead>On Time</TableHead>
+                        <TableHead>Rejected</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                     {Object.entries(stepData).map(([userName, data]) => {
+                         if (data.total === 0 && data.completed === 0) return null;
+                         return (
+                             <TableRow key={userName}>
+                                 <TableCell>{userName}</TableCell>
+                                 <TableCell>{data.total}</TableCell>
+                                 <TableCell>{data.completed}</TableCell>
+                                 <TableCell>{data.onTime}</TableCell>
+                                 <TableCell>{data.rejected}</TableCell>
+                             </TableRow>
+                         )
+                     })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )})
+        )}
       </div>
     </div>
   );
