@@ -29,7 +29,7 @@ export default function ManageCategoryPage() {
   const fetchCategories = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'categories'), orderBy('type'), orderBy('name'));
+      const q = query(collection(db, 'categories'), orderBy('type'));
       const querySnapshot = await getDocs(q);
       const categoriesData = querySnapshot.docs.map(doc => doc.data() as Category);
       
@@ -42,14 +42,29 @@ export default function ManageCategoryPage() {
         return acc;
       }, {} as Record<string, Category[]>);
 
+      // Sort the items within each group by name
+      for (const type in grouped) {
+          grouped[type].sort((a, b) => a.name.localeCompare(b.name));
+      }
+
       setCategoriesByType(grouped);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching categories: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch categories.',
-        variant: 'destructive',
-      });
+      // Check for Firestore index error
+      if (error.code === 'failed-precondition') {
+          toast({
+              title: 'Database Index Required',
+              description: "The query requires a custom index. Please check the Firebase console for instructions on how to create it.",
+              variant: 'destructive',
+              duration: 10000,
+          });
+      } else {
+          toast({
+            title: 'Error',
+            description: 'Failed to fetch categories.',
+            variant: 'destructive',
+          });
+      }
     }
     setIsLoading(false);
   };
