@@ -22,18 +22,15 @@ export default function SiteFundRequisitionLayout({
 
   return (
     <div className="flex w-full h-full">
-      <div className={cn("flex-1 transition-all duration-300", isExpanded ? "mr-48" : "mr-16")}>
-        {children}
-      </div>
       <aside 
         className={cn(
-            "fixed right-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-l bg-background transition-all duration-300",
+            "fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300",
             isExpanded ? "w-48" : "w-16"
         )}
       >
         <TooltipProvider delayDuration={0}>
           <div className="flex-1 p-2">
-            <nav className="flex flex-col items-center gap-1">
+            <nav className="flex flex-col gap-1">
               {navItems.map(item => (
                 <Tooltip key={item.label}>
                     <TooltipTrigger asChild>
@@ -42,7 +39,7 @@ export default function SiteFundRequisitionLayout({
                             variant="ghost"
                             className={cn(
                                 "w-full justify-start",
-                                isExpanded ? "px-3" : "h-10 w-10 p-0"
+                                isExpanded ? "px-3" : "h-10 w-10 p-0 justify-center"
                             )}
                          >
                             <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
@@ -51,7 +48,7 @@ export default function SiteFundRequisitionLayout({
                        </Link>
                     </TooltipTrigger>
                     {!isExpanded && (
-                       <TooltipContent side="left">
+                       <TooltipContent side="right">
                          <p>{item.label}</p>
                        </TooltipContent>
                     )}
@@ -66,23 +63,26 @@ export default function SiteFundRequisitionLayout({
                 variant="ghost"
                 className={cn(
                     "w-full justify-start",
-                    isExpanded ? "px-3" : "h-10 w-10 p-0"
+                    isExpanded ? "px-3" : "h-10 w-10 p-0 justify-center"
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 {isExpanded ? (
                     <>
-                        <ChevronRight className="h-5 w-5 mr-3" />
+                        <ChevronLeft className="h-5 w-5 mr-3" />
                         <span>Collapse</span>
                     </>
                 ) : (
-                    <ChevronLeft className="h-5 w-5" />
+                    <ChevronRight className="h-5 w-5" />
                 )}
                 <span className="sr-only">Toggle Sidebar</span>
             </Button>
         </div>
 
       </aside>
+      <div className={cn("flex-1 transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
+        {children}
+      </div>
     </div>
   );
 }
