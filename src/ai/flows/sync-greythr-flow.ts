@@ -37,18 +37,14 @@ async function getGreytHRToken(): Promise<string> {
         throw new Error("GreytHR credentials or domain not found in environment variables.");
     }
     
-    const url = "https://api.greythr.com/login";
+    const encodedCredentials = Buffer.from(`${username}:${password}`).toString('base64');
+    const url = `https://${domain}/uas/v1/oauth2/client-token`;
 
     const response = await fetch(url, {
         method: 'POST',
         headers: {
-            "Content-Type": "application/json",
-            "x-greythr-domain": domain,
+            "Authorization": "Basic " + encodedCredentials
         },
-        body: JSON.stringify({
-            username: username,
-            password: password,
-        }),
     });
 
     if (!response.ok) {
@@ -72,7 +68,7 @@ async function fetchCategoryMappings(token: string, domain: string): Promise<{ d
     const response = await fetch(url, {
         method: 'POST',
         headers: {
-            "Authorization": `Bearer ${token}`,
+            "ACCESS-TOKEN": token,
             "x-greythr-domain": domain,
             "Content-Type": "application/json",
         },
@@ -123,7 +119,7 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                "Authorization": `Bearer ${token}`,
+                "ACCESS-TOKEN": token,
                 "x-greythr-domain": domain,
             },
         });
@@ -184,7 +180,7 @@ const syncGreytHRFlow = ai.defineFlow(
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                "Authorization": `Bearer ${token}`,
+                "ACCESS-TOKEN": token,
                 "x-greythr-domain": domain,
             },
         });
