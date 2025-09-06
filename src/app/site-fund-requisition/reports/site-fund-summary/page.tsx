@@ -31,7 +31,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/components/auth/AuthProvider';
+
 
 interface SummaryStats {
     totalRequisitions: number;
@@ -46,7 +46,7 @@ interface StepWiseReportData {
         [userName: string]: {
             total: number;
             completed: number;
-            onTime: number;
+            onTime: number; // Placeholder for future logic
             rejected: number;
         }
     }
@@ -60,7 +60,6 @@ export default function SiteFundSummaryPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
-  const { user } = useAuth();
 
   const [filters, setFilters] = useState({
       year: 'all',
@@ -123,7 +122,11 @@ export default function SiteFundSummaryPage() {
 
 
   useEffect(() => {
-        if (isLoading) return;
+        if (isLoading || allRequisitions.length === 0) {
+           setSummaryStats({ totalRequisitions: 0, totalAmount: 0, cancelled: 0, approved: 0, balance: 0 });
+           return;
+        };
+
         const totalRequisitions = filteredRequisitions.length;
         const totalAmount = filteredRequisitions.reduce((sum, req) => sum + req.amount, 0);
         const cancelled = filteredRequisitions.filter(req => req.status === 'Rejected').length;
@@ -133,7 +136,7 @@ export default function SiteFundSummaryPage() {
         const balance = totalAmount - approved;
         
         setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
-  }, [filteredRequisitions, isLoading]);
+  }, [filteredRequisitions, isLoading, allRequisitions]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
     if (!workflow || !users.length || !filteredRequisitions.length) {
@@ -156,32 +159,30 @@ export default function SiteFundSummaryPage() {
     
     filteredRequisitions.forEach(req => {
         const history: ActionLog[] = req.history || [];
-        const uniqueTasksPerStep: Record<string, Set<string>> = {}; // { stepName: Set(userId) }
+        const uniqueTasksPerStep: Record<string, Set<string>> = {}; 
         
         history.forEach((h: ActionLog) => {
             const stepName = h.stepName;
             const userName = h.userName || userMap.get(h.userId) || 'Unknown User';
 
-            if (!report[stepName]) return; // Skip if step from history is not in current workflow
+            if (!report[stepName]) return;
 
             initializeUserInReport(stepName, userName);
 
-            // Increment total tasks for the user in that step if it's the first time we see this task for them.
             if (!uniqueTasksPerStep[stepName]) {
                 uniqueTasksPerStep[stepName] = new Set();
             }
-            if(!uniqueTasksPerStep[stepName].has(h.userId)) {
+            if(!uniqueTasksPerStep[stepName].has(h.userId + req.id)) {
                 report[stepName][userName].total++;
-                uniqueTasksPerStep[stepName].add(h.userId);
+                uniqueTasksPerStep[stepName].add(h.userId + req.id);
             }
 
-            // Check for completion/rejection
-            const completionActions = ['approve', 'complete', 'verified', 'update approved amount'];
+            const completionActions = ['approve', 'complete', 'verified', 'update approved amount', 'reject'];
             const action = h.action.toLowerCase();
             
-            if (completionActions.includes(action) || action === 'rejected') {
+            if (completionActions.includes(action)) {
                 report[stepName][userName].completed++;
-                if (action === 'rejected') {
+                if (action === 'reject') {
                     report[stepName][userName].rejected++;
                 }
             }
@@ -203,6 +204,8 @@ export default function SiteFundSummaryPage() {
               return projects.filter(p => allRequisitions.some(r => r.projectId === p.id));
           case 'applicant':
               return users.filter(u => allRequisitions.some(r => r.raisedById === u.id));
+          default:
+              return [];
       }
   }
 
@@ -334,7 +337,7 @@ export default function SiteFundSummaryPage() {
           workflow?.steps.map((step) => {
               const stepData = stepWiseReport[step.name];
               if (!stepData || Object.keys(stepData).length === 0) {
-                return null; // Don't render card if no data for this step
+                return null; 
               }
               return (
               <Card key={step.name}>
