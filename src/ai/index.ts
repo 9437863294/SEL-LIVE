@@ -6,3 +6,6 @@ export type { ValidateModuleContentInput, ValidateModuleContentOutput } from './
 
 export { syncGreytHR } from './flows/sync-greythr-flow';
 export type { SyncGreytHROutput, SyncGreytHRInput } from './flows/sync-greythr-flow';
+
+export { syncGreytHRCategories } from './flows/sync-categories-flow';
+export type { SyncCategoriesOutput } from './flows/sync-categories-flow';

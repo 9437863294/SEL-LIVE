@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,6 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { syncGreytHRCategories } from '@/ai';
 
 interface Category {
     id: number;
@@ -23,27 +24,53 @@ export default function ManageCategoryPage() {
   const { toast } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const fetchCategories = async () => {
+    setIsLoading(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'categories'));
+      const categoriesData: Category[] = querySnapshot.docs.map(doc => doc.data() as Category);
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error("Error fetching categories: ", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch categories.',
+        variant: 'destructive',
+      });
+    }
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      setIsLoading(true);
-      try {
-        const querySnapshot = await getDocs(collection(db, 'categories'));
-        const categoriesData: Category[] = querySnapshot.docs.map(doc => doc.data() as Category);
-        setCategories(categoriesData);
-      } catch (error) {
-        console.error("Error fetching categories: ", error);
-        toast({
-          title: 'Error',
-          description: 'Failed to fetch categories.',
-          variant: 'destructive',
-        });
-      }
-      setIsLoading(false);
-    };
-
     fetchCategories();
   }, [toast]);
+  
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await syncGreytHRCategories();
+      if (result.success) {
+        toast({
+            title: 'Sync Successful',
+            description: `Synced ${result.departmentCount} departments and ${result.designationCount} designations.`,
+        });
+        fetchCategories(); // Refresh the list
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error: any) {
+        toast({
+            title: 'Sync Failed',
+            description: error.message,
+            variant: 'destructive',
+        });
+    } finally {
+        setIsSyncing(false);
+    }
+  };
+
 
   const departments = categories.filter(c => c.type === 'Department').sort((a, b) => a.name.localeCompare(b.name));
   const designations = categories.filter(c => c.type === 'Designation').sort((a, b) => a.name.localeCompare(b.name));
@@ -88,13 +115,23 @@ export default function ManageCategoryPage() {
 
   return (
     <div className="w-full max-w-4xl mx-auto">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/settings/employee">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">Synced Categories</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+            <Link href="/settings/employee">
+            <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+            </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">Synced Categories</h1>
+        </div>
+        <Button onClick={handleSync} disabled={isSyncing}>
+            {isSyncing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Sync from GreytHR
+        </Button>
       </div>
       
       <Tabs defaultValue="departments">
@@ -112,5 +149,3 @@ export default function ManageCategoryPage() {
     </div>
   );
 }
-
-    
