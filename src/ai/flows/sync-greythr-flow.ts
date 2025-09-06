@@ -123,7 +123,6 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
         const categories: { departmentId?: number; designationId?: number } = {};
         if (emp.categoryList && Array.isArray(emp.categoryList)) {
             emp.categoryList.forEach((cat: any) => {
-                // According to GreytHR API structure, `category: 2` is Department and `category: 6` is Designation
                 if (cat.category === 2) { 
                     categories.departmentId = cat.value;
                 }
@@ -147,13 +146,10 @@ const syncGreytHRFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
-    // 1. Fetch all category mappings first
     const { departments: departmentMap, designations: designationMap } = await fetchCategoryMappings(token, domain);
 
-    // 2. Fetch all employee categories (which employee has which category ID)
     const employeeCategories = await fetchEmployeeCategories(token, domain);
     
-    // 3. Now, fetch all employees from GreytHR
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
     let page = 1;
     const size = 100;
@@ -184,10 +180,8 @@ const syncGreytHRFlow = ai.defineFlow(
         }
     }
 
-    // 4. Filter employees
     const filteredData = allData.filter(employee => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
-    // 5. Write to Firestore
     const employeesRef = collection(db, 'employees');
     const batch = writeBatch(db);
     let employeesSynced = 0;
@@ -223,7 +217,6 @@ const syncGreytHRFlow = ai.defineFlow(
 
     await batch.commit();
 
-    // 6. Update last sync time
     const settingsRef = doc(db, 'settings', 'employeeSync');
     await setDoc(settingsRef, { lastSynced: new Date().toISOString() });
 
