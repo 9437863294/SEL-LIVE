@@ -68,28 +68,59 @@ async function getGreytHRToken(): Promise<string> {
 }
 
 async function fetchAllCategories(token: string, domain: string): Promise<Map<number, string>> {
-    const url = "https://api.greythr.com/hr/v2/categories";
+    const url = "https://api.greythr.com/hr/v2/lov";
+    const allCategoryTypes = [
+        "cat::Department", "cat::Designation", "cat::Grade", "cat::Location",
+        "cat::Company", "cat::Project Name", "cat::Project Division", 
+        "cat::Cost Center", "cat::COST CENTER CODE", "cat::Shift", "cat::EMPLOYEE TYPE"
+    ];
+    
+    const body = JSON.stringify(allCategoryTypes);
+
     const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
             "ACCESS-TOKEN": token,
             "x-greythr-domain": domain,
+            "Content-Type": "application/json",
         },
+        body: body,
     });
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to fetch all categories: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to fetch all categories from LOV: ${response.statusText} - ${errorText}`);
     }
 
     const categoriesData = await response.json();
     const categoryMap = new Map<number, string>();
-    if (categoriesData && Array.isArray(categoriesData)) {
-        categoriesData.forEach(category => {
-            categoryMap.set(category.id, category.name);
+
+    // The lov endpoint returns a map where keys are "cat::CategoryName"
+    // and values are arrays of [id, name, ...]. We also need a way to map
+    // the category ID (e.g., 1 for Department) to its name ("Department").
+    // Let's create a temporary map for that.
+    const categoryIdToNameMap = new Map<number, string>();
+    if (categoriesData['cat::category']) {
+        categoriesData['cat::category'].forEach((cat: [number, string, any]) => {
+             // Reconstruct the key format used in the main positions response
+            const key = `cat::${cat[1]}`;
+            // The API for positions uses just the ID (e.g. 1), not the key ('cat::Department')
+            // So we need to know that ID 1 is "Department".
+            categoryIdToNameMap.set(cat[0], cat[1]);
         });
     }
-    return categoryMap;
+
+    // Now, populate the main map with value IDs to value names.
+    // E.g., for "cat::Department", we map department ID (e.g., 29) to name ("Development").
+    for (const catType of allCategoryTypes) {
+        if (categoriesData[catType]) {
+            categoriesData[catType].forEach((item: [number, string, any]) => {
+                categoryMap.set(item[0], item[1]);
+            });
+        }
+    }
+    
+    return categoryIdToNameMap;
 }
 
 
@@ -106,7 +137,7 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
     
     const url = `https://api.greythr.com/employee/v2/employees/categories?page=${page}&size=${pageSize}`;
     
-    const [positionsResponse, categoryMap] = await Promise.all([
+    const [positionsResponse, categoryIdToNameMap] = await Promise.all([
       fetch(url, {
           method: 'GET',
           headers: {
@@ -131,7 +162,8 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
       ...empPos,
       categoryList: empPos.categoryList.map((cat: any) => ({
         ...cat,
-        category: categoryMap.get(cat.category) || `ID: ${cat.category}`,
+        // Use the map to convert category ID (e.g., 1) to its name (e.g., "Department")
+        category: categoryIdToNameMap.get(cat.category) || `ID: ${cat.category}`,
       }))
     }));
 
