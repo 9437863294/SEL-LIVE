@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Loader2,
   Tags,
+  DownloadCloud,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -44,10 +45,10 @@ const employeeSettingsItemsBase = [
     href: '/settings/employee/manage' 
   },
   { 
-    icon: RefreshCw, 
+    icon: DownloadCloud, 
     text: 'Sync with GreytHR',
-    description: 'Sync employee data from GreytHR.',
-    href: '#' 
+    description: 'Fetch and import employee data from GreytHR.',
+    href: '/settings/employee/sync' 
   },
   { 
     icon: Tags, 
@@ -106,57 +107,38 @@ function EmployeeSettingsCard({ item }: EmployeeSettingsCardProps) {
 
 
 export default function EmployeeSettingsPage() {
-  const { toast } = useToast();
-  const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
 
-  const fetchLastSynced = async () => {
-      try {
-        const docRef = doc(db, 'settings', 'employeeSync');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.lastSynced) {
-                setLastSynced(formatDistanceToNow(new Date(data.lastSynced), { addSuffix: true }));
-            }
-        }
-      } catch (error) {
-        console.error("Failed to fetch last sync time:", error);
-      }
-  };
-  
   useEffect(() => {
+    const fetchLastSynced = async () => {
+        try {
+          const docRef = doc(db, 'settings', 'employeeSync');
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (data.lastSynced) {
+                  setLastSynced(formatDistanceToNow(new Date(data.lastSynced), { addSuffix: true }));
+              }
+          }
+        } catch (error) {
+          console.error("Failed to fetch last sync time:", error);
+        }
+    };
     fetchLastSynced();
-  }, []);
+    
+    // Listen for custom event to refresh sync time
+    const handleSyncSuccess = () => fetchLastSynced();
+    window.addEventListener('greytHRSyncSuccess', handleSyncSuccess);
 
-  const handleSync = async () => {
-    setIsSyncing(true);
-    try {
-      const result = await syncGreytHR();
-      if(result.success) {
-        toast({
-            title: 'Sync Successful',
-            description: result.message,
-        });
-        fetchLastSynced(); // Refresh the last synced time
-      } else {
-        throw new Error(result.message);
-      }
-    } catch(error: any) {
-        console.error("Error syncing with GreytHR: ", error);
-        toast({
-            title: 'Sync Failed',
-            description: error.message || 'An unexpected error occurred.',
-            variant: 'destructive',
-        });
-    } finally {
-        setIsSyncing(false);
-    }
-  };
+    return () => {
+        window.removeEventListener('greytHRSyncSuccess', handleSyncSuccess);
+    };
+
+  }, []);
 
   const employeeSettingsItems = employeeSettingsItemsBase.map(item => {
     if (item.text === 'Sync with GreytHR') {
-      return { ...item, action: handleSync, isLoading: isSyncing, lastSynced: lastSynced };
+      return { ...item, lastSynced: lastSynced };
     }
     return item;
   });
@@ -179,5 +161,3 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
-
-    

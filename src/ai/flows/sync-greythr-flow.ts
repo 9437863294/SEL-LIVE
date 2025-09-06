@@ -10,10 +10,20 @@ import { z } from 'zod';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, getDocs, query, where, doc, setDoc } from 'firebase/firestore';
 
+const EmployeeDataSchema = z.object({
+    employeeId: z.string(),
+    name: z.string(),
+    email: z.string(),
+    phone: z.string(),
+    department: z.string(),
+    designation: z.string(),
+    status: z.string(),
+});
+
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
-  employeesSynced: z.number(),
+  employees: z.array(EmployeeDataSchema).optional(),
 });
 
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
@@ -50,8 +60,8 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-// Fetches the mapping of category IDs to human-readable names and stores them
-async function fetchAndStoreCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
+// Fetches the mapping of category IDs to human-readable names
+async function fetchCategoryMappings(token: string, domain: string): Promise<{ departments: Map<number, string>, designations: Map<number, string> }> {
     const url = `https://api.greythr.com/hr/v2/lov`;
     const categoryTypes = ["cat::Department", "cat::Designation"];
     const response = await fetch(url, {
@@ -155,7 +165,7 @@ const syncGreytHRFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
-    const { departments: departmentMap, designations: designationMap } = await fetchAndStoreCategoryMappings(token, domain);
+    const { departments: departmentMap, designations: designationMap } = await fetchCategoryMappings(token, domain);
 
     const employeeCategories = await fetchEmployeeCategories(token, domain);
     
@@ -191,48 +201,29 @@ const syncGreytHRFlow = ai.defineFlow(
 
     const filteredData = allData.filter(employee => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
-    const employeesRef = collection(db, 'employees');
-    const batch = writeBatch(db);
-    let employeesSynced = 0;
-
-    for (const empData of filteredData) {
-        const q = query(employeesRef, where("employeeId", "==", empData.employeeNo));
-        const querySnapshot = await getDocs(q);
-        
+    const employeesToReturn = filteredData.map(empData => {
         const assignedCategories = employeeCategories[empData.employeeId] || {};
         const departmentName = assignedCategories.departmentId ? departmentMap.get(assignedCategories.departmentId) : '';
         const designationName = assignedCategories.designationId ? designationMap.get(assignedCategories.designationId) : '';
 
-        const newEmployeeData = {
+        return {
             employeeId: empData.employeeNo,
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',
-            department: departmentName || '',
-            designation: designationName || '',
+            department: departmentName || 'N/A',
+            designation: designationName || 'N/A',
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
         };
-
-        if (querySnapshot.empty) {
-            const newDocRef = doc(employeesRef);
-            batch.set(newDocRef, newEmployeeData);
-            employeesSynced++;
-        } else {
-            const docToUpdate = querySnapshot.docs[0];
-            batch.update(docToUpdate.ref, newEmployeeData);
-            employeesSynced++;
-        }
-    }
-
-    await batch.commit();
+    });
 
     const settingsRef = doc(db, 'settings', 'employeeSync');
     await setDoc(settingsRef, { lastSynced: new Date().toISOString() });
 
     return { 
         success: true, 
-        message: `Successfully synced ${employeesSynced} employees.`,
-        employeesSynced,
+        message: `Successfully fetched ${employeesToReturn.length} employees.`,
+        employees: employeesToReturn,
     };
   }
 );
@@ -241,5 +232,3 @@ const syncGreytHRFlow = ai.defineFlow(
 export async function syncGreytHR(): Promise<SyncGreytHROutput> {
   return syncGreytHRFlow();
 }
-
-    
