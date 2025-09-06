@@ -5,6 +5,7 @@
 
 
 
+
 export type Module = {
   id: string;
   title: string;
@@ -42,6 +43,11 @@ export type Employee = {
     status: 'Active' | 'Inactive';
 };
 
+export type UserTheme = {
+  color: string;
+  font: string;
+};
+
 export type User = {
     id: string;
     name: string;
@@ -50,6 +56,7 @@ export type User = {
     role: string; // Changed from 'Admin' | 'User' to string to support dynamic roles
     status: 'Active' | 'Inactive';
     photoURL?: string;
+    theme?: UserTheme;
 };
 
 export type Role = {

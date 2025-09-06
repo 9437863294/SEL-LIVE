@@ -13,11 +13,13 @@ import type { User } from '@/lib/types';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  refreshUserData: () => Promise<void>;
 }
 
 const AuthContext = React.createContext<AuthContextType>({
   user: null,
   loading: true,
+  refreshUserData: async () => {},
 });
 
 const publicRoutes = ['/login'];
@@ -28,38 +30,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
-        // User is signed in, fetch their profile from Firestore
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setUser({ id: userDocSnap.id, ...userDocSnap.data() } as User);
-        } else {
-          // Handle case where user exists in Auth but not in Firestore
-          // For now, we'll treat them as partially logged in
-          console.error("User document not found in Firestore for UID:", firebaseUser.uid);
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            name: firebaseUser.displayName || firebaseUser.email || 'User',
-            photoURL: firebaseUser.photoURL || undefined,
-            // Fill with default values
-            mobile: 'N/A',
-            role: 'User',
-            status: 'Active',
-          });
-        }
+  const fetchUserData = React.useCallback(async (firebaseUser: FirebaseUser | null) => {
+    if (firebaseUser) {
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        setUser({ id: userDocSnap.id, ...userDocSnap.data() } as User);
       } else {
-        // User is signed out
-        setUser(null);
+        console.error("User document not found in Firestore for UID:", firebaseUser.uid);
+        setUser({
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: firebaseUser.displayName || firebaseUser.email || 'User',
+          photoURL: firebaseUser.photoURL || undefined,
+          mobile: 'N/A',
+          role: 'User',
+          status: 'Active',
+        });
       }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    } else {
+      setUser(null);
+    }
+    setLoading(false);
   }, []);
+
+  const refreshUserData = React.useCallback(async () => {
+    const firebaseUser = auth.currentUser;
+    if (firebaseUser) {
+        setLoading(true);
+        await fetchUserData(firebaseUser);
+        setLoading(false);
+    }
+  }, [fetchUserData]);
+
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, fetchUserData);
+    return () => unsubscribe();
+  }, [fetchUserData]);
 
   React.useEffect(() => {
     if (loading) return;
@@ -83,7 +90,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isPublicRoute = publicRoutes.includes(pathname);
 
-  // While redirecting, show a loader to prevent flicker
   if ((!user && !isPublicRoute) || (user && isPublicRoute)) {
     return (
        <div className="flex min-h-screen items-center justify-center bg-background">
@@ -98,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, refreshUserData }}>
         {children}
     </AuthContext.Provider>
   )

@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Hash,
   Calculator,
+  Palette,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -35,6 +36,7 @@ const settingsItems = [
   { icon: ShieldCheck, text: 'Role Management', href: '/settings/role-management' },
   { icon: Hash, text: 'Serial No. Config', href: '/settings/serial-no-configuration' },
   { icon: Calculator, text: 'Import Config', href: '#' },
+  { icon: Palette, text: 'Appearance', href: '/settings/appearance' },
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {
