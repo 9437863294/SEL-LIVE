@@ -20,10 +20,16 @@ const EmployeeDataSchema = z.object({
     status: z.string(),
 });
 
+const SyncGreytHRInputSchema = z.object({
+  page: z.number().optional().default(1),
+});
+export type SyncGreytHRInput = z.infer<typeof SyncGreytHRInputSchema>;
+
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
   employees: z.array(EmployeeDataSchema).optional(),
+  hasNextPage: z.boolean().optional(),
 });
 
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
@@ -64,44 +70,38 @@ async function getGreytHRToken(): Promise<string> {
 const syncGreytHRFlow = ai.defineFlow(
   {
     name: 'syncGreytHRFlow',
+    inputSchema: SyncGreytHRInputSchema,
     outputSchema: SyncGreytHROutputSchema,
   },
-  async () => {
+  async ({ page = 1 }) => {
     const token = await getGreytHRToken();
     const domain = process.env.GREYTHR_DOMAIN!;
     
     const baseUrl = "https://api.greythr.com/employee/v2/employees";
-    let page = 1;
     const size = 100;
-    const allData = [];
 
-    while (true) {
-        const url = `${baseUrl}?page=${page}&size=${size}&state=CURRENT`;
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                "ACCESS-TOKEN": token,
-                "x-greythr-domain": domain,
-            },
-        });
+    const url = `${baseUrl}?page=${page}&size=${size}&state=CURRENT`;
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            "ACCESS-TOKEN": token,
+            "x-greythr-domain": domain,
+        },
+    });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to fetch employees: ${response.statusText} - ${errorText}`);
-        }
-
-        const json = await response.json();
-        if (json.data && json.data.length > 0) {
-            allData.push(...json.data);
-            page++;
-        } else {
-            break;
-        }
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch employees: ${response.statusText} - ${errorText}`);
     }
 
-    const filteredData = allData.filter(employee => employee.employeeNo && employee.employeeNo.startsWith("E"));
+    const json = await response.json();
+    const allData = json.data || [];
     
-    const employeesToReturn = filteredData.map(empData => {
+    const hasNextPage = allData.length === size;
+
+    const filteredData = allData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
+    
+    const employeesToReturn = filteredData.map((empData: any) => {
         return {
             employeeId: empData.employeeNo,
             name: empData.name,
@@ -114,17 +114,18 @@ const syncGreytHRFlow = ai.defineFlow(
     });
 
     const settingsRef = doc(db, 'settings', 'employeeSync');
-    await setDoc(settingsRef, { lastSynced: new Date().toISOString() });
+    await setDoc(settingsRef, { lastSynced: new Date().toISOString() }, { merge: true });
 
     return { 
         success: true, 
-        message: `Successfully fetched ${employeesToReturn.length} employees.`,
+        message: `Successfully fetched page ${page} with ${employeesToReturn.length} employees.`,
         employees: employeesToReturn,
+        hasNextPage: hasNextPage
     };
   }
 );
 
 
-export async function syncGreytHR(): Promise<SyncGreytHROutput> {
-  return syncGreytHRFlow();
+export async function syncGreytHR(input: SyncGreytHRInput): Promise<SyncGreytHROutput> {
+  return syncGreytHRFlow(input);
 }
