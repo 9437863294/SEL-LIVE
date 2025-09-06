@@ -66,7 +66,7 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-async function fetchPage(url: string, token: string, domain: string, page: number, size = 100) {
+async function fetchPage(url: string, token: string, domain: string, page: number, size = 25) {
     const paginatedUrl = `${url}?page=${page}&size=${size}&state=CURRENT`;
     const response = await fetch(paginatedUrl, {
         method: 'GET',

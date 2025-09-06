@@ -192,12 +192,14 @@ export default function SyncEmployeePage() {
                                 <TableHead>Name</TableHead>
                                 <TableHead>Email</TableHead>
                                 <TableHead>Mobile</TableHead>
+                                <TableHead>Department</TableHead>
+                                <TableHead>Designation</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                              {isFetching ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center">
+                                    <TableCell colSpan={7} className="h-24 text-center">
                                         <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                     </TableCell>
                                 </TableRow>
@@ -214,11 +216,13 @@ export default function SyncEmployeePage() {
                                         <TableCell>{emp.name}</TableCell>
                                         <TableCell>{emp.email}</TableCell>
                                         <TableCell>{emp.phone}</TableCell>
+                                        <TableCell>{emp.department}</TableCell>
+                                        <TableCell>{emp.designation}</TableCell>
                                     </TableRow>
                                 ))
                              ) : (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center h-24">No employees found in GreytHR.</TableCell>
+                                    <TableCell colSpan={7} className="text-center h-24">No employees found in GreytHR.</TableCell>
                                 </TableRow>
                              )}
                         </TableBody>
