@@ -12,10 +12,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import type { Employee, Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const initialNewEmployeeState = {
   employeeId: '',
@@ -39,6 +40,8 @@ export default function ManageEmployeePage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+
   const [filters, setFilters] = useState({
       employeeId: '',
       name: '',
@@ -177,7 +180,46 @@ export default function ManageEmployeePage() {
       });
     }
   };
+  
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedEmployeeIds(filteredEmployees.map(emp => emp.id));
+    } else {
+      setSelectedEmployeeIds([]);
+    }
+  };
+  
+  const handleSelectEmployee = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedEmployeeIds(prev => [...prev, id]);
+    } else {
+      setSelectedEmployeeIds(prev => prev.filter(empId => empId !== id));
+    }
+  };
 
+  const handleDeleteSelected = async () => {
+    const batch = writeBatch(db);
+    selectedEmployeeIds.forEach(id => {
+      batch.delete(doc(db, 'employees', id));
+    });
+
+    try {
+      await batch.commit();
+      toast({
+        title: 'Success',
+        description: `${selectedEmployeeIds.length} employee(s) deleted successfully.`,
+      });
+      setSelectedEmployeeIds([]);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting selected employees: ', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete selected employees.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -256,35 +298,45 @@ export default function ManageEmployeePage() {
       </div>
 
        <Card className="mb-6">
-        <CardContent className="p-4 flex flex-wrap items-center gap-4">
-            <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search Employee ID..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
+        <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-4">
+              <div className="relative w-full sm:w-auto">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search Employee ID..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
+              </div>
+              <div className="relative w-full sm:w-auto">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search Name..." className="pl-8 w-full sm:w-48" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
+              </div>
+              <Select value={filters.department} onValueChange={value => handleFilterChange('department', value)}>
+                  <SelectTrigger className="w-full sm:w-48">
+                      <SelectValue placeholder="All Departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {departments.map(dept => <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>)}
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                  </SelectContent>
+              </Select>
+              <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
+                  <SelectTrigger className="w-full sm:w-48">
+                      <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+              </Select>
             </div>
-            <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search Name..." className="pl-8 w-full sm:w-48" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
-            </div>
-            <Select value={filters.department} onValueChange={value => handleFilterChange('department', value)}>
-                <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    {departments.map(dept => <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>)}
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                </SelectContent>
-            </Select>
-            <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
-                <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-            </Select>
+            {selectedEmployeeIds.length > 0 && (
+                <div className="sm:ml-auto mt-4 sm:mt-0">
+                    <Button variant="destructive" onClick={handleDeleteSelected}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete ({selectedEmployeeIds.length})
+                    </Button>
+                </div>
+            )}
         </CardContent>
        </Card>
 
@@ -293,6 +345,13 @@ export default function ManageEmployeePage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[50px]">
+                   <Checkbox
+                        checked={selectedEmployeeIds.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
+                        onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                        aria-label="Select all"
+                    />
+                </TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
@@ -307,6 +366,7 @@ export default function ManageEmployeePage() {
               {isLoading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-5" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-48" /></TableCell>
@@ -322,7 +382,14 @@ export default function ManageEmployeePage() {
                 ))
               ) : filteredEmployees.length > 0 ? (
                 filteredEmployees.map((emp) => (
-                  <TableRow key={emp.id}>
+                  <TableRow key={emp.id} data-state={selectedEmployeeIds.includes(emp.id) && "selected"}>
+                    <TableCell>
+                      <Checkbox
+                          checked={selectedEmployeeIds.includes(emp.id)}
+                          onCheckedChange={(checked) => handleSelectEmployee(emp.id, !!checked)}
+                          aria-label={`Select employee ${emp.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{emp.employeeId}</TableCell>
                     <TableCell>{emp.name}</TableCell>
                     <TableCell>{emp.email}</TableCell>
@@ -338,7 +405,7 @@ export default function ManageEmployeePage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
+                  <TableCell colSpan={9} className="text-center h-24">
                     No employees found.
                   </TableCell>
                 </TableRow>
@@ -411,4 +478,3 @@ export default function ManageEmployeePage() {
   );
 }
 
-    
