@@ -130,7 +130,6 @@ async function fetchEmployeeCategories(token: string, domain: string): Promise<R
         const json = await response.json();
         if (json.data && json.data.length > 0) {
             allCategoriesData.push(...json.data);
-            if (!json.pages.hasNext) break;
             page++;
         } else {
             break;
@@ -193,7 +192,6 @@ const syncGreytHRFlow = ai.defineFlow(
         const json = await response.json();
         if (json.data && json.data.length > 0) {
             allData.push(...json.data);
-            if (!json.pages.hasNext) break;
             page++;
         } else {
             break;
