@@ -5,10 +5,23 @@ export type BoqItem = {
     [key: string]: any;
 };
 
+export type JmcItem = {
+  boqSlNo: string;
+  description: string;
+  unit: string;
+  rate: string;
+  executedQty: string;
+  totalAmount: string;
+};
 
-
-
-
+export type JmcEntry = {
+    id: string;
+    jmcNo: string;
+    woNo: string;
+    jmcDate: string;
+    items: JmcItem[];
+    createdAt: string;
+};
 
 
 export type Module = {

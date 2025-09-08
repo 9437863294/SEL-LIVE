@@ -25,20 +25,16 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
+import ViewRequisitionDialog from '@/components/ViewRequisitionDialog'; // Assuming this can view JMC entries too or a new one is needed
+import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 
-type JmcEntry = {
-    id: string;
-    jmcNo: string;
-    woNo: string;
-    jmcDate: string;
-    items: any[];
-    createdAt: string;
-};
 
 export default function JmcLogPage() {
   const { toast } = useToast();
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
   
   const fetchJmcEntries = async () => {
     setIsLoading(true);
@@ -101,6 +97,13 @@ export default function JmcLogPage() {
     XLSX.writeFile(workbook, "jmc_log_export.xlsx");
   };
 
+  const handleViewDetails = (entry: JmcEntry) => {
+    setSelectedEntry(entry);
+    setIsViewOpen(true);
+    // As there is no JMC view dialog, we just log for now.
+    console.log("Viewing details for:", entry);
+  };
+
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -144,7 +147,7 @@ export default function JmcLogPage() {
                 ))
               ) : jmcEntries.length > 0 ? (
                 jmcEntries.map((entry) => (
-                  <TableRow key={entry.id}>
+                  <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                     <TableCell className="font-medium">{entry.jmcNo}</TableCell>
                     <TableCell>{entry.woNo}</TableCell>
                     <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
@@ -154,20 +157,20 @@ export default function JmcLogPage() {
                        <AlertDialog>
                           <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
                                       <span className="sr-only">Open menu</span>
                                       <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => console.log('Viewing details for', entry.id)}>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
                                       <Eye className="mr-2 h-4 w-4" /> View Details
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => toast({ title: 'Info', description: 'PDF generation is not yet implemented.'})}>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); toast({ title: 'Info', description: 'PDF generation is not yet implemented.'})}}>
                                       <FileText className="mr-2 h-4 w-4" /> Generate PDF
                                   </DropdownMenuItem>
                                   <AlertDialogTrigger asChild>
-                                      <DropdownMenuItem className="text-destructive" onSelect={(e) => e.preventDefault()}>
+                                      <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()} onSelect={(e) => e.preventDefault()}>
                                           <Trash2 className="mr-2 h-4 w-4" /> Delete
                                       </DropdownMenuItem>
                                   </AlertDialogTrigger>
@@ -179,8 +182,8 @@ export default function JmcLogPage() {
                                   <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDelete(entry.id)}>Delete</AlertDialogAction>
+                                  <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry.id); }}>Delete</AlertDialogAction>
                               </AlertDialogFooter>
                           </AlertDialogContent>
                        </AlertDialog>
@@ -198,6 +201,8 @@ export default function JmcLogPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* A proper view dialog for JMC would be needed here. For now, it logs to console. */}
     </div>
   );
 }
