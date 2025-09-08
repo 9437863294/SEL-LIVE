@@ -124,7 +124,7 @@ export default function ViewBoqPage() {
 
   const formatNumber = (value: any) => {
     if (typeof value === 'number') {
-      return parseFloat(value.toFixed(4));
+      return parseFloat(value.toFixed(2));
     }
     return value;
   };
