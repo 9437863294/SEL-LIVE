@@ -1,6 +1,7 @@
 
 
 
+
 export type BoqItem = {
     id: string;
     [key: string]: any;
@@ -44,6 +45,7 @@ export type Bill = {
     woNo: string;
     items: (Omit<BillItem, 'billedQty'> & { billedQty: number })[]; // Store billedQty as a number
     createdAt: any; // Firestore Timestamp
+    totalAmount?: number; // Optional total amount, can be calculated client-side
 }
 
 
