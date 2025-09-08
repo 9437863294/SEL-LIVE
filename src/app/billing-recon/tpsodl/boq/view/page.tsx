@@ -60,9 +60,33 @@ export default function ViewBoqPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
-  );
+  
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
+    // Initialize state from localStorage or default to all visible
+    if (typeof window === 'undefined') {
+        return tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
+    }
+    try {
+      const saved = window.localStorage.getItem('boqColumnVisibility');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error("Failed to parse column visibility from localStorage", error);
+    }
+    // Default value if nothing is in localStorage or if it fails
+    return tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
+  });
+  
+  // Save to localStorage whenever column visibility changes
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('boqColumnVisibility', JSON.stringify(columnVisibility));
+    } catch (error) {
+      console.error("Failed to save column visibility to localStorage", error);
+    }
+  }, [columnVisibility]);
+
 
   const fetchBoqItems = async () => {
     setIsLoading(true);
@@ -137,7 +161,7 @@ export default function ViewBoqPage() {
 
   const formatNumber = (value: any) => {
     if (typeof value === 'number') {
-      return new Intl.NumberFormat('en-US', {
+      return new Intl.NumberFormat('en-IN', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(value);
