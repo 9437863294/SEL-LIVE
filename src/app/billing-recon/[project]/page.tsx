@@ -62,7 +62,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 export default function ProjectDashboardPage() {
   const params = useParams();
   const projectSlug = params.project as string;
-  const projectName = projectSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const projectName = projectSlug ? projectSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Project';
 
   const billingItems = [
     { icon: ClipboardList, text: 'BOQ', href: `/billing-recon/${projectSlug}/boq`, description: 'Manage Bill of Quantities.' },
