@@ -26,8 +26,6 @@ interface BoqItemSelectorProps {
   selectedSlNo: string | null;
   onSelect: (item: BoqItem | null) => void;
   isLoading: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
 }
 
 export function BoqItemSelector({
@@ -35,9 +33,8 @@ export function BoqItemSelector({
   selectedSlNo,
   onSelect,
   isLoading,
-  open,
-  onOpenChange,
 }: BoqItemSelectorProps) {
+  const [open, setOpen] = React.useState(false);
   const selectedItem = boqItems.find((item) => item['SL. No.'] === selectedSlNo);
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
@@ -46,7 +43,7 @@ export function BoqItemSelector({
   };
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -63,8 +60,7 @@ export function BoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-                const itemSlNo = value.split(' - ')[0];
-                const item = boqItems.find(i => i['SL. No.'] === itemSlNo);
+                const item = boqItems.find(i => `${i['SL. No.'] || ''} - ${i['DESCRIPTION OF ITEMS'] || ''}` === value);
                 if (!item) return 0;
 
                 const slNo = item['SL. No.']?.toLowerCase() || '';
@@ -90,7 +86,7 @@ export function BoqItemSelector({
                       value={`${item['SL. No.'] || ''} - ${item['DESCRIPTION OF ITEMS'] || ''}`}
                       onSelect={() => {
                         onSelect(item);
-                        onOpenChange(false);
+                        setOpen(false);
                       }}
                     >
                       <Check

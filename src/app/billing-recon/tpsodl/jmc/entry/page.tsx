@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BoqItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
+import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 
 const initialJmcDetails = {
     jmcNo: '',
@@ -39,6 +40,7 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
+  const [isMultiSelectOpen, setIsMultiSelectOpen] = useState(false);
 
   useEffect(() => {
     const fetchBoqItems = async () => {
@@ -50,7 +52,6 @@ export default function JmcEntryPage() {
                 return { 
                     ...data, 
                     id: doc.id, 
-                    // Ensure SL. No. is a string for consistent searching
                     'SL. No.': String(data['SL. No.'] || '') 
                 } as BoqItem;
             }).sort((a, b) => {
@@ -72,6 +73,11 @@ export default function JmcEntryPage() {
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setDetails(prev => ({ ...prev, [name]: value }));
+  };
+  
+  const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
+    const keys = Object.keys(boqItem);
+    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
   };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,7 +105,7 @@ export default function JmcEntryPage() {
     const itemToUpdate = newItems[index];
 
     if (boqItem) {
-        const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('price') && !k.toLowerCase().includes('total')) || 'BASIC PRICE';
+        const rateKey = findBasicPriceKey(boqItem) || 'BASIC PRICE';
         itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
         itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
         itemToUpdate.unit = boqItem['UNITS'] || '';
@@ -113,11 +119,31 @@ export default function JmcEntryPage() {
             }
         }
     } else {
-        // Clear fields if selection is cleared
         Object.assign(itemToUpdate, initialItem);
     }
     
     setItems(newItems);
+  };
+  
+  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
+      const newJmcItems = selectedBoqItems.map(boqItem => {
+          const rateKey = findBasicPriceKey(boqItem) || 'BASIC PRICE';
+          return {
+              boqSlNo: boqItem['SL. No.'] || '',
+              description: boqItem['DESCRIPTION OF ITEMS'] || '',
+              unit: boqItem['UNITS'] || '',
+              rate: String(boqItem[rateKey] || '0'),
+              executedQty: '',
+              totalAmount: '',
+          };
+      });
+
+      // If the first item is empty, replace it. Otherwise, add the new items.
+      const existingItems = items.length === 1 && items[0].boqSlNo === ''
+          ? []
+          : items;
+
+      setItems([...existingItems, ...newJmcItems]);
   };
 
   const addItem = () => {
@@ -125,8 +151,13 @@ export default function JmcEntryPage() {
   };
 
   const removeItem = (index: number) => {
-    const newItems = items.filter((_, i) => i !== index);
-    setItems(newItems);
+    if (items.length > 1) {
+        const newItems = items.filter((_, i) => i !== index);
+        setItems(newItems);
+    } else {
+        // If it's the last item, just reset it to the initial state
+        setItems([{...initialItem}]);
+    }
   };
 
   const handleSave = async () => {
@@ -167,6 +198,7 @@ export default function JmcEntryPage() {
   };
 
   return (
+    <>
     <div className="w-full max-w-7xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -208,8 +240,15 @@ export default function JmcEntryPage() {
 
       <Card>
         <CardHeader>
-            <CardTitle>JMC Items</CardTitle>
-            <CardDescription>Add one or more items executed under this JMC.</CardDescription>
+             <div className="flex items-center justify-between">
+                <div>
+                    <CardTitle>JMC Items</CardTitle>
+                    <CardDescription>Add one or more items executed under this JMC.</CardDescription>
+                </div>
+                <Button variant="outline" onClick={() => setIsMultiSelectOpen(true)}>
+                    <Library className="mr-2 h-4 w-4" /> Add Multiple Items
+                </Button>
+            </div>
         </CardHeader>
         <CardContent>
             <div className="overflow-x-auto">
@@ -228,14 +267,14 @@ export default function JmcEntryPage() {
                     <TableBody>
                         {items.map((item, index) => (
                             <TableRow key={index}>
-                            <TableCell>
-                                <BoqItemSelector
-                                    boqItems={boqItems}
-                                    selectedSlNo={item.boqSlNo}
-                                    onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
-                                    isLoading={isBoqLoading}
-                                />
-                            </TableCell>
+                                <TableCell>
+                                    <BoqItemSelector
+                                        boqItems={boqItems}
+                                        selectedSlNo={item.boqSlNo}
+                                        onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
+                                        isLoading={isBoqLoading}
+                                    />
+                                </TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
                                 <TableCell>{item.rate}</TableCell>
@@ -244,7 +283,7 @@ export default function JmcEntryPage() {
                                 </TableCell>
                                 <TableCell>{item.totalAmount}</TableCell>
                                 <TableCell>
-                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)} disabled={items.length <= 1}>
+                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
                                         <Trash2 className="h-4 w-4 text-destructive" />
                                     </Button>
                                 </TableCell>
@@ -259,5 +298,12 @@ export default function JmcEntryPage() {
         </CardContent>
       </Card>
     </div>
+    <BoqMultiSelectDialog
+        isOpen={isMultiSelectOpen}
+        onOpenChange={setIsMultiSelectOpen}
+        boqItems={boqItems}
+        onConfirm={handleMultiBoqSelect}
+    />
+    </>
   );
 }
