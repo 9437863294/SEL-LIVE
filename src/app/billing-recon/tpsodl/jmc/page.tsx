@@ -4,20 +4,15 @@
 import Link from 'next/link';
 import {
   ArrowLeft,
-  ClipboardList,
-  Truck,
-  Calculator,
-  FileEdit,
-  BarChart3,
   FilePlus,
-  HardHat,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-interface BillingReconCardProps {
+interface JmcCardProps {
   item: {
     icon: LucideIcon;
     text: string;
@@ -26,16 +21,12 @@ interface BillingReconCardProps {
   };
 }
 
-const billingItems = [
-  { icon: ClipboardList, text: 'BOQ', href: '/billing-recon/tpsodl/boq', description: 'Manage Bill of Quantities.' },
-  { icon: Truck, text: 'MVAC', href: '/billing-recon/tpsodl/mvac', description: 'Record supply and JMC details.' },
-  { icon: HardHat, text: 'JMC', href: '/billing-recon/tpsodl/jmc', description: 'Manage the civil workstream.' },
-  { icon: FileEdit, text: 'Amendment Entry', href: '#', description: 'Manage amendments and revisions.' },
-  { icon: BarChart3, text: 'Reports', href: '#', description: 'View and generate billing reports.' },
-  { icon: FilePlus, text: 'Create ARD', href: '#', description: 'Create Abstract of Rate Document.' },
+const jmcItems = [
+  { icon: FilePlus, text: 'Create Work Order', href: '/billing-recon/tpsodl/jmc/work-order', description: 'Issue a new work order to a subcontractor.' },
+  { icon: ClipboardCheck, text: 'Create JMC', href: '/billing-recon/tpsodl/jmc/entry', description: 'Create a Joint Measurement Certificate.' },
 ];
 
-function BillingReconCard({ item }: BillingReconCardProps) {
+function JmcCard({ item }: JmcCardProps) {
     const cardContent = (
          <Card
             className={cn(
@@ -67,21 +58,21 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 }
 
 
-export default function TpsodlPage() {
+export default function JmcPage() {
 
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center gap-2">
-        <Link href="/billing-recon">
+        <Link href="/billing-recon/tpsodl">
             <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">TPSODL</h1>
+        <h1 className="text-2xl font-bold">JMC Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {billingItems.map((item) => (
-          <BillingReconCard key={item.text} item={item} />
+        {jmcItems.map((item) => (
+          <JmcCard key={item.text} item={item} />
         ))}
       </div>
     </div>
