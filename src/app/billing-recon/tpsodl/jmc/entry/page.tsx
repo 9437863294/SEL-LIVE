@@ -94,14 +94,23 @@ export default function JmcEntryPage() {
   
   const handleBoqSelect = (index: number, boqItem: BoqItem) => {
     const newItems = [...items];
-    const item = newItems[index];
+    const itemToUpdate = newItems[index];
     const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('price') && !k.toLowerCase().includes('total')) || 'BASIC PRICE';
 
-    item.boqSlNo = boqItem['SL. No.'] || '';
-    item.description = boqItem['DESCRIPTION OF ITEMS'] || '';
-    item.unit = boqItem['UNITS'] || '';
-    item.rate = String(boqItem[rateKey] || '0');
+    itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
+    itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
+    itemToUpdate.unit = boqItem['UNITS'] || '';
+    itemToUpdate.rate = String(boqItem[rateKey] || '0');
     
+    // Auto-calculate amount if quantity is already entered
+    if (itemToUpdate.executedQty) {
+        const qty = parseFloat(itemToUpdate.executedQty);
+        const rate = parseFloat(itemToUpdate.rate);
+         if (!isNaN(qty) && !isNaN(rate)) {
+            itemToUpdate.totalAmount = (qty * rate).toFixed(2);
+        }
+    }
+
     setItems(newItems);
     setPopoverOpen(index, false);
   };
