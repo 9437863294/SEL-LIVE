@@ -1,45 +1,119 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
+import { Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { BoqItem } from '@/lib/types';
 
-const initialJmcItem = {
-    'JMC No': '',
-    'WO No': '',
-    'BOQ Sl. No.': '',
-    'Activity Description': '',
-    'Quantity Executed': '',
-    'Unit': '',
-    'Rate': '',
-    'Total Amount': '',
-    'JMC Date': '',
+
+const initialJmcDetails = {
+    jmcNo: '',
+    woNo: '',
+    jmcDate: new Date().toISOString().split('T')[0],
 };
+
+const initialItem = {
+    boqSlNo: '',
+    description: '',
+    unit: '',
+    rate: '',
+    executedQty: '',
+    totalAmount: '',
+};
+
+type JmcItem = typeof initialItem;
+
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
-  const [item, setItem] = useState(initialJmcItem);
+  const [details, setDetails] = useState(initialJmcDetails);
+  const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [isBoqLoading, setIsBoqLoading] = useState(true);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const fetchBoqItems = async () => {
+        setIsBoqLoading(true);
+        try {
+            const boqSnapshot = await getDocs(collection(db, "boqItems"));
+            const boqData = boqSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as BoqItem));
+            setBoqItems(boqData);
+        } catch (error) {
+            console.error("Error fetching BOQ items:", error);
+            toast({ title: "Error", description: "Could not fetch BOQ items.", variant: "destructive" });
+        }
+        setIsBoqLoading(false);
+    };
+    fetchBoqItems();
+  }, [toast]);
+
+  const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setItem(prev => ({ ...prev, [name]: value }));
+    setDetails(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const newItems = [...items];
+    const item = newItems[index];
+    const updatedItem = { ...item, [name]: value };
+
+    if (name === 'executedQty' || name === 'rate') {
+        const qty = parseFloat(updatedItem.executedQty);
+        const rate = parseFloat(updatedItem.rate);
+        if (!isNaN(qty) && !isNaN(rate)) {
+            updatedItem.totalAmount = (qty * rate).toFixed(2);
+        } else {
+            updatedItem.totalAmount = '';
+        }
+    }
+
+    newItems[index] = updatedItem;
+    setItems(newItems);
+  };
+  
+  const handleBoqSelect = (index: number, boqItem: BoqItem) => {
+    const newItems = [...items];
+    const item = newItems[index];
+    const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('price') && !k.toLowerCase().includes('total')) || 'BASIC PRICE';
+
+    item.boqSlNo = boqItem['SL. No.'] || '';
+    item.description = boqItem['DESCRIPTION OF ITEMS'] || '';
+    item.unit = boqItem['UNITS'] || '';
+    item.rate = String(boqItem[rateKey] || '0');
+    
+    setItems(newItems);
+  };
+
+  const addItem = () => {
+    setItems([...items, { ...initialItem }]);
+  };
+
+  const removeItem = (index: number) => {
+    const newItems = items.filter((_, i) => i !== index);
+    setItems(newItems);
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    if (!item['JMC No'] || !item['WO No']) {
+    if (!details.jmcNo || !details.woNo || items.some(item => !item.boqSlNo)) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please fill in at least "JMC No" and "WO No".',
+            description: 'Please fill in JMC No, WO No, and ensure all items have a BOQ Sl. No.',
             variant: 'destructive',
         });
         setIsSaving(false);
@@ -47,12 +121,18 @@ export default function JmcEntryPage() {
     }
     
     try {
-        await addDoc(collection(db, 'jmcEntries'), item);
+        const jmcData = {
+            ...details,
+            items,
+            createdAt: new Date().toISOString()
+        };
+        await addDoc(collection(db, 'jmcEntries'), jmcData);
         toast({
             title: 'JMC Entry Created',
-            description: 'The new JMC entry has been successfully saved.',
+            description: 'The new JMC entry with all its items has been successfully saved.',
         });
-        setItem(initialJmcItem); // Reset form
+        setDetails(initialJmcDetails);
+        setItems([initialItem]);
     } catch (error) {
         console.error("Error creating JMC entry: ", error);
         toast({
@@ -66,7 +146,7 @@ export default function JmcEntryPage() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full max-w-7xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href="/billing-recon/tpsodl/jmc">
@@ -82,26 +162,97 @@ export default function JmcEntryPage() {
         </Button>
       </div>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader>
             <CardTitle>JMC Details</CardTitle>
-            <CardDescription>Fill in the details for the new Joint Measurement Certificate entry.</CardDescription>
+            <CardDescription>Provide the main details for this Joint Measurement Certificate.</CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Object.keys(initialJmcItem).map(key => (
-                    <div className="space-y-2" key={key}>
-                        <Label htmlFor={key}>{key}</Label>
-                        <Input
-                            id={key}
-                            name={key}
-                            value={item[key as keyof typeof item]}
-                            onChange={handleInputChange}
-                            type={key.includes('Date') ? 'date' : 'text'}
-                        />
-                    </div>
-                ))}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                    <Label htmlFor="jmcNo">JMC No</Label>
+                    <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="woNo">WO No</Label>
+                    <Input id="woNo" name="woNo" value={details.woNo} onChange={handleDetailChange} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="jmcDate">JMC Date</Label>
+                    <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
+                </div>
             </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+            <CardTitle>JMC Items</CardTitle>
+            <CardDescription>Add one or more items executed under this JMC.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="w-[150px]">BOQ Sl. No.</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="w-[100px]">Unit</TableHead>
+                        <TableHead className="w-[120px]">Rate</TableHead>
+                        <TableHead className="w-[120px]">Executed Qty</TableHead>
+                        <TableHead className="w-[150px]">Total Amount</TableHead>
+                        <TableHead className="w-[50px]">Action</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {items.map((item, index) => (
+                        <TableRow key={index}>
+                           <TableCell>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" className="w-full justify-between">
+                                            {item.boqSlNo || "Select..."}
+                                            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Search BOQ..." />
+                                            <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
+                                            <CommandGroup>
+                                                {boqItems.map(boqItem => (
+                                                    <CommandItem
+                                                        key={boqItem.id}
+                                                        value={boqItem['SL. No.']}
+                                                        onSelect={() => handleBoqSelect(index, boqItem)}
+                                                    >
+                                                        <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
+                                                        {boqItem['SL. No.']} - {boqItem['DESCRIPTION OF ITEMS']}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                           </TableCell>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>{item.unit}</TableCell>
+                            <TableCell>{item.rate}</TableCell>
+                            <TableCell>
+                                <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
+                            </TableCell>
+                            <TableCell>{item.totalAmount}</TableCell>
+                            <TableCell>
+                                <Button variant="ghost" size="icon" onClick={() => removeItem(index)} disabled={items.length <= 1}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+            <Button variant="outline" onClick={addItem} className="mt-4">
+                <Plus className="mr-2 h-4 w-4" /> Add Item
+            </Button>
         </CardContent>
       </Card>
     </div>

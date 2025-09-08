@@ -1,5 +1,10 @@
 
 
+export type BoqItem = {
+    id: string;
+    [key: string]: any;
+};
+
 
 
 
