@@ -32,7 +32,6 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    // Initialize with module data directly to prevent uncontrolled -> controlled switch
     defaultValues: {
       title: module?.title || '',
       content: module?.content || '',
@@ -42,12 +41,12 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
   
   // Reset form if the module or open state changes, ensuring it's always up-to-date
   useEffect(() => {
-    if (module) {
-        form.reset({
-            title: module.title,
-            content: module.content,
-            icon: module.icon,
-        });
+    if (isOpen) {
+      form.reset({
+          title: module?.title || '',
+          content: module?.content || '',
+          icon: module?.icon || '',
+      });
     }
   }, [module, form, isOpen]);
 
