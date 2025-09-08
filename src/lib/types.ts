@@ -1,5 +1,6 @@
 
 
+
 export type BoqItem = {
     id: string;
     [key: string]: any;
@@ -22,6 +23,28 @@ export type JmcEntry = {
     items: JmcItem[];
     createdAt: string;
 };
+
+export type BillItem = {
+    jmcItemId: string; // A unique identifier for the JMC item, e.g., `${jmcEntry.id}-${itemIndex}`
+    jmcEntryId: string;
+    jmcNo: string;
+    boqSlNo: string;
+    description: string;
+    unit: string;
+    rate: string;
+    executedQty: string; // The original executed quantity from JMC
+    billedQty: string; // The quantity being billed in this specific bill
+    totalAmount: string;
+}
+
+export type Bill = {
+    id: string;
+    billNo: string;
+    billDate: string;
+    woNo: string;
+    items: (Omit<BillItem, 'billedQty'> & { billedQty: number })[]; // Store billedQty as a number
+    createdAt: any; // Firestore Timestamp
+}
 
 
 export type Module = {
