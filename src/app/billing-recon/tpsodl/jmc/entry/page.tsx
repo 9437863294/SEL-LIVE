@@ -13,9 +13,10 @@ import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import type { BoqItem } from '@/lib/types';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 const initialJmcDetails = {
@@ -220,22 +221,26 @@ export default function JmcEntryPage() {
                                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[300px] p-0">
+                                    <PopoverContent className="w-[400px] p-0">
                                         <Command>
                                             <CommandInput placeholder="Search BOQ..." />
-                                            <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
-                                            <CommandGroup>
-                                                {boqItems.map(boqItem => (
-                                                    <CommandItem
-                                                        key={boqItem.id}
-                                                        value={`${boqItem['SL. No.']} ${boqItem['DESCRIPTION OF ITEMS']}`}
-                                                        onSelect={() => handleBoqSelect(index, boqItem)}
-                                                    >
-                                                        <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
-                                                        {boqItem['SL. No.']} - {boqItem['DESCRIPTION OF ITEMS']}
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
+                                            <CommandList>
+                                                <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
+                                                <CommandGroup>
+                                                   <ScrollArea className="h-72">
+                                                    {boqItems.map(boqItem => (
+                                                        <CommandItem
+                                                            key={boqItem.id}
+                                                            value={`${boqItem['SL. No.'] || ''} ${boqItem['DESCRIPTION OF ITEMS'] || ''}`}
+                                                            onSelect={() => handleBoqSelect(index, boqItem)}
+                                                        >
+                                                            <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
+                                                            <span className="flex-1">{boqItem['SL. No.']} - {boqItem['DESCRIPTION OF ITEMS']}</span>
+                                                        </CommandItem>
+                                                    ))}
+                                                    </ScrollArea>
+                                                </CommandGroup>
+                                            </CommandList>
                                         </Command>
                                     </PopoverContent>
                                 </Popover>
