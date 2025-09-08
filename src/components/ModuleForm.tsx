@@ -110,7 +110,7 @@ export default function ModuleForm() {
       description: `"${values.title}" has been added to your hub.`,
     });
     router.push('/');
-  }
+  };
 
   return (
     <Form {...form}>
