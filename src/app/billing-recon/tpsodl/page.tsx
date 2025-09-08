@@ -26,7 +26,7 @@ interface BillingReconCardProps {
 }
 
 const billingItems = [
-  { icon: ClipboardList, text: 'BOQ Entry', href: '#', description: 'Manage Bill of Quantities.' },
+  { icon: ClipboardList, text: 'BOQ', href: '#', description: 'Manage Bill of Quantities.' },
   { icon: Truck, text: 'Supply and JMC Entry', href: '#', description: 'Record supply and JMC details.' },
   { icon: Calculator, text: 'Bill Qty Entry', href: '#', description: 'Enter and track bill quantities.' },
   { icon: FileEdit, text: 'Amendment Entry', href: '#', description: 'Manage amendments and revisions.' },
