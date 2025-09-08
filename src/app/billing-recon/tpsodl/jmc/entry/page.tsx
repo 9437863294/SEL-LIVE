@@ -44,11 +44,7 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
-  const [popoverOpenState, setPopoverOpenState] = useState<Record<number, boolean>>({});
-
-  const setPopoverOpen = (index: number, open: boolean) => {
-    setPopoverOpenState(prev => ({...prev, [index]: open }));
-  }
+  const [openPopoverIndex, setOpenPopoverIndex] = useState<number | null>(null);
 
 
   useEffect(() => {
@@ -111,7 +107,7 @@ export default function JmcEntryPage() {
     }
 
     setItems(newItems);
-    setPopoverOpen(index, false);
+    setOpenPopoverIndex(null);
   };
 
   const addItem = () => {
@@ -222,7 +218,7 @@ export default function JmcEntryPage() {
                     {items.map((item, index) => (
                         <TableRow key={index}>
                            <TableCell>
-                                <Popover open={popoverOpenState[index]} onOpenChange={(open) => setPopoverOpen(index, open)}>
+                                <Popover open={openPopoverIndex === index} onOpenChange={(isOpen) => setOpenPopoverIndex(isOpen ? index : null)}>
                                     <PopoverTrigger asChild>
                                         <Button variant="outline" className="w-full justify-between">
                                             {item.boqSlNo || "Select..."}
