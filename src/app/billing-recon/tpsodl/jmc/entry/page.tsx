@@ -221,7 +221,7 @@ export default function JmcEntryPage() {
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-[300px] p-0">
-                                        <Command onPointerDownOutside={(e) => e.preventDefault()}>
+                                        <Command>
                                             <CommandInput placeholder="Search BOQ..." />
                                             <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
                                             <CommandGroup>
