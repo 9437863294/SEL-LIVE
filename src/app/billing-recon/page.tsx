@@ -21,12 +21,33 @@ interface BillingReconCardProps {
   };
 }
 
-const tpsodlItem = { 
-    icon: Folder, 
-    text: 'TPSODL', 
-    href: '/billing-recon/tpsodl', 
-    description: 'Manage all TPSODL-related billing tasks.' 
-};
+const reconItems = [
+    { 
+        icon: Folder, 
+        text: 'TPSODL', 
+        href: '/billing-recon/tpsodl', 
+        description: 'Manage all TPSODL-related billing tasks.' 
+    },
+    { 
+        icon: Folder, 
+        text: 'WESCO', 
+        href: '#', 
+        description: 'Manage all WESCO-related billing tasks.' 
+    },
+    { 
+        icon: Folder, 
+        text: 'CESU', 
+        href: '#', 
+        description: 'Manage all CESU-related billing tasks.' 
+    },
+    { 
+        icon: Folder, 
+        text: 'NESCO', 
+        href: '#', 
+        description: 'Manage all NESCO-related billing tasks.' 
+    }
+];
+
 
 function BillingReconCard({ item }: BillingReconCardProps) {
     const cardContent = (
@@ -73,7 +94,9 @@ export default function BillingReconPage() {
         <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          <BillingReconCard item={tpsodlItem} />
+          {reconItems.map((item) => (
+              <BillingReconCard key={item.text} item={item} />
+          ))}
       </div>
     </div>
   );
