@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
 import { format } from 'date-fns';
+import { Card, CardContent } from './ui/card';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -56,6 +57,13 @@ export default function BoqItemDetailsDialog({
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
+  const summaryData = [
+      { label: 'BOQ Quantity', value: item['Total Qty'] || 0 },
+      { label: 'JMC Executed Quantity', value: item['JMC Executed Qty'] || 0 },
+      { label: 'Billed Quantity', value: item['Billed Qty'] || 0 },
+      { label: 'Balance Quantity', value: item['Balance Qty'] || 0 },
+  ];
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
@@ -67,6 +75,30 @@ export default function BoqItemDetailsDialog({
         </DialogHeader>
         <ScrollArea className="max-h-[70vh] p-1">
           <div className="space-y-6 pr-4">
+            <div>
+              <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
+               <div className="border rounded-md">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Description</TableHead>
+                                <TableHead className="text-right">Quantity</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {summaryData.map(row => (
+                                <TableRow key={row.label}>
+                                    <TableCell className="font-medium">{row.label}</TableCell>
+                                    <TableCell className="text-right">{row.value}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+               </div>
+            </div>
+
+            <Separator />
+
             <div>
               <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
               <div className="border rounded-md">
