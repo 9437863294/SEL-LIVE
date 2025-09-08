@@ -118,8 +118,14 @@ export default function ViewBoqPage() {
 
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
-    // Find a key that contains "price" but is not "total price" to avoid confusion
     return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+  };
+
+  const formatNumber = (value: any) => {
+    if (typeof value === 'number') {
+      return parseFloat(value.toFixed(4));
+    }
+    return value;
   };
 
   return (
@@ -184,7 +190,7 @@ export default function ViewBoqPage() {
                                        cellData = priceKey ? item[priceKey] : 'N/A';
                                     }
                                     return (
-                                        <TableCell key={`${item.id}-${header}`}>{cellData}</TableCell>
+                                        <TableCell key={`${item.id}-${header}`}>{formatNumber(cellData)}</TableCell>
                                     )
                                 })}
                             </TableRow>
