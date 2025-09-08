@@ -26,6 +26,8 @@ interface BoqItemSelectorProps {
   selectedSlNo: string | null;
   onSelect: (item: BoqItem | null) => void;
   isLoading: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function BoqItemSelector({
@@ -33,13 +35,18 @@ export function BoqItemSelector({
   selectedSlNo,
   onSelect,
   isLoading,
+  open,
+  onOpenChange,
 }: BoqItemSelectorProps) {
-  const [open, setOpen] = React.useState(false);
-
   const selectedItem = boqItems.find((item) => item['SL. No.'] === selectedSlNo);
+  
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const keys = Object.keys(item);
+    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -47,7 +54,7 @@ export function BoqItemSelector({
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {selectedSlNo && selectedItem
+          {selectedItem
             ? selectedItem['SL. No.']
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -56,7 +63,8 @@ export function BoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-                const item = boqItems.find(i => i.id === value);
+                const itemSlNo = value.split(' - ')[0];
+                const item = boqItems.find(i => i['SL. No.'] === itemSlNo);
                 if (!item) return 0;
 
                 const slNo = item['SL. No.']?.toLowerCase() || '';
@@ -73,29 +81,43 @@ export function BoqItemSelector({
             </CommandEmpty>
             <CommandGroup>
               <ScrollArea className="h-72">
-                {boqItems.map((item) => (
-                  <CommandItem
-                    key={item.id}
-                    value={item.id}
-                    onSelect={() => {
-                      onSelect(item);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        'mr-2 h-4 w-4',
-                        selectedSlNo === item['SL. No.']
-                          ? 'opacity-100'
-                          : 'opacity-0'
-                      )}
-                    />
-                    <div className="flex flex-col">
-                        <span className="font-medium">{item['SL. No.']}</span>
-                        <span className="text-xs text-muted-foreground">{item['DESCRIPTION OF ITEMS']}</span>
-                    </div>
-                  </CommandItem>
-                ))}
+                {boqItems.map((item) => {
+                  const rateKey = findBasicPriceKey(item);
+                  const rate = rateKey ? item[rateKey] : 'N/A';
+                  return (
+                    <CommandItem
+                      key={item.id}
+                      value={`${item['SL. No.'] || ''} - ${item['DESCRIPTION OF ITEMS'] || ''}`}
+                      onSelect={() => {
+                        onSelect(item);
+                        onOpenChange(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          selectedSlNo === item['SL. No.']
+                            ? 'opacity-100'
+                            : 'opacity-0'
+                        )}
+                      />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <span className="font-medium text-sm">{item['SL. No.']}</span>
+                          <span className="text-xs text-right">
+                              <strong>Rate:</strong> {rate}
+                          </span>
+                        </div>
+                         <div className="flex justify-between items-end mt-1">
+                            <p className="text-xs text-muted-foreground flex-1 pr-2">{item['DESCRIPTION OF ITEMS']}</p>
+                            <span className="text-xs text-muted-foreground text-right">
+                                <strong>Unit:</strong> {item['UNITS'] || 'N/A'}
+                            </span>
+                         </div>
+                      </div>
+                    </CommandItem>
+                  )
+                })}
               </ScrollArea>
             </CommandGroup>
           </CommandList>
