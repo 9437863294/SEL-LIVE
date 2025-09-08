@@ -29,14 +29,18 @@ type BoqItem = {
 };
 
 const tableHeaders = [
+    'ITEMS SPECS',
     'SL. No.',
     'Amended SL No',
     'Activity Description',
     'DESCRIPTION OF ITEMS',
-    'ITEMS SPECS',
     'UNITS',
     'Total Qty',
-    'BASIC PRICE'
+    'BASIC PRICE',
+    'TOTAL AMOUNT',
+    'GST @ 18% PER UNIT',
+    'TOTAL PRICE PER UNIT ( In Rs)',
+    'TOTAL PRICE FOR THE TENDER QUANTITY'
 ];
 
 
