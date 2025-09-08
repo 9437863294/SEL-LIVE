@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -16,6 +17,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useParams } from 'next/navigation';
 
 interface BillingReconCardProps {
   item: {
@@ -59,8 +61,9 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 
 
 export default function ProjectDashboardPage() {
-  const projectSlug = 'tpsodl';
-  const projectName = 'TPSODL';
+  const params = useParams();
+  const projectSlug = params.project as string;
+  const projectName = projectSlug ? projectSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Project';
 
   const billingItems = [
     { icon: ClipboardList, text: 'BOQ', href: `/billing-recon/${projectSlug}/boq`, description: 'Manage Bill of Quantities.' },
@@ -90,3 +93,4 @@ export default function ProjectDashboardPage() {
     </div>
   );
 }
+
