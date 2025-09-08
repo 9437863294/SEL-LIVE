@@ -30,6 +30,7 @@ const billingItems = [
   { icon: ClipboardList, text: 'BOQ', href: '/billing-recon/tpsodl/boq', description: 'Manage Bill of Quantities.' },
   { icon: Truck, text: 'MVAC', href: '/billing-recon/tpsodl/mvac', description: 'Record supply and JMC details.' },
   { icon: HardHat, text: 'JMC', href: '/billing-recon/tpsodl/jmc', description: 'Manage the civil workstream.' },
+  { icon: Calculator, text: 'Billing', href: '/billing-recon/tpsodl/billing', description: 'Generate and manage bills.' },
   { icon: FileEdit, text: 'Amendment Entry', href: '#', description: 'Manage amendments and revisions.' },
   { icon: BarChart3, text: 'Reports', href: '#', description: 'View and generate billing reports.' },
   { icon: FilePlus, text: 'Create ARD', href: '#', description: 'Create Abstract of Rate Document.' },
