@@ -17,10 +17,22 @@ type BoqItem = {
     [key: string]: any;
 };
 
+const tableHeaders = [
+    'ITEMS SPECS',
+    'SL. No.',
+    'Amended SL No',
+    'Activity Description',
+    'DESCRIPTION OF ITEMS',
+    'UNITS',
+    'Total Qty',
+    'BASIC PRICE'
+];
+
+
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [headers, setHeaders] = useState<string[]>([]);
+  const [headers, setHeaders] = useState<string[]>(tableHeaders);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -30,15 +42,7 @@ export default function ViewBoqPage() {
         const querySnapshot = await getDocs(collection(db, 'boqItems'));
         const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(items);
-        if (items.length > 0) {
-          // Dynamically create headers from the first item, excluding the ID
-          const firstItemKeys = Object.keys(items[0]).filter(key => key !== 'id');
-          // Prepend the new column header
-          setHeaders(['ITEMS SPECS', ...firstItemKeys]);
-        } else {
-          // Set default headers if no items are found
-           setHeaders(['ITEMS SPECS', 'SL. No.', 'Amended SL No', 'Activity Description', 'DESCRIPTION OF ITEMS', 'UNITS', 'Total Qty', 'BASIC PRICE']);
-        }
+        
       } catch (error) {
         console.error("Error fetching BOQ items: ", error);
         toast({
