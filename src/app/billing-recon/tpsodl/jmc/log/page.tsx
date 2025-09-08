@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Eye, MoreHorizontal, FileText, Download } from 'lucide-react';
+import { ArrowLeft, Trash2, Eye, MoreHorizontal, FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -76,7 +76,7 @@ export default function JmcLogPage() {
     }
   };
   
-  const handleExport = () => {
+  const handleExportAll = () => {
     const flattenedData = jmcEntries.flatMap(entry => 
       entry.items.map(item => ({
         'JMC No': entry.jmcNo,
@@ -94,7 +94,26 @@ export default function JmcLogPage() {
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Log");
-    XLSX.writeFile(workbook, "jmc_log_export.xlsx");
+    XLSX.writeFile(workbook, "jmc_log_export_all.xlsx");
+  };
+
+  const handleExportSingle = (entry: JmcEntry) => {
+    const flattenedData = entry.items.map(item => ({
+      'JMC No': entry.jmcNo,
+      'WO No': entry.woNo,
+      'JMC Date': entry.jmcDate,
+      'BOQ Sl. No.': item.boqSlNo,
+      'Description': item.description,
+      'Unit': item.unit,
+      'Rate': item.rate,
+      'Executed Qty': item.executedQty,
+      'Total Amount': item.totalAmount,
+    }));
+    
+    const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `JMC ${entry.jmcNo}`);
+    XLSX.writeFile(workbook, `jmc_${entry.jmcNo}.xlsx`);
   };
 
   const handleViewDetails = (entry: JmcEntry) => {
@@ -115,8 +134,8 @@ export default function JmcLogPage() {
               </Link>
               <h1 className="text-2xl font-bold">JMC Log</h1>
           </div>
-          <Button onClick={handleExport} disabled={jmcEntries.length === 0}>
-              <Download className="mr-2 h-4 w-4" /> Export as Excel
+          <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
+              <Download className="mr-2 h-4 w-4" /> Export All as Excel
           </Button>
         </div>
         <Card>
@@ -165,8 +184,8 @@ export default function JmcLogPage() {
                                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
                                         <Eye className="mr-2 h-4 w-4" /> View Details
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); toast({ title: 'Info', description: 'PDF generation is not yet implemented.'})}}>
-                                        <FileText className="mr-2 h-4 w-4" /> Generate PDF
+                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
+                                        <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
                                     </DropdownMenuItem>
                                     <AlertDialogTrigger asChild>
                                         <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
