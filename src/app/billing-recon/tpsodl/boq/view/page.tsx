@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu"
+import { cn } from '@/lib/utils';
 
 
 type BoqItem = {
@@ -168,6 +169,10 @@ export default function ViewBoqPage() {
     }
     return value;
   };
+  
+  const isNumeric = (value: any) => {
+    return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
+  }
 
   const visibleHeaders = tableHeaders.filter(header => columnVisibility[header]);
 
@@ -264,8 +269,12 @@ export default function ViewBoqPage() {
                                                 const priceKey = findBasicPriceKey(item);
                                                 cellData = priceKey ? item[priceKey] : 'N/A';
                                                 }
+                                                const formattedData = formatNumber(cellData);
+                                                const numeric = isNumeric(cellData);
                                                 return (
-                                                    <TableCell key={`${item.id}-${header}`}>{formatNumber(cellData)}</TableCell>
+                                                    <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
+                                                        {formattedData}
+                                                    </TableCell>
                                                 )
                                             })}
                                         </TableRow>
