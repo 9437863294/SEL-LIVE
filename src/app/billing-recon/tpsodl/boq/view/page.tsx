@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,6 +23,16 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu"
+
 
 type BoqItem = {
     id: string;
@@ -50,6 +60,9 @@ export default function ViewBoqPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
+  );
 
   const fetchBoqItems = async () => {
     setIsLoading(true);
@@ -129,6 +142,8 @@ export default function ViewBoqPage() {
     return value;
   };
 
+  const visibleHeaders = tableHeaders.filter(header => columnVisibility[header]);
+
   return (
     <div className="w-full max-w-7xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
@@ -140,29 +155,56 @@ export default function ViewBoqPage() {
             </Link>
             <h1 className="text-2xl font-bold">View BOQ</h1>
         </div>
-        <AlertDialog>
-            <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={isLoading || boqItems.length === 0 || isClearing}>
-                    {isClearing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                     Clear BOQ
-                </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
-                </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearBoq} disabled={isClearing}>
-                   {isClearing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                   Continue
-                </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+        <div className="flex items-center gap-2">
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                        <View className="mr-2 h-4 w-4" />
+                        Columns
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {tableHeaders.map(header => (
+                        <DropdownMenuCheckboxItem
+                            key={header}
+                            className="capitalize"
+                            checked={columnVisibility[header]}
+                            onCheckedChange={(value) =>
+                                setColumnVisibility(prev => ({...prev, [header]: !!value}))
+                            }
+                        >
+                            {header}
+                        </DropdownMenuCheckboxItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={isLoading || boqItems.length === 0 || isClearing}>
+                        {isClearing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                         Clear BOQ
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleClearBoq} disabled={isClearing}>
+                       {isClearing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                       Continue
+                    </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </div>
       </div>
       <Card>
         <CardContent className="p-0">
@@ -172,7 +214,7 @@ export default function ViewBoqPage() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    {tableHeaders.map((header) => (
+                                    {visibleHeaders.map((header) => (
                                         <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
                                     ))}
                                 </TableRow>
@@ -181,7 +223,7 @@ export default function ViewBoqPage() {
                                 {isLoading ? (
                                     Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        {tableHeaders.map((header, j) => (
+                                        {visibleHeaders.map((header, j) => (
                                             <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
                                         ))}
                                     </TableRow>
@@ -189,7 +231,7 @@ export default function ViewBoqPage() {
                                 ) : boqItems.length > 0 ? (
                                     boqItems.map((item) => (
                                         <TableRow key={item.id}>
-                                            {tableHeaders.map(header => {
+                                            {visibleHeaders.map(header => {
                                                 let cellData = item[header];
                                                 if(header === 'BASIC PRICE') {
                                                 const priceKey = findBasicPriceKey(item);
@@ -203,7 +245,7 @@ export default function ViewBoqPage() {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={tableHeaders.length} className="text-center h-24">
+                                        <TableCell colSpan={visibleHeaders.length} className="text-center h-24">
                                             No BOQ items found.
                                         </TableCell>
                                     </TableRow>
