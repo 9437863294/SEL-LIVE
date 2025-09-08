@@ -166,51 +166,53 @@ export default function ViewBoqPage() {
       </div>
       <Card>
         <CardContent className="p-0">
-            <ResizablePanelGroup direction="horizontal" className="min-w-full">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            {tableHeaders.map((header, index) => (
-                                <ResizablePanel key={header} defaultSize={150} minSize={50}>
-                                    <ResizableHandle withHandle />
-                                    <TableHead className="whitespace-nowrap px-4">{header}</TableHead>
-                                </ResizablePanel>
-                            ))}
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading ? (
-                            Array.from({ length: 5 }).map((_, i) => (
-                            <TableRow key={i}>
-                                {tableHeaders.map((header, j) => (
-                                    <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                ))}
-                            </TableRow>
-                            ))
-                        ) : boqItems.length > 0 ? (
-                            boqItems.map((item) => (
-                                <TableRow key={item.id}>
-                                    {tableHeaders.map(header => {
-                                        let cellData = item[header];
-                                        if(header === 'BASIC PRICE') {
-                                        const priceKey = findBasicPriceKey(item);
-                                        cellData = priceKey ? item[priceKey] : 'N/A';
-                                        }
-                                        return (
-                                            <TableCell key={`${item.id}-${header}`}>{formatNumber(cellData)}</TableCell>
-                                        )
-                                    })}
+            <ResizablePanelGroup direction="horizontal" className="min-w-full rounded-lg border">
+                <ResizablePanel defaultSize={100}>
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    {tableHeaders.map((header) => (
+                                        <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                                    ))}
                                 </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={tableHeaders.length} className="text-center h-24">
-                                    No BOQ items found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    Array.from({ length: 5 }).map((_, i) => (
+                                    <TableRow key={i}>
+                                        {tableHeaders.map((header, j) => (
+                                            <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                        ))}
+                                    </TableRow>
+                                    ))
+                                ) : boqItems.length > 0 ? (
+                                    boqItems.map((item) => (
+                                        <TableRow key={item.id}>
+                                            {tableHeaders.map(header => {
+                                                let cellData = item[header];
+                                                if(header === 'BASIC PRICE') {
+                                                const priceKey = findBasicPriceKey(item);
+                                                cellData = priceKey ? item[priceKey] : 'N/A';
+                                                }
+                                                return (
+                                                    <TableCell key={`${item.id}-${header}`}>{formatNumber(cellData)}</TableCell>
+                                                )
+                                            })}
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={tableHeaders.length} className="text-center h-24">
+                                            No BOQ items found.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </ResizablePanel>
+                <ResizableHandle withHandle />
             </ResizablePanelGroup>
         </CardContent>
       </Card>
