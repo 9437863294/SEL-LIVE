@@ -137,7 +137,10 @@ export default function ViewBoqPage() {
 
   const formatNumber = (value: any) => {
     if (typeof value === 'number') {
-      return parseFloat(value.toFixed(2));
+      return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
     }
     return value;
   };
