@@ -3,18 +3,17 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Search } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Search, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
-import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BoqItem } from '@/lib/types';
 
@@ -44,6 +43,12 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
+  const [popoverOpenState, setPopoverOpenState] = useState<Record<number, boolean>>({});
+
+  const setPopoverOpen = (index: number, open: boolean) => {
+    setPopoverOpenState(prev => ({...prev, [index]: open }));
+  }
+
 
   useEffect(() => {
     const fetchBoqItems = async () => {
@@ -97,6 +102,7 @@ export default function JmcEntryPage() {
     item.rate = String(boqItem[rateKey] || '0');
     
     setItems(newItems);
+    setPopoverOpen(index, false);
   };
 
   const addItem = () => {
@@ -207,7 +213,7 @@ export default function JmcEntryPage() {
                     {items.map((item, index) => (
                         <TableRow key={index}>
                            <TableCell>
-                                <Popover>
+                                <Popover open={popoverOpenState[index]} onOpenChange={(open) => setPopoverOpen(index, open)}>
                                     <PopoverTrigger asChild>
                                         <Button variant="outline" className="w-full justify-between">
                                             {item.boqSlNo || "Select..."}
@@ -215,14 +221,14 @@ export default function JmcEntryPage() {
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-[300px] p-0">
-                                        <Command>
+                                        <Command onPointerDownOutside={(e) => e.preventDefault()}>
                                             <CommandInput placeholder="Search BOQ..." />
                                             <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
                                             <CommandGroup>
                                                 {boqItems.map(boqItem => (
                                                     <CommandItem
                                                         key={boqItem.id}
-                                                        value={boqItem['SL. No.']}
+                                                        value={`${boqItem['SL. No.']}-${boqItem['DESCRIPTION OF ITEMS']}`}
                                                         onSelect={() => handleBoqSelect(index, boqItem)}
                                                     >
                                                         <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
