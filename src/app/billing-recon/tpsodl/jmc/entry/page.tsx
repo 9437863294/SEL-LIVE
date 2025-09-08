@@ -102,7 +102,6 @@ export default function JmcEntryPage() {
     itemToUpdate.unit = boqItem['UNITS'] || '';
     itemToUpdate.rate = String(boqItem[rateKey] || '0');
     
-    // Auto-calculate amount if quantity is already entered
     if (itemToUpdate.executedQty) {
         const qty = parseFloat(itemToUpdate.executedQty);
         const rate = parseFloat(itemToUpdate.rate);
