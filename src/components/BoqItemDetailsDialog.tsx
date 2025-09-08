@@ -57,13 +57,6 @@ export default function BoqItemDetailsDialog({
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
-  const summaryData = [
-      { label: 'BOQ Quantity', value: item['Total Qty'] || 0 },
-      { label: 'JMC Executed Quantity', value: item['JMC Executed Qty'] || 0 },
-      { label: 'Billed Quantity', value: item['Billed Qty'] || 0 },
-      { label: 'Balance Quantity', value: item['Balance Qty'] || 0 },
-  ];
-
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
@@ -81,17 +74,19 @@ export default function BoqItemDetailsDialog({
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Description</TableHead>
-                                <TableHead className="text-right">Quantity</TableHead>
+                                <TableHead>BOQ Quantity</TableHead>
+                                <TableHead>JMC Executed Qty</TableHead>
+                                <TableHead>Billed Qty</TableHead>
+                                <TableHead>Balance Qty</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {summaryData.map(row => (
-                                <TableRow key={row.label}>
-                                    <TableCell className="font-medium">{row.label}</TableCell>
-                                    <TableCell className="text-right">{row.value}</TableCell>
-                                </TableRow>
-                            ))}
+                            <TableRow>
+                                <TableCell>{item['Total Qty'] || 0}</TableCell>
+                                <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
+                                <TableCell>{item['Billed Qty'] || 0}</TableCell>
+                                <TableCell>{item['Balance Qty'] || 0}</TableCell>
+                            </TableRow>
                         </TableBody>
                     </Table>
                </div>
