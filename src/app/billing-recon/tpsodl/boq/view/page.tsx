@@ -29,11 +29,11 @@ type BoqItem = {
 };
 
 const tableHeaders = [
-    'ITEMS SPECS',
     'SL. No.',
     'Amended SL No',
     'Activity Description',
     'DESCRIPTION OF ITEMS',
+    'ITEMS SPECS',
     'UNITS',
     'Total Qty',
     'BASIC PRICE'
@@ -52,12 +52,11 @@ export default function ViewBoqPage() {
       const querySnapshot = await getDocs(collection(db, 'boqItems'));
       const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
       
-      // Sort items by "SL. No."
       const sortedItems = items.sort((a, b) => {
         const slNoA = Number(a['SL. No.']);
         const slNoB = Number(b['SL. No.']);
         if (isNaN(slNoA) || isNaN(slNoB)) {
-          return 0; // Keep original order if parsing fails
+          return 0; 
         }
         return slNoA - slNoB;
       });
