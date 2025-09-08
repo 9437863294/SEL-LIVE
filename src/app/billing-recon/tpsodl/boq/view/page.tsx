@@ -51,7 +51,18 @@ export default function ViewBoqPage() {
     try {
       const querySnapshot = await getDocs(collection(db, 'boqItems'));
       const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-      setBoqItems(items);
+      
+      // Sort items by "SL. No."
+      const sortedItems = items.sort((a, b) => {
+        const slNoA = Number(a['SL. No.']);
+        const slNoB = Number(b['SL. No.']);
+        if (isNaN(slNoA) || isNaN(slNoB)) {
+          return 0; // Keep original order if parsing fails
+        }
+        return slNoA - slNoB;
+      });
+
+      setBoqItems(sortedItems);
       
     } catch (error) {
       console.error("Error fetching BOQ items: ", error);
