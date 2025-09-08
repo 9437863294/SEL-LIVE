@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -32,13 +32,15 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
+    // Initialize with module data directly to prevent uncontrolled -> controlled switch
     defaultValues: {
-      title: '',
-      content: '',
-      icon: '',
+      title: module?.title || '',
+      content: module?.content || '',
+      icon: module?.icon || '',
     },
   });
   
+  // Reset form if the module or open state changes, ensuring it's always up-to-date
   useEffect(() => {
     if (module) {
         form.reset({
