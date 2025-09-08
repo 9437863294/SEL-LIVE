@@ -35,14 +35,18 @@ import {
 import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu"
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
+import type { JmcEntry, Bill } from '@/lib/types';
 
 
 type BoqItem = {
     id: string;
+    'JMC Executed Qty'?: number;
+    'Billed Qty'?: number;
+    'Balance Qty'?: number;
     [key: string]: any;
 };
 
-const tableHeaders = [
+const baseTableHeaders = [
     'ITEMS SPECS',
     'SL. No.',
     'Amended SL No',
@@ -50,6 +54,9 @@ const tableHeaders = [
     'DESCRIPTION OF ITEMS',
     'UNITS',
     'Total Qty',
+    'JMC Executed Qty',
+    'Billed Qty',
+    'Balance Qty',
     'BASIC PRICE',
     'TOTAL AMOUNT',
     'GST @ 18% PER UNIT',
@@ -69,7 +76,7 @@ export default function ViewBoqPage() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     // Initialize state from localStorage or default to all visible
     if (typeof window === 'undefined') {
-        return tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
+        return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
     }
     try {
       const saved = window.localStorage.getItem('boqColumnVisibility');
@@ -80,7 +87,17 @@ export default function ViewBoqPage() {
       console.error("Failed to parse column visibility from localStorage", error);
     }
     // Default value if nothing is in localStorage or if it fails
-    return tableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
+    const defaults: Record<string, boolean> = {
+        'SL. No.': true,
+        'DESCRIPTION OF ITEMS': true,
+        'UNITS': true,
+        'Total Qty': true,
+        'JMC Executed Qty': true,
+        'Billed Qty': true,
+        'Balance Qty': true,
+        'BASIC PRICE': true
+    };
+    return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] ?? false }), {});
   });
   
   // Save to localStorage whenever column visibility changes
@@ -96,8 +113,48 @@ export default function ViewBoqPage() {
   const fetchBoqItems = async () => {
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'boqItems'));
-      const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+      const [boqSnapshot, jmcSnapshot, billsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'boqItems')),
+        getDocs(collection(db, 'jmcEntries')),
+        getDocs(collection(db, 'bills')),
+      ]);
+
+      const jmcEntries = jmcSnapshot.docs.map(doc => doc.data() as JmcEntry);
+      const bills = billsSnapshot.docs.map(doc => doc.data() as Bill);
+
+      const jmcQuantities: Record<string, number> = {};
+      jmcEntries.forEach(entry => {
+        entry.items.forEach(item => {
+            if (item.boqSlNo) {
+                jmcQuantities[item.boqSlNo] = (jmcQuantities[item.boqSlNo] || 0) + parseFloat(item.executedQty || '0');
+            }
+        });
+      });
+
+      const billedQuantities: Record<string, number> = {};
+      bills.forEach(bill => {
+        bill.items.forEach(item => {
+            if (item.boqSlNo) {
+                billedQuantities[item.boqSlNo] = (billedQuantities[item.boqSlNo] || 0) + item.billedQty;
+            }
+        });
+      });
+
+      const items = boqSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const slNo = data['SL. No.'];
+        const boqQty = parseFloat(data['Total Qty'] || '0');
+        const jmcQty = jmcQuantities[slNo] || 0;
+        const billedQty = billedQuantities[slNo] || 0;
+
+        return { 
+            id: doc.id, 
+            ...data,
+            'JMC Executed Qty': jmcQty,
+            'Billed Qty': billedQty,
+            'Balance Qty': boqQty - jmcQty,
+        } as BoqItem;
+      });
       
       const sortedItems = items.sort((a, b) => {
         const slNoA = Number(a['SL. No.']);
@@ -216,7 +273,7 @@ export default function ViewBoqPage() {
     return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
   }
 
-  const visibleHeaders = tableHeaders.filter(header => columnVisibility[header]);
+  const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
   
   const handleSelectAll = (checked: boolean | 'indeterminate') => {
       setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
@@ -271,7 +328,7 @@ export default function ViewBoqPage() {
                 <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {tableHeaders.map(header => (
+                    {baseTableHeaders.map(header => (
                         <DropdownMenuCheckboxItem
                             key={header}
                             className="capitalize"
@@ -354,8 +411,8 @@ export default function ViewBoqPage() {
                                             {visibleHeaders.map(header => {
                                                 let cellData = item[header];
                                                 if(header === 'BASIC PRICE') {
-                                                const priceKey = findBasicPriceKey(item);
-                                                cellData = priceKey ? item[priceKey] : 'N/A';
+                                                  const priceKey = findBasicPriceKey(item);
+                                                  cellData = priceKey ? item[priceKey] : 'N/A';
                                                 }
                                                 const formattedData = formatNumber(cellData);
                                                 const numeric = isNumeric(cellData);
