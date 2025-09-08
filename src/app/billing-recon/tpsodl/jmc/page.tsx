@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   FilePlus,
   ClipboardCheck,
+  History,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ interface JmcCardProps {
 const jmcItems = [
   { icon: FilePlus, text: 'Create Work Order', href: '/billing-recon/tpsodl/jmc/work-order', description: 'Issue a new work order to a subcontractor.' },
   { icon: ClipboardCheck, text: 'Create JMC', href: '/billing-recon/tpsodl/jmc/entry', description: 'Create a Joint Measurement Certificate.' },
+  { icon: History, text: 'JMC Log', href: '/billing-recon/tpsodl/jmc/log', description: 'View and manage existing JMC entries.' },
 ];
 
 function JmcCard({ item }: JmcCardProps) {
