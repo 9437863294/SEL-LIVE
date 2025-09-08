@@ -83,12 +83,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
             <Edit className="h-4 w-4" />
             <span className="sr-only">Edit</span>
         </Button>
-        <AlertDialog onOpenChange={(open) => {
-          // Prevent dialog from opening when card is clicked.
-          if (open) {
-            props.onClick?.(null as any); // a bit of a hack to stop propagation
-          }
-        }}>
+        <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
                 <Trash2 className="h-4 w-4" />
