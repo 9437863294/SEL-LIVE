@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { JmcEntry, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
+import { useParams } from 'next/navigation';
 
 
 type BoqItem = {
@@ -68,6 +69,8 @@ const baseTableHeaders = [
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -117,12 +120,17 @@ export default function ViewBoqPage() {
 
 
   const fetchBoqItems = async () => {
+    if (!projectSlug) return;
     setIsLoading(true);
     try {
+      const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
+      const jmcEntriesRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+      const billsRef = collection(db, 'projects', projectSlug, 'bills');
+
       const [boqSnapshot, jmcSnapshot, billsSnapshot] = await Promise.all([
-        getDocs(collection(db, 'boqItems')),
-        getDocs(collection(db, 'jmcEntries')),
-        getDocs(collection(db, 'bills')),
+        getDocs(boqItemsRef),
+        getDocs(jmcEntriesRef),
+        getDocs(billsRef),
       ]);
 
       const fetchedJmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
@@ -188,7 +196,7 @@ export default function ViewBoqPage() {
 
   useEffect(() => {
     fetchBoqItems();
-  }, []);
+  }, [projectSlug]);
 
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
@@ -198,7 +206,8 @@ export default function ViewBoqPage() {
   const handleClearBoq = async () => {
     setIsDeleting(true);
     try {
-        const querySnapshot = await getDocs(collection(db, 'boqItems'));
+        const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
+        const querySnapshot = await getDocs(boqItemsRef);
         if (querySnapshot.empty) {
             toast({ title: 'No data to clear', description: 'The BOQ is already empty.' });
             setIsDeleting(false);
@@ -232,8 +241,9 @@ export default function ViewBoqPage() {
   const handleDeleteSelected = async () => {
     setIsDeleting(true);
     const batch = writeBatch(db);
+    const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
     selectedItemIds.forEach(id => {
-        batch.delete(doc(db, 'boqItems', id));
+        batch.delete(doc(boqItemsRef, id));
     });
 
     try {
@@ -254,7 +264,7 @@ export default function ViewBoqPage() {
   const handleDeleteSingle = async (id: string) => {
     setIsDeleting(true);
     try {
-        await deleteDoc(doc(db, 'boqItems', id));
+        await deleteDoc(doc(db, 'projects', projectSlug, 'boqItems', id));
         toast({
             title: 'Success',
             description: 'Item deleted successfully.',
@@ -302,7 +312,7 @@ export default function ViewBoqPage() {
       <div className="w-full mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href="/billing-recon/tpsodl/boq">
+              <Link href={`/billing-recon/${projectSlug}/boq`}>
                   <Button variant="ghost" size="icon">
                       <ArrowLeft className="h-6 w-6" />
                   </Button>
