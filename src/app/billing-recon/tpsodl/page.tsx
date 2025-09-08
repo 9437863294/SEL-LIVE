@@ -3,9 +3,13 @@
 
 import Link from 'next/link';
 import {
-  Home,
+  ArrowLeft,
   ClipboardList,
-  Folder,
+  Truck,
+  Calculator,
+  FileEdit,
+  BarChart3,
+  FilePlus,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -21,12 +25,14 @@ interface BillingReconCardProps {
   };
 }
 
-const tpsodlItem = { 
-    icon: Folder, 
-    text: 'TPSODL', 
-    href: '/billing-recon/tpsodl', 
-    description: 'Manage all TPSODL-related billing tasks.' 
-};
+const billingItems = [
+  { icon: ClipboardList, text: 'BOQ Entry', href: '#', description: 'Manage Bill of Quantities.' },
+  { icon: Truck, text: 'Supply and JMC Entry', href: '#', description: 'Record supply and JMC details.' },
+  { icon: Calculator, text: 'Bill Qty Entry', href: '#', description: 'Enter and track bill quantities.' },
+  { icon: FileEdit, text: 'Amendment Entry', href: '#', description: 'Manage amendments and revisions.' },
+  { icon: BarChart3, text: 'Reports', href: '#', description: 'View and generate billing reports.' },
+  { icon: FilePlus, text: 'Create ARD', href: '#', description: 'Create Abstract of Rate Document.' },
+];
 
 function BillingReconCard({ item }: BillingReconCardProps) {
     const cardContent = (
@@ -60,20 +66,22 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 }
 
 
-export default function BillingReconPage() {
+export default function TpsodlPage() {
 
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center gap-2">
-        <Link href="/">
+        <Link href="/billing-recon">
             <Button variant="ghost" size="icon">
-                <Home className="h-6 w-6" />
+                <ArrowLeft className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+        <h1 className="text-2xl font-bold">TPSODL</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          <BillingReconCard item={tpsodlItem} />
+        {billingItems.map((item) => (
+          <BillingReconCard key={item.text} item={item} />
+        ))}
       </div>
     </div>
   );
