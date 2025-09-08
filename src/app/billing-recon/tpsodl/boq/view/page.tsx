@@ -36,6 +36,7 @@ import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-men
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { JmcEntry, Bill } from '@/lib/types';
+import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 
 
 type BoqItem = {
@@ -68,11 +69,16 @@ const baseTableHeaders = [
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
+  const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     // Initialize state from localStorage or default to all visible
     if (typeof window === 'undefined') {
@@ -119,11 +125,13 @@ export default function ViewBoqPage() {
         getDocs(collection(db, 'bills')),
       ]);
 
-      const jmcEntries = jmcSnapshot.docs.map(doc => doc.data() as JmcEntry);
-      const bills = billsSnapshot.docs.map(doc => doc.data() as Bill);
+      const fetchedJmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
+      setJmcEntries(fetchedJmcEntries);
+      const fetchedBills = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
+      setBills(fetchedBills);
 
       const jmcQuantities: Record<string, number> = {};
-      jmcEntries.forEach(entry => {
+      fetchedJmcEntries.forEach(entry => {
         entry.items.forEach(item => {
             if (item.boqSlNo) {
                 jmcQuantities[item.boqSlNo] = (jmcQuantities[item.boqSlNo] || 0) + parseFloat(item.executedQty || '0');
@@ -132,7 +140,7 @@ export default function ViewBoqPage() {
       });
 
       const billedQuantities: Record<string, number> = {};
-      bills.forEach(bill => {
+      fetchedBills.forEach(bill => {
         bill.items.forEach(item => {
             if (item.boqSlNo) {
                 billedQuantities[item.boqSlNo] = (billedQuantities[item.boqSlNo] || 0) + item.billedQty;
@@ -181,6 +189,11 @@ export default function ViewBoqPage() {
   useEffect(() => {
     fetchBoqItems();
   }, []);
+
+  const handleRowClick = (item: BoqItem) => {
+    setSelectedBoqItem(item);
+    setIsDetailsDialogOpen(true);
+  };
   
   const handleClearBoq = async () => {
     setIsDeleting(true);
@@ -285,188 +298,202 @@ export default function ViewBoqPage() {
 
 
   return (
-    <div className="w-full mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-            <Link href="/billing-recon/tpsodl/boq">
-                <Button variant="ghost" size="icon">
-                    <ArrowLeft className="h-6 w-6" />
-                </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">View BOQ</h1>
-        </div>
-        <div className="flex items-center gap-2">
-            {selectedItemIds.length > 0 && (
-                 <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                       <Button variant="destructive" disabled={isDeleting}>
-                         {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                         Delete ({selectedItemIds.length})
-                       </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                This will permanently delete {selectedItemIds.length} item(s). This action cannot be undone.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                           <AlertDialogAction onClick={handleDeleteSelected}>Continue</AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            )}
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                        <View className="mr-2 h-4 w-4" />
-                        Columns
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {baseTableHeaders.map(header => (
-                        <DropdownMenuCheckboxItem
-                            key={header}
-                            className="capitalize"
-                            checked={columnVisibility[header]}
-                            onCheckedChange={(value) =>
-                                setColumnVisibility(prev => ({...prev, [header]: !!value}))
-                            }
-                        >
-                            {header}
-                        </DropdownMenuCheckboxItem>
-                    ))}
-                </DropdownMenuContent>
-            </DropdownMenu>
+    <>
+      <div className="w-full mx-auto">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+              <Link href="/billing-recon/tpsodl/boq">
+                  <Button variant="ghost" size="icon">
+                      <ArrowLeft className="h-6 w-6" />
+                  </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">View BOQ</h1>
+          </div>
+          <div className="flex items-center gap-2">
+              {selectedItemIds.length > 0 && (
+                  <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" disabled={isDeleting}>
+                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                          Delete ({selectedItemIds.length})
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                          <AlertDialogHeader>
+                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                  This will permanently delete {selectedItemIds.length} item(s). This action cannot be undone.
+                              </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleDeleteSelected}>Continue</AlertDialogAction>
+                          </AlertDialogFooter>
+                      </AlertDialogContent>
+                  </AlertDialog>
+              )}
+              <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                      <Button variant="outline">
+                          <View className="mr-2 h-4 w-4" />
+                          Columns
+                      </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {baseTableHeaders.map(header => (
+                          <DropdownMenuCheckboxItem
+                              key={header}
+                              className="capitalize"
+                              checked={columnVisibility[header]}
+                              onCheckedChange={(value) =>
+                                  setColumnVisibility(prev => ({...prev, [header]: !!value}))
+                              }
+                          >
+                              {header}
+                          </DropdownMenuCheckboxItem>
+                      ))}
+                  </DropdownMenuContent>
+              </DropdownMenu>
 
-            <AlertDialog>
-                <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={isLoading || boqItems.length === 0 || isDeleting}>
-                        {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                         Clear BOQ
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
-                    </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleClearBoq} disabled={isDeleting}>
-                       {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                       Continue
-                    </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+              <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                      <Button variant="destructive" disabled={isLoading || boqItems.length === 0 || isDeleting}>
+                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                          Clear BOQ
+                      </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                      <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
+                      </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleClearBoq} disabled={isDeleting}>
+                        {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Continue
+                      </AlertDialogAction>
+                      </AlertDialogFooter>
+                  </AlertDialogContent>
+              </AlertDialog>
+          </div>
         </div>
+        <Card>
+          <CardContent className="p-0">
+              <ResizablePanelGroup direction="horizontal" className="min-w-full rounded-lg border">
+                  <ResizablePanel defaultSize={100}>
+                      <div className="overflow-x-auto">
+                          <Table>
+                              <TableHeader>
+                                  <TableRow>
+                                      <TableHead className="w-[50px]">
+                                          <Checkbox 
+                                              checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
+                                              onCheckedChange={handleSelectAll}
+                                          />
+                                      </TableHead>
+                                      {visibleHeaders.map((header) => (
+                                          <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                                      ))}
+                                      <TableHead className="text-right">Actions</TableHead>
+                                  </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                  {isLoading ? (
+                                      Array.from({ length: 5 }).map((_, i) => (
+                                      <TableRow key={i}>
+                                          <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                          {visibleHeaders.map((header, j) => (
+                                              <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                          ))}
+                                          <TableCell><Skeleton className="h-5 w-10" /></TableCell>
+                                      </TableRow>
+                                      ))
+                                  ) : boqItems.length > 0 ? (
+                                      boqItems.map((item) => (
+                                          <TableRow 
+                                            key={item.id} 
+                                            data-state={selectedItemIds.includes(item.id) && "selected"}
+                                            onClick={() => handleRowClick(item)}
+                                            className="cursor-pointer"
+                                          >
+                                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                                  <Checkbox 
+                                                      checked={selectedItemIds.includes(item.id)}
+                                                      onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                                  />
+                                              </TableCell>
+                                              {visibleHeaders.map(header => {
+                                                  let cellData = item[header];
+                                                  if(header === 'BASIC PRICE') {
+                                                    const priceKey = findBasicPriceKey(item);
+                                                    cellData = priceKey ? item[priceKey] : 'N/A';
+                                                  }
+                                                  const formattedData = formatNumber(cellData);
+                                                  const numeric = isNumeric(cellData);
+                                                  return (
+                                                      <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
+                                                          {formattedData}
+                                                      </TableCell>
+                                                  )
+                                              })}
+                                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                                  <AlertDialog>
+                                                      <DropdownMenu>
+                                                          <DropdownMenuTrigger asChild>
+                                                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                                                  <span className="sr-only">Open menu</span>
+                                                                  <MoreHorizontal className="h-4 w-4" />
+                                                              </Button>
+                                                          </DropdownMenuTrigger>
+                                                          <DropdownMenuContent align="end">
+                                                              <DropdownMenuItem>Edit</DropdownMenuItem>
+                                                              <AlertDialogTrigger asChild>
+                                                                  <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                                                              </AlertDialogTrigger>
+                                                          </DropdownMenuContent>
+                                                      </DropdownMenu>
+                                                      <AlertDialogContent>
+                                                          <AlertDialogHeader>
+                                                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                                              <AlertDialogDescription>This will permanently delete the item. This action cannot be undone.</AlertDialogDescription>
+                                                          </AlertDialogHeader>
+                                                          <AlertDialogFooter>
+                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                              <AlertDialogAction onClick={() => handleDeleteSingle(item.id)}>Delete</AlertDialogAction>
+                                                          </AlertDialogFooter>
+                                                      </AlertDialogContent>
+                                                  </AlertDialog>
+                                              </TableCell>
+                                          </TableRow>
+                                      ))
+                                  ) : (
+                                      <TableRow>
+                                          <TableCell colSpan={visibleHeaders.length + 2} className="text-center h-24">
+                                              No BOQ items found.
+                                          </TableCell>
+                                      </TableRow>
+                                  )}
+                              </TableBody>
+                          </Table>
+                      </div>
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+              </ResizablePanelGroup>
+          </CardContent>
+        </Card>
       </div>
-      <Card>
-        <CardContent className="p-0">
-            <ResizablePanelGroup direction="horizontal" className="min-w-full rounded-lg border">
-                <ResizablePanel defaultSize={100}>
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="w-[50px]">
-                                        <Checkbox 
-                                            checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
-                                            onCheckedChange={handleSelectAll}
-                                        />
-                                    </TableHead>
-                                    {visibleHeaders.map((header) => (
-                                        <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
-                                    ))}
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isLoading ? (
-                                    Array.from({ length: 5 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                        {visibleHeaders.map((header, j) => (
-                                            <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                        ))}
-                                         <TableCell><Skeleton className="h-5 w-10" /></TableCell>
-                                    </TableRow>
-                                    ))
-                                ) : boqItems.length > 0 ? (
-                                    boqItems.map((item) => (
-                                        <TableRow key={item.id} data-state={selectedItemIds.includes(item.id) && "selected"}>
-                                            <TableCell>
-                                                <Checkbox 
-                                                    checked={selectedItemIds.includes(item.id)}
-                                                    onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                                />
-                                            </TableCell>
-                                            {visibleHeaders.map(header => {
-                                                let cellData = item[header];
-                                                if(header === 'BASIC PRICE') {
-                                                  const priceKey = findBasicPriceKey(item);
-                                                  cellData = priceKey ? item[priceKey] : 'N/A';
-                                                }
-                                                const formattedData = formatNumber(cellData);
-                                                const numeric = isNumeric(cellData);
-                                                return (
-                                                    <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
-                                                        {formattedData}
-                                                    </TableCell>
-                                                )
-                                            })}
-                                            <TableCell className="text-right">
-                                                <AlertDialog>
-                                                     <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                                <span className="sr-only">Open menu</span>
-                                                                <MoreHorizontal className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end">
-                                                            <DropdownMenuItem>Edit</DropdownMenuItem>
-                                                            <AlertDialogTrigger asChild>
-                                                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                                                            </AlertDialogTrigger>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                                            <AlertDialogDescription>This will permanently delete the item. This action cannot be undone.</AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction onClick={() => handleDeleteSingle(item.id)}>Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={visibleHeaders.length + 2} className="text-center h-24">
-                                            No BOQ items found.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </ResizablePanel>
-                <ResizableHandle withHandle />
-            </ResizablePanelGroup>
-        </CardContent>
-      </Card>
-    </div>
+      <BoqItemDetailsDialog
+        isOpen={isDetailsDialogOpen}
+        onOpenChange={setIsDetailsDialogOpen}
+        item={selectedBoqItem}
+        jmcEntries={jmcEntries}
+        bills={bills}
+      />
+    </>
   );
 }
