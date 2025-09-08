@@ -33,7 +33,11 @@ export default function ViewBoqPage() {
         if (items.length > 0) {
           // Dynamically create headers from the first item, excluding the ID
           const firstItemKeys = Object.keys(items[0]).filter(key => key !== 'id');
-          setHeaders(firstItemKeys);
+          // Prepend the new column header
+          setHeaders(['ITEMS SPECS', ...firstItemKeys]);
+        } else {
+          // Set default headers if no items are found
+           setHeaders(['ITEMS SPECS', 'SL. No.', 'Amended SL No', 'Activity Description', 'DESCRIPTION OF ITEMS', 'UNITS', 'Total Qty', 'BASIC PRICE']);
         }
       } catch (error) {
         console.error("Error fetching BOQ items: ", error);
@@ -71,7 +75,7 @@ export default function ViewBoqPage() {
                     {isLoading ? (
                         Array.from({ length: 5 }).map((_, i) => (
                            <TableRow key={i}>
-                                {headers.map((_, j) => (
+                                {headers.map((header, j) => (
                                     <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
                                 ))}
                            </TableRow>
