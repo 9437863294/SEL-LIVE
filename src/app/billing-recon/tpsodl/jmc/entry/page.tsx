@@ -235,7 +235,7 @@ export default function JmcEntryPage() {
                                                     {boqItems.map(boqItem => (
                                                         <CommandItem
                                                             key={boqItem.id}
-                                                            value={`${boqItem['SL. No.'] || ''} ${boqItem['DESCRIPTION OF ITEMS'] || ''}`}
+                                                            value={`${boqItem['SL. No.'] || ''} - ${boqItem['DESCRIPTION OF ITEMS'] || ''}`}
                                                             onSelect={() => handleBoqSelect(index, boqItem)}
                                                         >
                                                             <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
