@@ -21,6 +21,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem } from '@/lib/types';
 import { Search, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useParams } from 'next/navigation';
+
 
 interface JmcItemSelectorDialogProps {
   isOpen: boolean;
@@ -40,20 +42,25 @@ interface JmcItemWithDetails extends JmcItem {
 
 export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, alreadyAddedItems }: JmcItemSelectorDialogProps) {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !projectSlug) return;
 
     const fetchJmcAndBillData = async () => {
         setIsLoading(true);
         try {
+            const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+            const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
+
             const [jmcSnapshot, billsSnapshot] = await Promise.all([
-                getDocs(collection(db, 'jmcEntries')),
-                getDocs(collection(db, 'bills'))
+                getDocs(jmcCollectionRef),
+                getDocs(billsCollectionRef)
             ]);
 
             const allJmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
@@ -93,13 +100,13 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
 
         } catch (error) {
             console.error("Error fetching data for item selection:", error);
-            toast({ title: "Error", description: "Could not load available JMC items.", variant: "destructive" });
+            toast({ title: "Error", description: "Could not load available JMC items for this project.", variant: "destructive" });
         }
         setIsLoading(false);
     };
 
     fetchJmcAndBillData();
-  }, [isOpen, toast]);
+  }, [isOpen, projectSlug, toast]);
 
   const filteredItems = useMemo(() => {
     const lowercasedFilter = searchTerm.toLowerCase();

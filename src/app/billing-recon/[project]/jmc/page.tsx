@@ -12,6 +12,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useParams } from 'next/navigation';
 
 interface JmcCardProps {
   item: {
@@ -21,12 +22,6 @@ interface JmcCardProps {
     description: string;
   };
 }
-
-const jmcItems = [
-  { icon: FilePlus, text: 'Create Work Order', href: '/billing-recon/tpsodl/jmc/work-order', description: 'Issue a new work order to a subcontractor.' },
-  { icon: ClipboardCheck, text: 'Create JMC', href: '/billing-recon/tpsodl/jmc/entry', description: 'Create a Joint Measurement Certificate.' },
-  { icon: History, text: 'JMC Log', href: '/billing-recon/tpsodl/jmc/log', description: 'View and manage existing JMC entries.' },
-];
 
 function JmcCard({ item }: JmcCardProps) {
     const cardContent = (
@@ -61,11 +56,19 @@ function JmcCard({ item }: JmcCardProps) {
 
 
 export default function JmcPage() {
+  const params = useParams();
+  const projectSlug = params.project as string;
+
+  const jmcItems = [
+    { icon: FilePlus, text: 'Create Work Order', href: `/billing-recon/${projectSlug}/jmc/work-order`, description: 'Issue a new work order to a subcontractor.' },
+    { icon: ClipboardCheck, text: 'Create JMC', href: `/billing-recon/${projectSlug}/jmc/entry`, description: 'Create a Joint Measurement Certificate.' },
+    { icon: History, text: 'JMC Log', href: `/billing-recon/${projectSlug}/jmc/log`, description: 'View and manage existing JMC entries.' },
+  ];
 
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center gap-2">
-        <Link href="/billing-recon/tpsodl">
+        <Link href={`/billing-recon/${projectSlug}`}>
             <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
             </Button>

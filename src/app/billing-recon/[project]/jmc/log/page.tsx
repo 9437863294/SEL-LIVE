@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -27,19 +27,24 @@ import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import type { JmcEntry } from '@/lib/types';
+import { useParams } from 'next/navigation';
 
 
 export default function JmcLogPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   
   const fetchJmcEntries = async () => {
+    if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'jmcEntries'));
+      const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+      const querySnapshot = await getDocs(jmcCollectionRef);
       const entries = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -53,7 +58,7 @@ export default function JmcLogPage() {
       console.error("Error fetching JMC entries: ", error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch JMC entries.',
+        description: 'Failed to fetch JMC entries for this project.',
         variant: 'destructive',
       });
     }
@@ -62,12 +67,12 @@ export default function JmcLogPage() {
 
   useEffect(() => {
     fetchJmcEntries();
-  }, []);
+  }, [projectSlug]);
 
   const handleDelete = async (id: string | null) => {
-    if (!id) return;
+    if (!id || !projectSlug) return;
     try {
-      await deleteDoc(doc(db, 'jmcEntries', id));
+      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', id));
       toast({ title: 'Success', description: 'JMC entry deleted successfully.' });
       fetchJmcEntries();
     } catch (error) {
@@ -94,7 +99,7 @@ export default function JmcLogPage() {
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Log");
-    XLSX.writeFile(workbook, "jmc_log_export_all.xlsx");
+    XLSX.writeFile(workbook, `jmc_log_${projectSlug}.xlsx`);
   };
 
   const handleExportSingle = (entry: JmcEntry) => {
@@ -113,7 +118,7 @@ export default function JmcLogPage() {
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, `JMC ${entry.jmcNo}`);
-    XLSX.writeFile(workbook, `jmc_${entry.jmcNo}.xlsx`);
+    XLSX.writeFile(workbook, `jmc_${projectSlug}_${entry.jmcNo}.xlsx`);
   };
 
   const handleViewDetails = (entry: JmcEntry) => {
@@ -127,7 +132,7 @@ export default function JmcLogPage() {
       <div className="w-full max-w-7xl mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href="/billing-recon/tpsodl/jmc">
+              <Link href={`/billing-recon/${projectSlug}/jmc`}>
                   <Button variant="ghost" size="icon">
                       <ArrowLeft className="h-6 w-6" />
                   </Button>

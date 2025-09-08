@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, JmcEntry, BoqItem } from '@/lib/types';
 import { JmcItemSelectorDialog } from '@/components/JmcItemSelectorDialog';
+import { useParams } from 'next/navigation';
+
 
 const initialBillDetails = {
     billNo: '',
@@ -23,6 +25,8 @@ const initialBillDetails = {
 
 export default function CreateBillingPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<BillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -89,7 +93,7 @@ export default function CreateBillingPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    if (!details.billNo || !details.woNo || items.length === 0) {
+    if (!projectSlug || !details.billNo || !details.woNo || items.length === 0) {
         toast({
             title: 'Missing Required Fields',
             description: 'Please fill in Bill No, WO No, and add at least one item.',
@@ -105,7 +109,7 @@ export default function CreateBillingPage() {
             items: items.map(item => ({...item, billedQty: parseFloat(item.billedQty)})), // Ensure billedQty is a number
             createdAt: serverTimestamp()
         };
-        await addDoc(collection(db, 'bills'), billData);
+        await addDoc(collection(db, 'projects', projectSlug, 'bills'), billData);
         toast({
             title: 'Bill Created',
             description: 'The new bill has been successfully saved.',
@@ -135,7 +139,7 @@ export default function CreateBillingPage() {
       <div className="w-full max-w-7xl mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href="/billing-recon/tpsodl/billing">
+              <Link href={`/billing-recon/${projectSlug}/billing`}>
                   <Button variant="ghost" size="icon">
                       <ArrowLeft className="h-6 w-6" />
                   </Button>

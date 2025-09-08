@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { BoqItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import { useParams } from 'next/navigation';
 
 const initialJmcDetails = {
     jmcNo: '',
@@ -35,6 +36,8 @@ type JmcItem = typeof initialItem;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [details, setDetails] = useState(initialJmcDetails);
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
@@ -44,9 +47,10 @@ export default function JmcEntryPage() {
 
   useEffect(() => {
     const fetchBoqItems = async () => {
+        if (!projectSlug) return;
         setIsBoqLoading(true);
         try {
-            const boqSnapshot = await getDocs(collection(db, "boqItems"));
+            const boqSnapshot = await getDocs(collection(db, "projects", projectSlug, "boqItems"));
             const boqData = boqSnapshot.docs.map(doc => {
                 const data = doc.data();
                 return { 
@@ -63,12 +67,12 @@ export default function JmcEntryPage() {
             setBoqItems(boqData);
         } catch (error) {
             console.error("Error fetching BOQ items:", error);
-            toast({ title: "Error", description: "Could not fetch BOQ items.", variant: "destructive" });
+            toast({ title: "Error", description: "Could not fetch BOQ items for this project.", variant: "destructive" });
         }
         setIsBoqLoading(false);
     };
     fetchBoqItems();
-  }, [toast]);
+  }, [projectSlug, toast]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -178,7 +182,7 @@ export default function JmcEntryPage() {
             items,
             createdAt: new Date().toISOString()
         };
-        await addDoc(collection(db, 'jmcEntries'), jmcData);
+        await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
         toast({
             title: 'JMC Entry Created',
             description: 'The new JMC entry with all its items has been successfully saved.',
@@ -202,7 +206,7 @@ export default function JmcEntryPage() {
     <div className="w-full max-w-7xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <Link href="/billing-recon/tpsodl/jmc">
+            <Link href={`/billing-recon/${projectSlug}/jmc`}>
                 <Button variant="ghost" size="icon">
                     <ArrowLeft className="h-6 w-6" />
                 </Button>

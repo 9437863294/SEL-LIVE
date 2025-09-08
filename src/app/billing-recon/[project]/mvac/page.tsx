@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -14,40 +13,38 @@ import { collection, addDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 
-const initialBoqItem = {
-    'ITEMS SPECS': '',
-    'SL. No.': '',
-    'Amended SL No': '',
-    'Activity Description': '',
-    'DESCRIPTION OF ITEMS': '',
-    'UNITS': '',
-    'Total Qty': '',
-    'BASIC PRICE': '',
-    'TOTAL AMOUNT': '',
-    'GST @ 18% PER UNIT': '',
-    'TOTAL PRICE PER UNIT ( In Rs)': '',
-    'TOTAL PRICE FOR THE TENDER QUANTITY': ''
+const initialMvacItem = {
+    'WO': '',
+    'Project': '',
+    'BOQ Sl. No.': '',
+    'Description': '',
+    'Unit': '',
+    'Total BOQ Qty': '',
+    'Rate': '',
+    'Amount': '',
+    'Start Date': '',
+    'End Date': '',
+    'Status': ''
 };
 
-export default function AddBoqItemPage() {
+export default function AddMvacItemPage() {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
-  const [boqItem, setBoqItem] = useState(initialBoqItem);
+  const [mvacItem, setMvacItem] = useState(initialMvacItem);
   const [isSaving, setIsSaving] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setBoqItem(prev => ({ ...prev, [name]: value }));
+    setMvacItem(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    // Basic validation
-    if (!boqItem['SL. No.'] || !boqItem['DESCRIPTION OF ITEMS']) {
+    if (!mvacItem['WO'] || !mvacItem['BOQ Sl. No.']) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please fill in at least "SL. No." and "DESCRIPTION OF ITEMS".',
+            description: 'Please fill in at least "WO" and "BOQ Sl. No.".',
             variant: 'destructive',
         });
         setIsSaving(false);
@@ -55,14 +52,14 @@ export default function AddBoqItemPage() {
     }
     
     try {
-        await addDoc(collection(db, 'projects', projectSlug, 'boqItems'), boqItem);
+        await addDoc(collection(db, 'projects', projectSlug, 'mvacItems'), mvacItem);
         toast({
             title: 'Item Added',
-            description: 'The new BOQ item has been successfully saved.',
+            description: 'The new MVAC item has been successfully saved.',
         });
-        setBoqItem(initialBoqItem); // Reset form
+        setMvacItem(initialMvacItem); // Reset form
     } catch (error) {
-        console.error("Error adding BOQ item: ", error);
+        console.error("Error adding MVAC item: ", error);
         toast({
             title: 'Save Failed',
             description: 'An error occurred while saving the item.',
@@ -77,12 +74,12 @@ export default function AddBoqItemPage() {
     <div className="w-full max-w-4xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/boq`}>
+            <Link href={`/billing-recon/${projectSlug}`}>
                 <Button variant="ghost" size="icon">
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Add New BOQ Item</h1>
+            <h1 className="text-2xl font-bold">Add New MVAC Item</h1>
         </div>
         <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -93,17 +90,17 @@ export default function AddBoqItemPage() {
       <Card>
         <CardHeader>
             <CardTitle>Item Details</CardTitle>
-            <CardDescription>Fill in the details for the new Bill of Quantities item.</CardDescription>
+            <CardDescription>Fill in the details for the new MVAC item.</CardDescription>
         </CardHeader>
         <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Object.keys(initialBoqItem).map(key => (
+                {Object.keys(initialMvacItem).map(key => (
                     <div className="space-y-2" key={key}>
                         <Label htmlFor={key}>{key}</Label>
                         <Input
                             id={key}
                             name={key}
-                            value={boqItem[key as keyof typeof boqItem]}
+                            value={mvacItem[key as keyof typeof mvacItem]}
                             onChange={handleInputChange}
                         />
                     </div>
@@ -114,4 +111,3 @@ export default function AddBoqItemPage() {
     </div>
   );
 }
-

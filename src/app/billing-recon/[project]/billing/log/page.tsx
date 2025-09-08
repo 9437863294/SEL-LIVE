@@ -14,9 +14,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { Bill } from '@/lib/types';
 import ViewBillDialog from '@/components/ViewBillDialog';
+import { useParams } from 'next/navigation';
+
 
 export default function BillLogPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
@@ -24,9 +28,10 @@ export default function BillLogPage() {
 
   useEffect(() => {
     const fetchBills = async () => {
+      if (!projectSlug) return;
       setIsLoading(true);
       try {
-        const q = query(collection(db, 'bills'), orderBy('createdAt', 'desc'));
+        const q = query(collection(db, 'projects', projectSlug, 'bills'), orderBy('createdAt', 'desc'));
         const querySnapshot = await getDocs(q);
         const entries = querySnapshot.docs.map(doc => {
           const data = doc.data();
@@ -40,12 +45,12 @@ export default function BillLogPage() {
         setBills(entries);
       } catch (error) {
         console.error("Error fetching bills: ", error);
-        toast({ title: 'Error', description: 'Failed to fetch bills.', variant: 'destructive' });
+        toast({ title: 'Error', description: 'Failed to fetch bills for this project.', variant: 'destructive' });
       }
       setIsLoading(false);
     };
     fetchBills();
-  }, [toast]);
+  }, [projectSlug, toast]);
   
   const handleViewDetails = (bill: Bill) => {
     setSelectedBill(bill);
@@ -61,7 +66,7 @@ export default function BillLogPage() {
       <div className="w-full max-w-7xl mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href="/billing-recon/tpsodl/billing">
+            <Link href={`/billing-recon/${projectSlug}/billing`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>

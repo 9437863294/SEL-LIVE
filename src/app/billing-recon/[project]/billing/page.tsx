@@ -1,13 +1,11 @@
 
-
 'use client';
 
 import Link from 'next/link';
 import {
   ArrowLeft,
-  UploadCloud,
-  Eye,
-  PlusSquare,
+  FilePlus,
+  History,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -15,7 +13,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 
-interface BoqCardProps {
+interface BillingCardProps {
   item: {
     icon: LucideIcon;
     text: string;
@@ -24,7 +22,7 @@ interface BoqCardProps {
   };
 }
 
-function BoqCard({ item }: BoqCardProps) {
+function BillingCard({ item }: BillingCardProps) {
     const cardContent = (
          <Card
             className={cn(
@@ -56,14 +54,13 @@ function BoqCard({ item }: BoqCardProps) {
 }
 
 
-export default function BoqPage() {
+export default function BillingDashboardPage() {
   const params = useParams();
   const projectSlug = params.project as string;
   
-  const boqItems = [
-    { icon: UploadCloud, text: 'Import BOQ', href: `/billing-recon/${projectSlug}/boq/import`, description: 'Upload and process a new BOQ file.' },
-    { icon: Eye, text: 'View BOQ', href: `/billing-recon/${projectSlug}/boq/view`, description: 'See the details of existing BOQs.' },
-    { icon: PlusSquare, text: 'Add BOQ Items', href: `/billing-recon/${projectSlug}/boq/add`, description: 'Manually add items to a BOQ.' },
+  const billingItems = [
+    { icon: FilePlus, text: 'Create New Bill', href: `/billing-recon/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.' },
+    { icon: History, text: 'Billing Log', href: `/billing-recon/${projectSlug}/billing/log`, description: 'View and manage all past bills.' },
   ];
 
   return (
@@ -74,14 +71,13 @@ export default function BoqPage() {
                 <ArrowLeft className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">BOQ Management</h1>
+        <h1 className="text-2xl font-bold">Billing Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {boqItems.map((item) => (
-          <BoqCard key={item.text} item={item} />
+        {billingItems.map((item) => (
+          <BillingCard key={item.text} item={item} />
         ))}
       </div>
     </div>
   );
 }
-

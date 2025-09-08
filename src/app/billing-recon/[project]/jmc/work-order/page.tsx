@@ -11,6 +11,8 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
+import { useParams } from 'next/navigation';
+
 
 const initialWorkOrderItem = {
     'WO No': '',
@@ -24,6 +26,8 @@ const initialWorkOrderItem = {
 
 export default function CreateWorkOrderPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [item, setItem] = useState(initialWorkOrderItem);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -45,7 +49,11 @@ export default function CreateWorkOrderPage() {
     }
     
     try {
-        await addDoc(collection(db, 'workOrders'), item);
+        const workOrderData = {
+          ...item,
+          projectSlug: projectSlug, // Tag work order with project slug
+        }
+        await addDoc(collection(db, 'workOrders'), workOrderData);
         toast({
             title: 'Work Order Created',
             description: 'The new work order has been successfully saved.',
@@ -67,7 +75,7 @@ export default function CreateWorkOrderPage() {
     <div className="w-full max-w-4xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <Link href="/billing-recon/tpsodl/jmc">
+            <Link href={`/billing-recon/${projectSlug}/jmc`}>
                 <Button variant="ghost" size="icon">
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
