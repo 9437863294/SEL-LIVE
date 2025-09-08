@@ -23,7 +23,7 @@ interface BoqCardProps {
 }
 
 const boqItems = [
-  { icon: UploadCloud, text: 'Import BOQ', href: '#', description: 'Upload and process a new BOQ file.' },
+  { icon: UploadCloud, text: 'Import BOQ', href: '/billing-recon/tpsodl/boq/import', description: 'Upload and process a new BOQ file.' },
   { icon: Eye, text: 'View BOQ', href: '/billing-recon/tpsodl/boq/view', description: 'See the details of existing BOQs.' },
   { icon: PlusSquare, text: 'Add BOQ Items', href: '#', description: 'Manually add items to a BOQ.' },
 ];
