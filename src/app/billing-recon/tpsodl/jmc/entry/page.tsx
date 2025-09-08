@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Search, Check } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,12 +12,8 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { cn } from '@/lib/utils';
 import type { BoqItem } from '@/lib/types';
-import { ScrollArea } from '@/components/ui/scroll-area';
-
+import { BoqItemSelector } from '@/components/BoqItemSelector';
 
 const initialJmcDetails = {
     jmcNo: '',
@@ -36,7 +32,6 @@ const initialItem = {
 
 type JmcItem = typeof initialItem;
 
-
 export default function JmcEntryPage() {
   const { toast } = useToast();
   const [details, setDetails] = useState(initialJmcDetails);
@@ -44,15 +39,26 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
-  const [openPopoverIndex, setOpenPopoverIndex] = useState<number | null>(null);
-
 
   useEffect(() => {
     const fetchBoqItems = async () => {
         setIsBoqLoading(true);
         try {
             const boqSnapshot = await getDocs(collection(db, "boqItems"));
-            const boqData = boqSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as BoqItem));
+            const boqData = boqSnapshot.docs.map(doc => {
+                const data = doc.data();
+                return { 
+                    ...data, 
+                    id: doc.id, 
+                    // Ensure SL. No. is a string for consistent searching
+                    'SL. No.': String(data['SL. No.'] || '') 
+                } as BoqItem;
+            }).sort((a, b) => {
+                const slNoA = parseFloat(a['SL. No.']);
+                const slNoB = parseFloat(b['SL. No.']);
+                if (isNaN(slNoA) || isNaN(slNoB)) return 0;
+                return slNoA - slNoB;
+            });
             setBoqItems(boqData);
         } catch (error) {
             console.error("Error fetching BOQ items:", error);
@@ -88,26 +94,30 @@ export default function JmcEntryPage() {
     setItems(newItems);
   };
   
-  const handleBoqSelect = (index: number, boqItem: BoqItem) => {
+  const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
     const itemToUpdate = newItems[index];
-    const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('price') && !k.toLowerCase().includes('total')) || 'BASIC PRICE';
 
-    itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
-    itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
-    itemToUpdate.unit = boqItem['UNITS'] || '';
-    itemToUpdate.rate = String(boqItem[rateKey] || '0');
-    
-    if (itemToUpdate.executedQty) {
-        const qty = parseFloat(itemToUpdate.executedQty);
-        const rate = parseFloat(itemToUpdate.rate);
-         if (!isNaN(qty) && !isNaN(rate)) {
-            itemToUpdate.totalAmount = (qty * rate).toFixed(2);
+    if (boqItem) {
+        const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('price') && !k.toLowerCase().includes('total')) || 'BASIC PRICE';
+        itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
+        itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
+        itemToUpdate.unit = boqItem['UNITS'] || '';
+        itemToUpdate.rate = String(boqItem[rateKey] || '0');
+        
+        if (itemToUpdate.executedQty) {
+            const qty = parseFloat(itemToUpdate.executedQty);
+            const rate = parseFloat(itemToUpdate.rate);
+             if (!isNaN(qty) && !isNaN(rate)) {
+                itemToUpdate.totalAmount = (qty * rate).toFixed(2);
+            }
         }
+    } else {
+        // Clear fields if selection is cleared
+        Object.assign(itemToUpdate, initialItem);
     }
-
+    
     setItems(newItems);
-    setOpenPopoverIndex(null);
   };
 
   const addItem = () => {
@@ -202,69 +212,47 @@ export default function JmcEntryPage() {
             <CardDescription>Add one or more items executed under this JMC.</CardDescription>
         </CardHeader>
         <CardContent>
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead className="w-[150px]">BOQ Sl. No.</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="w-[100px]">Unit</TableHead>
-                        <TableHead className="w-[120px]">Rate</TableHead>
-                        <TableHead className="w-[120px]">Executed Qty</TableHead>
-                        <TableHead className="w-[150px]">Total Amount</TableHead>
-                        <TableHead className="w-[50px]">Action</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {items.map((item, index) => (
-                        <TableRow key={index}>
-                           <TableCell>
-                                <Popover open={openPopoverIndex === index} onOpenChange={(isOpen) => setOpenPopoverIndex(isOpen ? index : null)}>
-                                    <PopoverTrigger asChild>
-                                        <Button variant="outline" className="w-full justify-between">
-                                            {item.boqSlNo || "Select..."}
-                                            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[400px] p-0">
-                                        <Command>
-                                            <CommandInput placeholder="Search BOQ..." />
-                                            <CommandList>
-                                                <CommandEmpty>{isBoqLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
-                                                <CommandGroup>
-                                                   <ScrollArea className="h-72">
-                                                    {boqItems.map(boqItem => (
-                                                        <CommandItem
-                                                            key={boqItem.id}
-                                                            value={`${boqItem['SL. No.'] || ''} - ${boqItem['DESCRIPTION OF ITEMS'] || ''}`}
-                                                            onSelect={() => handleBoqSelect(index, boqItem)}
-                                                        >
-                                                            <Check className={cn("mr-2 h-4 w-4", item.boqSlNo === boqItem['SL. No.'] ? "opacity-100" : "opacity-0")} />
-                                                            <span className="flex-1">{boqItem['SL. No.']} - {boqItem['DESCRIPTION OF ITEMS']}</span>
-                                                        </CommandItem>
-                                                    ))}
-                                                    </ScrollArea>
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                           </TableCell>
-                            <TableCell>{item.description}</TableCell>
-                            <TableCell>{item.unit}</TableCell>
-                            <TableCell>{item.rate}</TableCell>
-                            <TableCell>
-                                <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
-                            </TableCell>
-                            <TableCell>{item.totalAmount}</TableCell>
-                            <TableCell>
-                                <Button variant="ghost" size="icon" onClick={() => removeItem(index)} disabled={items.length <= 1}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                            </TableCell>
+            <div className="overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead className="w-[100px]">Unit</TableHead>
+                            <TableHead className="w-[120px]">Rate</TableHead>
+                            <TableHead className="w-[120px]">Executed Qty</TableHead>
+                            <TableHead className="w-[150px]">Total Amount</TableHead>
+                            <TableHead className="w-[50px]">Action</TableHead>
                         </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
+                    </TableHeader>
+                    <TableBody>
+                        {items.map((item, index) => (
+                            <TableRow key={index}>
+                            <TableCell>
+                                <BoqItemSelector
+                                    boqItems={boqItems}
+                                    selectedSlNo={item.boqSlNo}
+                                    onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
+                                    isLoading={isBoqLoading}
+                                />
+                            </TableCell>
+                                <TableCell>{item.description}</TableCell>
+                                <TableCell>{item.unit}</TableCell>
+                                <TableCell>{item.rate}</TableCell>
+                                <TableCell>
+                                    <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
+                                </TableCell>
+                                <TableCell>{item.totalAmount}</TableCell>
+                                <TableCell>
+                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)} disabled={items.length <= 1}>
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
             <Button variant="outline" onClick={addItem} className="mt-4">
                 <Plus className="mr-2 h-4 w-4" /> Add Item
             </Button>
