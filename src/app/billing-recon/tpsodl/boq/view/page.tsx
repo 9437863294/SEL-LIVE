@@ -32,7 +32,6 @@ const tableHeaders = [
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [headers, setHeaders] = useState<string[]>(tableHeaders);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -72,14 +71,14 @@ export default function ViewBoqPage() {
             <Table>
                 <TableHeader>
                     <TableRow>
-                        {headers.map(header => <TableHead key={header}>{header}</TableHead>)}
+                        {tableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {isLoading ? (
                         Array.from({ length: 5 }).map((_, i) => (
                            <TableRow key={i}>
-                                {headers.map((header, j) => (
+                                {tableHeaders.map((header, j) => (
                                     <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
                                 ))}
                            </TableRow>
@@ -87,14 +86,14 @@ export default function ViewBoqPage() {
                     ) : boqItems.length > 0 ? (
                         boqItems.map((item) => (
                             <TableRow key={item.id}>
-                                {headers.map(header => (
+                                {tableHeaders.map(header => (
                                     <TableCell key={`${item.id}-${header}`}>{item[header]}</TableCell>
                                 ))}
                             </TableRow>
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={headers.length || 1} className="text-center h-24">
+                            <TableCell colSpan={tableHeaders.length} className="text-center h-24">
                                 No BOQ items found.
                             </TableCell>
                         </TableRow>
