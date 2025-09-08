@@ -39,6 +39,7 @@ export default function JmcLogPage() {
   const { toast } = useToast();
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const fetchJmcEntries = async () => {
     setIsLoading(true);
@@ -68,7 +69,8 @@ export default function JmcLogPage() {
     fetchJmcEntries();
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | null) => {
+    if (!id) return;
     try {
       await deleteDoc(doc(db, 'jmcEntries', id));
       toast({ title: 'Success', description: 'JMC entry deleted successfully.' });
@@ -76,6 +78,8 @@ export default function JmcLogPage() {
     } catch (error) {
       console.error("Error deleting JMC entry:", error);
       toast({ title: 'Error', description: 'Failed to delete JMC entry.', variant: 'destructive' });
+    } finally {
+        setItemToDelete(null);
     }
   };
   
@@ -150,39 +154,27 @@ export default function JmcLogPage() {
                     <TableCell>{entry.createdAt}</TableCell>
                     <TableCell>{entry.items.length}</TableCell>
                     <TableCell className="text-right">
-                        <AlertDialog>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                        <span className="sr-only">Open menu</span>
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem>
-                                        <Eye className="mr-2 h-4 w-4" /> View Details
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => console.log('Viewing details for', entry.id)}>
+                                    <Eye className="mr-2 h-4 w-4" /> View Details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => toast({ title: 'Info', description: 'PDF generation is not yet implemented.'})}>
+                                    <FileText className="mr-2 h-4 w-4" /> Generate PDF
+                                </DropdownMenuItem>
+                                <AlertDialogTrigger asChild>
+                                    <DropdownMenuItem className="text-destructive" onSelect={() => setItemToDelete(entry.id)}>
+                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem>
-                                        <FileText className="mr-2 h-4 w-4" /> Generate PDF
-                                    </DropdownMenuItem>
-                                    <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem className="text-destructive">
-                                            <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                        </DropdownMenuItem>
-                                    </AlertDialogTrigger>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                    <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDelete(entry.id)}>Delete</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
+                                </AlertDialogTrigger>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -197,6 +189,19 @@ export default function JmcLogPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!itemToDelete} onOpenChange={(isOpen) => !isOpen && setItemToDelete(null)}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setItemToDelete(null)}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDelete(itemToDelete)}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
