@@ -66,7 +66,7 @@ export default function ViewBoqPage() {
 
   useEffect(() => {
     fetchBoqItems();
-  }, [toast]);
+  }, []);
   
   const handleClearBoq = async () => {
     setIsClearing(true);
@@ -74,6 +74,7 @@ export default function ViewBoqPage() {
         const querySnapshot = await getDocs(collection(db, 'boqItems'));
         if (querySnapshot.empty) {
             toast({ title: 'No data to clear', description: 'The BOQ is already empty.' });
+            setIsClearing(false);
             return;
         }
 
@@ -114,8 +115,9 @@ export default function ViewBoqPage() {
         </div>
         <AlertDialog>
             <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={isLoading || boqItems.length === 0}>
-                    <Trash2 className="mr-2 h-4 w-4" /> Clear BOQ
+                <Button variant="destructive" disabled={isLoading || boqItems.length === 0 || isClearing}>
+                    {isClearing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                     Clear BOQ
                 </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -155,9 +157,15 @@ export default function ViewBoqPage() {
                     ) : boqItems.length > 0 ? (
                         boqItems.map((item) => (
                             <TableRow key={item.id}>
-                                {tableHeaders.map(header => (
-                                    <TableCell key={`${item.id}-${header}`}>{item[header]}</TableCell>
-                                ))}
+                                {tableHeaders.map(header => {
+                                    let cellData = item[header];
+                                    if(header === 'BASIC PRICE') {
+                                        cellData = item['BASIC PRICE'] ?? item['BASICPRICE'] ?? item['Basic Price'];
+                                    }
+                                    return (
+                                        <TableCell key={`${item.id}-${header}`}>{cellData}</TableCell>
+                                    )
+                                })}
                             </TableRow>
                         ))
                     ) : (
