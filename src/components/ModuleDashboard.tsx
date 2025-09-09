@@ -6,29 +6,50 @@ import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
 import { useAuth } from './auth/AuthProvider';
+import type { Module } from '@/lib/types';
 
-const defaultModules = [
+// This is the guaranteed unique list of default modules.
+const defaultModules: Module[] = [
   { id: '1', title: 'Site Fund Requisition', content: 'Handle site fund requests and approvals.', tags: [], icon: 'Landmark' },
   { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [], icon: 'FileText' },
   { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
   { id: '4', title: 'Email Management', content: 'Manage email campaigns and templates.', tags: [], icon: 'Mail' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
-  { id: '6', title: 'Daily Requisition 2', content: 'This is a new module.', tags: [], icon: 'FileText' },
-  { id: '7', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
+  { id: '6', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
 ];
+
 
 export default function ModuleDashboard() {
   const { modules, updateModuleOrder, isLoading, setModules } = useModules();
   const { user } = useAuth();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  // Set default modules only if no modules exist in storage.
+  // This effect runs once when the component mounts.
+  // It ensures the module list is clean and free of duplicates.
   useEffect(() => {
-    if (!isLoading && modules.length === 0) {
-      setModules(defaultModules);
+    if (!isLoading) {
+      // If local storage is empty, initialize with the clean default list.
+      if (modules.length === 0) {
+        setModules(defaultModules);
+      } else {
+        // If local storage has modules, perform a one-time cleanup to remove any duplicates
+        // that may have been created by previous buggy logic.
+        const uniqueModules = modules.reduce((acc, current) => {
+          if (!acc.find(item => item.id === current.id)) {
+            acc.push(current);
+          }
+          return acc;
+        }, [] as Module[]);
+
+        // If duplicates were found and removed, update the state.
+        if (uniqueModules.length !== modules.length) {
+          setModules(uniqueModules);
+        }
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, setModules]);
+
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
