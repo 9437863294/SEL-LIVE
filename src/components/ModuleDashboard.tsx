@@ -15,6 +15,7 @@ const defaultModules = [
   { id: '4', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
   { id: '6', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
+  { id: '7', title: 'Email Management', content: 'Manage email campaigns and templates.', tags: [], icon: 'Mail' },
 ];
 
 export default function ModuleDashboard() {
