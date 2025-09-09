@@ -24,26 +24,36 @@ export default function ModuleDashboard() {
   const { user } = useAuth();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  // This effect runs once when the component mounts.
-  // It ensures the module list is clean and free of duplicates.
+  // This effect runs once when the component mounts to ensure the module list is clean.
   useEffect(() => {
     if (!isLoading) {
       // If local storage is empty, initialize with the clean default list.
       if (modules.length === 0) {
         setModules(defaultModules);
       } else {
-        // If local storage has modules, perform a one-time cleanup to remove any duplicates
-        // that may have been created by previous buggy logic.
-        const uniqueModules = modules.reduce((acc, current) => {
+        // One-time cleanup: merge the default modules with the stored modules,
+        // ensuring no duplicates and that all default modules are present.
+        const combinedModules = [...modules];
+        const storedModuleIds = new Set(modules.map(m => m.id));
+
+        defaultModules.forEach(defaultModule => {
+          if (!storedModuleIds.has(defaultModule.id)) {
+            combinedModules.push(defaultModule);
+          }
+        });
+        
+        // Final check for any duplicates that might have existed in localStorage previously.
+        const uniqueModules = combinedModules.reduce((acc, current) => {
           if (!acc.find(item => item.id === current.id)) {
             acc.push(current);
           }
           return acc;
         }, [] as Module[]);
 
-        // If duplicates were found and removed, update the state.
-        if (uniqueModules.length !== modules.length) {
-          setModules(uniqueModules);
+
+        // Only update state if the list has changed, to avoid unnecessary re-renders.
+        if (uniqueModules.length !== modules.length || !modules.every(m => uniqueModules.some(um => um.id === m.id))) {
+            setModules(uniqueModules);
         }
       }
     }
