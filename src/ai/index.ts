@@ -16,3 +16,6 @@ export type { GetAllEmployeePositionsInput, GetAllEmployeePositionsOutput } from
 
 export { getEmails } from './flows/email-flow';
 export type { GetEmailsInput, GetEmailsOutput } from './flows/email-flow';
+
+export { sendEmailAuthorization } from './flows/send-email-authorization-flow';
+export type { SendEmailAuthorizationInput, SendEmailAuthorizationOutput } from './flows/send-email-authorization-flow';

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { EmailAuthorization } from '@/lib/types';
@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { sendEmailAuthorization } from '@/ai';
 
 export default function EmailAuthorizationPage() {
   const { toast } = useToast();
@@ -58,29 +59,24 @@ export default function EmailAuthorizationPage() {
     }
     setIsSending(true);
     try {
-      // In a real app, this would trigger a secure backend process:
-      // 1. Generate a unique, secure token for the request.
-      // 2. Store the pending request (email, token, expiry) in Firestore.
-      // 3. Trigger an email (via a secure backend service) to the user with a link like /authorize-email?token=...
-      // For now, we'll just simulate it by adding a "Pending" record.
-      
-      const newAuth = {
-        email,
-        status: 'Pending' as const,
-        createdAt: new Date().toISOString(),
-      };
-      
-      await addDoc(collection(db, 'emailAuthorizations'), newAuth);
-
-      toast({
-        title: 'Request Sent',
-        description: `Authorization request sent to ${email}.`,
-      });
-      setEmail('');
-      fetchAuthorizations(); // Refresh list
-    } catch (error) {
+      const result = await sendEmailAuthorization({ email });
+      if (result.success) {
+        toast({
+          title: 'Request Sent',
+          description: result.message,
+        });
+        setEmail('');
+        fetchAuthorizations(); // Refresh list
+      } else {
+        toast({
+          title: 'Request Failed',
+          description: result.message,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
       console.error("Error sending request: ", error);
-      toast({ title: 'Error', description: 'Failed to send authorization request.', variant: 'destructive' });
+      toast({ title: 'Error', description: error.message || 'Failed to send authorization request.', variant: 'destructive' });
     }
     setIsSending(false);
   };
