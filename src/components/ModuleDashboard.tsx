@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
@@ -23,12 +23,23 @@ export default function ModuleDashboard() {
   const { user } = useAuth();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  // Set default modules if none exist
-  useState(() => {
-    if (!isLoading && modules.length === 0) {
-      setModules(defaultModules);
+  // Set default modules if none exist, or merge if new ones are added
+  useEffect(() => {
+    if (!isLoading) {
+      if (modules.length === 0) {
+        setModules(defaultModules);
+      } else {
+        // This ensures new modules from the default list get added
+        // without losing the user's existing modules or their order.
+        const existingModuleIds = new Set(modules.map(m => m.id));
+        const missingModules = defaultModules.filter(dm => !existingModuleIds.has(dm.id));
+        
+        if (missingModules.length > 0) {
+            setModules(prevModules => [...prevModules, ...missingModules]);
+        }
+      }
     }
-  });
+  }, [isLoading, modules, setModules]);
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
@@ -43,7 +54,7 @@ export default function ModuleDashboard() {
     e.preventDefault();
     if (draggedItemId === null || draggedItemId === targetId) return;
 
-    const currentModules = modules.length > 0 ? modules : defaultModules;
+    const currentModules = modules;
     const draggedIndex = currentModules.findIndex((m) => m.id === draggedItemId);
     const targetIndex = currentModules.findIndex((m) => m.id === targetId);
 
@@ -53,13 +64,13 @@ export default function ModuleDashboard() {
     const [draggedItem] = newModules.splice(draggedIndex, 1);
     newModules.splice(targetIndex, 0, draggedItem);
     updateModuleOrder(newModules);
-  }, [draggedItemId, modules, defaultModules, updateModuleOrder]);
+  }, [draggedItemId, modules, updateModuleOrder]);
   
   const handleDragEnd = useCallback(() => {
     setDraggedItemId(null);
   }, []);
-
-  const currentModules = modules.length > 0 ? modules : defaultModules;
+  
+  const currentModules = modules;
 
   return (
     <div className="flex flex-col gap-8 h-full">
