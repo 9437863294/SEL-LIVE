@@ -50,10 +50,14 @@ export default function ModuleDashboard() {
           return acc;
         }, [] as Module[]);
 
+        // Explicitly remove the bad "Billing Recon" entry
+        const finalCleanedModules = uniqueModules.filter(
+          module => !(module.title === 'Billing Recon' && module.content === 'This is a new module.')
+        );
 
         // Only update state if the list has changed, to avoid unnecessary re-renders.
-        if (JSON.stringify(uniqueModules) !== JSON.stringify(modules)) {
-            setModules(uniqueModules);
+        if (JSON.stringify(finalCleanedModules) !== JSON.stringify(modules)) {
+            setModules(finalCleanedModules);
         }
       }
     }
