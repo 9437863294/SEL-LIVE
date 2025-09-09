@@ -58,7 +58,7 @@ export default function ModuleDashboard() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, setModules]);
+  }, [isLoading]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
