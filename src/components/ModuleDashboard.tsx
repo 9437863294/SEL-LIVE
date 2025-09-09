@@ -52,7 +52,7 @@ export default function ModuleDashboard() {
 
 
         // Only update state if the list has changed, to avoid unnecessary re-renders.
-        if (uniqueModules.length !== modules.length || !modules.every(m => uniqueModules.some(um => um.id === m.id))) {
+        if (JSON.stringify(uniqueModules) !== JSON.stringify(modules)) {
             setModules(uniqueModules);
         }
       }
