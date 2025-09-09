@@ -12,6 +12,7 @@ import {
   Hash,
   Calculator,
   Palette,
+  MailCheck,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,7 @@ const settingsItems = [
   { icon: Hash, text: 'Serial No. Config', href: '/settings/serial-no-configuration' },
   { icon: Calculator, text: 'Import Config', href: '#' },
   { icon: Palette, text: 'Appearance', href: '/settings/appearance' },
+  { icon: MailCheck, text: 'Email Authorization', href: '/settings/email-authorization' },
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {

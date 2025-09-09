@@ -10,6 +10,15 @@ export type Email = {
   read: boolean;
 };
 
+export type EmailAuthorization = {
+  id: string;
+  email: string;
+  status: 'Pending' | 'Authorized';
+  createdAt: string;
+  // In a real app, you would securely store accessToken and refreshToken here,
+  // likely in a separate, more secure subcollection.
+};
+
 
 export type BoqItem = {
     id: string;
