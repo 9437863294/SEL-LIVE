@@ -1,5 +1,14 @@
 
 
+export type Email = {
+  id: string;
+  sender: string;
+  initials: string;
+  subject: string;
+  body: string;
+  date: string;
+  read: boolean;
+};
 
 
 export type BoqItem = {

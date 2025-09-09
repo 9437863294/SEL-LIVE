@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   File,
   Inbox,
@@ -11,6 +11,7 @@ import {
   FileText,
   Search,
   PlusCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -26,7 +27,10 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { useToast } from '@/hooks/use-toast';
+import { getEmails } from '@/ai';
+import type { Email } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const folders = [
   { name: 'Inbox', icon: Inbox, count: 12 },
@@ -36,31 +40,38 @@ const folders = [
   { name: 'Trash', icon: Trash2 },
 ];
 
-const emails = [
-  {
-    id: 1,
-    sender: 'Alex Doe',
-    initials: 'AD',
-    subject: 'Project Alpha Kick-off',
-    body: 'Hi team, Just a reminder about the kick-off meeting tomorrow at 10 AM. Please come prepared to discuss the project timeline and initial deliverables. Looking forward to it!',
-    date: '2 hours ago',
-    read: false,
-  },
-  {
-    id: 2,
-    sender: 'Samantha Lee',
-    initials: 'SL',
-    subject: 'Q3 Report Final Draft',
-    body: 'Attached is the final draft of the Q3 report. Please review and provide any feedback by EOD. Thanks!',
-    date: 'Yesterday',
-    read: true,
-  },
-  // Add more emails as needed
-];
 
 export default function EmailManagementPage() {
+  const { toast } = useToast();
   const [selectedFolder, setSelectedFolder] = useState('Inbox');
-  const [selectedEmail, setSelectedEmail] = useState(emails[0]);
+  const [emails, setEmails] = useState<Email[]>([]);
+  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchEmails = async (folder: string) => {
+        setIsLoading(true);
+        setSelectedEmail(null);
+        try {
+            const response = await getEmails({ folder });
+            setEmails(response.emails);
+            if(response.emails.length > 0){
+                setSelectedEmail(response.emails[0]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch emails:", error);
+            toast({
+                title: 'Error',
+                description: 'Could not fetch emails.',
+                variant: 'destructive',
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    fetchEmails(selectedFolder);
+  }, [selectedFolder, toast]);
 
   return (
     <div className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
@@ -103,25 +114,35 @@ export default function EmailManagementPage() {
               </div>
             </div>
             <ul className="flex-1 overflow-y-auto">
-              {emails.map((email) => (
-                <li
-                  key={email.id}
-                  className={cn(
-                    'cursor-pointer border-b p-4 hover:bg-muted/50',
-                    selectedEmail?.id === email.id && 'bg-muted'
-                  )}
-                  onClick={() => setSelectedEmail(email)}
-                >
-                  <div className="flex justify-between items-start">
-                    <p className={cn("font-semibold", !email.read && 'text-primary')}>{email.sender}</p>
-                    <p className="text-xs text-muted-foreground">{email.date}</p>
-                  </div>
-                  <p className={cn("text-sm", !email.read && 'font-bold')}>{email.subject}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {email.body}
-                  </p>
-                </li>
-              ))}
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <li key={i} className="p-4 border-b">
+                    <Skeleton className="h-4 w-1/4 mb-2" />
+                    <Skeleton className="h-4 w-3/4 mb-1" />
+                    <Skeleton className="h-3 w-full" />
+                  </li>
+                ))
+              ) : (
+                 emails.map((email) => (
+                  <li
+                    key={email.id}
+                    className={cn(
+                      'cursor-pointer border-b p-4 hover:bg-muted/50',
+                      selectedEmail?.id === email.id && 'bg-muted'
+                    )}
+                    onClick={() => setSelectedEmail(email)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <p className={cn("font-semibold", !email.read && 'text-primary')}>{email.sender}</p>
+                      <p className="text-xs text-muted-foreground">{email.date}</p>
+                    </div>
+                    <p className={cn("text-sm", !email.read && 'font-bold')}>{email.subject}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {email.body}
+                    </p>
+                  </li>
+                 ))
+              )}
             </ul>
           </div>
         </ResizablePanel>
@@ -154,7 +175,7 @@ export default function EmailManagementPage() {
             </div>
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
-              <p>Select an email to read</p>
+              {isLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : <p>Select an email to read</p>}
             </div>
           )}
         </ResizablePanel>
