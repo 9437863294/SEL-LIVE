@@ -34,7 +34,11 @@ export default function ModuleDashboard() {
         const missingModules = defaultModules.filter(dm => !existingModuleIds.has(dm.id));
         
         if (missingModules.length > 0) {
-            setModules(prevModules => [...prevModules, ...missingModules]);
+            setModules(prevModules => {
+              const currentIds = new Set(prevModules.map(m => m.id));
+              const modulesToAdd = missingModules.filter(m => !currentIds.has(m.id));
+              return [...prevModules, ...modulesToAdd];
+            });
         }
       }
     }
