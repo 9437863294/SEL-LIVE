@@ -34,15 +34,12 @@ export default function ModuleDashboard() {
         const missingModules = defaultModules.filter(dm => !existingModuleIds.has(dm.id));
         
         if (missingModules.length > 0) {
-            setModules(prevModules => {
-              const currentIds = new Set(prevModules.map(m => m.id));
-              const modulesToAdd = missingModules.filter(m => !currentIds.has(m.id));
-              return [...prevModules, ...modulesToAdd];
-            });
+            setModules(prevModules => [...prevModules, ...missingModules]);
         }
       }
     }
-  }, [isLoading, modules, setModules]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, setModules]);
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
