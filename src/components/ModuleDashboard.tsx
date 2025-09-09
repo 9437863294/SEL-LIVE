@@ -22,21 +22,10 @@ export default function ModuleDashboard() {
   const { user } = useAuth();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  // Set default modules if none exist, or merge if new ones are added
+  // Set default modules only if no modules exist in storage.
   useEffect(() => {
-    if (!isLoading) {
-      if (modules.length === 0) {
-        setModules(defaultModules);
-      } else {
-        // This ensures new modules from the default list get added
-        // without losing the user's existing modules or their order.
-        const existingModuleIds = new Set(modules.map(m => m.id));
-        const missingModules = defaultModules.filter(dm => !existingModuleIds.has(dm.id));
-        
-        if (missingModules.length > 0) {
-            setModules(prevModules => [...prevModules, ...missingModules]);
-        }
-      }
+    if (!isLoading && modules.length === 0) {
+      setModules(defaultModules);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, setModules]);
