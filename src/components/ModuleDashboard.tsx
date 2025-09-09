@@ -10,11 +10,11 @@ import { useAuth } from './auth/AuthProvider';
 const defaultModules = [
   { id: '1', title: 'Site Fund Requisition', content: 'Handle site fund requests and approvals.', tags: [], icon: 'Landmark' },
   { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [], icon: 'FileText' },
-  { id: '3', title: 'Daily Requisition 2', content: 'This is a new module.', tags: [], icon: 'FileText' },
-  { id: '4', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
+  { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
+  { id: '4', title: 'Email Management', content: 'Manage email campaigns and templates.', tags: [], icon: 'Mail' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
-  { id: '6', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
-  { id: '7', title: 'Email Management', content: 'Manage email campaigns and templates.', tags: [], icon: 'Mail' },
+  { id: '6', title: 'Daily Requisition 2', content: 'This is a new module.', tags: [], icon: 'FileText' },
+  { id: '7', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
 ];
 
 export default function ModuleDashboard() {
