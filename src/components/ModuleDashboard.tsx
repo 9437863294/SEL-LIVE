@@ -14,6 +14,7 @@ const defaultModules: Module[] = [
   { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [], icon: 'FileText' },
   { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
+  { id: '6', title: 'Expenses', content: 'Track and manage project expenses.', tags: [], icon: 'Receipt' },
 ];
 
 
@@ -37,7 +38,9 @@ export default function ModuleDashboard() {
         // This also filters out any old/stale modules that are no longer in the default list
         // unless they were custom-added. The primary goal is to ensure no duplicates from defaults.
         modules.forEach(module => {
-            modulesMap.set(module.id, module);
+            if (module.title !== 'Billing Recon' || module.content !== 'This is a new module.') {
+               modulesMap.set(module.id, module);
+            }
         });
         
         // Use the order from storage as the base, but ensure all default modules are present.
