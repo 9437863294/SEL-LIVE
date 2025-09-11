@@ -4,45 +4,32 @@
 import Link from 'next/link';
 import {
   Home,
-  Briefcase,
-  Construction,
-  Clock,
-  Users,
-  ShieldCheck,
-  Hash,
-  Calculator,
-  Palette,
-  MailCheck,
-  Receipt,
+  Settings,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-interface SettingsCardProps {
+interface ExpensesCardProps {
   item: {
     icon: LucideIcon;
     text: string;
     href: string;
+    description: string;
   };
 }
 
-const settingsItems = [
-  { icon: Briefcase, text: 'Manage Department', href: '/settings/department' },
-  { icon: Construction, text: 'Manage Project', href: '/settings/project' },
-  { icon: Users, text: 'Employee', href: '/settings/employee'},
-  { icon: Briefcase, text: 'Manage Vendor', href: '#' },
-  { icon: Clock, text: 'Working Hrs', href: '/settings/working-hours' },
-  { icon: Users, text: 'User Management', href: '/settings/user-management' },
-  { icon: ShieldCheck, text: 'Role Management', href: '/settings/role-management' },
-  { icon: Hash, text: 'Serial No. Config', href: '/settings/serial-no-configuration' },
-  { icon: Calculator, text: 'Import Config', href: '#' },
-  { icon: Palette, text: 'Appearance', href: '/settings/appearance' },
-  { icon: MailCheck, text: 'Email Authorization', href: '/settings/email-authorization' },
+const expensesItems = [
+  { 
+    icon: Settings, 
+    text: 'Expenses Settings', 
+    href: '/settings/expenses', 
+    description: 'Configure settings for the expenses module.' 
+  },
 ];
 
-function SettingsCard({ item }: SettingsCardProps) {
+function ExpensesCard({ item }: ExpensesCardProps) {
     const cardContent = (
          <Card
             className={cn(
@@ -50,12 +37,13 @@ function SettingsCard({ item }: SettingsCardProps) {
                 item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="flex-row items-center gap-4 space-y-0 pb-4">
+            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
                 <div className="bg-primary/10 p-3 rounded-lg">
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
                     <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
         </Card>
@@ -73,7 +61,7 @@ function SettingsCard({ item }: SettingsCardProps) {
 }
 
 
-export default function SettingsPage() {
+export default function ExpensesPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -83,11 +71,11 @@ export default function SettingsPage() {
                 <Home className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold">Expenses Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {settingsItems.map((item) => (
-          <SettingsCard key={item.text} item={item} />
+        {expensesItems.map((item) => (
+          <ExpensesCard key={item.text} item={item} />
         ))}
       </div>
     </div>
