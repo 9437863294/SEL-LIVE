@@ -26,9 +26,8 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
       const item = window.localStorage.getItem('modules');
       if (item) {
         let loadedModules = JSON.parse(item) as Module[];
-        // Aggressively filter out the stale "Utility Module" upon loading.
-        // This ensures that even if it's in local storage, it gets removed.
-        const cleanedModules = loadedModules.filter(module => module.title !== 'Utility Module');
+        // Aggressively filter out the stale modules upon loading.
+        const cleanedModules = loadedModules.filter(module => module.title !== 'Utility Module' && module.title !== 'Email Management');
         setModules(cleanedModules);
       }
     } catch (error) {
