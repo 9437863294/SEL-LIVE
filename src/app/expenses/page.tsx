@@ -23,7 +23,7 @@ interface ExpensesCardProps {
 const expensesItems = [
   { 
     icon: Settings, 
-    text: 'Expenses Settings', 
+    text: 'Settings', 
     href: '/settings/expenses', 
     description: 'Configure settings for the expenses module.' 
   },
