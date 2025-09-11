@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Home,
   Building2,
+  Receipt,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -85,6 +86,15 @@ export default function ExpensesPage() {
       description: `Manage expenses for the ${dept.name} department.`
   }));
 
+  const settingsItem = { 
+      icon: Receipt, 
+      text: 'Settings', 
+      href: '/settings/expenses', 
+      description: 'Configure settings for the expenses module.' 
+  };
+  
+  const allItems = [...departmentItems, settingsItem];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
@@ -98,8 +108,8 @@ export default function ExpensesPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {isLoading ? (
             Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
-        ) : departmentItems.length > 0 ? (
-            departmentItems.map((item) => (
+        ) : allItems.length > 1 ? (
+            allItems.map((item) => (
               <ExpensesCard key={item.text} item={item} />
             ))
         ) : (
