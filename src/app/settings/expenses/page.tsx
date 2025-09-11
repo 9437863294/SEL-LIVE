@@ -11,13 +11,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 
 export default function ExpensesSettingsPage() {
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="mb-6 flex items-center gap-4">
-        <Link href="/settings">
+        <Link href="/expenses">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-6 w-6" />
           </Button>
