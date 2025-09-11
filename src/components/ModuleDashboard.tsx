@@ -15,7 +15,6 @@ const defaultModules: Module[] = [
   { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
   { id: '4', title: 'Email Management', content: 'Manage email campaigns and templates.', tags: [], icon: 'Mail' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
-  { id: '6', title: 'Utility Module', content: 'Contains tools like Text Convert.', tags: [], icon: 'LayoutGrid' },
 ];
 
 
@@ -27,38 +26,34 @@ export default function ModuleDashboard() {
   // This effect runs once when the component mounts to ensure the module list is clean.
   useEffect(() => {
     if (!isLoading) {
-      // If local storage is empty, initialize with the clean default list.
-      if (modules.length === 0) {
-        setModules(defaultModules);
-      } else {
-        // One-time cleanup: merge the default modules with the stored modules,
-        // ensuring no duplicates and that all default modules are present.
-        const combinedModules = [...modules];
-        const storedModuleIds = new Set(modules.map(m => m.id));
+      // Create a map of the default modules for quick lookup.
+      const defaultModulesMap = new Map(defaultModules.map(m => [m.id, m]));
+      // Create a map of the stored modules, ensuring no duplicates from storage.
+      const storedModulesMap = new Map(modules.map(m => [m.id, m]));
+  
+      // Combine the maps. The stored modules will overwrite defaults if IDs are the same.
+      const combinedMap = new Map([...defaultModulesMap, ...storedModulesMap]);
+  
+      // Re-create the array from the combined map's values.
+      const finalModules = Array.from(combinedMap.values());
+      
+      // Ensure the final order respects the stored order as much as possible, with new modules appended.
+      const orderedFinalModules = [
+        ...modules.map(m => finalModules.find(fm => fm.id === m.id)).filter(Boolean) as Module[],
+        ...defaultModules.filter(dm => !storedModulesMap.has(dm.id))
+      ];
 
-        defaultModules.forEach(defaultModule => {
-          if (!storedModuleIds.has(defaultModule.id)) {
-            combinedModules.push(defaultModule);
-          }
-        });
-        
-        // Final check for any duplicates that might have existed in localStorage previously.
-        const uniqueModules = combinedModules.reduce((acc, current) => {
-          if (!acc.find(item => item.id === current.id)) {
-            acc.push(current);
-          }
-          return acc;
-        }, [] as Module[]);
+      // Clean up any remaining undefined entries or duplicates, just in case.
+      const seen = new Set();
+      const cleanedModules = orderedFinalModules.filter(el => {
+        const duplicate = seen.has(el.id);
+        seen.add(el.id);
+        return !duplicate;
+      });
 
-        // Explicitly remove the bad "Billing Recon" entry
-        const finalCleanedModules = uniqueModules.filter(
-          module => !(module.title === 'Billing Recon' && module.content === 'This is a new module.')
-        );
-
-        // Only update state if the list has changed, to avoid unnecessary re-renders.
-        if (JSON.stringify(finalCleanedModules) !== JSON.stringify(modules)) {
-            setModules(finalCleanedModules);
-        }
+      // Only update state if the list has changed, to avoid unnecessary re-renders.
+      if (JSON.stringify(cleanedModules) !== JSON.stringify(modules)) {
+        setModules(cleanedModules);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
