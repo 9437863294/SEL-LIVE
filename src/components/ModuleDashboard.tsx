@@ -26,35 +26,40 @@ export default function ModuleDashboard() {
   // This effect runs once when the component mounts to ensure the module list is clean.
   useEffect(() => {
     if (!isLoading) {
-      // Create a map of the default modules for quick lookup.
-      const defaultModulesMap = new Map(defaultModules.map(m => [m.id, m]));
-      // Create a map of the stored modules, ensuring no duplicates from storage.
-      const storedModulesMap = new Map(modules.map(m => [m.id, m]));
-  
-      // Combine the maps. The stored modules will overwrite defaults if IDs are the same.
-      const combinedMap = new Map([...defaultModulesMap, ...storedModulesMap]);
-  
-      // Re-create the array from the combined map's values.
-      const finalModules = Array.from(combinedMap.values());
-      
-      // Ensure the final order respects the stored order as much as possible, with new modules appended.
-      const orderedFinalModules = [
-        ...modules.map(m => finalModules.find(fm => fm.id === m.id)).filter(Boolean) as Module[],
-        ...defaultModules.filter(dm => !storedModulesMap.has(dm.id))
-      ];
+        // Use a Map to ensure all module IDs are unique.
+        const modulesMap = new Map();
 
-      // Clean up any remaining undefined entries or duplicates, just in case.
-      const seen = new Set();
-      const cleanedModules = orderedFinalModules.filter(el => {
-        const duplicate = seen.has(el.id);
-        seen.add(el.id);
-        return !duplicate;
-      });
+        // Add default modules first.
+        defaultModules.forEach(module => {
+            modulesMap.set(module.id, module);
+        });
 
-      // Only update state if the list has changed, to avoid unnecessary re-renders.
-      if (JSON.stringify(cleanedModules) !== JSON.stringify(modules)) {
-        setModules(cleanedModules);
-      }
+        // Add stored modules, overwriting defaults if IDs match.
+        // This also filters out any old/stale modules that are no longer in the default list
+        // unless they were custom-added. The primary goal is to ensure no duplicates from defaults.
+        modules.forEach(module => {
+            modulesMap.set(module.id, module);
+        });
+        
+        // Use the order from storage as the base, but ensure all default modules are present.
+        const finalModules: Module[] = [];
+        const finalModuleIds = new Set<string>();
+
+        // Add modules based on the stored order first
+        modules.forEach(storedModule => {
+            if (modulesMap.has(storedModule.id)) {
+                finalModules.push(modulesMap.get(storedModule.id));
+                finalModuleIds.add(storedModule.id);
+                modulesMap.delete(storedModule.id); // Remove from map to avoid re-adding
+            }
+        });
+
+        // Add any remaining modules from the map (these would be new default modules)
+        modulesMap.forEach(module => {
+            finalModules.push(module);
+        });
+        
+        setModules(finalModules);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
