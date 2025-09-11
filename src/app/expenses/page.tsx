@@ -4,12 +4,17 @@
 import Link from 'next/link';
 import {
   Home,
-  Settings,
+  Building2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import type { Department } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ExpensesCardProps {
   item: {
@@ -20,14 +25,6 @@ interface ExpensesCardProps {
   };
 }
 
-const expensesItems = [
-  { 
-    icon: Settings, 
-    text: 'Settings', 
-    href: '/settings/expenses', 
-    description: 'Configure settings for the expenses module.' 
-  },
-];
 
 function ExpensesCard({ item }: ExpensesCardProps) {
     const cardContent = (
@@ -62,6 +59,31 @@ function ExpensesCard({ item }: ExpensesCardProps) {
 
 
 export default function ExpensesPage() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+        setIsLoading(true);
+        try {
+            const q = query(collection(db, 'departments'), where('status', '==', 'Active'));
+            const querySnapshot = await getDocs(q);
+            const depts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+            setDepartments(depts);
+        } catch (error) {
+            console.error("Error fetching active departments:", error);
+        }
+        setIsLoading(false);
+    };
+    fetchDepartments();
+  }, []);
+
+  const departmentItems = departments.map(dept => ({
+      icon: Building2,
+      text: dept.name,
+      href: '#', // Placeholder link
+      description: `Manage expenses for the ${dept.name} department.`
+  }));
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -74,9 +96,21 @@ export default function ExpensesPage() {
         <h1 className="text-2xl font-bold">Expenses Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {expensesItems.map((item) => (
-          <ExpensesCard key={item.text} item={item} />
-        ))}
+        {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
+        ) : departmentItems.length > 0 ? (
+            departmentItems.map((item) => (
+              <ExpensesCard key={item.text} item={item} />
+            ))
+        ) : (
+            <div className="col-span-full text-center py-10">
+                <p className="text-muted-foreground">No active departments found.</p>
+                <p className="text-sm text-muted-foreground">You can add departments in the settings.</p>
+                <Link href="/settings/department" className="mt-4 inline-block">
+                    <Button>Go to Department Settings</Button>
+                </Link>
+            </div>
+        )}
       </div>
     </div>
   );
