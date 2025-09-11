@@ -203,7 +203,7 @@ export default function JmcEntryPage() {
 
   return (
     <>
-    <div className="w-full max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href={`/billing-recon/${projectSlug}/jmc`}>

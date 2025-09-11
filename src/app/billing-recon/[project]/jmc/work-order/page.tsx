@@ -72,7 +72,7 @@ export default function CreateWorkOrderPage() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href={`/billing-recon/${projectSlug}/jmc`}>
