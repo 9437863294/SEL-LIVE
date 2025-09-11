@@ -75,7 +75,7 @@ function SettingsCard({ item }: SettingsCardProps) {
 export default function SettingsPage() {
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
         <Link href="/">
             <Button variant="ghost" size="icon">
