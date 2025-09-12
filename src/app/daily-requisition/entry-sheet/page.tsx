@@ -355,7 +355,7 @@ export default function EntrySheetPage() {
                       </div>
                       <div className="space-y-2">
                           <Label htmlFor="project">Project Name</Label>
-                          <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)}>
+                          <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)} disabled={!!formState.depNo}>
                               <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
                               <SelectContent>
                                   {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
@@ -369,7 +369,7 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="department">Department</Label>
-                      <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)}>
+                      <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)} disabled={!!formState.depNo}>
                           <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
                           <SelectContent>
                               {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
