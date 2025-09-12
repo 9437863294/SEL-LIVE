@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useRef } from 'react';
@@ -28,21 +29,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
   const printRef = useRef<HTMLDivElement>(null);
   
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (printContent) {
-      const parent = printContent.parentNode;
-      const body = document.body;
-      
-      // Detach the printable content and move it to the body
-      body.appendChild(printContent);
-      printContent.classList.add('printable');
-      
-      window.print();
-      
-      // Re-attach it to its original parent
-      parent?.appendChild(printContent);
-      printContent.classList.remove('printable');
-    }
+    window.print();
   };
   
   if (!entry) return null;
@@ -57,8 +44,8 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
           </DialogDescription>
         </DialogHeader>
         
-        <div className="max-h-[70vh] overflow-y-auto p-1" ref={printRef}>
-          <div className="p-6 border rounded-lg">
+        <div className="max-h-[70vh] overflow-y-auto p-1" >
+           <div ref={printRef} className="printable p-6 border rounded-lg">
             <h2 className="text-xl font-bold text-center mb-2">SIDDHARTHA ENGINEERING LIMITED</h2>
             <h3 className="text-lg font-semibold text-center mb-4">Check List for Payment</h3>
             

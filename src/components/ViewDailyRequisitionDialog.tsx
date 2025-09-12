@@ -20,27 +20,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
   const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (printContent) {
-      // Temporarily move the printable content to the root of the body
-      // to ensure it's the only thing that prints.
-      const parent = printContent.parentNode;
-      const body = document.body;
-
-      body.appendChild(printContent);
-      printContent.classList.add('printable'); // This class makes it visible for printing
-
-      window.print();
-      
-      // Restore the content to its original place in the dialog
-      if (parent) {
-          parent.appendChild(printContent);
-      } else {
-          // Fallback if parent is somehow lost
-          body.removeChild(printContent);
-      }
-      printContent.classList.remove('printable');
-    }
+    window.print();
   };
 
 
@@ -57,8 +37,8 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
           <DialogTitle>Details for {entry.receptionNo}</DialogTitle>
         </DialogHeader>
         
-        <div ref={printRef} className="p-4 print:p-0">
-          <div className="space-y-4">
+        <div className="printable" ref={printRef}>
+          <div className="space-y-4 p-4">
              <div className="text-center mb-6 hidden print:block">
                 <h2 className="text-xl font-bold">Daily Requisition - {entry.receptionNo}</h2>
              </div>
