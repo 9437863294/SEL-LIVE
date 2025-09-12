@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
@@ -21,7 +21,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
+import { cn } from '@/lib/utils';
 
 
 const baseTableHeaders = [
@@ -44,6 +55,18 @@ export default function DepartmentExpensesPage() {
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
+
+  // State for column order
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return baseTableHeaders;
+    try {
+        const savedOrder = window.localStorage.getItem('expenseColumnOrder');
+        return savedOrder ? JSON.parse(savedOrder) : baseTableHeaders;
+    } catch (e) {
+        return baseTableHeaders;
+    }
+  });
 
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     if (typeof window === 'undefined') {
@@ -65,6 +88,14 @@ export default function DepartmentExpensesPage() {
       console.error("Failed to save column visibility to localStorage", error);
     }
   }, [columnVisibility]);
+  
+  useEffect(() => {
+    try {
+        window.localStorage.setItem('expenseColumnOrder', JSON.stringify(columnOrder));
+    } catch (e) {
+        console.error("Failed to save column order", e);
+    }
+  }, [columnOrder]);
 
 
   useEffect(() => {
@@ -90,7 +121,17 @@ export default function DepartmentExpensesPage() {
     fetchDepartment();
   }, [departmentId, toast]);
   
-  const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
+  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
+  
+  const moveColumn = (index: number, direction: 'up' | 'down') => {
+      const newOrder = [...columnOrder];
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      
+      if (newIndex >= 0 && newIndex < newOrder.length) {
+          [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+          setColumnOrder(newOrder);
+      }
+  };
 
   if (isLoading) {
     return (
@@ -112,6 +153,7 @@ export default function DepartmentExpensesPage() {
   }
 
   return (
+    <>
     <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -125,6 +167,40 @@ export default function DepartmentExpensesPage() {
                 </h1>
             </div>
             <div className="flex items-center gap-2">
+                <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline">
+                            <Shuffle className="mr-2 h-4 w-4" /> Edit Sequence
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Edit Column Sequence</DialogTitle>
+                            <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-2">
+                            {columnOrder.map((header, index) => (
+                                <div key={header} className="flex items-center justify-between p-2 border rounded-md">
+                                    <span className="font-medium">({index + 1}) {header}</span>
+                                    <div className="flex items-center">
+                                        <Button variant="ghost" size="icon" disabled={index === 0} onClick={() => moveColumn(index, 'up')}>
+                                            <ArrowUp className="h-4 w-4" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" disabled={index === columnOrder.length - 1} onClick={() => moveColumn(index, 'down')}>
+                                            <ArrowDown className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                         <DialogFooter>
+                            <DialogClose asChild>
+                                <Button>Done</Button>
+                            </DialogClose>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline">
@@ -135,7 +211,7 @@ export default function DepartmentExpensesPage() {
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        {baseTableHeaders.map((header, index) => (
+                        {columnOrder.map((header, index) => (
                             <DropdownMenuCheckboxItem
                                 key={header}
                                 className="capitalize"
@@ -186,5 +262,6 @@ export default function DepartmentExpensesPage() {
             </CardContent>
         </Card>
     </div>
+    </>
   );
 }
