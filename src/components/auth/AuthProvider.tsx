@@ -1,7 +1,7 @@
 
 'use client';
 
-import * as React from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
@@ -16,7 +16,7 @@ interface AuthContextType {
   refreshUserData: () => Promise<void>;
 }
 
-const AuthContext = React.createContext<AuthContextType>({
+const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   refreshUserData: async () => {},
@@ -24,13 +24,13 @@ const AuthContext = React.createContext<AuthContextType>({
 
 const publicRoutes = ['/login'];
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = React.useState<User | null>(null);
-  const [loading, setLoading] = React.useState(true);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
-  const fetchUserData = React.useCallback(async (firebaseUser: FirebaseUser | null) => {
+  const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null) => {
     if (firebaseUser) {
       const userDocRef = doc(db, 'users', firebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const refreshUserData = React.useCallback(async () => {
+  const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
     if (firebaseUser) {
         setLoading(true);
@@ -63,12 +63,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fetchUserData]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, fetchUserData);
     return () => unsubscribe();
   }, [fetchUserData]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (loading) return;
 
     const isPublicRoute = publicRoutes.includes(pathname);
@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useAuth = () => {
-  const context = React.useContext(AuthContext);
+  const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
