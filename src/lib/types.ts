@@ -4,6 +4,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -256,4 +257,15 @@ export type EmployeePosition = {
     categoryList: PositionDetail[];
 };
 
+export type DailyRequisitionEntry = {
+  id: string;
+  createdAt: string;
+  receptionNo: string;
+  date: string;
+  project: string;
+  department: string;
+  narration: string;
+  grossAmount: number;
+  netAmount: number;
+};
     
