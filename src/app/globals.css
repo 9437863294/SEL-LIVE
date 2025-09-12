@@ -93,3 +93,25 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  @media print {
+    .printable {
+      display: block !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    body > *:not(.printable) {
+      display: none !important;
+    }
+    body > .printable {
+      display: block !important;
+      position: absolute;
+      left: 0;
+      top: 0;
+      right: 0;
+      bottom: 0;
+    }
+  }
+}

@@ -1,8 +1,6 @@
-
 'use client';
 
 import { useRef } from 'react';
-import { useReactToPrint } from 'react-to-print';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -21,9 +19,30 @@ interface ViewDailyRequisitionDialogProps {
 export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department }: ViewDailyRequisitionDialogProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = useReactToPrint({
-    content: () => printRef.current,
-  });
+  const handlePrint = () => {
+    const printContent = printRef.current;
+    if (printContent) {
+      // Temporarily move the printable content to the root of the body
+      // to ensure it's the only thing that prints.
+      const parent = printContent.parentNode;
+      const body = document.body;
+
+      body.appendChild(printContent);
+      printContent.classList.add('printable'); // This class makes it visible for printing
+
+      window.print();
+      
+      // Restore the content to its original place in the dialog
+      if (parent) {
+          parent.appendChild(printContent);
+      } else {
+          // Fallback if parent is somehow lost
+          body.removeChild(printContent);
+      }
+      printContent.classList.remove('printable');
+    }
+  };
+
 
   if (!entry) return null;
 
@@ -74,7 +93,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
           </div>
         </div>
 
-        <DialogFooter className="mt-4 pr-4">
+        <DialogFooter className="mt-4 pr-4 no-print">
           <Button variant="outline" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" /> Print
           </Button>
