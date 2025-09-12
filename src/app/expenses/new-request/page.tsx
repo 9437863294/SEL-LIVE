@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 const initialExpenseState = {
     departmentId: '',
     projectId: '',
+    amount: 0,
     headOfAccount: '',
     subHeadOfAccount: '',
     remarks: '',
@@ -132,6 +133,7 @@ function NewExpenseRequestForm() {
 
         const newExpenseRequest = {
             ...expense,
+            amount: Number(expense.amount),
             requestNo: newRequestNo,
             generatedByDepartment: selectedDept.name,
             generatedByUser: user?.name || 'Unknown',
@@ -205,6 +207,16 @@ function NewExpenseRequestForm() {
                             {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                         </SelectContent>
                     </Select>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="amount">Amount</Label>
+                    <Input 
+                        id="amount" 
+                        name="amount" 
+                        type="number"
+                        value={expense.amount} 
+                        onChange={(e) => setExpense(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                    />
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="partyName">Name of the party</Label>

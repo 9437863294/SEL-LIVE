@@ -2,6 +2,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -101,6 +102,7 @@ export type ExpenseRequest = {
     departmentId: string;
     generatedByDepartment: string;
     projectId: string;
+    amount: number;
     headOfAccount: string;
     subHeadOfAccount: string;
     remarks: string;
