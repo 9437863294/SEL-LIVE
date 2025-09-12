@@ -114,11 +114,11 @@ export default function EntrySheetPage() {
   };
 
   const handleDepNoSelect = (value: string) => {
-    const selectedRequest = expenseRequests.find(req => req.requestNo === value);
+    const selectedRequest = unassignedExpenseRequests.find(req => req.requestNo.toLowerCase() === value.toLowerCase());
     if (selectedRequest) {
         setFormState(prev => ({
             ...prev,
-            depNo: value,
+            depNo: selectedRequest.requestNo,
             description: selectedRequest.description || '',
             partyName: selectedRequest.partyName || '',
             projectId: selectedRequest.projectId || '',
@@ -128,6 +128,7 @@ export default function EntrySheetPage() {
         }));
     }
     setDepNoPopoverOpen(false);
+    setDepNoSearch('');
   };
 
 
