@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -21,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Mock Data
 const mockData: DailyRequisitionEntry[] = [];
@@ -258,6 +260,7 @@ export default function EntrySheetPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  <TooltipProvider>
                   {sortedEntries.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell>{entry.createdAt}</TableCell>
@@ -266,7 +269,16 @@ export default function EntrySheetPage() {
                       <TableCell>{entry.project}</TableCell>
                       <TableCell>{entry.department}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
-                      <TableCell>{entry.description}</TableCell>
+                      <TableCell>
+                        <Tooltip>
+                            <TooltipTrigger>
+                                <p className="truncate max-w-xs">{entry.description}</p>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p className="max-w-md">{entry.description}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
                       <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
                       <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
                       <TableCell>
@@ -285,6 +297,7 @@ export default function EntrySheetPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  </TooltipProvider>
                 </TableBody>
               </Table>
             </div>
