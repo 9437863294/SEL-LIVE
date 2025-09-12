@@ -77,7 +77,7 @@ export default function DepartmentExpensesPage() {
                 {department ? `${department.name} Department Expenses` : 'Department Expenses'}
                 </h1>
             </div>
-            <Link href="/expenses/new-request">
+            <Link href={`/expenses/new-request?departmentId=${departmentId}`}>
                 <Button>
                     <Plus className="mr-2 h-4 w-4"/>
                     New Expense Request

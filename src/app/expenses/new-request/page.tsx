@@ -1,8 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,10 +29,16 @@ const initialExpenseState = {
     partyName: '',
 };
 
-export default function NewExpenseRequestPage() {
+function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [expense, setExpense] = useState(initialExpenseState);
+  const searchParams = useSearchParams();
+  const departmentIdFromUrl = searchParams.get('departmentId');
+
+  const [expense, setExpense] = useState(() => ({
+    ...initialExpenseState,
+    departmentId: departmentIdFromUrl || '',
+  }));
   const [isSaving, setIsSaving] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -52,6 +59,11 @@ export default function NewExpenseRequestPage() {
     fetchData();
   }, [toast]);
   
+  useEffect(() => {
+    // If departmentIdFromUrl changes, update the state
+    setExpense(prev => ({ ...prev, departmentId: departmentIdFromUrl || prev.departmentId || '' }));
+  }, [departmentIdFromUrl]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setExpense(prev => ({ ...prev, [name]: value }));
@@ -192,4 +204,12 @@ export default function NewExpenseRequestPage() {
       </Card>
     </div>
   );
+}
+
+export default function NewExpenseRequestPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <NewExpenseRequestForm />
+        </Suspense>
+    )
 }
