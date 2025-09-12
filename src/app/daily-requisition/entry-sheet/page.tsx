@@ -2,9 +2,9 @@
 
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,12 +20,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
-// Mock Data
-const mockData: DailyRequisitionEntry[] = [];
 
 const initialFormState = {
   receptionNo: '',
@@ -43,7 +42,7 @@ type SortKey = keyof DailyRequisitionEntry | '';
 
 export default function EntrySheetPage() {
   const { toast } = useToast();
-  const [entries, setEntries] = useState<DailyRequisitionEntry[]>(mockData);
+  const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filterText, setFilterText] = useState('');
@@ -54,23 +53,37 @@ export default function EntrySheetPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [depNoSearch, setDepNoSearch] = useState('');
+  const [depNoPopoverOpen, setDepNoPopoverOpen] = useState(false);
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(25);
 
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchAllData = async () => {
       setIsLoading(true);
       try {
-        const [projectsSnap, deptsSnap, configSnap, expensesSnap] = await Promise.all([
+        const [projectsSnap, deptsSnap, configSnap, expensesSnap, requisitionsSnap] = await Promise.all([
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'departments')),
           getDoc(doc(db, 'serialNumberConfigs', 'daily-requisition')),
-          getDocs(collection(db, 'expenseRequests'))
+          getDocs(query(collection(db, 'expenseRequests'), where('receptionNo', '==', ''))),
+          getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc')))
         ]);
 
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
-
+        setEntries(requisitionsSnap.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                date: format(data.date.toDate(), 'MMMM do, yyyy'),
+                createdAt: format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
+            } as DailyRequisitionEntry
+        }));
 
         if (configSnap.exists()) {
           const config = configSnap.data() as SerialNumberConfig;
@@ -81,11 +94,14 @@ export default function EntrySheetPage() {
         }
 
       } catch (error) {
+        console.error("Error fetching data:", error);
         toast({ title: 'Error', description: 'Failed to load necessary data.', variant: 'destructive' });
       }
       setIsLoading(false);
-    };
-    fetchData();
+  };
+
+  useEffect(() => {
+    fetchAllData();
   }, [toast]);
   
   const unassignedExpenseRequests = useMemo(() => {
@@ -97,7 +113,7 @@ export default function EntrySheetPage() {
     setFormState(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleDepNoChange = (value: string) => {
+  const handleDepNoSelect = (value: string) => {
     const selectedRequest = expenseRequests.find(req => req.requestNo === value);
     if (selectedRequest) {
         setFormState(prev => ({
@@ -108,56 +124,97 @@ export default function EntrySheetPage() {
             projectId: selectedRequest.projectId || '',
             departmentId: selectedRequest.departmentId || '',
             grossAmount: String(selectedRequest.amount || ''),
-            netAmount: String(selectedRequest.amount || ''), // Pre-fill net amount as well
+            netAmount: String(selectedRequest.amount || ''), 
         }));
-    } else {
-        handleFormChange('depNo', value);
+    }
+    setDepNoSearch(value);
+    setDepNoPopoverOpen(false);
+  };
+
+
+  const handleAddEntry = async () => {
+    setIsSaving(true);
+    const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
+    const selectedExpenseRequest = expenseRequests.find(req => req.requestNo === formState.depNo);
+
+    try {
+        await runTransaction(db, async (transaction) => {
+            // 1. Get and update serial number config
+            const configDoc = await transaction.get(configRef);
+            if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            const receptionNo = `${configData.prefix}${configData.format}${newIndex}${configData.suffix}`;
+            transaction.update(configRef, { startingIndex: newIndex + 1 });
+
+            // 2. Create the new daily requisition entry
+            const newEntryData = {
+                receptionNo: receptionNo,
+                depNo: formState.depNo,
+                date: Timestamp.fromDate(formState.date),
+                projectId: formState.projectId,
+                departmentId: formState.departmentId,
+                description: formState.description,
+                partyName: formState.partyName,
+                grossAmount: parseFloat(formState.grossAmount) || 0,
+                netAmount: parseFloat(formState.netAmount) || 0,
+                createdAt: Timestamp.now(),
+            };
+            
+            const newEntryRef = doc(collection(db, 'dailyRequisitions'));
+            transaction.set(newEntryRef, newEntryData);
+            
+            // 3. Update the expense request if one was selected
+            if (selectedExpenseRequest) {
+                const expenseRef = doc(db, 'expenseRequests', selectedExpenseRequest.id);
+                transaction.update(expenseRef, { 
+                    receptionNo: receptionNo,
+                    receptionDate: format(formState.date, 'yyyy-MM-dd'),
+                });
+            }
+        });
+        
+        toast({ title: 'Success', description: 'New entry added to the database.' });
+        setIsAddDialogOpen(false);
+        setFormState(initialFormState); // Reset form
+        setDepNoSearch('');
+        fetchAllData(); // Refresh data from Firestore
+
+    } catch (error: any) {
+        console.error("Error in transaction:", error);
+        toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the entry.', variant: 'destructive' });
+    } finally {
+        setIsSaving(false);
     }
   };
-
-
-  const handleAddEntry = () => {
-    // In a real app, this would save to Firestore and update serial number config
-    const newEntry: DailyRequisitionEntry = {
-      id: String(entries.length + 1),
-      createdAt: new Date().toLocaleString(),
-      receptionNo: formState.receptionNo,
-      depNo: formState.depNo,
-      date: format(formState.date, 'MMMM do, yyyy'),
-      project: projects.find(p => p.id === formState.projectId)?.projectName || '',
-      department: departments.find(d => d.id === formState.departmentId)?.name || '',
-      description: formState.description,
-      partyName: formState.partyName,
-      grossAmount: parseFloat(formState.grossAmount) || 0,
-      netAmount: parseFloat(formState.netAmount) || 0,
-    };
-    setEntries(prev => [newEntry, ...prev]);
-    toast({ title: 'Success', description: 'New entry added.' });
-    setIsAddDialogOpen(false);
-    setFormState(initialFormState); // Reset form
-  };
-
-  const sortedEntries = useMemo(() => {
+  
+  const paginatedEntries = useMemo(() => {
     let sortableEntries = [...entries];
     if (sortKey) {
       sortableEntries.sort((a, b) => {
         const valA = a[sortKey];
         const valB = b[sortKey];
         if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - a;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
         }
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
     }
-    return sortableEntries.filter(entry => 
+    const filtered = sortableEntries.filter(entry => 
       Object.values(entry).some(value => 
         String(value).toLowerCase().includes(filterText.toLowerCase())
       ) &&
       (!dateFilter || new Date(entry.date).toDateString() === dateFilter.toDateString())
     );
-  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
+
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(startIndex, startIndex + itemsPerPage);
+
+  }, [entries, sortKey, sortDirection, filterText, dateFilter, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(entries.length / itemsPerPage);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -261,13 +318,13 @@ export default function EntrySheetPage() {
                 </TableHeader>
                 <TableBody>
                   <TooltipProvider>
-                  {sortedEntries.map((entry) => (
+                  {paginatedEntries.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell>{entry.createdAt}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
                       <TableCell>{entry.date}</TableCell>
-                      <TableCell>{entry.project}</TableCell>
-                      <TableCell>{entry.department}</TableCell>
+                      <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
+                      <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
                       <TableCell>
                         <Tooltip>
@@ -305,10 +362,10 @@ export default function EntrySheetPage() {
         </Card>
         
         <div className="flex items-center justify-between space-x-2 py-4">
-          <p className="text-sm text-muted-foreground">Page 1 of 164</p>
+          <p className="text-sm text-muted-foreground">Page {currentPage} of {totalPages}</p>
           <div className="space-x-2">
-              <Button variant="outline" size="sm">Previous</Button>
-              <Button variant="outline" size="sm">Next</Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}>Next</Button>
           </div>
         </div>
       </div>
@@ -328,16 +385,37 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                      <Select value={formState.depNo} onValueChange={handleDepNoChange}>
-                        <SelectTrigger><SelectValue placeholder="Select Expense Request No." /></SelectTrigger>
-                        <SelectContent>
-                            {unassignedExpenseRequests.length > 0 ? (
-                                unassignedExpenseRequests.map(req => <SelectItem key={req.id} value={req.requestNo}>{req.requestNo}</SelectItem>)
-                            ) : (
-                                <SelectItem value="none" disabled>No available requests</SelectItem>
-                            )}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={depNoPopoverOpen} onOpenChange={setDepNoPopoverOpen}>
+                        <PopoverTrigger asChild>
+                           <Button variant="outline" role="combobox" className="w-full justify-between">
+                              {formState.depNo || "Select or type..."}
+                              <Search className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
+                           </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0">
+                           <Command>
+                              <CommandInput 
+                                placeholder="Search request no..."
+                                value={depNoSearch}
+                                onValueChange={setDepNoSearch}
+                              />
+                              <CommandList>
+                                 <CommandEmpty>No request found.</CommandEmpty>
+                                 <CommandGroup>
+                                    {unassignedExpenseRequests.map((req) => (
+                                       <CommandItem
+                                          key={req.id}
+                                          value={req.requestNo}
+                                          onSelect={handleDepNoSelect}
+                                       >
+                                          {req.requestNo}
+                                       </CommandItem>
+                                    ))}
+                                 </CommandGroup>
+                              </CommandList>
+                           </Command>
+                        </PopoverContent>
+                      </Popover>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="date">Reception Date</Label>
@@ -355,7 +433,7 @@ export default function EntrySheetPage() {
                           <Calendar
                               mode="single"
                               selected={formState.date}
-                              onSelect={(date) => handleFormChange('date', date)}
+                              onSelect={(date) => date && handleFormChange('date', date)}
                               initialFocus
                           />
                           </PopoverContent>
@@ -402,7 +480,10 @@ export default function EntrySheetPage() {
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button onClick={handleAddEntry}>Add Entry</Button>
+                <Button onClick={handleAddEntry} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Entry
+                </Button>
               </DialogFooter>
             </>
           )}
