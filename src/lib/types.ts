@@ -6,6 +6,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -125,6 +126,8 @@ export type ExpenseRequest = {
     generatedByUser: string;
     generatedByUserId: string;
     createdAt: string;
+    receptionNo?: string;
+    receptionDate?: string;
 };
 
 

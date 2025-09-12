@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -257,6 +258,24 @@ function NewExpenseRequestForm() {
                         </FormItem>
                       )}
                     />
+                     <FormField
+                      control={form.control}
+                      name="headOfAccount"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Head of A/c</FormLabel>
+                           <Select value={field.value} disabled>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Will be auto-filled"/></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
+                            </SelectContent>
+                           </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={form.control}
                       name="subHeadOfAccount"
@@ -275,25 +294,7 @@ function NewExpenseRequestForm() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="headOfAccount"
-                      render={({ field }) => (
-                        <FormItem className="space-y-2">
-                          <FormLabel>Head of A/c</FormLabel>
-                           <Select value={field.value} disabled>
-                            <FormControl>
-                              <SelectTrigger><SelectValue placeholder="Will be auto-filled"/></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
-                            </SelectContent>
-                           </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="space-y-2 hidden md:block"></div>
+                    <div className="space-y-2 hidden md:block lg:hidden"></div>
                     <FormField
                       control={form.control}
                       name="description"

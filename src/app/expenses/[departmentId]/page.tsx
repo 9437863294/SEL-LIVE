@@ -46,7 +46,9 @@ const baseTableHeaders = [
     'Sub-Head of A/c',
     'Remarks',
     'Description',
-    'Name of the party'
+    'Name of the party',
+    'Reception No',
+    'Reception Date'
 ];
 
 export default function DepartmentExpensesPage() {
@@ -214,6 +216,10 @@ export default function DepartmentExpensesPage() {
         return expense.description;
       case 'Name of the party':
         return expense.partyName;
+      case 'Reception No':
+        return expense.receptionNo || 'N/A';
+      case 'Reception Date':
+        return expense.receptionDate || 'N/A';
       default:
         return '';
     }
