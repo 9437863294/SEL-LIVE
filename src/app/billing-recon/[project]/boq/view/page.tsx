@@ -22,7 +22,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -394,106 +393,101 @@ export default function ViewBoqPage() {
         </div>
         <Card>
           <CardContent className="p-0">
-              <ResizablePanelGroup direction="horizontal" className="min-w-full rounded-lg border">
-                  <ResizablePanel defaultSize={100}>
-                      <div className="overflow-x-auto">
-                          <Table>
-                              <TableHeader>
-                                  <TableRow>
-                                      <TableHead className="w-[50px]">
+              <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                      <TableHeader>
+                          <TableRow>
+                              <TableHead className="w-[50px]">
+                                  <Checkbox 
+                                      checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
+                                      onCheckedChange={handleSelectAll}
+                                  />
+                              </TableHead>
+                              {visibleHeaders.map((header) => (
+                                  <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                              ))}
+                              <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {isLoading ? (
+                              Array.from({ length: 5 }).map((_, i) => (
+                              <TableRow key={i}>
+                                  <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                  {visibleHeaders.map((header, j) => (
+                                      <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                  ))}
+                                  <TableCell><Skeleton className="h-5 w-10" /></TableCell>
+                              </TableRow>
+                              ))
+                          ) : boqItems.length > 0 ? (
+                              boqItems.map((item) => (
+                                  <TableRow 
+                                    key={item.id} 
+                                    data-state={selectedItemIds.includes(item.id) && "selected"}
+                                    onClick={() => handleRowClick(item)}
+                                    className="cursor-pointer"
+                                  >
+                                      <TableCell onClick={(e) => e.stopPropagation()}>
                                           <Checkbox 
-                                              checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
-                                              onCheckedChange={handleSelectAll}
+                                              checked={selectedItemIds.includes(item.id)}
+                                              onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                           />
-                                      </TableHead>
-                                      {visibleHeaders.map((header) => (
-                                          <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
-                                      ))}
-                                      <TableHead className="text-right">Actions</TableHead>
+                                      </TableCell>
+                                      {visibleHeaders.map(header => {
+                                          let cellData = item[header];
+                                          if(header === 'BASIC PRICE') {
+                                            const priceKey = findBasicPriceKey(item);
+                                            cellData = priceKey ? item[priceKey] : 'N/A';
+                                          }
+                                          const formattedData = formatNumber(cellData);
+                                          const numeric = isNumeric(cellData);
+                                          return (
+                                              <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
+                                                  {formattedData}
+                                              </TableCell>
+                                          )
+                                      })}
+                                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                          <AlertDialog>
+                                              <DropdownMenu>
+                                                  <DropdownMenuTrigger asChild>
+                                                      <Button variant="ghost" className="h-8 w-8 p-0">
+                                                          <span className="sr-only">Open menu</span>
+                                                          <MoreHorizontal className="h-4 w-4" />
+                                                      </Button>
+                                                  </DropdownMenuTrigger>
+                                                  <DropdownMenuContent align="end">
+                                                      <DropdownMenuItem>Edit</DropdownMenuItem>
+                                                      <AlertDialogTrigger asChild>
+                                                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                                                      </AlertDialogTrigger>
+                                                  </DropdownMenuContent>
+                                              </DropdownMenu>
+                                              <AlertDialogContent>
+                                                  <AlertDialogHeader>
+                                                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                                      <AlertDialogDescription>This will permanently delete the item. This action cannot be undone.</AlertDialogDescription>
+                                                  </AlertDialogHeader>
+                                                  <AlertDialogFooter>
+                                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                      <AlertDialogAction onClick={() => handleDeleteSingle(item.id)}>Delete</AlertDialogAction>
+                                                  </AlertDialogFooter>
+                                              </AlertDialogContent>
+                                          </AlertDialog>
+                                      </TableCell>
                                   </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                  {isLoading ? (
-                                      Array.from({ length: 5 }).map((_, i) => (
-                                      <TableRow key={i}>
-                                          <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                          {visibleHeaders.map((header, j) => (
-                                              <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                          ))}
-                                          <TableCell><Skeleton className="h-5 w-10" /></TableCell>
-                                      </TableRow>
-                                      ))
-                                  ) : boqItems.length > 0 ? (
-                                      boqItems.map((item) => (
-                                          <TableRow 
-                                            key={item.id} 
-                                            data-state={selectedItemIds.includes(item.id) && "selected"}
-                                            onClick={() => handleRowClick(item)}
-                                            className="cursor-pointer"
-                                          >
-                                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                                  <Checkbox 
-                                                      checked={selectedItemIds.includes(item.id)}
-                                                      onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                                  />
-                                              </TableCell>
-                                              {visibleHeaders.map(header => {
-                                                  let cellData = item[header];
-                                                  if(header === 'BASIC PRICE') {
-                                                    const priceKey = findBasicPriceKey(item);
-                                                    cellData = priceKey ? item[priceKey] : 'N/A';
-                                                  }
-                                                  const formattedData = formatNumber(cellData);
-                                                  const numeric = isNumeric(cellData);
-                                                  return (
-                                                      <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
-                                                          {formattedData}
-                                                      </TableCell>
-                                                  )
-                                              })}
-                                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                                  <AlertDialog>
-                                                      <DropdownMenu>
-                                                          <DropdownMenuTrigger asChild>
-                                                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                                                  <span className="sr-only">Open menu</span>
-                                                                  <MoreHorizontal className="h-4 w-4" />
-                                                              </Button>
-                                                          </DropdownMenuTrigger>
-                                                          <DropdownMenuContent align="end">
-                                                              <DropdownMenuItem>Edit</DropdownMenuItem>
-                                                              <AlertDialogTrigger asChild>
-                                                                  <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                                                              </AlertDialogTrigger>
-                                                          </DropdownMenuContent>
-                                                      </DropdownMenu>
-                                                      <AlertDialogContent>
-                                                          <AlertDialogHeader>
-                                                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                                              <AlertDialogDescription>This will permanently delete the item. This action cannot be undone.</AlertDialogDescription>
-                                                          </AlertDialogHeader>
-                                                          <AlertDialogFooter>
-                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                              <AlertDialogAction onClick={() => handleDeleteSingle(item.id)}>Delete</AlertDialogAction>
-                                                          </AlertDialogFooter>
-                                                      </AlertDialogContent>
-                                                  </AlertDialog>
-                                              </TableCell>
-                                          </TableRow>
-                                      ))
-                                  ) : (
-                                      <TableRow>
-                                          <TableCell colSpan={visibleHeaders.length + 2} className="text-center h-24">
-                                              No BOQ items found.
-                                          </TableCell>
-                                      </TableRow>
-                                  )}
-                              </TableBody>
-                          </Table>
-                      </div>
-                  </ResizablePanel>
-                  <ResizableHandle withHandle />
-              </ResizablePanelGroup>
+                              ))
+                          ) : (
+                              <TableRow>
+                                  <TableCell colSpan={visibleHeaders.length + 2} className="text-center h-24">
+                                      No BOQ items found.
+                                  </TableCell>
+                              </TableRow>
+                          )}
+                      </TableBody>
+                  </Table>
+              </div>
           </CardContent>
         </Card>
       </div>

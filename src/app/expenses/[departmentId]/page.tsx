@@ -9,7 +9,7 @@ import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,8 +32,6 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
 
@@ -293,49 +291,44 @@ export default function DepartmentExpensesPage() {
       
         <Card>
             <CardContent className="p-0">
-                <ResizablePanelGroup direction="horizontal" className="min-w-full rounded-lg border">
-                    <ResizablePanel defaultSize={100}>
-                         <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        {visibleHeaders.map((header) => (
-                                          <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                 <div className="overflow-x-auto border rounded-lg">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                {visibleHeaders.map((header) => (
+                                  <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                                ))}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isLoading ? (
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <TableRow key={i}>
+                                        {visibleHeaders.map(header => (
+                                            <TableCell key={header}><Skeleton className="h-5 w-full" /></TableCell>
                                         ))}
                                     </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isLoading ? (
-                                        Array.from({ length: 5 }).map((_, i) => (
-                                            <TableRow key={i}>
-                                                {visibleHeaders.map(header => (
-                                                    <TableCell key={header}><Skeleton className="h-5 w-full" /></TableCell>
-                                                ))}
-                                            </TableRow>
-                                        ))
-                                    ) : expenses.length > 0 ? (
-                                        expenses.map(expense => (
-                                            <TableRow key={expense.id}>
-                                                {visibleHeaders.map(header => (
-                                                    <TableCell key={header} className="whitespace-nowrap">
-                                                        {getCellContent(header, expense)}
-                                                    </TableCell>
-                                                ))}
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={visibleHeaders.length} className="text-center h-24">
-                                                No expense requests found.
+                                ))
+                            ) : expenses.length > 0 ? (
+                                expenses.map(expense => (
+                                    <TableRow key={expense.id}>
+                                        {visibleHeaders.map(header => (
+                                            <TableCell key={header} className="whitespace-nowrap">
+                                                {getCellContent(header, expense)}
                                             </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </ResizablePanel>
-                    <ResizableHandle withHandle />
-                </ResizablePanelGroup>
+                                        ))}
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={visibleHeaders.length} className="text-center h-24">
+                                        No expense requests found.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
             </CardContent>
         </Card>
     </div>
