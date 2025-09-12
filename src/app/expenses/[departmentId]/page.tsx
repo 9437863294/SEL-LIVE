@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -118,7 +119,7 @@ export default function DepartmentExpensesPage() {
       try {
         const deptDocRef = doc(db, 'departments', departmentId);
         const projectsSnap = await getDocs(collection(db, 'projects'));
-        const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId), orderBy('createdAt', 'desc'));
+        const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId));
 
         const [deptDocSnap, expensesSnap] = await Promise.all([
           getDoc(deptDocRef),
@@ -132,7 +133,11 @@ export default function DepartmentExpensesPage() {
         }
         
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-        setExpenses(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
+
+        const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
+        // Sort the results in the browser
+        fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setExpenses(fetchedExpenses);
         
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -337,5 +342,3 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
-
-    
