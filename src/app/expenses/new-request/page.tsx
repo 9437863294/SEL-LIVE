@@ -23,8 +23,6 @@ const initialExpenseState = {
     projectId: '',
     headOfAccount: '',
     subHeadOfAccount: '',
-    receptionNo: '',
-    receptionDate: '',
     remarks: '',
     description: '',
     partyName: '',
@@ -138,6 +136,8 @@ function NewExpenseRequestForm() {
             generatedByDepartment: selectedDept.name,
             generatedByUser: user?.name || 'Unknown',
             generatedByUserId: user?.id || 'Unknown',
+            receptionNo: '', // Initialize as empty
+            receptionDate: '', // Initialize as empty
             createdAt: new Date().toISOString(),
         };
 
@@ -217,14 +217,6 @@ function NewExpenseRequestForm() {
                  <div className="space-y-2">
                     <Label htmlFor="subHeadOfAccount">Sub-Head of A/c</Label>
                     <Input id="subHeadOfAccount" name="subHeadOfAccount" value={expense.subHeadOfAccount} onChange={handleInputChange} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="receptionNo">Reception No</Label>
-                    <Input id="receptionNo" name="receptionNo" value={expense.receptionNo} onChange={handleInputChange} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="receptionDate">Reception Date</Label>
-                    <Input id="receptionDate" name="receptionDate" type="date" value={expense.receptionDate} onChange={handleInputChange} />
                 </div>
                  <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
                     <Label htmlFor="description">Description</Label>
