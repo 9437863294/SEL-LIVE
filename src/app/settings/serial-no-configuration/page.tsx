@@ -46,7 +46,7 @@ export default function SerialNoConfigurationPage() {
                     // If no config exists, initialize with a default structure for the selected module
                     const defaultConfig = selectedModule === 'site-fund-requisition' 
                         ? { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 18 }
-                        : initialConfigState;
+                        : { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 };
                     setConfig(defaultConfig);
                 }
             } catch (error) {
@@ -61,7 +61,7 @@ export default function SerialNoConfigurationPage() {
         };
 
         fetchConfig();
-    }, [selectedModule]);
+    }, [selectedModule, toast]);
 
     const handleSave = async () => {
         if (!selectedModule) {

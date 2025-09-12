@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,46 +12,127 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig } from '@/lib/types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { format } from 'date-fns';
 
 // Mock Data
 const mockData: DailyRequisitionEntry[] = [
-  { id: '1', createdAt: '28/08/2025 5:47 PM', receptionNo: 'SEL\\REC\\2025-26\\7339', date: 'August 28th, 2025', project: 'TPSODL', department: 'HR', narration: 'ugfhkjfkkjgfh', grossAmount: 365413.00, netAmount: 654646.00 },
-  { id: '2', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/1', date: 'April 1st, 2025', project: 'TPNODL-ARADI', department: 'PROJECT', narration: 'DIBYENDU SAHOO', grossAmount: 5500.00, netAmount: 5500.00 },
-  { id: '3', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/2', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS KOLKATA FL...', grossAmount: 8200.00, netAmount: 8200.00 },
-  { id: '4', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/3', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS DURGA ELE...', grossAmount: 6533.00, netAmount: 6533.00 },
-  { id: '5', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/4', date: 'April 3rd, 2025', project: 'ODSSP PURI', department: 'FINANCE', narration: 'H A MARBLES', grossAmount: 6588.85, netAmount: 7775.00 },
-  { id: '6', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/5', date: 'April 3rd, 2025', project: 'HO', department: 'IT', narration: 'MT CREATIONS', grossAmount: 3200.00, netAmount: 3200.00 },
+  { id: '1', createdAt: '28/08/2025 5:47 PM', receptionNo: 'SEL\\REC\\2025-26\\7339', date: 'August 28th, 2025', project: 'TPSODL', department: 'HR', narration: 'ugfhkjfkkjgfh', grossAmount: 365413.00, netAmount: 654646.00, depNo: '' },
+  { id: '2', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/1', date: 'April 1st, 2025', project: 'TPNODL-ARADI', department: 'PROJECT', narration: 'DIBYENDU SAHOO', grossAmount: 5500.00, netAmount: 5500.00, depNo: '' },
+  { id: '3', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/2', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS KOLKATA FL...', grossAmount: 8200.00, netAmount: 8200.00, depNo: '' },
+  { id: '4', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/3', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS DURGA ELE...', grossAmount: 6533.00, netAmount: 6533.00, depNo: '' },
+  { id: '5', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/4', date: 'April 3rd, 2025', project: 'ODSSP PURI', department: 'FINANCE', narration: 'H A MARBLES', grossAmount: 6588.85, netAmount: 7775.00, depNo: '' },
+  { id: '6', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/5', date: 'April 3rd, 2025', project: 'HO', department: 'IT', narration: 'MT CREATIONS', grossAmount: 3200.00, netAmount: 3200.00, depNo: '' },
 ];
+
+const initialFormState = {
+  receptionNo: '',
+  depNo: '',
+  date: new Date(),
+  narration: '',
+  projectId: '',
+  departmentId: '',
+  grossAmount: '',
+  netAmount: '',
+};
 
 type SortKey = keyof DailyRequisitionEntry | '';
 
 export default function EntrySheetPage() {
+  const { toast } = useToast();
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>(mockData);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filterText, setFilterText] = useState('');
-  const [date, setDate] = useState<Date>();
+  const [dateFilter, setDateFilter] = useState<Date>();
+  
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [formState, setFormState] = useState(initialFormState);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const [projectsSnap, deptsSnap, configSnap] = await Promise.all([
+          getDocs(collection(db, 'projects')),
+          getDocs(collection(db, 'departments')),
+          getDoc(doc(db, 'serialNumberConfigs', 'daily-requisition'))
+        ]);
+
+        setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+
+        if (configSnap.exists()) {
+          const config = configSnap.data() as SerialNumberConfig;
+          const receptionNo = `${config.prefix}${config.format}${config.startingIndex}${config.suffix}`;
+          setFormState(prev => ({ ...prev, receptionNo }));
+        } else {
+          setFormState(prev => ({ ...prev, receptionNo: 'SEL\\REC\\2025-26\\7340' })); // Fallback
+        }
+
+      } catch (error) {
+        toast({ title: 'Error', description: 'Failed to load necessary data.', variant: 'destructive' });
+      }
+      setIsLoading(false);
+    };
+    fetchData();
+  }, [toast]);
+
+  const handleFormChange = (field: keyof typeof formState, value: any) => {
+    setFormState(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddEntry = () => {
+    // In a real app, this would save to Firestore and update serial number config
+    const newEntry: DailyRequisitionEntry = {
+      id: String(entries.length + 1),
+      createdAt: new Date().toLocaleString(),
+      receptionNo: formState.receptionNo,
+      depNo: formState.depNo,
+      date: format(formState.date, 'MMMM do, yyyy'),
+      project: projects.find(p => p.id === formState.projectId)?.projectName || '',
+      department: departments.find(d => d.id === formState.departmentId)?.name || '',
+      narration: formState.narration,
+      grossAmount: parseFloat(formState.grossAmount) || 0,
+      netAmount: parseFloat(formState.netAmount) || 0,
+    };
+    setEntries(prev => [newEntry, ...prev]);
+    toast({ title: 'Success', description: 'New entry added.' });
+    setIsAddDialogOpen(false);
+    setFormState(initialFormState); // Reset form
+  };
 
   const sortedEntries = useMemo(() => {
     let sortableEntries = [...entries];
     if (sortKey) {
       sortableEntries.sort((a, b) => {
-        if (a[sortKey] < b[sortKey]) {
-          return sortDirection === 'asc' ? -1 : 1;
+        const valA = a[sortKey];
+        const valB = b[sortKey];
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
         }
-        if (a[sortKey] > b[sortKey]) {
-          return sortDirection === 'asc' ? 1 : -1;
-        }
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
     }
     return sortableEntries.filter(entry => 
       Object.values(entry).some(value => 
         String(value).toLowerCase().includes(filterText.toLowerCase())
-      )
+      ) &&
+      (!dateFilter || new Date(entry.date).toDateString() === dateFilter.toDateString())
     );
-  }, [entries, sortKey, sortDirection, filterText]);
+  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -78,120 +159,203 @@ export default function EntrySheetPage() {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/daily-requisition">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">Entry Sheet</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Upload className="mr-2 h-4 w-4" />
-            Import from Excel
-          </Button>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Add New Entry
-          </Button>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Total Entries: {entries.length}</h2>
-        <div className="flex items-center gap-2">
-            <Popover>
-                <PopoverTrigger asChild>
-                <Button
-                    variant={"outline"}
-                    className={cn(
-                    "w-[240px] justify-start text-left font-normal",
-                    !date && "text-muted-foreground"
-                    )}
-                >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? "Date selected" : "Filter by date"}
-                </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                />
-                </PopoverContent>
-            </Popover>
-           <Input 
-                placeholder="Filter entries..." 
-                className="w-64"
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-            />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {headers.map(header => (
-                     <TableHead key={header.key} onClick={() => handleSort(header.key)}>
-                        <div className="flex items-center cursor-pointer">
-                            {header.label}
-                            {sortKey === header.key && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                        </div>
-                     </TableHead>
-                  ))}
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{entry.createdAt}</TableCell>
-                    <TableCell>{entry.receptionNo}</TableCell>
-                    <TableCell>{entry.date}</TableCell>
-                    <TableCell>{entry.project}</TableCell>
-                    <TableCell>{entry.department}</TableCell>
-                    <TableCell>{entry.narration}</TableCell>
-                    <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
-                    <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
-                    <TableCell>
-                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View</DropdownMenuItem>
-                          <DropdownMenuItem>Edit</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+    <>
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link href="/daily-requisition">
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">Entry Sheet</h1>
           </div>
-        </CardContent>
-      </Card>
-      
-       <div className="flex items-center justify-between space-x-2 py-4">
-        <p className="text-sm text-muted-foreground">Page 1 of 164</p>
-        <div className="space-x-2">
-            <Button variant="outline" size="sm">Previous</Button>
-            <Button variant="outline" size="sm">Next</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline">
+              <Upload className="mr-2 h-4 w-4" />
+              Import from Excel
+            </Button>
+            <Button onClick={() => setIsAddDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add New Entry
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Total Entries: {entries.length}</h2>
+          <div className="flex items-center gap-2">
+              <Popover>
+                  <PopoverTrigger asChild>
+                  <Button
+                      variant={"outline"}
+                      className={cn(
+                      "w-[240px] justify-start text-left font-normal",
+                      !dateFilter && "text-muted-foreground"
+                      )}
+                  >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateFilter ? format(dateFilter, "PPP") : "Filter by date"}
+                  </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                      mode="single"
+                      selected={dateFilter}
+                      onSelect={setDateFilter}
+                      initialFocus
+                  />
+                  </PopoverContent>
+              </Popover>
+            <Input 
+                  placeholder="Filter entries..." 
+                  className="w-64"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+              />
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {headers.map(header => (
+                      <TableHead key={header.key} onClick={() => handleSort(header.key)}>
+                          <div className="flex items-center cursor-pointer">
+                              {header.label}
+                              {sortKey === header.key && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                          </div>
+                      </TableHead>
+                    ))}
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedEntries.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell>{entry.createdAt}</TableCell>
+                      <TableCell>{entry.receptionNo}</TableCell>
+                      <TableCell>{entry.date}</TableCell>
+                      <TableCell>{entry.project}</TableCell>
+                      <TableCell>{entry.department}</TableCell>
+                      <TableCell>{entry.narration}</TableCell>
+                      <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
+                      <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>View</DropdownMenuItem>
+                            <DropdownMenuItem>Edit</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <div className="flex items-center justify-between space-x-2 py-4">
+          <p className="text-sm text-muted-foreground">Page 1 of 164</p>
+          <div className="space-x-2">
+              <Button variant="outline" size="sm">Previous</Button>
+              <Button variant="outline" size="sm">Next</Button>
+          </div>
         </div>
       </div>
-
-    </div>
+      
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Add New Entry</DialogTitle>
+            <DialogDescription>Fill in the details for the new requisition entry.</DialogDescription>
+          </DialogHeader>
+          {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                  <div className="space-y-2">
+                      <Label htmlFor="reception-no">Reception No.</Label>
+                      <Input id="reception-no" value={formState.receptionNo} readOnly />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="dep-no">DEP No.</Label>
+                      <Input id="dep-no" value={formState.depNo} onChange={(e) => handleFormChange('depNo', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="date">Date</Label>
+                       <Popover>
+                          <PopoverTrigger asChild>
+                          <Button
+                              variant={"outline"}
+                              className={cn("w-full justify-start text-left font-normal", !formState.date && "text-muted-foreground")}
+                          >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
+                          </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                              mode="single"
+                              selected={formState.date}
+                              onSelect={(date) => handleFormChange('date', date)}
+                              initialFocus
+                          />
+                          </PopoverContent>
+                      </Popover>
+                  </div>
+                  <div className="col-span-1 md:col-span-3 space-y-2">
+                      <Label htmlFor="narration">Narration</Label>
+                      <Textarea id="narration" placeholder="Enter narration..." value={formState.narration} onChange={(e) => handleFormChange('narration', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="project">Project Name</Label>
+                      <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)}>
+                          <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
+                          <SelectContent>
+                              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                   <div className="space-y-2">
+                      <Label htmlFor="department">Department</Label>
+                      <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)}>
+                          <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
+                          <SelectContent>
+                              {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="space-y-2"></div>
+                  <div className="space-y-2">
+                      <Label htmlFor="grossAmount">Gross Amount</Label>
+                      <Input id="grossAmount" type="number" value={formState.grossAmount} onChange={(e) => handleFormChange('grossAmount', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="netAmount">Net Amount</Label>
+                      <Input id="netAmount" type="number" value={formState.netAmount} onChange={(e) => handleFormChange('netAmount', e.target.value)} />
+                  </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleAddEntry}>Add Entry</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

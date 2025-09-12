@@ -5,6 +5,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -267,5 +268,6 @@ export type DailyRequisitionEntry = {
   narration: string;
   grossAmount: number;
   netAmount: number;
+  depNo: string;
 };
     
