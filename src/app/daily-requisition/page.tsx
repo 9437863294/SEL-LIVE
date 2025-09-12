@@ -7,6 +7,7 @@ import {
   FilePlus,
   Landmark,
   Receipt,
+  Settings,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -63,6 +64,7 @@ export default function DailyRequisitionPage() {
     { icon: FilePlus, text: 'Entry Sheet', href: '/daily-requisition/entry-sheet', description: 'Create a new daily requisition.' },
     { icon: Landmark, text: 'Receiving at Finance', href: '#', description: 'Manage entries received by finance.' },
     { icon: Receipt, text: 'GST & TDS Verification', href: '#', description: 'Verify GST and TDS for received entries.' },
+    { icon: Settings, text: 'Settings', href: '#', description: 'Configure settings for this module.' },
   ];
 
   return (
@@ -73,9 +75,9 @@ export default function DailyRequisitionPage() {
                 <Home className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Daily Requisition 2</h1>
+        <h1 className="text-2xl font-bold">Daily Requisition</h1>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {dailyRequisitionItems.map((item) => (
           <DailyRequisitionCard key={item.text} item={item} />
         ))}
