@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Hash } from 'lucide-react';
+import { ArrowLeft, Hash, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
@@ -25,7 +25,12 @@ const settingsItems = [
     description: 'Configure serial numbers for expense reports for each department.',
     href: '/settings/expenses/department-serial-no' 
   },
-  // Other expense settings can be added here in the future
+  { 
+    icon: Tags, 
+    title: 'Head of A/c Sub-Head of A/c', 
+    description: 'Manage the chart of accounts for expenses.',
+    href: '#' // This will be implemented in a future step
+  },
 ];
 
 
