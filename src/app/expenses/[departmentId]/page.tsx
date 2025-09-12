@@ -153,6 +153,7 @@ export default function DepartmentExpensesPage() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
 
         const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
+        // Sort in the browser instead of in the query
         fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setExpenses(fetchedExpenses);
         
@@ -202,7 +203,7 @@ export default function DepartmentExpensesPage() {
       case 'Project Name':
         return getProjectName(expense.projectId);
       case 'Amount':
-        return `₹ ${expense.amount.toLocaleString()}`;
+        return `₹ ${(expense.amount || 0).toLocaleString()}`;
       case 'Head of A/c':
         return expense.headOfAccount;
       case 'Sub-Head of A/c':
@@ -296,7 +297,7 @@ export default function DepartmentExpensesPage() {
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        {columnOrder.map((header, index) => (
+                        {baseTableHeaders.map((header) => (
                             <DropdownMenuCheckboxItem
                                 key={header}
                                 className="capitalize"
@@ -305,7 +306,7 @@ export default function DepartmentExpensesPage() {
                                     setColumnVisibility(prev => ({...prev, [header]: !!value}))
                                 }
                             >
-                                <span className="mr-2 font-mono text-xs w-5 text-center">({index + 1})</span>{header}
+                                {header}
                             </DropdownMenuCheckboxItem>
                         ))}
                     </DropdownMenuContent>
