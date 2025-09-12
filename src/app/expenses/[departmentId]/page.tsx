@@ -135,7 +135,7 @@ export default function DepartmentExpensesPage() {
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        {baseTableHeaders.map(header => (
+                        {baseTableHeaders.map((header, index) => (
                             <DropdownMenuCheckboxItem
                                 key={header}
                                 className="capitalize"
@@ -144,7 +144,7 @@ export default function DepartmentExpensesPage() {
                                     setColumnVisibility(prev => ({...prev, [header]: !!value}))
                                 }
                             >
-                                {header}
+                                <span className="mr-2 font-mono text-xs w-5 text-center">({index + 1})</span>{header}
                             </DropdownMenuCheckboxItem>
                         ))}
                     </DropdownMenuContent>
