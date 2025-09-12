@@ -7,6 +7,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -268,7 +269,7 @@ export type DailyRequisitionEntry = {
   date: string;
   project: string;
   department: string;
-  narration: string;
+  description: string;
   grossAmount: number;
   netAmount: number;
   depNo: string;

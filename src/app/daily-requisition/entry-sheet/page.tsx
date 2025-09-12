@@ -29,7 +29,7 @@ const initialFormState = {
   receptionNo: '',
   depNo: '',
   date: new Date(),
-  narration: '',
+  description: '',
   projectId: '',
   departmentId: '',
   grossAmount: '',
@@ -104,7 +104,7 @@ export default function EntrySheetPage() {
       date: format(formState.date, 'MMMM do, yyyy'),
       project: projects.find(p => p.id === formState.projectId)?.projectName || '',
       department: departments.find(d => d.id === formState.departmentId)?.name || '',
-      narration: formState.narration,
+      description: formState.description,
       grossAmount: parseFloat(formState.grossAmount) || 0,
       netAmount: parseFloat(formState.netAmount) || 0,
     };
@@ -155,7 +155,7 @@ export default function EntrySheetPage() {
     { key: 'date', label: 'Date' },
     { key: 'project', label: 'Project' },
     { key: 'department', label: 'Department' },
-    { key: 'narration', label: 'Narration' },
+    { key: 'description', label: 'Description' },
     { key: 'grossAmount', label: 'Gross Amount' },
     { key: 'netAmount', label: 'Net Amount' },
   ];
@@ -243,7 +243,7 @@ export default function EntrySheetPage() {
                       <TableCell>{entry.date}</TableCell>
                       <TableCell>{entry.project}</TableCell>
                       <TableCell>{entry.department}</TableCell>
-                      <TableCell>{entry.narration}</TableCell>
+                      <TableCell>{entry.description}</TableCell>
                       <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
                       <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
                       <TableCell>
@@ -326,8 +326,8 @@ export default function EntrySheetPage() {
                       </Popover>
                   </div>
                   <div className="col-span-1 md:col-span-3 space-y-2">
-                      <Label htmlFor="narration">Narration</Label>
-                      <Textarea id="narration" placeholder="Enter narration..." value={formState.narration} onChange={(e) => handleFormChange('narration', e.target.value)} />
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea id="description" placeholder="Enter description..." value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="project">Project Name</Label>
