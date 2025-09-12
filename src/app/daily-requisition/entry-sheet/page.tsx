@@ -23,14 +23,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 
 // Mock Data
-const mockData: DailyRequisitionEntry[] = [
-  { id: '1', createdAt: '28/08/2025 5:47 PM', receptionNo: 'SEL\\REC\\2025-26\\7339', date: 'August 28th, 2025', project: 'TPSODL', department: 'HR', narration: 'ugfhkjfkkjgfh', grossAmount: 365413.00, netAmount: 654646.00, depNo: '' },
-  { id: '2', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/1', date: 'April 1st, 2025', project: 'TPNODL-ARADI', department: 'PROJECT', narration: 'DIBYENDU SAHOO', grossAmount: 5500.00, netAmount: 5500.00, depNo: '' },
-  { id: '3', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/2', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS KOLKATA FL...', grossAmount: 8200.00, netAmount: 8200.00, depNo: '' },
-  { id: '4', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/3', date: 'April 2nd, 2025', project: 'HO', department: 'ADMIN', narration: 'PAYMENT TOWARDS DURGA ELE...', grossAmount: 6533.00, netAmount: 6533.00, depNo: '' },
-  { id: '5', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/4', date: 'April 3rd, 2025', project: 'ODSSP PURI', department: 'FINANCE', narration: 'H A MARBLES', grossAmount: 6588.85, netAmount: 7775.00, depNo: '' },
-  { id: '6', createdAt: '28/08/2025 3:38 PM', receptionNo: 'SEL/2025-26/5', date: 'April 3rd, 2025', project: 'HO', department: 'IT', narration: 'MT CREATIONS', grossAmount: 3200.00, netAmount: 3200.00, depNo: '' },
-];
+const mockData: DailyRequisitionEntry[] = [];
 
 const initialFormState = {
   receptionNo: '',
