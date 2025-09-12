@@ -9,7 +9,7 @@ import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
@@ -137,9 +137,18 @@ export default function DepartmentExpensesPage() {
         fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setExpenses(fetchedExpenses);
         
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching data:", error);
-        toast({ title: 'Error', description: 'Failed to fetch department details.', variant: 'destructive' });
+        if (error.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This query requires a custom index. Please check your Firebase console.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        } else {
+            toast({ title: 'Error', description: 'Failed to fetch department details.', variant: 'destructive' });
+        }
       }
       setIsLoading(false);
     };
