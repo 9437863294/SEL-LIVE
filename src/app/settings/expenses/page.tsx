@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Hash, Tags } from 'lucide-react';
+import { ArrowLeft, Hash, Tags, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
@@ -30,6 +30,12 @@ const settingsItems = [
     title: 'Head of A/c Sub-Head of A/c', 
     description: 'Manage the chart of accounts for expenses.',
     href: '/settings/expenses/accounts'
+  },
+  { 
+    icon: Users, 
+    title: 'User Role Configuration', 
+    description: 'Assign users to specific roles within each department.',
+    href: '#' // This will link to the new page once created
   },
 ];
 
