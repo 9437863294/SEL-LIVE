@@ -3,6 +3,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -94,6 +95,17 @@ export type Project = {
   location: string;
   siteInCharge: string;
   status: 'Active' | 'Inactive';
+};
+
+export type AccountHead = {
+  id: string;
+  name: string;
+};
+
+export type SubAccountHead = {
+  id: string;
+  name: string;
+  headId: string;
 };
 
 export type ExpenseRequest = {

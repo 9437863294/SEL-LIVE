@@ -29,7 +29,7 @@ const settingsItems = [
     icon: Tags, 
     title: 'Head of A/c Sub-Head of A/c', 
     description: 'Manage the chart of accounts for expenses.',
-    href: '#' // This will be implemented in a future step
+    href: '/settings/expenses/accounts'
   },
 ];
 
