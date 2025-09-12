@@ -1,5 +1,6 @@
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -92,6 +93,23 @@ export type Project = {
   siteInCharge: string;
   status: 'Active' | 'Inactive';
 };
+
+export type ExpenseRequest = {
+    id: string;
+    requestNo: string;
+    departmentId: string;
+    generatedByDepartment: string;
+    projectId: string;
+    headOfAccount: string;
+    subHeadOfAccount: string;
+    remarks: string;
+    description: string;
+    partyName: string;
+    generatedByUser: string;
+    generatedByUserId: string;
+    createdAt: string;
+};
+
 
 export type Employee = {
     id: string;
@@ -211,3 +229,5 @@ export type EmployeePosition = {
     employeeId: number;
     categoryList: PositionDetail[];
 };
+
+    
