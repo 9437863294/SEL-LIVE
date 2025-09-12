@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -68,7 +67,7 @@ export default function EntrySheetPage() {
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'departments')),
           getDoc(doc(db, 'serialNumberConfigs', 'daily-requisition')),
-          getDocs(query(collection(db, 'expenseRequests'), where('receptionNo', '==', ''))),
+          getDocs(query(collection(db, 'expenseRequests'))),
           getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc')))
         ]);
 
