@@ -25,7 +25,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 const expenseFormSchema = z.object({
   departmentId: z.string().min(1, "Department is required."),
   projectId: z.string().min(1, "Project is required."),
-  amount: z.coerce.number().min(1, "Amount must be greater than 0."),
+  amount: z.coerce.number().gte(0, "Amount must be a non-negative number."),
   headOfAccount: z.string().min(1, "Head of Account is required."),
   subHeadOfAccount: z.string().min(1, "Sub-Head of Account is required."),
   remarks: z.string().optional(),
@@ -259,24 +259,6 @@ function NewExpenseRequestForm() {
                     />
                     <FormField
                       control={form.control}
-                      name="headOfAccount"
-                      render={({ field }) => (
-                        <FormItem className="space-y-2">
-                          <FormLabel>Head of A/c</FormLabel>
-                           <Select value={field.value} disabled>
-                            <FormControl>
-                              <SelectTrigger><SelectValue placeholder="Will be auto-filled"/></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
-                            </SelectContent>
-                           </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
                       name="subHeadOfAccount"
                       render={({ field }) => (
                         <FormItem className="space-y-2">
@@ -289,6 +271,24 @@ function NewExpenseRequestForm() {
                                 {subAccountHeads.map(sh => <SelectItem key={sh.id} value={sh.name}>{sh.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="headOfAccount"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Head of A/c</FormLabel>
+                           <Select value={field.value} disabled>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Will be auto-filled"/></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
+                            </SelectContent>
+                           </Select>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -336,5 +336,3 @@ export default function NewExpenseRequestPage() {
         </Suspense>
     )
 }
-
-    
