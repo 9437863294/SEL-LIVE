@@ -127,7 +127,6 @@ export default function EntrySheetPage() {
             netAmount: String(selectedRequest.amount || ''), 
         }));
     }
-    setDepNoSearch(value);
     setDepNoPopoverOpen(false);
   };
 
