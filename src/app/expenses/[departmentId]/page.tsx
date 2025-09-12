@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react';
@@ -54,6 +54,8 @@ export default function DepartmentExpensesPage() {
   const { user } = useAuth();
   const departmentId = params.departmentId as string;
   const settingsKey = `expenses_${departmentId}`;
+  
+  const isInitialMount = useRef(true);
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -113,13 +115,16 @@ export default function DepartmentExpensesPage() {
         toast({ title: "Error", description: "Could not save your column preferences.", variant: "destructive" });
     }
   };
-
+  
   useEffect(() => {
-    if (!isLoading && user) { // Only save when not loading and user is available
-      saveColumnSettings(columnOrder, columnVisibility);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnOrder, columnVisibility]);
+      if (isInitialMount.current) {
+          isInitialMount.current = false;
+      } else {
+          if (user) {
+              saveColumnSettings(columnOrder, columnVisibility);
+          }
+      }
+  }, [columnOrder, columnVisibility, user]);
   
 
   useEffect(() => {
