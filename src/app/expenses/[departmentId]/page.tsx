@@ -99,14 +99,14 @@ export default function DepartmentExpensesPage() {
     }
   }, [columnVisibility, departmentId]);
   
-  useEffect(() => {
+  const saveColumnOrder = () => {
     if (!departmentId) return;
     try {
         window.localStorage.setItem(`expenseColumnOrder_${departmentId}`, JSON.stringify(columnOrder));
     } catch (e) {
         console.error("Failed to save column order", e);
     }
-  }, [columnOrder, departmentId]);
+  };
 
 
   useEffect(() => {
@@ -231,7 +231,10 @@ export default function DepartmentExpensesPage() {
                 </h1>
             </div>
             <div className="flex items-center gap-2">
-                <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
+                <Dialog open={isSequenceDialogOpen} onOpenChange={(open) => {
+                    setIsSequenceDialogOpen(open);
+                    if (!open) saveColumnOrder();
+                }}>
                     <DialogTrigger asChild>
                         <Button variant="outline">
                             <Shuffle className="mr-2 h-4 w-4" /> Edit Sequence
