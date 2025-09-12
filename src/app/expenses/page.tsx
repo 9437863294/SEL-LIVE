@@ -82,7 +82,7 @@ export default function ExpensesPage() {
   const departmentItems = departments.map(dept => ({
       icon: Building2,
       text: dept.name,
-      href: '#', // Placeholder link
+      href: `/expenses/${dept.id}`,
       description: `Manage expenses for the ${dept.name} department.`
   }));
 
