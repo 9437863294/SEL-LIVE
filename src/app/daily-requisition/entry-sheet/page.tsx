@@ -30,6 +30,7 @@ const initialFormState = {
   depNo: '',
   date: new Date(),
   description: '',
+  partyName: '',
   projectId: '',
   departmentId: '',
   grossAmount: '',
@@ -105,6 +106,7 @@ export default function EntrySheetPage() {
       project: projects.find(p => p.id === formState.projectId)?.projectName || '',
       department: departments.find(d => d.id === formState.departmentId)?.name || '',
       description: formState.description,
+      partyName: formState.partyName,
       grossAmount: parseFloat(formState.grossAmount) || 0,
       netAmount: parseFloat(formState.netAmount) || 0,
     };
@@ -155,6 +157,7 @@ export default function EntrySheetPage() {
     { key: 'date', label: 'Date' },
     { key: 'project', label: 'Project' },
     { key: 'department', label: 'Department' },
+    { key: 'partyName', label: 'Party Name' },
     { key: 'description', label: 'Description' },
     { key: 'grossAmount', label: 'Gross Amount' },
     { key: 'netAmount', label: 'Net Amount' },
@@ -243,6 +246,7 @@ export default function EntrySheetPage() {
                       <TableCell>{entry.date}</TableCell>
                       <TableCell>{entry.project}</TableCell>
                       <TableCell>{entry.department}</TableCell>
+                      <TableCell>{entry.partyName}</TableCell>
                       <TableCell>{entry.description}</TableCell>
                       <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
                       <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
@@ -325,20 +329,26 @@ export default function EntrySheetPage() {
                           </PopoverContent>
                       </Popover>
                   </div>
+                   <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="partyName">Party Name</Label>
+                        <Input id="partyName" placeholder="Enter party name..." value={formState.partyName} onChange={(e) => handleFormChange('partyName', e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="project">Project Name</Label>
+                          <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)}>
+                              <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
+                              <SelectContent>
+                                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                              </SelectContent>
+                          </Select>
+                      </div>
+                  </div>
                   <div className="col-span-1 md:col-span-3 space-y-2">
                       <Label htmlFor="description">Description</Label>
                       <Textarea id="description" placeholder="Enter description..." value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                      <Label htmlFor="project">Project Name</Label>
-                      <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)}>
-                          <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
-                          <SelectContent>
-                              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                          </SelectContent>
-                      </Select>
-                  </div>
-                   <div className="space-y-2">
                       <Label htmlFor="department">Department</Label>
                       <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)}>
                           <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
@@ -347,7 +357,6 @@ export default function EntrySheetPage() {
                           </SelectContent>
                       </Select>
                   </div>
-                  <div className="space-y-2"></div>
                   <div className="space-y-2">
                       <Label htmlFor="grossAmount">Gross Amount</Label>
                       <Input id="grossAmount" type="number" value={formState.grossAmount} onChange={(e) => handleFormChange('grossAmount', e.target.value)} />
