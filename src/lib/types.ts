@@ -1,6 +1,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -127,6 +128,16 @@ export type UserTheme = {
   font: string;
 };
 
+export type ColumnPreference = {
+  order: string[];
+  visibility: Record<string, boolean>;
+};
+
+export type UserSettings = {
+  columnPreferences?: Record<string, ColumnPreference>;
+};
+
+
 export type User = {
     id: string;
     name: string;
@@ -136,6 +147,7 @@ export type User = {
     status: 'Active' | 'Inactive';
     photoURL?: string;
     theme?: UserTheme;
+    settings?: UserSettings;
 };
 
 export type Role = {

@@ -9,8 +9,8 @@ import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project } from '@/lib/types';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc } from 'firebase/firestore';
+import type { Department, ExpenseRequest, Project, UserSettings } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,6 +33,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { format } from 'date-fns';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 
 const baseTableHeaders = [
@@ -50,7 +51,9 @@ const baseTableHeaders = [
 export default function DepartmentExpensesPage() {
   const params = useParams();
   const { toast } = useToast();
+  const { user } = useAuth();
   const departmentId = params.departmentId as string;
+  const settingsKey = `expenses_${departmentId}`;
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -60,54 +63,64 @@ export default function DepartmentExpensesPage() {
 
   // State for column order
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
-
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => 
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
   );
-  
-  useEffect(() => {
-    if (!departmentId) return;
-
-    try {
-        const savedOrder = window.localStorage.getItem(`expenseColumnOrder_${departmentId}`);
-        if (savedOrder) {
-            setColumnOrder(JSON.parse(savedOrder));
-        } else {
-            setColumnOrder(baseTableHeaders);
-        }
-
-        const savedVisibility = window.localStorage.getItem(`expenseColumnVisibility_${departmentId}`);
-        if (savedVisibility) {
-            setColumnVisibility(JSON.parse(savedVisibility));
-        } else {
-             setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {}));
-        }
-    } catch (e) {
-        console.error("Failed to load column settings from localStorage", e);
-        setColumnOrder(baseTableHeaders);
-        setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {}));
-    }
-  }, [departmentId]);
-
 
   useEffect(() => {
-    if (!departmentId) return;
+    if (!user) return;
+    const fetchSettings = async () => {
+      const settingsRef = doc(db, 'userSettings', user.id);
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const settings = settingsSnap.data() as UserSettings;
+        const pageSettings = settings.columnPreferences?.[settingsKey];
+        if (pageSettings) {
+          // Ensure all base headers are present in the loaded settings
+          const mergedVisibility = {
+            ...baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {}),
+            ...pageSettings.visibility
+          };
+          const mergedOrder = [
+            ...pageSettings.order,
+            ...baseTableHeaders.filter(h => !pageSettings.order.includes(h))
+          ];
+          setColumnVisibility(mergedVisibility);
+          setColumnOrder(mergedOrder);
+        }
+      }
+    };
+    fetchSettings();
+  }, [user, settingsKey]);
+
+  const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
+    if (!user) return;
     try {
-      window.localStorage.setItem(`expenseColumnVisibility_${departmentId}`, JSON.stringify(columnVisibility));
-    } catch (error) {
-      console.error("Failed to save column visibility to localStorage", error);
-    }
-  }, [columnVisibility, departmentId]);
-  
-  const saveColumnOrder = () => {
-    if (!departmentId) return;
-    try {
-        window.localStorage.setItem(`expenseColumnOrder_${departmentId}`, JSON.stringify(columnOrder));
+        const settingsRef = doc(db, 'userSettings', user.id);
+        const settingsSnap = await getDoc(settingsRef);
+        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
+
+        const newPreferences = {
+            ...currentSettings.columnPreferences,
+            [settingsKey]: {
+                order: order,
+                visibility: visibility,
+            }
+        };
+        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
     } catch (e) {
-        console.error("Failed to save column order", e);
+        console.error("Failed to save column settings to Firestore", e);
+        toast({ title: "Error", description: "Could not save your column preferences.", variant: "destructive" });
     }
   };
 
+  useEffect(() => {
+    if (!isLoading && user) { // Only save when not loading and user is available
+      saveColumnSettings(columnOrder, columnVisibility);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnOrder, columnVisibility]);
+  
 
   useEffect(() => {
     if (!departmentId) return;
@@ -117,6 +130,7 @@ export default function DepartmentExpensesPage() {
       try {
         const deptDocRef = doc(db, 'departments', departmentId);
         const projectsSnap = await getDocs(collection(db, 'projects'));
+        
         const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId));
 
         const [deptDocSnap, expensesSnap] = await Promise.all([
@@ -133,7 +147,6 @@ export default function DepartmentExpensesPage() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
 
         const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
-        // Sort the results in the browser
         fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setExpenses(fetchedExpenses);
         
@@ -197,7 +210,7 @@ export default function DepartmentExpensesPage() {
     }
   };
 
-  if (isLoading && !department) { // Initial page load
+  if (isLoading && !department) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
@@ -231,10 +244,7 @@ export default function DepartmentExpensesPage() {
                 </h1>
             </div>
             <div className="flex items-center gap-2">
-                <Dialog open={isSequenceDialogOpen} onOpenChange={(open) => {
-                    setIsSequenceDialogOpen(open);
-                    if (!open) saveColumnOrder();
-                }}>
+                <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
                     <DialogTrigger asChild>
                         <Button variant="outline">
                             <Shuffle className="mr-2 h-4 w-4" /> Edit Sequence
