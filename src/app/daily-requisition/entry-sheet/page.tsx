@@ -308,7 +308,7 @@ export default function EntrySheetPage() {
                       </Select>
                   </div>
                   <div className="space-y-2">
-                      <Label htmlFor="date">Date</Label>
+                      <Label htmlFor="date">Reception Date</Label>
                        <Popover>
                           <PopoverTrigger asChild>
                           <Button
