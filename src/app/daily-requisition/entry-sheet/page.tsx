@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,20 +50,24 @@ export default function EntrySheetPage() {
   const [formState, setFormState] = useState(initialFormState);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [projectsSnap, deptsSnap, configSnap] = await Promise.all([
+        const [projectsSnap, deptsSnap, configSnap, expensesSnap] = await Promise.all([
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'departments')),
-          getDoc(doc(db, 'serialNumberConfigs', 'daily-requisition'))
+          getDoc(doc(db, 'serialNumberConfigs', 'daily-requisition')),
+          getDocs(collection(db, 'expenseRequests'))
         ]);
 
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+        setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
+
 
         if (configSnap.exists()) {
           const config = configSnap.data() as SerialNumberConfig;
@@ -80,6 +84,11 @@ export default function EntrySheetPage() {
     };
     fetchData();
   }, [toast]);
+  
+  const unassignedExpenseRequests = useMemo(() => {
+    return expenseRequests.filter(req => !req.receptionNo);
+  }, [expenseRequests]);
+
 
   const handleFormChange = (field: keyof typeof formState, value: any) => {
     setFormState(prev => ({ ...prev, [field]: value }));
@@ -112,7 +121,7 @@ export default function EntrySheetPage() {
         const valA = a[sortKey];
         const valB = b[sortKey];
         if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - valA;
+          return sortDirection === 'asc' ? valA - valB : valB - a;
         }
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
@@ -282,8 +291,17 @@ export default function EntrySheetPage() {
                       <Input id="reception-no" value={formState.receptionNo} readOnly />
                   </div>
                   <div className="space-y-2">
-                      <Label htmlFor="dep-no">DEP No.</Label>
-                      <Input id="dep-no" value={formState.depNo} onChange={(e) => handleFormChange('depNo', e.target.value)} />
+                      <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
+                      <Select value={formState.depNo} onValueChange={(value) => handleFormChange('depNo', value)}>
+                        <SelectTrigger><SelectValue placeholder="Select Expense Request No." /></SelectTrigger>
+                        <SelectContent>
+                            {unassignedExpenseRequests.length > 0 ? (
+                                unassignedExpenseRequests.map(req => <SelectItem key={req.id} value={req.requestNo}>{req.requestNo}</SelectItem>)
+                            ) : (
+                                <SelectItem value="none" disabled>No available requests</SelectItem>
+                            )}
+                        </SelectContent>
+                      </Select>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="date">Date</Label>
