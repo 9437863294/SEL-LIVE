@@ -22,7 +22,6 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 
 const initialFormState = {
@@ -54,8 +53,6 @@ export default function EntrySheetPage() {
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [depNoSearch, setDepNoSearch] = useState('');
-  const [depNoPopoverOpen, setDepNoPopoverOpen] = useState(false);
   
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(25);
@@ -113,7 +110,7 @@ export default function EntrySheetPage() {
   };
 
   const handleDepNoSelect = (value: string) => {
-    const selectedRequest = unassignedExpenseRequests.find(req => req.requestNo.toLowerCase() === value.toLowerCase());
+    const selectedRequest = unassignedExpenseRequests.find(req => req.requestNo === value);
     if (selectedRequest) {
         setFormState(prev => ({
             ...prev,
@@ -126,8 +123,6 @@ export default function EntrySheetPage() {
             netAmount: String(selectedRequest.amount || ''), 
         }));
     }
-    setDepNoPopoverOpen(false);
-    setDepNoSearch('');
   };
 
 
@@ -176,7 +171,6 @@ export default function EntrySheetPage() {
         toast({ title: 'Success', description: 'New entry added to the database.' });
         setIsAddDialogOpen(false);
         setFormState(initialFormState); // Reset form
-        setDepNoSearch('');
         fetchAllData(); // Refresh data from Firestore
 
     } catch (error: any) {
@@ -384,37 +378,18 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                      <Popover open={depNoPopoverOpen} onOpenChange={setDepNoPopoverOpen}>
-                        <PopoverTrigger asChild>
-                           <Button variant="outline" role="combobox" className="w-full justify-between">
-                              {formState.depNo || "Select or type..."}
-                              <Search className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
-                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0">
-                           <Command>
-                              <CommandInput 
-                                placeholder="Search request no..."
-                                value={depNoSearch}
-                                onValueChange={setDepNoSearch}
-                              />
-                              <CommandList>
-                                 <CommandEmpty>No request found.</CommandEmpty>
-                                 <CommandGroup>
-                                    {unassignedExpenseRequests.map((req) => (
-                                       <CommandItem
-                                          key={req.id}
-                                          value={req.requestNo}
-                                          onSelect={handleDepNoSelect}
-                                       >
-                                          {req.requestNo}
-                                       </CommandItem>
-                                    ))}
-                                 </CommandGroup>
-                              </CommandList>
-                           </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <Select value={formState.depNo} onValueChange={handleDepNoSelect}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select an expense request" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unassignedExpenseRequests.map((req) => (
+                            <SelectItem key={req.id} value={req.requestNo}>
+                              {req.requestNo}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="date">Reception Date</Label>
