@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Department, Project, SerialNumberConfig } from '@/lib/types';
+import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { format } from 'date-fns';
 
@@ -42,27 +42,32 @@ function NewExpenseRequestForm() {
   const [isSaving, setIsSaving] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [deptsSnap, projectsSnap] = await Promise.all([
+        const [deptsSnap, projectsSnap, headsSnap, subHeadsSnap] = await Promise.all([
           getDocs(collection(db, 'departments')),
           getDocs(collection(db, 'projects')),
+          getDocs(collection(db, 'accountHeads')),
+          getDocs(collection(db, 'subAccountHeads')),
         ]);
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setAccountHeads(headsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountHead)));
+        setSubAccountHeads(subHeadsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubAccountHead)).sort((a,b) => a.name.localeCompare(b.name)));
       } catch (error) {
-        toast({ title: 'Error', description: 'Failed to load departments or projects.', variant: 'destructive' });
+        toast({ title: 'Error', description: 'Failed to load required data.', variant: 'destructive' });
       }
     };
     fetchData();
   }, [toast]);
   
   useEffect(() => {
-    // If departmentIdFromUrl changes, update the state
     setExpense(prev => ({ ...prev, departmentId: departmentIdFromUrl || prev.departmentId || '' }));
   }, [departmentIdFromUrl]);
 
@@ -101,12 +106,24 @@ function NewExpenseRequestForm() {
   const handleSelectChange = (name: string, value: string) => {
     setExpense(prev => ({ ...prev, [name]: value }));
   };
+  
+  const handleSubHeadChange = (subHeadName: string) => {
+    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
+    if (selectedSubHead) {
+        const parentHead = accountHeads.find(h => h.id === selectedSubHead.headId);
+        setExpense(prev => ({
+            ...prev,
+            subHeadOfAccount: subHeadName,
+            headOfAccount: parentHead ? parentHead.name : '',
+        }));
+    }
+  };
 
   const handleSave = async () => {
-    if (!expense.departmentId || !expense.projectId) {
+    if (!expense.departmentId || !expense.projectId || !expense.headOfAccount || !expense.subHeadOfAccount) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please select a department and project.',
+            description: 'Please fill all required fields.',
             variant: 'destructive',
         });
         return;
@@ -138,8 +155,8 @@ function NewExpenseRequestForm() {
             generatedByDepartment: selectedDept.name,
             generatedByUser: user?.name || 'Unknown',
             generatedByUserId: user?.id || 'Unknown',
-            receptionNo: '', // Initialize as empty
-            receptionDate: '', // Initialize as empty
+            receptionNo: '', 
+            receptionDate: '',
             createdAt: new Date().toISOString(),
         };
 
@@ -148,7 +165,7 @@ function NewExpenseRequestForm() {
             title: 'Request Created',
             description: `Expense request ${newRequestNo} has been successfully created.`,
         });
-        setExpense(initialExpenseState); // Reset form
+        setExpense(initialExpenseState);
     } catch (error: any) {
         console.error("Error creating expense request: ", error);
         toast({
@@ -223,12 +240,22 @@ function NewExpenseRequestForm() {
                     <Input id="partyName" name="partyName" value={expense.partyName} onChange={handleInputChange} />
                 </div>
                  <div className="space-y-2">
-                    <Label htmlFor="headOfAccount">Head of A/c</Label>
-                    <Input id="headOfAccount" name="headOfAccount" value={expense.headOfAccount} onChange={handleInputChange} />
+                    <Label htmlFor="subHeadOfAccount">Sub-Head of A/c</Label>
+                    <Select onValueChange={handleSubHeadChange} value={expense.subHeadOfAccount}>
+                        <SelectTrigger><SelectValue placeholder="Select Sub-Head"/></SelectTrigger>
+                        <SelectContent>
+                            {subAccountHeads.map(sh => <SelectItem key={sh.id} value={sh.name}>{sh.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
                 </div>
                  <div className="space-y-2">
-                    <Label htmlFor="subHeadOfAccount">Sub-Head of A/c</Label>
-                    <Input id="subHeadOfAccount" name="subHeadOfAccount" value={expense.subHeadOfAccount} onChange={handleInputChange} />
+                    <Label htmlFor="headOfAccount">Head of A/c</Label>
+                     <Select value={expense.headOfAccount} disabled>
+                        <SelectTrigger><SelectValue placeholder="Will be auto-filled"/></SelectTrigger>
+                        <SelectContent>
+                            {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
                 </div>
                  <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
                     <Label htmlFor="description">Description</Label>
