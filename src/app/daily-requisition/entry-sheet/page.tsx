@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -22,6 +23,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
 
 
 const initialFormState = {
@@ -56,6 +58,9 @@ export default function EntrySheetPage() {
   
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(25);
+
+  const [selectedEntry, setSelectedEntry] = useState<DailyRequisitionEntry | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
   const fetchAllData = async () => {
       setIsLoading(true);
@@ -121,6 +126,11 @@ export default function EntrySheetPage() {
             departmentId: selectedRequest.departmentId || '',
             grossAmount: String(selectedRequest.amount || ''),
             netAmount: String(selectedRequest.amount || ''), 
+        }));
+    } else {
+        setFormState(prev => ({
+            ...prev,
+            depNo: value,
         }));
     }
   };
@@ -188,7 +198,7 @@ export default function EntrySheetPage() {
         const valA = a[sortKey];
         const valB = b[sortKey];
         if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - valA;
+          return sortDirection === 'asc' ? valA - valB : valB - a;
         }
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
@@ -216,6 +226,11 @@ export default function EntrySheetPage() {
       setSortKey(key);
       setSortDirection('asc');
     }
+  };
+  
+  const handleViewDetails = (entry: DailyRequisitionEntry) => {
+    setSelectedEntry(entry);
+    setIsViewDialogOpen(true);
   };
 
   const formatCurrency = (amount: number) => {
@@ -312,7 +327,7 @@ export default function EntrySheetPage() {
                 <TableBody>
                   <TooltipProvider>
                   {paginatedEntries.map((entry) => (
-                    <TableRow key={entry.id}>
+                    <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                       <TableCell>{entry.createdAt}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
                       <TableCell>{entry.date}</TableCell>
@@ -334,14 +349,16 @@ export default function EntrySheetPage() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
                                 <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>View</DropdownMenuItem>
-                            <DropdownMenuItem>Edit</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}>
+                                <Eye className="mr-2 h-4 w-4" /> View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Edit</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>Delete</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -463,6 +480,16 @@ export default function EntrySheetPage() {
           )}
         </DialogContent>
       </Dialog>
+      
+      {selectedEntry && (
+        <ViewDailyRequisitionDialog
+            isOpen={isViewDialogOpen}
+            onOpenChange={setIsViewDialogOpen}
+            entry={selectedEntry}
+            project={projects.find(p => p.id === selectedEntry.projectId)}
+            department={departments.find(d => d.id === selectedEntry.departmentId)}
+        />
+      )}
     </>
   );
 }
