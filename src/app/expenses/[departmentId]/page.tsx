@@ -77,10 +77,12 @@ export default function DepartmentExpensesPage() {
                 {department ? `${department.name} Department Expenses` : 'Department Expenses'}
                 </h1>
             </div>
-            <Button>
-                <Plus className="mr-2 h-4 w-4"/>
-                New Expense Request
-            </Button>
+            <Link href="/expenses/new-request">
+                <Button>
+                    <Plus className="mr-2 h-4 w-4"/>
+                    New Expense Request
+                </Button>
+            </Link>
         </div>
       
         <Card>
