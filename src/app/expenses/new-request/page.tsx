@@ -164,7 +164,7 @@ function NewExpenseRequestForm() {
   const selectedDepartmentName = departments.find(d => d.id === expense.departmentId)?.name || '';
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href="/expenses">
