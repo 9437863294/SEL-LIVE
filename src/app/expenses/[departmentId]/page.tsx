@@ -58,44 +58,54 @@ export default function DepartmentExpensesPage() {
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
 
   // State for column order
-  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return baseTableHeaders;
-    try {
-        const savedOrder = window.localStorage.getItem('expenseColumnOrder');
-        return savedOrder ? JSON.parse(savedOrder) : baseTableHeaders;
-    } catch (e) {
-        return baseTableHeaders;
-    }
-  });
+  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
 
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') {
-        return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
-    }
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => 
+    baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
+  );
+  
+  useEffect(() => {
+    if (!departmentId) return;
+
     try {
-      const saved = window.localStorage.getItem('expenseColumnVisibility');
-      return saved ? JSON.parse(saved) : baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
-    } catch (error) {
-      console.error("Failed to parse column visibility from localStorage", error);
-      return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
+        const savedOrder = window.localStorage.getItem(`expenseColumnOrder_${departmentId}`);
+        if (savedOrder) {
+            setColumnOrder(JSON.parse(savedOrder));
+        } else {
+            setColumnOrder(baseTableHeaders);
+        }
+
+        const savedVisibility = window.localStorage.getItem(`expenseColumnVisibility_${departmentId}`);
+        if (savedVisibility) {
+            setColumnVisibility(JSON.parse(savedVisibility));
+        } else {
+             setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {}));
+        }
+    } catch (e) {
+        console.error("Failed to load column settings from localStorage", e);
+        setColumnOrder(baseTableHeaders);
+        setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {}));
     }
-  });
+  }, [departmentId]);
+
 
   useEffect(() => {
+    if (!departmentId) return;
     try {
-      window.localStorage.setItem('expenseColumnVisibility', JSON.stringify(columnVisibility));
+      window.localStorage.setItem(`expenseColumnVisibility_${departmentId}`, JSON.stringify(columnVisibility));
     } catch (error) {
       console.error("Failed to save column visibility to localStorage", error);
     }
-  }, [columnVisibility]);
+  }, [columnVisibility, departmentId]);
   
   useEffect(() => {
+    if (!departmentId) return;
     try {
-        window.localStorage.setItem('expenseColumnOrder', JSON.stringify(columnOrder));
+        window.localStorage.setItem(`expenseColumnOrder_${departmentId}`, JSON.stringify(columnOrder));
     } catch (e) {
         console.error("Failed to save column order", e);
     }
-  }, [columnOrder]);
+  }, [columnOrder, departmentId]);
 
 
   useEffect(() => {
