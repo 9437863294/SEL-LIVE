@@ -95,6 +95,25 @@ export default function EntrySheetPage() {
     setFormState(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleDepNoChange = (value: string) => {
+    const selectedRequest = expenseRequests.find(req => req.requestNo === value);
+    if (selectedRequest) {
+        setFormState(prev => ({
+            ...prev,
+            depNo: value,
+            description: selectedRequest.description || '',
+            partyName: selectedRequest.partyName || '',
+            projectId: selectedRequest.projectId || '',
+            departmentId: selectedRequest.departmentId || '',
+            grossAmount: String(selectedRequest.amount || ''),
+            netAmount: String(selectedRequest.amount || ''), // Pre-fill net amount as well
+        }));
+    } else {
+        handleFormChange('depNo', value);
+    }
+  };
+
+
   const handleAddEntry = () => {
     // In a real app, this would save to Firestore and update serial number config
     const newEntry: DailyRequisitionEntry = {
@@ -296,7 +315,7 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                      <Select value={formState.depNo} onValueChange={(value) => handleFormChange('depNo', value)}>
+                      <Select value={formState.depNo} onValueChange={handleDepNoChange}>
                         <SelectTrigger><SelectValue placeholder="Select Expense Request No." /></SelectTrigger>
                         <SelectContent>
                             {unassignedExpenseRequests.length > 0 ? (
