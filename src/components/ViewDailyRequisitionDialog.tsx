@@ -19,7 +19,6 @@ interface ViewDailyRequisitionDialogProps {
 }
 
 export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest }: ViewDailyRequisitionDialogProps) {
-  const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
     window.print();
@@ -34,7 +33,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl printable-area">
-        <div ref={printRef}>
+        <div>
             <DialogHeader className="no-print">
               <DialogTitle>Details for {entry.receptionNo}</DialogTitle>
             </DialogHeader>

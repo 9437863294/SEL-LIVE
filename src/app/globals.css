@@ -100,24 +100,20 @@
       size: A4;
       margin: 1rem;
     }
-    body * {
-      visibility: hidden;
-    }
-    .printable-area, .printable-area * {
-      visibility: visible;
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .printable-area {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: auto;
-      margin: 0;
-      padding: 0;
-      border: none;
-      box-shadow: none;
+      display: block;
     }
     .no-print {
+      display: none;
+    }
+    body > *:not(.printable-area) {
+      display: none;
+    }
+    .printable-area .no-print {
       display: none;
     }
   }
