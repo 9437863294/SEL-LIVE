@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project } from '@/lib/types';
+import { format } from 'date-fns';
 
 interface EnrichedEntry extends DailyRequisitionEntry {
   projectName: string;
@@ -39,9 +40,12 @@ export default function ReceivingAtFinancePage() {
 
       const data = reqsSnap.docs.map(doc => {
         const entry = doc.data() as DailyRequisitionEntry;
+        // Convert Firestore timestamp to a formatted string
+        const date = entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date);
         return {
           ...entry,
           id: doc.id,
+          date: date,
           projectName: projects.get(entry.projectId) || 'N/A',
         };
       });
