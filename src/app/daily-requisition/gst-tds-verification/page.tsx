@@ -32,7 +32,7 @@ export default function GstTdsVerificationPage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Received', 'Verified']), orderBy('receivedAt', 'desc'))),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Received', 'Verified']))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -52,10 +52,26 @@ export default function GstTdsVerificationPage() {
         };
       });
 
+      // Sort client-side to avoid needing a composite index
+      data.sort((a, b) => {
+          const dateA = a.receivedAt ? new Date(a.receivedAt).getTime() : 0;
+          const dateB = b.receivedAt ? new Date(b.receivedAt).getTime() : 0;
+          return dateB - dateA;
+      });
+      
       setEntries(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching entries: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
+      if (error.code === 'failed-precondition') {
+          toast({
+              title: 'Database Index Required',
+              description: "This query may require a composite index. Please check your Firebase console.",
+              variant: 'destructive',
+              duration: 10000,
+          });
+      } else {
+        toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
+      }
     }
     setIsLoading(false);
   };
