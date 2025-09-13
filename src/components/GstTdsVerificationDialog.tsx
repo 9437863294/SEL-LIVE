@@ -30,7 +30,7 @@ interface GstTdsVerificationDialogProps {
   onSuccess: () => void;
 }
 
-type GstType = 'igst' | 'cgst-sgst';
+type GstType = 'igst' | 'cgst-sgst' | 'none';
 
 export function GstTdsVerificationDialog({
   isOpen,
@@ -86,7 +86,10 @@ export function GstTdsVerificationDialog({
     let cgst = 0;
     let sgst = 0;
 
-    if (gstType === 'igst') {
+    if (gstType === 'none') {
+        setGstPercentage(0);
+        setTaxDetails(prev => ({ ...prev, gstNo: '', igstAmount: '0', cgstAmount: '0', sgstAmount: '0' }));
+    } else if (gstType === 'igst') {
         igst = (grossAmount * gstPercentage) / 100;
         setTaxDetails(prev => ({ ...prev, igstAmount: String(igst), cgstAmount: '0', sgstAmount: '0' }));
     } else { // cgst-sgst
@@ -122,7 +125,7 @@ export function GstTdsVerificationDialog({
         retentionAmount: parseFloat(taxDetails.retentionAmount) || 0,
         otherDeduction: parseFloat(taxDetails.otherDeduction) || 0,
         verificationNotes: taxDetails.notes,
-        gstNo: taxDetails.gstNo,
+        gstNo: gstType === 'none' ? '' : taxDetails.gstNo,
       });
       toast({ title: 'Success', description: 'Entry has been marked as verified.' });
       onSuccess();
@@ -172,16 +175,20 @@ export function GstTdsVerificationDialog({
                             <RadioGroupItem value="cgst-sgst" id="cgst-sgst-radio" />
                             <Label htmlFor="cgst-sgst-radio">CGST/SGST</Label>
                         </div>
+                         <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="none" id="none-radio" />
+                            <Label htmlFor="none-radio">No GST</Label>
+                        </div>
                     </RadioGroup>
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="gstPercentage">GST Rate (%)</Label>
-                    <Input id="gstPercentage" type="number" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
+                    <Input id="gstPercentage" type="number" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} disabled={gstType === 'none'}/>
                 </div>
             </div>
              <div className="space-y-2">
                 <Label htmlFor="gstNo">GST No.</Label>
-                <Input id="gstNo" type="text" value={taxDetails.gstNo} onChange={e => handleInputChange('gstNo', e.target.value)} />
+                <Input id="gstNo" type="text" value={taxDetails.gstNo} onChange={e => handleInputChange('gstNo', e.target.value)} disabled={gstType === 'none'} />
             </div>
 
             <Separator />
@@ -191,6 +198,10 @@ export function GstTdsVerificationDialog({
                     <Label htmlFor="igstAmount">IGST Amount</Label>
                     <Input id="igstAmount" type="number" value={taxDetails.igstAmount} readOnly />
                 </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="tdsAmount">TDS Amount</Label>
+                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
+                </div>
                 <div className="space-y-2">
                     <Label htmlFor="cgstAmount">CGST Amount</Label>
                     <Input id="cgstAmount" type="number" value={taxDetails.cgstAmount} readOnly />
@@ -198,10 +209,6 @@ export function GstTdsVerificationDialog({
                 <div className="space-y-2">
                     <Label htmlFor="sgstAmount">SGST Amount</Label>
                     <Input id="sgstAmount" type="number" value={taxDetails.sgstAmount} readOnly />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="tdsAmount">TDS Amount</Label>
-                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="retentionAmount">Retention Amount</Label>
