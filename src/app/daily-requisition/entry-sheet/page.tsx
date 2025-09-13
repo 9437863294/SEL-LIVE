@@ -4,7 +4,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,11 +20,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
 import { ChecklistDialog } from '@/components/ChecklistDialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 
 const initialFormState = {
@@ -50,6 +51,9 @@ export default function EntrySheetPage() {
   const [dateFilter, setDateFilter] = useState<Date>();
   
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<DailyRequisitionEntry | null>(null);
+  
   const [formState, setFormState] = useState(initialFormState);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -214,6 +218,60 @@ export default function EntrySheetPage() {
         setIsSaving(false);
     }
   };
+
+  const handleOpenEditDialog = (entry: DailyRequisitionEntry) => {
+    setEditingEntry(entry);
+    setFormState({
+        receptionNo: entry.receptionNo,
+        depNo: entry.depNo,
+        date: new Date(entry.date),
+        description: entry.description,
+        partyName: entry.partyName,
+        projectId: entry.projectId,
+        departmentId: entry.departmentId,
+        grossAmount: String(entry.grossAmount),
+        netAmount: String(entry.netAmount),
+    });
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleUpdateEntry = async () => {
+    if (!editingEntry) return;
+    setIsSaving(true);
+    try {
+        const entryRef = doc(db, 'dailyRequisitions', editingEntry.id);
+        const updatedData = {
+            date: Timestamp.fromDate(formState.date),
+            projectId: formState.projectId,
+            departmentId: formState.departmentId,
+            description: formState.description,
+            partyName: formState.partyName,
+            grossAmount: parseFloat(formState.grossAmount) || 0,
+            netAmount: parseFloat(formState.netAmount) || 0,
+        };
+        await updateDoc(entryRef, updatedData);
+        toast({ title: 'Success', description: 'Entry updated successfully.' });
+        setIsEditDialogOpen(false);
+        setEditingEntry(null);
+        fetchAllData();
+    } catch(error) {
+        console.error("Error updating entry:", error);
+        toast({ title: 'Update Failed', description: 'An error occurred while updating the entry.', variant: 'destructive' });
+    } finally {
+        setIsSaving(false);
+    }
+  }
+
+  const handleDeleteEntry = async (entryId: string) => {
+      try {
+          await deleteDoc(doc(db, 'dailyRequisitions', entryId));
+          toast({ title: 'Success', description: 'Entry deleted successfully.' });
+          fetchAllData();
+      } catch (error) {
+          console.error("Error deleting entry:", error);
+          toast({ title: 'Delete Failed', description: 'An error occurred while deleting the entry.', variant: 'destructive' });
+      }
+  }
   
   const paginatedEntries = useMemo(() => {
     let sortableEntries = [...entries];
@@ -281,6 +339,47 @@ export default function EntrySheetPage() {
     { key: 'grossAmount', label: 'Gross Amount' },
     { key: 'netAmount', label: 'Net Amount' },
   ];
+
+  const renderFormFields = (isEdit = false) => (
+      <>
+        <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <Label htmlFor="partyName">Party Name</Label>
+            <Input id="partyName" placeholder="Enter party name..." value={formState.partyName} onChange={(e) => handleFormChange('partyName', e.target.value)} />
+          </div>
+          <div className="space-y-2">
+              <Label htmlFor="project">Project Name</Label>
+              <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)} disabled={!!formState.depNo && !isEdit}>
+                  <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
+                  <SelectContent>
+                      {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                  </SelectContent>
+              </Select>
+          </div>
+        </div>
+        <div className="col-span-1 md:col-span-3 space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea id="description" placeholder="Enter description..." value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+            <Label htmlFor="department">Department</Label>
+            <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)} disabled={!!formState.depNo && !isEdit}>
+                <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
+                <SelectContent>
+                    {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        </div>
+        <div className="space-y-2">
+            <Label htmlFor="grossAmount">Gross Amount</Label>
+            <Input id="grossAmount" type="number" value={formState.grossAmount} onChange={(e) => handleFormChange('grossAmount', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+            <Label htmlFor="netAmount">Net Amount</Label>
+            <Input id="netAmount" type="number" value={formState.netAmount} onChange={(e) => handleFormChange('netAmount', e.target.value)} />
+        </div>
+      </>
+  );
 
   return (
     <>
@@ -380,23 +479,41 @@ export default function EntrySheetPage() {
                       <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
                       <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}>
-                                <Eye className="mr-2 h-4 w-4" /> View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChecklist(entry); }}>
-                                <FileText className="mr-2 h-4 w-4" /> View Checklist
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Edit</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>Delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <AlertDialog>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}>
+                                  <Eye className="mr-2 h-4 w-4" /> View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChecklist(entry); }}>
+                                  <FileText className="mr-2 h-4 w-4" /> View Checklist
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(entry); }}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit
+                              </DropdownMenuItem>
+                              <AlertDialogTrigger asChild>
+                                  <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                  </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                           <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>This will permanently delete the entry. This action cannot be undone.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteEntry(entry.id)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -466,42 +583,7 @@ export default function EntrySheetPage() {
                           </PopoverContent>
                       </Popover>
                   </div>
-                   <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="partyName">Party Name</Label>
-                        <Input id="partyName" placeholder="Enter party name..." value={formState.partyName} onChange={(e) => handleFormChange('partyName', e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                          <Label htmlFor="project">Project Name</Label>
-                          <Select value={formState.projectId} onValueChange={(value) => handleFormChange('projectId', value)} disabled={!!formState.depNo}>
-                              <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
-                              <SelectContent>
-                                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                              </SelectContent>
-                          </Select>
-                      </div>
-                  </div>
-                  <div className="col-span-1 md:col-span-3 space-y-2">
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea id="description" placeholder="Enter description..." value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="department">Department</Label>
-                      <Select value={formState.departmentId} onValueChange={(value) => handleFormChange('departmentId', value)} disabled={!!formState.depNo}>
-                          <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
-                          <SelectContent>
-                              {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                          </SelectContent>
-                      </Select>
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="grossAmount">Gross Amount</Label>
-                      <Input id="grossAmount" type="number" value={formState.grossAmount} onChange={(e) => handleFormChange('grossAmount', e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="netAmount">Net Amount</Label>
-                      <Input id="netAmount" type="number" value={formState.netAmount} onChange={(e) => handleFormChange('netAmount', e.target.value)} />
-                  </div>
+                   {renderFormFields()}
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -510,6 +592,61 @@ export default function EntrySheetPage() {
                 <Button onClick={handleAddEntry} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Add Entry
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Entry: {editingEntry?.receptionNo}</DialogTitle>
+            <DialogDescription>Update the details of the requisition entry.</DialogDescription>
+          </DialogHeader>
+           {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                  <div className="space-y-2">
+                      <Label>Reception No.</Label>
+                      <Input value={formState.receptionNo} readOnly />
+                  </div>
+                  <div className="space-y-2">
+                      <Label>DEP No.</Label>
+                      <Input value={formState.depNo} readOnly />
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Reception Date</Label>
+                       <Popover>
+                          <PopoverTrigger asChild>
+                          <Button
+                              variant={"outline"}
+                              className={cn("w-full justify-start text-left font-normal", !formState.date && "text-muted-foreground")}
+                          >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
+                          </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                              mode="single"
+                              selected={formState.date}
+                              onSelect={(date) => date && handleFormChange('date', date)}
+                              initialFocus
+                          />
+                          </PopoverContent>
+                      </Popover>
+                  </div>
+                   {renderFormFields(true)}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleUpdateEntry} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
                 </Button>
               </DialogFooter>
             </>
