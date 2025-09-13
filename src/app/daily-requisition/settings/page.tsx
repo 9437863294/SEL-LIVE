@@ -3,11 +3,6 @@
 
 import Link from 'next/link';
 import {
-  Home,
-  FilePlus,
-  Landmark,
-  Receipt,
-  Settings,
   Users,
   Hash,
   ArrowLeft,
@@ -74,7 +69,7 @@ function SettingsCard({ item }: SettingsCardProps) {
 
 export default function DailyRequisitionSettingsPage() {
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/daily-requisition">
           <Button variant="ghost" size="icon">
