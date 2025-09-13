@@ -101,7 +101,8 @@ function NewExpenseRequestForm() {
             if (configDoc.exists()) {
                 const configData = configDoc.data() as SerialNumberConfig;
                 const newIndex = configData.startingIndex;
-                const requestNo = `${configData.prefix || ''}${configData.format || ''}${newIndex}${configData.suffix || ''}`;
+                const formattedIndex = String(newIndex).padStart(4, '0');
+                const requestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
                 setPreviewRequestNo(requestNo);
             } else {
                 setPreviewRequestNo('Config not found');
@@ -113,7 +114,7 @@ function NewExpenseRequestForm() {
 
     generatePreviewId();
     setTimestamp(format(new Date(), 'PPpp'));
-  }, [form.watch('departmentId')]);
+  }, [form, form.watch('departmentId')]);
 
 
   const handleSubHeadChange = (subHeadName: string) => {
@@ -140,7 +141,8 @@ function NewExpenseRequestForm() {
 
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
-            const requestNo = `${configData.prefix || ''}${configData.format || ''}${newIndex}${configData.suffix || ''}`;
+            const formattedIndex = String(newIndex).padStart(4, '0');
+            const requestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
             
             transaction.update(configRef, { startingIndex: newIndex + 1 });
             return requestNo;
@@ -337,3 +339,5 @@ export default function NewExpenseRequestPage() {
         </Suspense>
     )
 }
+
+    
