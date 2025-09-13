@@ -3,6 +3,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -275,6 +276,7 @@ export type DailyRequisitionEntry = {
   cgstAmount?: number;
   sgstAmount?: number;
   retentionAmount?: number;
+  otherDeduction?: number;
   verificationNotes?: string;
   verifiedAt?: any; // Timestamp
 };

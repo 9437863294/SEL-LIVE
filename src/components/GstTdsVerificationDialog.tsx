@@ -50,12 +50,12 @@ export function GstTdsVerificationDialog({
     cgstAmount: '0',
     sgstAmount: '0',
     retentionAmount: '0',
+    otherDeduction: '0',
     notes: '',
   });
 
   useEffect(() => {
     if (entry) {
-        // Reset state when a new entry is passed in
         const netAmt = entry.netAmount || entry.grossAmount || 0;
         setTaxDetails({
             netAmount: String(netAmt),
@@ -64,6 +64,7 @@ export function GstTdsVerificationDialog({
             cgstAmount: String(entry.cgstAmount || 0),
             sgstAmount: String(entry.sgstAmount || 0),
             retentionAmount: String(entry.retentionAmount || 0),
+            otherDeduction: String(entry.otherDeduction || 0),
             notes: entry.verificationNotes || '',
         });
         setGstPercentage(0);
@@ -77,6 +78,7 @@ export function GstTdsVerificationDialog({
     const grossAmount = entry.grossAmount || 0;
     const tds = parseFloat(taxDetails.tdsAmount) || 0;
     const retention = parseFloat(taxDetails.retentionAmount) || 0;
+    const otherDeduction = parseFloat(taxDetails.otherDeduction) || 0;
     let igst = 0;
     let cgst = 0;
     let sgst = 0;
@@ -91,11 +93,11 @@ export function GstTdsVerificationDialog({
     }
     
     const totalGst = igst + cgst + sgst;
-    const netAmount = grossAmount + totalGst - tds - retention;
+    const netAmount = grossAmount + totalGst - tds - retention - otherDeduction;
     
     setTaxDetails(prev => ({ ...prev, netAmount: String(netAmount) }));
 
-  }, [gstType, gstPercentage, taxDetails.tdsAmount, taxDetails.retentionAmount, entry]);
+  }, [gstType, gstPercentage, taxDetails.tdsAmount, taxDetails.retentionAmount, taxDetails.otherDeduction, entry]);
 
 
   const handleInputChange = (field: keyof typeof taxDetails, value: string) => {
@@ -115,6 +117,7 @@ export function GstTdsVerificationDialog({
         cgstAmount: parseFloat(taxDetails.cgstAmount) || 0,
         sgstAmount: parseFloat(taxDetails.sgstAmount) || 0,
         retentionAmount: parseFloat(taxDetails.retentionAmount) || 0,
+        otherDeduction: parseFloat(taxDetails.otherDeduction) || 0,
         verificationNotes: taxDetails.notes,
       });
       toast({ title: 'Success', description: 'Entry has been marked as verified.' });
@@ -193,6 +196,10 @@ export function GstTdsVerificationDialog({
                     <Label htmlFor="retentionAmount">Retention Amount</Label>
                     <Input id="retentionAmount" type="number" value={taxDetails.retentionAmount} onChange={e => handleInputChange('retentionAmount', e.target.value)} />
                 </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="otherDeduction">Other Deduction</Label>
+                    <Input id="otherDeduction" type="number" value={taxDetails.otherDeduction} onChange={e => handleInputChange('otherDeduction', e.target.value)} />
+                </div>
             </div>
              <div className="space-y-2">
                 <Label htmlFor="netAmount">Net Amount</Label>
@@ -217,4 +224,3 @@ export function GstTdsVerificationDialog({
     </Dialog>
   );
 }
-
