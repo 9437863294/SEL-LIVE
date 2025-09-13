@@ -45,20 +45,47 @@ const permissionModules = {
     'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
     'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
   ],
-  'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
-  'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
-  'Manage Vendor': ['View', 'Add', 'Edit', 'Delete'],
-  'Working Hrs': ['View', 'Edit'],
-  'User Management': ['View', 'Add', 'Edit', 'Delete'],
-  'Role Management': ['View', 'Add', 'Edit', 'Delete'],
-  'Serial No. Config': ['View', 'Edit'],
-  'Import Config': ['View', 'Edit'],
+  'Daily Requisition': {
+    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
+    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
+    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
+    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+  },
+  'Billing Recon': {
+    'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
+    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC'],
+    'Billing': ['View', 'Create Bill', 'View Log'],
+    'MVAC': ['View', 'Add Item'],
+  },
+  'Expenses': {
+    'Module Access': ['View'],
+    'Expense Requests': ['Create', 'View All'],
+    'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
+  },
+  'Settings': {
+    'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
+    'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
+    'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
+    'User Management': ['View', 'Add', 'Edit', 'Delete'],
+    'Role Management': ['View', 'Add', 'Edit', 'Delete'],
+    'Working Hrs': ['View', 'Edit'],
+    'Serial No. Config': ['View', 'Edit'],
+    'Appearance': ['View', 'Edit'],
+    'Email Authorization': ['View', 'Send Request', 'Revoke'],
+  },
 };
 
 const initialNewRoleState = {
   name: '',
   permissions: Object.keys(permissionModules).reduce((acc, module) => {
-    acc[module] = [];
+    const sub = permissionModules[module as keyof typeof permissionModules];
+    if(Array.isArray(sub)){
+      acc[module] = [];
+    } else {
+      Object.keys(sub).forEach(subModule => {
+        acc[`${module}.${subModule}`] = [];
+      });
+    }
     return acc;
   }, {} as Record<string, string[]>),
 };
@@ -105,19 +132,19 @@ export default function ManageRolePage() {
 
   const handlePermissionChange = (
     setState: React.Dispatch<React.SetStateAction<any>>,
-    moduleName: string, 
+    moduleKey: string,
     permission: string, 
     isChecked: boolean
   ) => {
     setState((prevState: any) => {
       const newPermissions = { ...prevState.permissions };
-      const currentPermissions = newPermissions[moduleName] || [];
+      const currentPermissions = newPermissions[moduleKey] || [];
       if (isChecked) {
         if (!currentPermissions.includes(permission)) {
-          newPermissions[moduleName] = [...currentPermissions, permission];
+          newPermissions[moduleKey] = [...currentPermissions, permission];
         }
       } else {
-        newPermissions[moduleName] = currentPermissions.filter((p: string) => p !== permission);
+        newPermissions[moduleKey] = currentPermissions.filter((p: string) => p !== permission);
       }
       return { ...prevState, permissions: newPermissions };
     });
@@ -169,11 +196,18 @@ export default function ManageRolePage() {
   };
   
   const openEditDialog = (role: Role) => {
-    // Ensure the editing role has all modules from permissionModules
-    const completePermissions = Object.keys(permissionModules).reduce((acc, moduleName) => {
-        acc[moduleName] = role.permissions?.[moduleName] || [];
-        return acc;
-    }, {} as Record<string, string[]>);
+    const completePermissions: Record<string, string[]> = {};
+    Object.keys(permissionModules).forEach(moduleName => {
+        const sub = permissionModules[moduleName as keyof typeof permissionModules];
+        if (Array.isArray(sub)) {
+            completePermissions[moduleName] = role.permissions?.[moduleName] || [];
+        } else {
+            Object.keys(sub).forEach(subModule => {
+                const key = `${moduleName}.${subModule}`;
+                completePermissions[key] = role.permissions?.[key] || [];
+            });
+        }
+    });
     
     setEditingRole({ ...role, permissions: completePermissions });
     setIsEditDialogOpen(true);
@@ -223,26 +257,52 @@ export default function ManageRolePage() {
         <Card className="mt-2">
           <CardContent className="p-4 max-h-[50vh] overflow-y-auto">
              <Accordion type="multiple" defaultValue={Object.keys(permissionModules)}>
-              {Object.entries(permissionModules).map(([moduleName, permissions], index) => (
+              {Object.entries(permissionModules).map(([moduleName, permissions]) => (
                 <AccordionItem value={moduleName} key={moduleName}>
                   <AccordionTrigger className="font-medium text-base">
                     {moduleName}
                   </AccordionTrigger>
-                  <AccordionContent className="pt-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {permissions.map((permission) => (
-                        <div key={permission} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`${roleData.name}-${moduleName}-${permission}`}
-                            checked={roleData.permissions?.[moduleName]?.includes(permission)}
-                            onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
-                          />
-                          <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight">
-                            {permission}
-                          </Label>
+                  <AccordionContent className="pt-4 space-y-4">
+                    {Array.isArray(permissions) ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {permissions.map((permission) => (
+                                <div key={permission} className="flex items-center space-x-2">
+                                <Checkbox
+                                    id={`${roleData.name}-${moduleName}-${permission}`}
+                                    checked={roleData.permissions?.[moduleName]?.includes(permission)}
+                                    onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
+                                />
+                                <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight">
+                                    {permission}
+                                </Label>
+                                </div>
+                            ))}
                         </div>
-                      ))}
-                    </div>
+                    ) : (
+                        <Accordion type="multiple" className="w-full" defaultValue={Object.keys(permissions)}>
+                            {Object.entries(permissions).map(([subModuleName, subPermissions]) => (
+                                <AccordionItem value={subModuleName} key={subModuleName}>
+                                    <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
+                                    <AccordionContent className="pt-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                            {subPermissions.map((permission) => (
+                                                <div key={permission} className="flex items-center space-x-2">
+                                                <Checkbox
+                                                    id={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`}
+                                                    checked={roleData.permissions?.[`${moduleName}.${subModuleName}`]?.includes(permission)}
+                                                    onCheckedChange={(checked) => handlePermissionChange(setData, `${moduleName}.${subModuleName}`, permission, !!checked)}
+                                                />
+                                                <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight">
+                                                    {permission}
+                                                </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            ))}
+                        </Accordion>
+                    )}
                   </AccordionContent>
                 </AccordionItem>
               ))}
@@ -321,14 +381,14 @@ export default function ManageRolePage() {
                     <TableCell>
                       <TooltipProvider>
                         <div className="flex flex-wrap gap-1">
-                          {role.permissions && Object.entries(role.permissions).map(([moduleName, perms]) => (
+                          {role.permissions && Object.entries(role.permissions).map(([moduleKey, perms]) => (
                             perms.length > 0 && (
-                              <Tooltip key={moduleName}>
+                              <Tooltip key={moduleKey}>
                                 <TooltipTrigger asChild>
-                                  <Badge variant="secondary" className="cursor-default">{moduleName} ({perms.length})</Badge>
+                                  <Badge variant="secondary" className="cursor-default">{moduleKey.replace('.', ' / ')} ({perms.length})</Badge>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p className="font-medium">{moduleName}</p>
+                                  <p className="font-medium">{moduleKey.replace('.', ' / ')}</p>
                                   <ul className="list-disc pl-4 text-muted-foreground">
                                     {perms.map(p => <li key={p}>{p}</li>)}
                                   </ul>
