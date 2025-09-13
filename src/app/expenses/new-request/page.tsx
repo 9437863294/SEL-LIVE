@@ -54,6 +54,7 @@ function NewExpenseRequestForm() {
   const [partyNames, setPartyNames] = useState<string[]>([]);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
+  const [openPartyNamePopover, setOpenPartyNamePopover] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -271,7 +272,7 @@ function NewExpenseRequestForm() {
                       render={({ field }) => (
                         <FormItem className="flex flex-col space-y-2">
                           <FormLabel>Name of the party</FormLabel>
-                            <Popover>
+                            <Popover open={openPartyNamePopover} onOpenChange={setOpenPartyNamePopover}>
                                 <PopoverTrigger asChild>
                                     <FormControl>
                                         <Button
@@ -288,24 +289,22 @@ function NewExpenseRequestForm() {
                                     </FormControl>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
-                                    <Command>
+                                    <Command shouldFilter={false}>
                                         <CommandInput 
                                             placeholder="Search party name..."
-                                            onValueChange={(search) => {
-                                                // Allow typing freely by not forcing a selection
-                                                form.setValue('partyName', search);
-                                            }}
                                             value={field.value}
+                                            onValueChange={field.onChange}
                                         />
                                         <CommandList>
                                             <CommandEmpty>No results found.</CommandEmpty>
                                             <CommandGroup>
-                                                {partyNames.map((name) => (
+                                                {partyNames.filter(name => name.toLowerCase().includes(field.value.toLowerCase())).map((name) => (
                                                     <CommandItem
                                                         value={name}
                                                         key={name}
-                                                        onSelect={(currentValue) => {
-                                                            form.setValue("partyName", currentValue === field.value ? "" : currentValue);
+                                                        onSelect={() => {
+                                                            form.setValue("partyName", name);
+                                                            setOpenPartyNamePopover(false);
                                                         }}
                                                     >
                                                         <Check
