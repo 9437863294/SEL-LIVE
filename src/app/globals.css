@@ -96,6 +96,10 @@
 
 @layer utilities {
   @media print {
+    @page {
+      size: A4;
+      margin: 1rem;
+    }
     body {
       visibility: hidden;
     }
@@ -106,7 +110,6 @@
       top: 0;
       width: 100%;
       height: auto;
-      padding: 1rem;
     }
     .no-print {
       display: none;
