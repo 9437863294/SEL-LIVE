@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -62,7 +63,7 @@ export default function DailyRequisitionPage() {
   
   const dailyRequisitionItems = [
     { icon: FilePlus, text: 'Entry Sheet', href: '/daily-requisition/entry-sheet', description: 'Create a new daily requisition.' },
-    { icon: Landmark, text: 'Receiving at Finance', href: '#', description: 'Manage entries received by finance.' },
+    { icon: Landmark, text: 'Receiving at Finance', href: '/daily-requisition/receiving-at-finance', description: 'Manage entries received by finance.' },
     { icon: Receipt, text: 'GST & TDS Verification', href: '#', 'description': 'Verify GST and TDS for received entries.' },
     { icon: Settings, text: 'Settings', href: '/daily-requisition/settings', description: 'Configure settings for this module.' },
   ];
