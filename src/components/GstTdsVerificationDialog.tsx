@@ -42,6 +42,7 @@ export function GstTdsVerificationDialog({
     tdsAmount: '0',
     cgstAmount: '0',
     sgstAmount: '0',
+    retentionAmount: '0',
     notes: '',
   });
 
@@ -70,6 +71,7 @@ export function GstTdsVerificationDialog({
         tdsAmount: parseFloat(taxDetails.tdsAmount) || 0,
         cgstAmount: parseFloat(taxDetails.cgstAmount) || 0,
         sgstAmount: parseFloat(taxDetails.sgstAmount) || 0,
+        retentionAmount: parseFloat(taxDetails.retentionAmount) || 0,
         verificationNotes: taxDetails.notes,
       });
       toast({ title: 'Success', description: 'Entry has been marked as verified.' });
@@ -127,6 +129,10 @@ export function GstTdsVerificationDialog({
                  <div className="space-y-2">
                     <Label htmlFor="sgstAmount">SGST Amount</Label>
                     <Input id="sgstAmount" type="number" value={taxDetails.sgstAmount} onChange={e => handleInputChange('sgstAmount', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="retentionAmount">Retention Amount</Label>
+                    <Input id="retentionAmount" type="number" value={taxDetails.retentionAmount} onChange={e => handleInputChange('retentionAmount', e.target.value)} />
                 </div>
             </div>
 
