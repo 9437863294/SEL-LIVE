@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -256,7 +256,7 @@ export function GstTdsVerificationDialog({
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Amount Mismatch</AlertTitle>
                     <AlertDescription>
-                        The calculated net amount does not match the original amount. The entry will be marked for review.
+                        The calculated net amount does not match the original amount. Saving will mark this entry for review.
                     </AlertDescription>
                 </Alert>
             )}
