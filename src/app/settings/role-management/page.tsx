@@ -40,6 +40,11 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const permissionModules = {
+  'Site Fund Requisition': [
+    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
+    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
+    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
+  ],
   'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
   'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
   'Manage Vendor': ['View', 'Add', 'Edit', 'Delete'],
