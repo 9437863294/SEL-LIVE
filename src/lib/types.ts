@@ -5,6 +5,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -271,7 +272,7 @@ export type DailyRequisitionEntry = {
   grossAmount: number;
   netAmount: number;
   depNo: string;
-  status: 'Pending' | 'Received' | 'Cancelled' | 'Verified';
+  status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review';
   igstAmount?: number;
   tdsAmount?: number;
   cgstAmount?: number;

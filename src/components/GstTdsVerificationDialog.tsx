@@ -78,6 +78,17 @@ export function GstTdsVerificationDialog({
     }
   }, [entry]);
   
+  const handleInputChange = (field: keyof typeof taxDetails, value: string) => {
+    setTaxDetails(prev => ({ ...prev, [field]: value }));
+  };
+
+  const amountMismatch = useMemo(() => {
+    if (!entry) return false;
+    // Use a small tolerance for floating point comparisons
+    return Math.abs(parseFloat(taxDetails.calculatedNetAmount) - originalNetAmount) > 0.01;
+  }, [taxDetails.calculatedNetAmount, originalNetAmount, entry]);
+
+
   useEffect(() => {
     if (!entry) return;
 
@@ -112,9 +123,15 @@ export function GstTdsVerificationDialog({
   const handleVerify = async () => {
     if (!entry) return;
     setIsLoading(true);
+
+    const newStatus = amountMismatch ? 'Needs Review' : 'Verified';
+    const successMessage = amountMismatch 
+      ? `Entry marked for review due to amount mismatch.`
+      : `Entry has been marked as verified.`;
+
     try {
       await updateDoc(doc(db, 'dailyRequisitions', entry.id), {
-        status: 'Verified',
+        status: newStatus,
         verifiedAt: new Date(),
         netAmount: parseFloat(taxDetails.calculatedNetAmount) || 0,
         igstAmount: parseFloat(taxDetails.igstAmount) || 0,
@@ -126,12 +143,12 @@ export function GstTdsVerificationDialog({
         verificationNotes: taxDetails.notes,
         gstNo: gstType === 'none' ? '' : taxDetails.gstNo,
       });
-      toast({ title: 'Success', description: 'Entry has been marked as verified.' });
+      toast({ title: 'Success', description: successMessage });
       onSuccess();
       onOpenChange(false);
     } catch (error) {
       console.error("Error verifying entry: ", error);
-      toast({ title: 'Error', description: 'Failed to verify the entry.', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Failed to save verification details.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -140,9 +157,6 @@ export function GstTdsVerificationDialog({
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
-  
-  const amountMismatch = Math.abs(parseFloat(taxDetails.calculatedNetAmount) - originalNetAmount) > 0.01;
-
 
   if (!entry) return null;
 
@@ -242,7 +256,7 @@ export function GstTdsVerificationDialog({
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Amount Mismatch</AlertTitle>
                     <AlertDescription>
-                        The calculated net amount does not match the original amount. Saving will update the entry with the new value.
+                        The calculated net amount does not match the original amount. The entry will be marked for review.
                     </AlertDescription>
                 </Alert>
             )}
@@ -258,7 +272,7 @@ export function GstTdsVerificationDialog({
           </DialogClose>
           <Button onClick={handleVerify} disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Mark as Verified
+            {amountMismatch ? 'Mark for Review' : 'Mark as Verified'}
           </Button>
         </DialogFooter>
       </DialogContent>

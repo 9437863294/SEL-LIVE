@@ -39,7 +39,7 @@ export default function GstTdsVerificationPage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Received', 'Verified']))),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Received', 'Verified', 'Needs Review']))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -114,36 +114,31 @@ export default function GstTdsVerificationPage() {
     }
   }
 
-  const renderTable = (data: EnrichedEntry[], type: 'pending' | 'verified') => {
+  const renderTable = (data: EnrichedEntry[], type: 'pending' | 'verified' | 'needs-review') => {
     const filteredData = data.filter(entry => 
       entry.receptionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (entry.receivedBy || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const titleMap = {
+        pending: 'Pending Verification',
+        verified: 'Verified Entries',
+        'needs-review': 'Needs Review',
+    };
+    const descriptionMap = {
+        pending: 'Entries received by finance and awaiting GST/TDS verification.',
+        verified: 'Entries that have been successfully verified.',
+        'needs-review': 'Entries where the calculated amount mismatches the original. Please review and re-verify.',
+    }
+
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{type === 'pending' ? 'Pending Verification' : 'Verified Entries'}</CardTitle>
-          <CardDescription>
-            {type === 'pending'
-                ? 'Entries received by finance and awaiting GST/TDS verification.'
-                : 'Entries that have been successfully verified.'
-            }
-          </CardDescription>
+          <CardTitle>{titleMap[type]}</CardTitle>
+          <CardDescription>{descriptionMap[type]}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-end mb-4">
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search entries..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -180,7 +175,7 @@ export default function GstTdsVerificationPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuItem onSelect={() => handleOpenVerifyDialog(entry)}>
-                                    Re-verify
+                                    {type === 'verified' ? 'Re-verify' : 'Review & Verify'}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => handleReturnToPending(entry)} className="text-destructive">
                                     <RotateCcw className="mr-2 h-4 w-4" />
@@ -204,6 +199,8 @@ export default function GstTdsVerificationPage() {
   
   const pendingEntries = useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
   const verifiedEntries = useMemo(() => entries.filter(e => e.status === 'Verified'), [entries]);
+  const needsReviewEntries = useMemo(() => entries.filter(e => e.status === 'Needs Review'), [entries]);
+
 
   return (
     <>
@@ -220,10 +217,14 @@ export default function GstTdsVerificationPage() {
         <Tabs defaultValue="pending">
           <TabsList>
             <TabsTrigger value="pending">Pending Verification</TabsTrigger>
+            <TabsTrigger value="needs-review">Needs Review</TabsTrigger>
             <TabsTrigger value="verified">Verified</TabsTrigger>
           </TabsList>
           <TabsContent value="pending" className="mt-4">
             {renderTable(pendingEntries, 'pending')}
+          </TabsContent>
+          <TabsContent value="needs-review" className="mt-4">
+            {renderTable(needsReviewEntries, 'needs-review')}
           </TabsContent>
           <TabsContent value="verified" className="mt-4">
             {renderTable(verifiedEntries, 'verified')}
