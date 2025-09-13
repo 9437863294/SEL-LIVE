@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Check, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,10 +18,14 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead } from '@/lib/types';
+import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead, ExpenseRequest, DailyRequisitionEntry } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+
 
 const expenseFormSchema = z.object({
   departmentId: z.string().min(1, "Department is required."),
@@ -47,6 +51,7 @@ function NewExpenseRequestForm() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
+  const [partyNames, setPartyNames] = useState<string[]>([]);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
 
@@ -67,16 +72,24 @@ function NewExpenseRequestForm() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [deptsSnap, projectsSnap, headsSnap, subHeadsSnap] = await Promise.all([
+        const [deptsSnap, projectsSnap, headsSnap, subHeadsSnap, expensesSnap, requisitionsSnap] = await Promise.all([
           getDocs(collection(db, 'departments')),
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'accountHeads')),
           getDocs(collection(db, 'subAccountHeads')),
+          getDocs(collection(db, 'expenseRequests')),
+          getDocs(collection(db, 'dailyRequisitions')),
         ]);
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setAccountHeads(headsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountHead)));
         setSubAccountHeads(subHeadsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubAccountHead)).sort((a,b) => a.name.localeCompare(b.name)));
+        
+        const existingExpenseParties = expensesSnap.docs.map(doc => (doc.data() as ExpenseRequest).partyName);
+        const existingRequisitionParties = requisitionsSnap.docs.map(doc => (doc.data() as DailyRequisitionEntry).partyName);
+        const uniquePartyNames = [...new Set([...existingExpenseParties, ...existingRequisitionParties].filter(Boolean))];
+        setPartyNames(uniquePartyNames.sort());
+
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to load required data.', variant: 'destructive' });
       }
@@ -251,11 +264,58 @@ function NewExpenseRequestForm() {
                       control={form.control}
                       name="partyName"
                       render={({ field }) => (
-                        <FormItem className="space-y-2">
+                        <FormItem className="flex flex-col space-y-2">
                           <FormLabel>Name of the party</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <FormControl>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            className={cn(
+                                                "w-full justify-between",
+                                                !field.value && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {field.value || "Select or type a party name"}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                    <Command shouldFilter={false}>
+                                        <CommandInput 
+                                            placeholder="Search party name..."
+                                            onValueChange={(search) => {
+                                                // Allow creating a new party name by typing
+                                                field.onChange(search);
+                                            }}
+                                        />
+                                        <CommandList>
+                                            <CommandEmpty>No results found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {partyNames.filter(name => name.toLowerCase().includes(form.getValues('partyName').toLowerCase())).map((name) => (
+                                                    <CommandItem
+                                                        value={name}
+                                                        key={name}
+                                                        onSelect={() => {
+                                                            form.setValue("partyName", name);
+                                                        }}
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                name === field.value ? "opacity-100" : "opacity-0"
+                                                            )}
+                                                        />
+                                                        {name}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -339,5 +399,3 @@ export default function NewExpenseRequestPage() {
         </Suspense>
     )
 }
-
-    
