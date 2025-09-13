@@ -18,10 +18,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Separator } from './ui/separator';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 interface GstTdsVerificationDialogProps {
   isOpen: boolean;
@@ -44,8 +45,9 @@ export function GstTdsVerificationDialog({
   const [gstType, setGstType] = useState<GstType>('igst');
   const [gstPercentage, setGstPercentage] = useState(0);
 
+  const [originalNetAmount, setOriginalNetAmount] = useState(0);
   const [taxDetails, setTaxDetails] = useState({
-    netAmount: '0',
+    calculatedNetAmount: '0',
     igstAmount: '0',
     tdsAmount: '0',
     cgstAmount: '0',
@@ -59,8 +61,9 @@ export function GstTdsVerificationDialog({
   useEffect(() => {
     if (entry) {
         const netAmt = entry.netAmount || entry.grossAmount || 0;
+        setOriginalNetAmount(netAmt);
         setTaxDetails({
-            netAmount: String(netAmt),
+            calculatedNetAmount: String(netAmt),
             igstAmount: String(entry.igstAmount || 0),
             tdsAmount: String(entry.tdsAmount || 0),
             cgstAmount: String(entry.cgstAmount || 0),
@@ -91,24 +94,20 @@ export function GstTdsVerificationDialog({
         setTaxDetails(prev => ({ ...prev, gstNo: '', igstAmount: '0', cgstAmount: '0', sgstAmount: '0' }));
     } else if (gstType === 'igst') {
         igst = (grossAmount * gstPercentage) / 100;
-        setTaxDetails(prev => ({ ...prev, igstAmount: String(igst), cgstAmount: '0', sgstAmount: '0' }));
+        setTaxDetails(prev => ({ ...prev, igstAmount: String(igst.toFixed(2)), cgstAmount: '0', sgstAmount: '0' }));
     } else { // cgst-sgst
         cgst = (grossAmount * gstPercentage) / 200; // Split percentage
         sgst = (grossAmount * gstPercentage) / 200;
-        setTaxDetails(prev => ({ ...prev, igstAmount: '0', cgstAmount: String(cgst), sgstAmount: String(sgst) }));
+        setTaxDetails(prev => ({ ...prev, igstAmount: '0', cgstAmount: String(cgst.toFixed(2)), sgstAmount: String(sgst.toFixed(2)) }));
     }
     
     const totalGst = igst + cgst + sgst;
-    const netAmount = grossAmount + totalGst - tds - retention - otherDeduction;
+    const calculatedNetAmount = grossAmount + totalGst - tds - retention - otherDeduction;
     
-    setTaxDetails(prev => ({ ...prev, netAmount: String(netAmount) }));
+    setTaxDetails(prev => ({ ...prev, calculatedNetAmount: String(calculatedNetAmount.toFixed(2)) }));
 
   }, [gstType, gstPercentage, taxDetails.tdsAmount, taxDetails.retentionAmount, taxDetails.otherDeduction, entry]);
 
-
-  const handleInputChange = (field: keyof typeof taxDetails, value: string) => {
-    setTaxDetails(prev => ({ ...prev, [field]: value }));
-  };
 
   const handleVerify = async () => {
     if (!entry) return;
@@ -117,7 +116,7 @@ export function GstTdsVerificationDialog({
       await updateDoc(doc(db, 'dailyRequisitions', entry.id), {
         status: 'Verified',
         verifiedAt: new Date(),
-        netAmount: parseFloat(taxDetails.netAmount) || 0,
+        netAmount: parseFloat(taxDetails.calculatedNetAmount) || 0,
         igstAmount: parseFloat(taxDetails.igstAmount) || 0,
         tdsAmount: parseFloat(taxDetails.tdsAmount) || 0,
         cgstAmount: parseFloat(taxDetails.cgstAmount) || 0,
@@ -141,6 +140,9 @@ export function GstTdsVerificationDialog({
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
+  
+  const amountMismatch = Math.abs(parseFloat(taxDetails.calculatedNetAmount) - originalNetAmount) > 0.01;
+
 
   if (!entry) return null;
 
@@ -221,12 +223,31 @@ export function GstTdsVerificationDialog({
                     <Input id="otherDeduction" type="number" value={taxDetails.otherDeduction} onChange={e => handleInputChange('otherDeduction', e.target.value)} />
                 </div>
             </div>
-             <div className="space-y-2">
-                <Label htmlFor="netAmount">Net Amount</Label>
-                <Input id="netAmount" type="number" value={taxDetails.netAmount} readOnly className="font-bold text-lg h-12" />
-            </div>
+            
             <Separator />
-             <div className="space-y-2">
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                  <Label htmlFor="originalNetAmount">Original Net Amount</Label>
+                  <Input id="originalNetAmount" type="text" value={formatCurrency(originalNetAmount)} readOnly className="font-medium text-muted-foreground" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="calculatedNetAmount">Calculated Net Amount</Label>
+                <Input id="calculatedNetAmount" type="number" value={taxDetails.calculatedNetAmount} readOnly className="font-bold text-lg h-12" />
+              </div>
+            </div>
+
+            {amountMismatch && (
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Amount Mismatch</AlertTitle>
+                    <AlertDescription>
+                        The calculated net amount does not match the original amount. Saving will update the entry with the new value.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            <div className="space-y-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
                 <Textarea id="notes" value={taxDetails.notes} onChange={e => handleInputChange('notes', e.target.value)} />
             </div>
