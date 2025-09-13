@@ -21,6 +21,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { Separator } from './ui/separator';
 
 interface GstTdsVerificationDialogProps {
   isOpen: boolean;
@@ -52,6 +53,7 @@ export function GstTdsVerificationDialog({
     retentionAmount: '0',
     otherDeduction: '0',
     notes: '',
+    gstNo: '',
   });
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export function GstTdsVerificationDialog({
             retentionAmount: String(entry.retentionAmount || 0),
             otherDeduction: String(entry.otherDeduction || 0),
             notes: entry.verificationNotes || '',
+            gstNo: entry.gstNo || '',
         });
         setGstPercentage(0);
         setGstType('igst');
@@ -119,6 +122,7 @@ export function GstTdsVerificationDialog({
         retentionAmount: parseFloat(taxDetails.retentionAmount) || 0,
         otherDeduction: parseFloat(taxDetails.otherDeduction) || 0,
         verificationNotes: taxDetails.notes,
+        gstNo: taxDetails.gstNo,
       });
       toast({ title: 'Success', description: 'Entry has been marked as verified.' });
       onSuccess();
@@ -139,12 +143,12 @@ export function GstTdsVerificationDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Verify Entry: {entry.receptionNo}</DialogTitle>
           <DialogDescription>Enter tax details to complete verification.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Project:</span>
                 <span className="font-medium">{(entry as any).projectName || 'N/A'}</span>
@@ -154,31 +158,34 @@ export function GstTdsVerificationDialog({
                 <span className="font-medium">{formatCurrency(entry.grossAmount)}</span>
             </div>
             
-            <div className="space-y-2">
-                <Label>GST Type</Label>
-                <RadioGroup value={gstType} onValueChange={(value: GstType) => setGstType(value)} className="flex gap-4">
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="igst" id="igst-radio" />
-                        <Label htmlFor="igst-radio">IGST</Label>
-                    </div>
-                     <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="cgst-sgst" id="cgst-sgst-radio" />
-                        <Label htmlFor="cgst-sgst-radio">CGST/SGST</Label>
-                    </div>
-                </RadioGroup>
-            </div>
+            <Separator />
 
-            <div className="grid grid-cols-2 gap-4">
+             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                    <Label>GST Type</Label>
+                    <RadioGroup value={gstType} onValueChange={(value: GstType) => setGstType(value)} className="flex gap-4">
+                        <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="igst" id="igst-radio" />
+                            <Label htmlFor="igst-radio">IGST</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="cgst-sgst" id="cgst-sgst-radio" />
+                            <Label htmlFor="cgst-sgst-radio">CGST/SGST</Label>
+                        </div>
+                    </RadioGroup>
+                </div>
+                 <div className="space-y-2">
                     <Label htmlFor="gstPercentage">GST Rate (%)</Label>
                     <Input id="gstPercentage" type="number" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
                 </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="tdsAmount">TDS Amount</Label>
-                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
-                </div>
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="gstNo">GST No.</Label>
+                <Input id="gstNo" type="text" value={taxDetails.gstNo} onChange={e => handleInputChange('gstNo', e.target.value)} />
             </div>
 
+            <Separator />
+            <p className="font-medium text-sm text-muted-foreground">Amounts:</p>
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="igstAmount">IGST Amount</Label>
@@ -192,6 +199,10 @@ export function GstTdsVerificationDialog({
                     <Label htmlFor="sgstAmount">SGST Amount</Label>
                     <Input id="sgstAmount" type="number" value={taxDetails.sgstAmount} readOnly />
                 </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="tdsAmount">TDS Amount</Label>
+                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
+                </div>
                 <div className="space-y-2">
                     <Label htmlFor="retentionAmount">Retention Amount</Label>
                     <Input id="retentionAmount" type="number" value={taxDetails.retentionAmount} onChange={e => handleInputChange('retentionAmount', e.target.value)} />
@@ -203,9 +214,9 @@ export function GstTdsVerificationDialog({
             </div>
              <div className="space-y-2">
                 <Label htmlFor="netAmount">Net Amount</Label>
-                <Input id="netAmount" type="number" value={taxDetails.netAmount} readOnly />
+                <Input id="netAmount" type="number" value={taxDetails.netAmount} readOnly className="font-bold text-lg h-12" />
             </div>
-
+            <Separator />
              <div className="space-y-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
                 <Textarea id="notes" value={taxDetails.notes} onChange={e => handleInputChange('notes', e.target.value)} />

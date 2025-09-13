@@ -4,6 +4,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -279,4 +280,5 @@ export type DailyRequisitionEntry = {
   otherDeduction?: number;
   verificationNotes?: string;
   verifiedAt?: any; // Timestamp
+  gstNo?: string;
 };
