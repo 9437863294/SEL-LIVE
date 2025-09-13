@@ -73,8 +73,16 @@ export function GstTdsVerificationDialog({
             notes: entry.verificationNotes || '',
             gstNo: entry.gstNo || '',
         });
-        setGstPercentage(0);
-        setGstType('igst');
+        
+        // Determine initial GST state from loaded data
+        if(entry.igstAmount && entry.igstAmount > 0) {
+            setGstType('igst');
+        } else if (entry.cgstAmount && entry.cgstAmount > 0) {
+            setGstType('cgst-sgst');
+        } else {
+            setGstType('none');
+        }
+        setGstPercentage(0); // Reset percentage on new entry
     }
   }, [entry]);
   
@@ -130,10 +138,9 @@ export function GstTdsVerificationDialog({
       : `Entry has been marked as verified.`;
 
     try {
-      await updateDoc(doc(db, 'dailyRequisitions', entry.id), {
+      const updateData: any = {
         status: newStatus,
         verifiedAt: new Date(),
-        netAmount: parseFloat(taxDetails.calculatedNetAmount) || 0,
         igstAmount: parseFloat(taxDetails.igstAmount) || 0,
         tdsAmount: parseFloat(taxDetails.tdsAmount) || 0,
         cgstAmount: parseFloat(taxDetails.cgstAmount) || 0,
@@ -142,7 +149,15 @@ export function GstTdsVerificationDialog({
         otherDeduction: parseFloat(taxDetails.otherDeduction) || 0,
         verificationNotes: taxDetails.notes,
         gstNo: gstType === 'none' ? '' : taxDetails.gstNo,
-      });
+      };
+
+      // Only update the netAmount if it matches the original, otherwise preserve the old amount
+      if (!amountMismatch) {
+          updateData.netAmount = parseFloat(taxDetails.calculatedNetAmount) || 0;
+      }
+
+      await updateDoc(doc(db, 'dailyRequisitions', entry.id), updateData);
+      
       toast({ title: 'Success', description: successMessage });
       onSuccess();
       onOpenChange(false);
@@ -256,7 +271,7 @@ export function GstTdsVerificationDialog({
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Amount Mismatch</AlertTitle>
                     <AlertDescription>
-                        The calculated net amount does not match the original amount. Saving will mark this entry for review.
+                        The calculated net amount does not match the original amount. Saving will mark this entry for review with the original amount preserved.
                     </AlertDescription>
                 </Alert>
             )}
