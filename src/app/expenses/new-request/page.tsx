@@ -315,9 +315,9 @@ function NewExpenseRequestForm() {
                                                 <CommandItem
                                                     value={name}
                                                     key={name}
-                                                    onSelect={(val) => {
-                                                        form.setValue("partyName", val);
-                                                        setPartySearch(val);
+                                                    onSelect={(currentValue) => {
+                                                        form.setValue("partyName", currentValue);
+                                                        setPartySearch(currentValue);
                                                         setPartyPopoverOpen(false);
                                                     }}
                                                 >
@@ -333,10 +333,10 @@ function NewExpenseRequestForm() {
                                             {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
                                               <CommandItem
                                                 value={partySearch}
-                                                onSelect={(val) => {
-                                                  form.setValue("partyName", val);
-                                                  setPartySearch(val);
-                                                  setPartyNames(prev => [...prev, val].sort());
+                                                onSelect={(currentValue) => {
+                                                  form.setValue("partyName", currentValue);
+                                                  setPartySearch(currentValue);
+                                                  setPartyNames(prev => [...prev, currentValue].sort());
                                                   setPartyPopoverOpen(false);
                                                 }}
                                               >
