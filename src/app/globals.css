@@ -104,17 +104,25 @@
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    body * {
+      visibility: hidden;
+    }
+    .printable-area, .printable-area * {
+      visibility: visible;
+    }
     .printable-area {
-      display: block;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      margin: 0;
+      border: none !important;
+      box-shadow: none !important;
     }
     .no-print {
-      display: none;
-    }
-    body > *:not(.printable-area) {
-      display: none;
-    }
-    .printable-area .no-print {
-      display: none;
+      display: none !important;
     }
   }
 }
