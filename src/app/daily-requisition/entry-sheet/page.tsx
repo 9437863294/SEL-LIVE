@@ -21,11 +21,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
 import { ChecklistDialog } from '@/components/ChecklistDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+
+
+interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
+  originalDate: string;
+}
 
 
 const initialFormState = {
@@ -44,7 +49,7 @@ type SortKey = keyof DailyRequisitionEntry | '';
 
 export default function EntrySheetPage() {
   const { toast } = useToast();
-  const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
+  const [entries, setEntries] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filterText, setFilterText] = useState('');
@@ -52,7 +57,7 @@ export default function EntrySheetPage() {
   
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<DailyRequisitionEntry | null>(null);
+  const [editingEntry, setEditingEntry] = useState<EnrichedDailyRequisitionEntry | null>(null);
   
   const [formState, setFormState] = useState(initialFormState);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -86,12 +91,14 @@ export default function EntrySheetPage() {
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
         setEntries(requisitionsSnap.docs.map(doc => {
             const data = doc.data();
+            const dateObject = data.date.toDate();
             return {
                 id: doc.id,
                 ...data,
-                date: format(data.date.toDate(), 'MMMM do, yyyy'),
+                date: format(dateObject, 'MMMM do, yyyy'),
+                originalDate: dateObject.toISOString(), // Store original date
                 createdAt: format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
-            } as DailyRequisitionEntry
+            } as EnrichedDailyRequisitionEntry
         }));
 
         if (configSnap.exists()) {
@@ -219,12 +226,12 @@ export default function EntrySheetPage() {
     }
   };
 
-  const handleOpenEditDialog = (entry: DailyRequisitionEntry) => {
+  const handleOpenEditDialog = (entry: EnrichedDailyRequisitionEntry) => {
     setEditingEntry(entry);
     setFormState({
         receptionNo: entry.receptionNo,
         depNo: entry.depNo,
-        date: new Date(entry.date),
+        date: parseISO(entry.originalDate),
         description: entry.description,
         partyName: entry.partyName,
         projectId: entry.projectId,
