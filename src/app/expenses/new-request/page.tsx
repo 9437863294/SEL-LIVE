@@ -173,6 +173,11 @@ function NewExpenseRequestForm() {
         };
 
         await addDoc(collection(db, 'expenseRequests'), newExpenseRequest);
+
+        if (!partyNames.includes(data.partyName)) {
+            setPartyNames(prev => [...prev, data.partyName].sort());
+        }
+
         toast({
             title: 'Request Created',
             description: `Expense request ${newRequestNo} has been successfully created.`,
@@ -286,8 +291,8 @@ function NewExpenseRequestForm() {
                                     <Command shouldFilter={false}>
                                         <CommandInput 
                                             placeholder="Search party name..."
+                                            value={field.value}
                                             onValueChange={(search) => {
-                                                // Allow creating a new party name by typing
                                                 field.onChange(search);
                                             }}
                                         />
