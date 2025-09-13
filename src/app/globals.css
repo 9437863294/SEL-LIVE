@@ -96,22 +96,20 @@
 
 @layer utilities {
   @media print {
-    .printable {
-      display: block !important;
+    body {
+      visibility: hidden;
     }
-    .no-print {
-      display: none !important;
-    }
-    body > *:not(.printable) {
-      display: none !important;
-    }
-    body > .printable {
-      display: block !important;
+    .printable-area {
+      visibility: visible;
       position: absolute;
       left: 0;
       top: 0;
-      right: 0;
-      bottom: 0;
+      width: 100%;
+      height: auto;
+      padding: 1rem;
+    }
+    .no-print {
+      display: none;
     }
   }
 }
