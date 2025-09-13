@@ -41,9 +41,6 @@ function DailyRequisitionCard({ item }: DailyRequisitionCardProps) {
                     <CardDescription className="text-sm pt-1">{item.description}</CardDescription>
                 </div>
             </CardHeader>
-            <CardContent className="mt-auto p-6 pt-0">
-                <Button className="w-full">Go to {item.text}</Button>
-            </CardContent>
         </Card>
     )
 
