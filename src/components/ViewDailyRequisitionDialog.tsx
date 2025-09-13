@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useRef } from 'react';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
-import { PrintButton } from './PrintButton';
+import { Printer } from 'lucide-react';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -19,6 +20,10 @@ interface ViewDailyRequisitionDialogProps {
 
 export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest }: ViewDailyRequisitionDialogProps) {
   const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   if (!entry) return null;
 
@@ -81,7 +86,9 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
         </div>
 
         <DialogFooter className="mt-4 pr-4 no-print">
-          <PrintButton contentToPrint={printRef} />
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" /> Print
+          </Button>
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
