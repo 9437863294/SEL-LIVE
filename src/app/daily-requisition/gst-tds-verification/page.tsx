@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -15,6 +16,8 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, updateDoc, doc, query, where, orderBy } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
+import { GstTdsVerificationDialog } from '@/components/GstTdsVerificationDialog';
+
 
 interface EnrichedEntry extends DailyRequisitionEntry {
   projectName: string;
@@ -27,6 +30,10 @@ export default function GstTdsVerificationPage() {
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<EnrichedEntry | null>(null);
+
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -80,18 +87,9 @@ export default function GstTdsVerificationPage() {
     fetchData();
   }, []);
 
-  const handleVerify = async (id: string) => {
-    try {
-        await updateDoc(doc(db, 'dailyRequisitions', id), {
-            status: 'Verified',
-            verifiedAt: new Date(),
-        });
-        toast({ title: 'Success', description: 'Entry has been marked as verified.' });
-        fetchData();
-    } catch (error) {
-        console.error("Error verifying entry: ", error);
-        toast({ title: 'Error', description: 'Failed to verify the entry.', variant: 'destructive' });
-    }
+  const handleOpenVerifyDialog = (entry: EnrichedEntry) => {
+    setSelectedEntry(entry);
+    setIsVerifyDialogOpen(true);
   };
 
   const renderTable = (data: EnrichedEntry[], type: 'pending' | 'verified') => {
@@ -150,7 +148,7 @@ export default function GstTdsVerificationPage() {
                     <TableCell className="text-right">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.netAmount)}</TableCell>
                     <TableCell className="text-right">
                       {type === 'pending' ? (
-                          <Button size="sm" onClick={() => handleVerify(entry.id)}>Verify</Button>
+                          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Verify</Button>
                       ) : (
                           <span className="text-sm text-green-600 font-semibold">Verified</span>
                       )}
@@ -171,28 +169,37 @@ export default function GstTdsVerificationPage() {
   const verifiedEntries = useMemo(() => entries.filter(e => e.status === 'Verified'), [entries]);
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link href="/daily-requisition">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">GST & TDS Verification</h1>
+    <>
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+          <Link href="/daily-requisition">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold">GST & TDS Verification</h1>
+        </div>
+
+        <Tabs defaultValue="pending">
+          <TabsList>
+            <TabsTrigger value="pending">Pending Verification</TabsTrigger>
+            <TabsTrigger value="verified">Verified</TabsTrigger>
+          </TabsList>
+          <TabsContent value="pending" className="mt-4">
+            {renderTable(pendingEntries, 'pending')}
+          </TabsContent>
+          <TabsContent value="verified" className="mt-4">
+            {renderTable(verifiedEntries, 'verified')}
+          </TabsContent>
+        </Tabs>
       </div>
 
-      <Tabs defaultValue="pending">
-        <TabsList>
-          <TabsTrigger value="pending">Pending Verification</TabsTrigger>
-          <TabsTrigger value="verified">Verified</TabsTrigger>
-        </TabsList>
-        <TabsContent value="pending" className="mt-4">
-          {renderTable(pendingEntries, 'pending')}
-        </TabsContent>
-        <TabsContent value="verified" className="mt-4">
-          {renderTable(verifiedEntries, 'verified')}
-        </TabsContent>
-      </Tabs>
-    </div>
+      <GstTdsVerificationDialog
+        isOpen={isVerifyDialogOpen}
+        onOpenChange={setIsVerifyDialogOpen}
+        entry={selectedEntry}
+        onSuccess={fetchData}
+      />
+    </>
   );
 }

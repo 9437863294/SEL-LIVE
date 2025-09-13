@@ -1,6 +1,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -268,4 +269,10 @@ export type DailyRequisitionEntry = {
   netAmount: number;
   depNo: string;
   status: 'Pending' | 'Received' | 'Cancelled' | 'Verified';
+  igstAmount?: number;
+  tdsAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  verificationNotes?: string;
+  verifiedAt?: any; // Timestamp
 };
