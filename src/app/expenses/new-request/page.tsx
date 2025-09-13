@@ -306,13 +306,17 @@ function NewExpenseRequestForm() {
                                                 : 'No party found.'}
                                         </CommandEmpty>
                                         <CommandGroup>
-                                            {partyNames.map((name) => (
+                                            {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
                                                 <CommandItem
                                                     value={name}
                                                     key={name}
                                                     onSelect={() => {
                                                         form.setValue("partyName", name);
                                                         setPartyPopoverOpen(false);
+                                                    }}
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
                                                     }}
                                                 >
                                                     <Check
@@ -331,6 +335,10 @@ function NewExpenseRequestForm() {
                                                   form.setValue("partyName", partySearch)
                                                   setPartyNames(prev => [...prev, partySearch].sort());
                                                   setPartyPopoverOpen(false);
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
                                                 }}
                                               >
                                                 <Check className="mr-2 h-4 w-4 opacity-0" />
