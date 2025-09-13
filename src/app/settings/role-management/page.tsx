@@ -3,7 +3,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronUp, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -38,6 +38,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad, CardContent as CardContentShad } from '@/components/ui/card';
+
 
 const permissionModules = {
   'Site Fund Requisition': [
@@ -92,6 +95,7 @@ const initialNewRoleState = {
 
 export default function ManageRolePage() {
   const { toast } = useToast();
+  const { can } = useAuthorization();
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -313,6 +317,29 @@ export default function ManageRolePage() {
     </div>
   );
 
+  if (!can('View', 'Role Management')) {
+    return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Role Management</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitleShad>Access Denied</CardTitleShad>
+                    <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
+                </CardHeader>
+                <CardContentShad>
+                    <ShieldAlert className="h-16 w-16 text-destructive mx-auto" />
+                </CardContentShad>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -327,7 +354,7 @@ export default function ManageRolePage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!can('Add', 'Role Management')}>
               <Plus className="mr-2 h-4 w-4" />
               Add New Role
             </Button>
@@ -400,8 +427,8 @@ export default function ManageRolePage() {
                       </TooltipProvider>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(role)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteRole(role.id)}>Delete</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(role)} disabled={!can('Edit', 'Role Management')}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteRole(role.id)} disabled={!can('Delete', 'Role Management')}>Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))
