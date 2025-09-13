@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -54,7 +53,10 @@ function NewExpenseRequestForm() {
   const [partyNames, setPartyNames] = useState<string[]>([]);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
-  const [openPartyNamePopover, setOpenPartyNamePopover] = useState(false);
+  
+  const [partySearch, setPartySearch] = useState("");
+  const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
+
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -178,6 +180,8 @@ function NewExpenseRequestForm() {
         if (!partyNames.includes(data.partyName)) {
             setPartyNames(prev => [...prev, data.partyName].sort());
         }
+        
+        setPartySearch("");
 
         toast({
             title: 'Request Created',
@@ -272,55 +276,69 @@ function NewExpenseRequestForm() {
                       render={({ field }) => (
                         <FormItem className="flex flex-col space-y-2">
                           <FormLabel>Name of the party</FormLabel>
-                            <Popover open={openPartyNamePopover} onOpenChange={setOpenPartyNamePopover}>
-                                <PopoverTrigger asChild>
-                                    <FormControl>
-                                        <Button
-                                            variant="outline"
-                                            role="combobox"
-                                            className={cn(
-                                                "w-full justify-between",
-                                                !field.value && "text-muted-foreground"
+                          <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <FormControl>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className={cn(
+                                            "w-full justify-between",
+                                            !field.value && "text-muted-foreground"
+                                        )}
+                                    >
+                                        {field.value || "Select or type a party name"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                <Command>
+                                    <CommandInput 
+                                        placeholder="Search party name..."
+                                        value={partySearch}
+                                        onValueChange={setPartySearch}
+                                    />
+                                    <CommandList>
+                                        <CommandEmpty>No party found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {partyNames.filter(name => name.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
+                                                <CommandItem
+                                                    value={name}
+                                                    key={name}
+                                                    onSelect={() => {
+                                                        field.onChange(name);
+                                                        setPartySearch(name);
+                                                        setPartyPopoverOpen(false);
+                                                    }}
+                                                >
+                                                    <Check
+                                                        className={cn(
+                                                            "mr-2 h-4 w-4",
+                                                            name === field.value ? "opacity-100" : "opacity-0"
+                                                        )}
+                                                    />
+                                                    {name}
+                                                </CommandItem>
+                                            ))}
+                                            {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
+                                              <CommandItem
+                                                value={partySearch}
+                                                onSelect={() => {
+                                                  field.onChange(partySearch);
+                                                  setPartyNames(prev => [...prev, partySearch].sort());
+                                                  setPartyPopoverOpen(false);
+                                                }}
+                                              >
+                                                <Check className="mr-2 h-4 w-4 opacity-0" />
+                                                Create "{partySearch}"
+                                              </CommandItem>
                                             )}
-                                        >
-                                            {field.value || "Select or type a party name"}
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                        </Button>
-                                    </FormControl>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
-                                    <Command shouldFilter={false}>
-                                        <CommandInput 
-                                            placeholder="Search party name..."
-                                            value={field.value}
-                                            onValueChange={field.onChange}
-                                        />
-                                        <CommandList>
-                                            <CommandEmpty>No results found.</CommandEmpty>
-                                            <CommandGroup>
-                                                {partyNames.filter(name => name.toLowerCase().includes(field.value.toLowerCase())).map((name) => (
-                                                    <CommandItem
-                                                        value={name}
-                                                        key={name}
-                                                        onSelect={() => {
-                                                            form.setValue("partyName", name);
-                                                            setOpenPartyNamePopover(false);
-                                                        }}
-                                                    >
-                                                        <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                name === field.value ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        {name}
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
-                                        </CommandList>
-                                    </Command>
-                                </PopoverContent>
-                            </Popover>
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                          </Popover>
                           <FormMessage />
                         </FormItem>
                       )}
