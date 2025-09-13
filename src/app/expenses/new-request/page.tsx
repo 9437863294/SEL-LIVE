@@ -300,15 +300,18 @@ function NewExpenseRequestForm() {
                                         onValueChange={setPartySearch}
                                     />
                                     <CommandList>
-                                        <CommandEmpty>No party found.</CommandEmpty>
+                                        <CommandEmpty>
+                                            {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) 
+                                                ? 'No party found. Use the option below to add.' 
+                                                : 'No party found.'}
+                                        </CommandEmpty>
                                         <CommandGroup>
-                                            {partyNames.filter(name => name.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
+                                            {partyNames.map((name) => (
                                                 <CommandItem
                                                     value={name}
                                                     key={name}
                                                     onSelect={() => {
-                                                        field.onChange(name);
-                                                        setPartySearch(name);
+                                                        form.setValue("partyName", name);
                                                         setPartyPopoverOpen(false);
                                                     }}
                                                 >
@@ -325,7 +328,7 @@ function NewExpenseRequestForm() {
                                               <CommandItem
                                                 value={partySearch}
                                                 onSelect={() => {
-                                                  field.onChange(partySearch);
+                                                  form.setValue("partyName", partySearch)
                                                   setPartyNames(prev => [...prev, partySearch].sort());
                                                   setPartyPopoverOpen(false);
                                                 }}
