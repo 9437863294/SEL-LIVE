@@ -1,14 +1,5 @@
 
 
-
-
-
-
-
-
-
-
-
 export type Email = {
   id: string;
   sender: string;
@@ -268,12 +259,11 @@ export type DailyRequisitionEntry = {
   createdAt: string;
   receptionNo: string;
   date: string;
-  project: string;
-  department: string;
+  projectId: string;
+  departmentId: string;
   description: string;
   partyName: string;
   grossAmount: number;
   netAmount: number;
   depNo: string;
 };
-    

@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { DailyRequisitionEntry, Project, Department } from '@/lib/types';
-import { Printer } from 'lucide-react';
+import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
+import { PrintButton } from './PrintButton';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -14,15 +14,11 @@ interface ViewDailyRequisitionDialogProps {
   entry: DailyRequisitionEntry | null;
   project?: Project;
   department?: Department;
+  expenseRequest?: ExpenseRequest | null;
 }
 
-export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department }: ViewDailyRequisitionDialogProps) {
+export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest }: ViewDailyRequisitionDialogProps) {
   const printRef = useRef<HTMLDivElement>(null);
-
-  const handlePrint = () => {
-    window.print();
-  };
-
 
   if (!entry) return null;
 
@@ -65,6 +61,17 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
             </div>
 
             <Separator />
+            
+            {expenseRequest && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><Label>Head of A/c</Label><p className="font-medium">{expenseRequest.headOfAccount}</p></div>
+                  <div><Label>Sub-Head of A/c</Label><p className="font-medium">{expenseRequest.subHeadOfAccount}</p></div>
+                </div>
+                <Separator />
+              </>
+            )}
+
 
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Gross Amount</Label><p className="font-medium">{formatCurrency(entry.grossAmount)}</p></div>
@@ -74,9 +81,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
         </div>
 
         <DialogFooter className="mt-4 pr-4 no-print">
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> Print
-          </Button>
+          <PrintButton contentToPrint={printRef} />
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>

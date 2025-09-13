@@ -4,7 +4,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -24,6 +24,7 @@ import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Ti
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
+import { ChecklistDialog } from '@/components/ChecklistDialog';
 
 
 const initialFormState = {
@@ -61,6 +62,9 @@ export default function EntrySheetPage() {
 
   const [selectedEntry, setSelectedEntry] = useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  
+  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [checklistData, setChecklistData] = useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
 
   const fetchAllData = async () => {
       setIsLoading(true);
@@ -142,6 +146,7 @@ export default function EntrySheetPage() {
     const selectedExpenseRequest = expenseRequests.find(req => req.requestNo === formState.depNo);
 
     try {
+        let finalEntryData: DailyRequisitionEntry | null = null;
         await runTransaction(db, async (transaction) => {
             // 1. Get and update serial number config
             const configDoc = await transaction.get(configRef);
@@ -176,10 +181,27 @@ export default function EntrySheetPage() {
                     receptionDate: format(formState.date, 'yyyy-MM-dd'),
                 });
             }
+            
+            finalEntryData = {
+                id: newEntryRef.id,
+                ...newEntryData,
+                date: format(newEntryData.date.toDate(), 'MMMM do, yyyy'),
+                createdAt: format(newEntryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
+            } as DailyRequisitionEntry;
         });
         
         toast({ title: 'Success', description: 'New entry added to the database.' });
         setIsAddDialogOpen(false);
+        
+        if (finalEntryData) {
+            setChecklistData({
+                entry: finalEntryData,
+                project: projects.find(p => p.id === finalEntryData!.projectId),
+                expenseRequest: selectedExpenseRequest,
+            });
+            setIsChecklistOpen(true);
+        }
+        
         setFormState(initialFormState); // Reset form
         fetchAllData(); // Refresh data from Firestore
 
@@ -232,6 +254,15 @@ export default function EntrySheetPage() {
     setSelectedEntry(entry);
     setIsViewDialogOpen(true);
   };
+  
+  const handleViewChecklist = (entry: DailyRequisitionEntry) => {
+      setChecklistData({
+          entry: entry,
+          project: projects.find(p => p.id === entry.projectId),
+          expenseRequest: expenseRequests.find(req => req.requestNo === entry.depNo),
+      });
+      setIsChecklistOpen(true);
+  }
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -241,8 +272,8 @@ export default function EntrySheetPage() {
     { key: 'createdAt', label: 'Created At' },
     { key: 'receptionNo', label: 'Reception No.' },
     { key: 'date', label: 'Date' },
-    { key: 'project', label: 'Project' },
-    { key: 'department', label: 'Department' },
+    { key: 'projectId', label: 'Project' },
+    { key: 'departmentId', label: 'Department' },
     { key: 'partyName', label: 'Party Name' },
     { key: 'description', label: 'Description' },
     { key: 'grossAmount', label: 'Gross Amount' },
@@ -356,6 +387,9 @@ export default function EntrySheetPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}>
                                 <Eye className="mr-2 h-4 w-4" /> View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChecklist(entry); }}>
+                                <FileText className="mr-2 h-4 w-4" /> View Checklist
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Edit</DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>Delete</DropdownMenuItem>
@@ -488,6 +522,17 @@ export default function EntrySheetPage() {
             entry={selectedEntry}
             project={projects.find(p => p.id === selectedEntry.projectId)}
             department={departments.find(d => d.id === selectedEntry.departmentId)}
+            expenseRequest={expenseRequests.find(req => req.requestNo === selectedEntry.depNo)}
+        />
+      )}
+
+      {checklistData && (
+        <ChecklistDialog
+            isOpen={isChecklistOpen}
+            onOpenChange={setIsChecklistOpen}
+            entry={checklistData.entry}
+            project={checklistData.project}
+            expenseRequest={checklistData.expenseRequest}
         />
       )}
     </>
