@@ -100,16 +100,22 @@
       size: A4;
       margin: 1rem;
     }
-    body {
+    body * {
       visibility: hidden;
     }
-    .printable-area {
+    .printable-area, .printable-area * {
       visibility: visible;
+    }
+    .printable-area {
       position: absolute;
       left: 0;
       top: 0;
       width: 100%;
       height: auto;
+      margin: 0;
+      padding: 0;
+      border: none;
+      box-shadow: none;
     }
     .no-print {
       display: none;
