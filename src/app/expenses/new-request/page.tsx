@@ -288,18 +288,14 @@ function NewExpenseRequestForm() {
                                     </FormControl>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
-                                    <Command shouldFilter={false}>
+                                    <Command>
                                         <CommandInput 
                                             placeholder="Search party name..."
-                                            value={field.value}
-                                            onValueChange={(search) => {
-                                                field.onChange(search);
-                                            }}
                                         />
                                         <CommandList>
                                             <CommandEmpty>No results found.</CommandEmpty>
                                             <CommandGroup>
-                                                {partyNames.filter(name => name.toLowerCase().includes(form.getValues('partyName').toLowerCase())).map((name) => (
+                                                {partyNames.map((name) => (
                                                     <CommandItem
                                                         value={name}
                                                         key={name}
