@@ -188,6 +188,7 @@ function NewExpenseRequestForm() {
             description: `Expense request ${newRequestNo} has been successfully created.`,
         });
         form.reset();
+        setPartySearch("");
     } catch (error: any) {
         console.error("Error creating expense request: ", error);
         toast({
@@ -314,10 +315,6 @@ function NewExpenseRequestForm() {
                                                         form.setValue("partyName", name);
                                                         setPartyPopoverOpen(false);
                                                     }}
-                                                    onMouseDown={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                    }}
                                                 >
                                                     <Check
                                                         className={cn(
@@ -335,10 +332,6 @@ function NewExpenseRequestForm() {
                                                   form.setValue("partyName", partySearch)
                                                   setPartyNames(prev => [...prev, partySearch].sort());
                                                   setPartyPopoverOpen(false);
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
                                                 }}
                                               >
                                                 <Check className="mr-2 h-4 w-4 opacity-0" />
