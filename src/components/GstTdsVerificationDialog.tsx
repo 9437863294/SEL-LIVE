@@ -163,7 +163,7 @@ export function GstTdsVerificationDialog({
             
             <Separator />
 
-             <div className="grid grid-cols-2 gap-4">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label>GST Type</Label>
                     <RadioGroup value={gstType} onValueChange={(value: GstType) => setGstType(value)} className="flex gap-4">
@@ -181,26 +181,24 @@ export function GstTdsVerificationDialog({
                         </div>
                     </RadioGroup>
                 </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="gstPercentage">GST Rate (%)</Label>
-                    <Input id="gstPercentage" type="number" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} disabled={gstType === 'none'}/>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="gstPercentage">GST Rate (%)</Label>
+                        <Input id="gstPercentage" type="number" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} disabled={gstType === 'none'}/>
+                    </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="gstNo">GST No.</Label>
+                        <Input id="gstNo" type="text" value={taxDetails.gstNo} onChange={e => handleInputChange('gstNo', e.target.value)} disabled={gstType === 'none'} />
+                    </div>
                 </div>
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="gstNo">GST No.</Label>
-                <Input id="gstNo" type="text" value={taxDetails.gstNo} onChange={e => handleInputChange('gstNo', e.target.value)} disabled={gstType === 'none'} />
             </div>
 
             <Separator />
             <p className="font-medium text-sm text-muted-foreground">Amounts:</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="igstAmount">IGST Amount</Label>
                     <Input id="igstAmount" type="number" value={taxDetails.igstAmount} readOnly />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="tdsAmount">TDS Amount</Label>
-                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="cgstAmount">CGST Amount</Label>
@@ -209,6 +207,10 @@ export function GstTdsVerificationDialog({
                 <div className="space-y-2">
                     <Label htmlFor="sgstAmount">SGST Amount</Label>
                     <Input id="sgstAmount" type="number" value={taxDetails.sgstAmount} readOnly />
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="tdsAmount">TDS Amount</Label>
+                    <Input id="tdsAmount" type="number" value={taxDetails.tdsAmount} onChange={e => handleInputChange('tdsAmount', e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="retentionAmount">Retention Amount</Label>
