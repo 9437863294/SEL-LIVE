@@ -92,7 +92,8 @@ export default function EntrySheetPage() {
 
         if (configSnap.exists()) {
           const config = configSnap.data() as SerialNumberConfig;
-          const receptionNo = `${config.prefix}${config.format}${config.startingIndex}${config.suffix}`;
+          const formattedIndex = String(config.startingIndex).padStart(4, '0');
+          const receptionNo = `${config.prefix}${config.format}${formattedIndex}${config.suffix}`;
           setFormState(prev => ({ ...prev, receptionNo }));
         } else {
           setFormState(prev => ({ ...prev, receptionNo: 'SEL\\REC\\2025-26\\7340' })); // Fallback
@@ -153,7 +154,8 @@ export default function EntrySheetPage() {
             if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
-            const receptionNo = `${configData.prefix}${configData.format}${newIndex}${configData.suffix}`;
+            const formattedIndex = String(newIndex).padStart(4, '0');
+            const receptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
             transaction.update(configRef, { startingIndex: newIndex + 1 });
 
             // 2. Create the new daily requisition entry
