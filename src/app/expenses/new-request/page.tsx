@@ -291,8 +291,8 @@ function NewExpenseRequestForm() {
                                     </Button>
                                 </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent 
-                              className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"
+                            <PopoverContent
+                              className="w-[--radix-popover-trigger-width] p-0"
                               side="bottom"
                               align="start"
                               onEscapeKeyDown={() => setPartyPopoverOpen(false)}
@@ -306,9 +306,7 @@ function NewExpenseRequestForm() {
                                     />
                                     <CommandList>
                                         <CommandEmpty>
-                                            {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) 
-                                                ? 'No party found. Use the option below to add.' 
-                                                : 'No party found.'}
+                                            No party found.
                                         </CommandEmpty>
                                         <CommandGroup>
                                             {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
@@ -316,6 +314,7 @@ function NewExpenseRequestForm() {
                                                     value={name}
                                                     key={name}
                                                     onSelect={(currentValue) => {
+                                                        field.onChange(currentValue);
                                                         form.setValue("partyName", currentValue);
                                                         setPartySearch(currentValue);
                                                         setPartyPopoverOpen(false);
@@ -334,6 +333,7 @@ function NewExpenseRequestForm() {
                                               <CommandItem
                                                 value={partySearch}
                                                 onSelect={(currentValue) => {
+                                                  field.onChange(currentValue);
                                                   form.setValue("partyName", currentValue);
                                                   setPartySearch(currentValue);
                                                   setPartyNames(prev => [...prev, currentValue].sort());
@@ -432,5 +432,3 @@ export default function NewExpenseRequestPage() {
         </Suspense>
     )
 }
-
-    
