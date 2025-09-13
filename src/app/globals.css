@@ -103,26 +103,38 @@
     body {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
-    }
-    body * {
-      visibility: hidden;
-    }
-    .printable-area, .printable-area * {
-      visibility: visible;
-    }
-    .printable-area {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      padding: 0;
-      margin: 0;
-      border: none !important;
-      box-shadow: none !important;
+      background-color: white; /* Ensure background is white */
     }
     .no-print {
       display: none !important;
+    }
+    /* Hide everything except the printable area and its children */
+    body > *:not(.printable-area) {
+      display: none;
+    }
+    .printable-area {
+      display: block !important;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: auto;
+      padding: 0;
+      margin: 0;
+    }
+    /* Reset styles for the dialog container when printing */
+    [role="dialog"] {
+      position: static !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
+      transform: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: visible !important;
     }
   }
 }

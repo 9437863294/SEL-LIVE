@@ -1,7 +1,6 @@
 
 'use client';
 
-import { useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -32,8 +31,8 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl printable-area">
-        <div>
+      <DialogContent className="sm:max-w-2xl">
+        <div className="printable-area">
             <DialogHeader className="no-print">
               <DialogTitle>Details for {entry.receptionNo}</DialogTitle>
             </DialogHeader>

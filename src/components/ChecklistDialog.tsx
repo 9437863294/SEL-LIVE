@@ -1,7 +1,6 @@
 
 'use client';
 
-import { useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Separator } from './ui/separator';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
-import { format } from 'date-fns';
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -35,8 +33,8 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl printable-area">
-        <div>
+      <DialogContent className="sm:max-w-3xl">
+        <div className="printable-area">
             <DialogHeader className="no-print">
               <DialogTitle>Check List for Payment</DialogTitle>
               <DialogDescription>
