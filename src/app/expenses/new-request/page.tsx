@@ -181,8 +181,6 @@ function NewExpenseRequestForm() {
             setPartyNames(prev => [...prev, data.partyName].sort());
         }
         
-        setPartySearch("");
-
         toast({
             title: 'Request Created',
             description: `Expense request ${newRequestNo} has been successfully created.`,
@@ -277,7 +275,7 @@ function NewExpenseRequestForm() {
                       render={({ field }) => (
                         <FormItem className="flex flex-col space-y-2">
                           <FormLabel>Name of the party</FormLabel>
-                          <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
+                           <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
                             <PopoverTrigger asChild>
                                 <FormControl>
                                     <Button
@@ -293,7 +291,13 @@ function NewExpenseRequestForm() {
                                     </Button>
                                 </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                            <PopoverContent 
+                              className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"
+                              side="bottom"
+                              align="start"
+                              onEscapeKeyDown={() => setPartyPopoverOpen(false)}
+                              onPointerDownOutside={() => setPartyPopoverOpen(false)}
+                            >
                                 <Command>
                                     <CommandInput 
                                         placeholder="Search party name..."
@@ -311,8 +315,9 @@ function NewExpenseRequestForm() {
                                                 <CommandItem
                                                     value={name}
                                                     key={name}
-                                                    onSelect={() => {
-                                                        form.setValue("partyName", name);
+                                                    onSelect={(val) => {
+                                                        form.setValue("partyName", val);
+                                                        setPartySearch(val);
                                                         setPartyPopoverOpen(false);
                                                     }}
                                                 >
@@ -328,9 +333,10 @@ function NewExpenseRequestForm() {
                                             {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
                                               <CommandItem
                                                 value={partySearch}
-                                                onSelect={() => {
-                                                  form.setValue("partyName", partySearch)
-                                                  setPartyNames(prev => [...prev, partySearch].sort());
+                                                onSelect={(val) => {
+                                                  form.setValue("partyName", val);
+                                                  setPartySearch(val);
+                                                  setPartyNames(prev => [...prev, val].sort());
                                                   setPartyPopoverOpen(false);
                                                 }}
                                               >
@@ -426,3 +432,5 @@ export default function NewExpenseRequestPage() {
         </Suspense>
     )
 }
+
+    
