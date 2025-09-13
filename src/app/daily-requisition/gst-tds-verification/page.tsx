@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -150,7 +149,7 @@ export default function GstTdsVerificationPage() {
                       {type === 'pending' ? (
                           <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Verify</Button>
                       ) : (
-                          <span className="text-sm text-green-600 font-semibold">Verified</span>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Re-verify</Button>
                       )}
                     </TableCell>
                   </TableRow>
