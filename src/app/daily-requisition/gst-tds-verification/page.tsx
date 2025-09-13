@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, Search, MoreHorizontal, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +16,7 @@ import { collection, getDocs, updateDoc, doc, query, where, orderBy } from 'fire
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
 import { GstTdsVerificationDialog } from '@/components/GstTdsVerificationDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 
 interface EnrichedEntry extends DailyRequisitionEntry {
@@ -90,6 +91,28 @@ export default function GstTdsVerificationPage() {
     setSelectedEntry(entry);
     setIsVerifyDialogOpen(true);
   };
+  
+  const handleReturnToPending = async (entry: EnrichedEntry) => {
+    try {
+        await updateDoc(doc(db, 'dailyRequisitions', entry.id), {
+            status: 'Received',
+            verifiedAt: null,
+            igstAmount: 0,
+            tdsAmount: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            retentionAmount: 0,
+            otherDeduction: 0,
+            verificationNotes: '',
+            gstNo: '',
+        });
+        toast({ title: 'Success', description: `${entry.receptionNo} returned to pending verification.` });
+        fetchData();
+    } catch (error) {
+        console.error("Error returning entry:", error);
+        toast({ title: 'Error', description: 'Failed to return the entry.', variant: 'destructive' });
+    }
+  }
 
   const renderTable = (data: EnrichedEntry[], type: 'pending' | 'verified') => {
     const filteredData = data.filter(entry => 
@@ -149,7 +172,22 @@ export default function GstTdsVerificationPage() {
                       {type === 'pending' ? (
                           <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Verify</Button>
                       ) : (
-                          <Button variant="outline" size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Re-verify</Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => handleOpenVerifyDialog(entry)}>
+                                    Re-verify
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handleReturnToPending(entry)} className="text-destructive">
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Return to Pending
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                       )}
                     </TableCell>
                   </TableRow>
