@@ -291,6 +291,11 @@ function NewExpenseRequestForm() {
                                     <Command>
                                         <CommandInput 
                                             placeholder="Search party name..."
+                                            onValueChange={(search) => {
+                                                // Allow typing freely by not forcing a selection
+                                                form.setValue('partyName', search);
+                                            }}
+                                            value={field.value}
                                         />
                                         <CommandList>
                                             <CommandEmpty>No results found.</CommandEmpty>
@@ -299,8 +304,8 @@ function NewExpenseRequestForm() {
                                                     <CommandItem
                                                         value={name}
                                                         key={name}
-                                                        onSelect={() => {
-                                                            form.setValue("partyName", name);
+                                                        onSelect={(currentValue) => {
+                                                            form.setValue("partyName", currentValue === field.value ? "" : currentValue);
                                                         }}
                                                     >
                                                         <Check
