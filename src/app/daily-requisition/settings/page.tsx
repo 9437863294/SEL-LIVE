@@ -2,11 +2,19 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Hash } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Home,
+  FilePlus,
+  Landmark,
+  Receipt,
+  Settings,
+  Users,
+  Hash,
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface SettingsCardProps {
   item: {
@@ -23,6 +31,12 @@ const settingsItems = [
     title: 'Serial No. Configuration', 
     description: 'Configure serial numbers for daily requisitions.',
     href: '/settings/serial-no-configuration' 
+  },
+   { 
+    icon: Users, 
+    title: 'User Role Configuration', 
+    description: 'Assign users to specific roles within the module.',
+    href: '#' 
   },
 ];
 
