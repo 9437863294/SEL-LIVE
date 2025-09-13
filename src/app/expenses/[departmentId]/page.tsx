@@ -14,6 +14,7 @@ import type { Department, ExpenseRequest, Project, UserSettings } from '@/lib/ty
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -213,7 +214,18 @@ export default function DepartmentExpensesPage() {
       case 'Remarks':
         return expense.remarks;
       case 'Description':
-        return expense.description;
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger>
+                <p className="truncate max-w-[200px]">{expense.description}</p>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-md">{expense.description}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
       case 'Name of the party':
         return expense.partyName;
       case 'Reception No':
