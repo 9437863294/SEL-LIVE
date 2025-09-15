@@ -25,8 +25,7 @@ const initialBillDetails = {
 
 export default function CreateBillingPage() {
   const { toast } = useToast();
-  const params = useParams();
-  const projectSlug = params.project as string;
+  const { project: projectSlug } = useParams() as { project: string };
   const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<BillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);

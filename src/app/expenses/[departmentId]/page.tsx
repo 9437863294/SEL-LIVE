@@ -54,11 +54,10 @@ const baseTableHeaders = [
 ];
 
 export default function DepartmentExpensesPage() {
-  const params = useParams();
+  const { departmentId } = useParams() as { departmentId: string };
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
-  const departmentId = Array.isArray(params.departmentId) ? params.departmentId[0] : params.departmentId;
   const settingsKey = `expenses_${departmentId}`;
   
   const isInitialMount = useRef(true);

@@ -88,14 +88,12 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 
 
 export default function ProjectDashboardPage() {
-  const params = useParams();
+  const { project: projectSlug } = useParams() as { project: string };
   const router = useRouter();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const projectSlug = params.project as string;
   
   useEffect(() => {
     if(isAuthLoading) return;

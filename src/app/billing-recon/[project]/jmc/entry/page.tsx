@@ -37,8 +37,7 @@ type JmcItem = typeof initialItem;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
-  const params = useParams();
-  const projectSlug = params.project as string;
+  const { project: projectSlug } = useParams() as { project: string };
   const [details, setDetails] = useState(initialJmcDetails);
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);

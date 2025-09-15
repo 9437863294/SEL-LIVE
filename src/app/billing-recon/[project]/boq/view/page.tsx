@@ -68,8 +68,7 @@ const baseTableHeaders = [
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
-  const params = useParams();
-  const projectSlug = params.project as string;
+  const { project: projectSlug } = useParams() as { project: string };
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
