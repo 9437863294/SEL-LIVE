@@ -196,24 +196,6 @@ export default function ExpenseReportsPage() {
             });
         };
 
-        const flattenColumns = (cols: any[]): { key: string; path: string[] }[] => {
-            if (!cols || cols.length === 0) return [];
-            let flat: { key: string; path: string[] }[] = [];
-            cols.forEach(col => {
-                const currentPath = [col.key]; // Path starts from current node
-                if (col.subColumns && col.subColumns.length > 0) {
-                     // Recursively flatten sub-columns and prepend current key to their paths
-                     const subFlat = flattenColumns(col.subColumns);
-                     subFlat.forEach(sub => {
-                         flat.push({ key: sub.key, path: [...currentPath, ...sub.path] });
-                     });
-                } else {
-                    flat.push({ key: col.key, path: currentPath });
-                }
-            });
-            return flat;
-        };
-        
         const finalFlattenedCols = (cols: any[], path: string[] = []): { key: string; path: string[] }[] => {
             let result: { key: string; path: string[] }[] = [];
             cols.forEach(col => {
@@ -246,15 +228,16 @@ export default function ExpenseReportsPage() {
                 const items = grouped.get(key)!;
                 const newPath = [...path, key];
                 const rowData: Record<string, number> = {};
+                let rowTotal = 0;
                 
                 flatCols.forEach(col => {
                     const colKey = col.path.join('_');
                     const filteredItems = items.filter(item => col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p));
                     const cellValue = filteredItems.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
                     rowData[colKey] = cellValue;
+                    rowTotal += cellValue;
                 });
                 
-                const rowTotal = flatCols.reduce((sum, col) => sum + (rowData[col.path.join('_')] || 0), 0);
                 rowData['__rowTotal'] = rowTotal;
                 
                 const subRows = groupData(items, level + 1, newPath);
@@ -274,8 +257,8 @@ export default function ExpenseReportsPage() {
             const colTotal = filteredForCol.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
             grandTotalRow[colKey] = colTotal;
         });
-
-        const grandTotal = Object.keys(grandTotalRow).reduce((acc, key) => acc + (grandTotalRow[key] || 0), 0);
+        
+        const grandTotal = filteredExpenses.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
         grandTotalRow['__grandTotal'] = grandTotal;
         
         return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal, columnHierarchy };
@@ -534,4 +517,3 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
-
