@@ -3,9 +3,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad, CardContent as CardContentShad } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,8 @@ import type { User, Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { useAuthorization } from '@/hooks/useAuthorization';
+
 
 const initialNewUserState = {
   name: '',
@@ -30,6 +32,8 @@ const initialNewUserState = {
 
 export default function ManageUserPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,6 +43,18 @@ export default function ManageUserPage() {
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  const canView = can('View', 'Settings.User Management');
+  const canAdd = can('Add', 'Settings.User Management');
+  const canEdit = can('Edit', 'Settings.User Management');
+
+  useEffect(() => {
+    if (!isAuthLoading && canView) {
+      fetchUsersAndRoles();
+    } else if (!isAuthLoading && !canView) {
+        setIsLoading(false);
+    }
+  }, [isAuthLoading, canView]);
 
   const fetchUsersAndRoles = async () => {
     setIsLoading(true);
@@ -67,10 +83,6 @@ export default function ManageUserPage() {
     }
     setIsLoading(false);
   };
-
-  useEffect(() => {
-    fetchUsersAndRoles();
-  }, []);
   
   const handleInputChange = (field: keyof typeof newUser, value: string) => {
     setNewUser(prev => ({ ...prev, [field]: value }));
@@ -95,11 +107,9 @@ export default function ManageUserPage() {
       return;
     }
     try {
-      // Step 1: Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
       const authUser = userCredential.user;
 
-      // Step 2: Store additional details in Firestore
       const userData = {
         name: newUser.name,
         email: newUser.email,
@@ -108,7 +118,6 @@ export default function ManageUserPage() {
         status: newUser.status,
       };
       
-      // Use the UID from Auth as the document ID in Firestore
       await setDoc(doc(db, 'users', authUser.uid), userData);
 
       toast({
@@ -155,6 +164,46 @@ export default function ManageUserPage() {
       });
     }
   };
+  
+  if (isAuthLoading || (isLoading && canView)) {
+      return (
+        <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <Skeleton className="h-96 w-full" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
+  
+  if (!canView) {
+    return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">User Management</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitleShad>Access Denied</CardTitleShad>
+                    <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
+                </CardHeader>
+                <CardContentShad className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContentShad>
+            </Card>
+        </div>
+    );
+  }
 
 
   return (
@@ -170,7 +219,7 @@ export default function ManageUserPage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add User
             </Button>
@@ -271,7 +320,7 @@ export default function ManageUserPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(user)}>Edit</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(user)} disabled={!canEdit}>Edit</Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -341,3 +390,5 @@ export default function ManageUserPage() {
     </div>
   );
 }
+
+    
