@@ -1,12 +1,14 @@
 
+
 'use client';
 
 import Link from 'next/link';
 import {
   Home,
   Folder,
+  ShieldAlert,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,7 @@ import type { Project } from '@/lib/types';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 interface BillingReconCardProps {
   item: {
@@ -70,8 +73,16 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 export default function BillingReconPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const canViewModule = can('View Module', 'Billing Recon');
 
   useEffect(() => {
+    if(isAuthLoading) return;
+    if(!canViewModule) {
+        setIsLoading(false);
+        return;
+    }
+
     const fetchProjects = async () => {
         setIsLoading(true);
         try {
@@ -84,7 +95,7 @@ export default function BillingReconPage() {
         setIsLoading(false);
     };
     fetchProjects();
-  }, []);
+  }, [isAuthLoading, canViewModule]);
 
   const projectItems = projects.map(project => ({
       icon: Folder,
@@ -92,6 +103,40 @@ export default function BillingReconPage() {
       href: `/billing-recon/${slugify(project.projectName)}`,
       description: `Manage all ${project.projectName}-related billing tasks.`
   }));
+  
+  if (isAuthLoading || (isLoading && canViewModule)) {
+      return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+          <Skeleton className="h-10 w-80 mb-6" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                  <Card key={i} className="h-28"><CardHeader><Skeleton className="h-5 w-3/4" /><Skeleton className="h-4 w-1/2 mt-1" /></CardHeader></Card>
+              ))}
+          </div>
+        </div>
+      );
+  }
+
+  if (!canViewModule) {
+      return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+             <div className="mb-6 flex items-center gap-2">
+                <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to access the Billing & Reconciliation module.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
+
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -104,15 +149,9 @@ export default function BillingReconPage() {
         <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-                <Card key={i} className="h-28"><CardHeader><Skeleton className="h-5 w-3/4" /><Skeleton className="h-4 w-1/2 mt-1" /></CardHeader></Card>
-            ))
-          ) : (
-            projectItems.map((item) => (
-              <BillingReconCard key={item.text} item={item} />
-            ))
-          )}
+          {projectItems.map((item) => (
+            <BillingReconCard key={item.text} item={item} />
+          ))}
       </div>
     </div>
   );

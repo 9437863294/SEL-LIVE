@@ -4,9 +4,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest } from '@/lib/types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogDescription as DialogDescriptionShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -26,6 +26,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
 import { ChecklistDialog } from '@/components/ChecklistDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
@@ -49,6 +51,8 @@ type SortKey = keyof DailyRequisitionEntry | '';
 
 export default function EntrySheetPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
   const [entries, setEntries] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -74,6 +78,13 @@ export default function EntrySheetPage() {
   
   const [isChecklistOpen, setIsChecklistOpen] = useState(false);
   const [checklistData, setChecklistData] = useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
+  
+  const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
+  const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
+  const canEdit = can('Edit', 'Daily Requisition.Entry Sheet');
+  const canDelete = can('Delete', 'Daily Requisition.Entry Sheet');
+  const canViewChecklist = can('View Checklist', 'Daily Requisition.Entry Sheet');
+
 
   const fetchAllData = async () => {
       setIsLoading(true);
@@ -118,8 +129,14 @@ export default function EntrySheetPage() {
   };
 
   useEffect(() => {
-    fetchAllData();
-  }, [toast]);
+    if (!isAuthLoading) {
+        if(canViewPage) {
+            fetchAllData();
+        } else {
+            setIsLoading(false);
+        }
+    }
+  }, [isAuthLoading, canViewPage]);
   
   const unassignedExpenseRequests = useMemo(() => {
     return expenseRequests.filter(req => !req.receptionNo);
@@ -388,6 +405,44 @@ export default function EntrySheetPage() {
       </>
   );
 
+  if (isAuthLoading || isLoading) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-10 w-10" />
+            <Skeleton className="h-8 w-48" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-10 w-36" />
+            <Skeleton className="h-10 w-36" />
+          </div>
+        </div>
+        <Card><CardContent><Skeleton className="h-96 w-full" /></CardContent></Card>
+      </div>
+    );
+  }
+
+  if (!canViewPage) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Entry Sheet</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
+
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -405,7 +460,7 @@ export default function EntrySheetPage() {
               <Upload className="mr-2 h-4 w-4" />
               Import from Excel
             </Button>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
+            <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add New Entry
             </Button>
@@ -497,17 +552,23 @@ export default function EntrySheetPage() {
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}>
                                   <Eye className="mr-2 h-4 w-4" /> View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChecklist(entry); }}>
-                                  <FileText className="mr-2 h-4 w-4" /> View Checklist
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(entry); }}>
-                                <Edit className="mr-2 h-4 w-4" /> Edit
-                              </DropdownMenuItem>
-                              <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
-                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                  </DropdownMenuItem>
-                              </AlertDialogTrigger>
+                              {canViewChecklist && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChecklist(entry); }}>
+                                    <FileText className="mr-2 h-4 w-4" /> View Checklist
+                                </DropdownMenuItem>
+                              )}
+                              {canEdit && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(entry); }}>
+                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                                </DropdownMenuItem>
+                              )}
+                              {canDelete && (
+                                <AlertDialogTrigger asChild>
+                                    <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                    </DropdownMenuItem>
+                                </AlertDialogTrigger>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                            <AlertDialogContent>
@@ -543,8 +604,8 @@ export default function EntrySheetPage() {
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Add New Entry</DialogTitle>
-            <DialogDescription>Fill in the details for the new requisition entry.</DialogDescription>
+            <DialogTitleShad>Add New Entry</DialogTitleShad>
+            <DialogDescriptionShad>Fill in the details for the new requisition entry.</DialogDescriptionShad>
           </DialogHeader>
           {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
             <>
@@ -609,8 +670,8 @@ export default function EntrySheetPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Edit Entry: {editingEntry?.receptionNo}</DialogTitle>
-            <DialogDescription>Update the details of the requisition entry.</DialogDescription>
+            <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
+            <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
            {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
             <>

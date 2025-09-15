@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 const initialSteps: WorkflowStep[] = [
@@ -54,6 +56,8 @@ const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update',
 
 export default function WorkflowConfigurationPage() {
     const { toast } = useToast();
+    const { can, isLoading: isAuthLoading } = useAuthorization();
+    
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -61,40 +65,49 @@ export default function WorkflowConfigurationPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    
+    const canViewPage = can('View Settings', 'Site Fund Requisition');
 
     useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                // Fetch roles, users, projects, departments
-                const [rolesSnap, usersSnap, projectsSnap, deptsSnap] = await Promise.all([
-                    getDocs(collection(db, 'roles')),
-                    getDocs(collection(db, 'users')),
-                    getDocs(collection(db, 'projects')),
-                    getDocs(collection(db, 'departments'))
-                ]);
-                setRoles(rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role)));
-                setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-                setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-                setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
-                
-                // Fetch workflow
-                const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
-                const workflowSnap = await getDoc(workflowRef);
-
-                if (workflowSnap.exists() && workflowSnap.data().steps.length > 0) {
-                    setSteps(workflowSnap.data().steps);
-                } else {
-                    setSteps(initialSteps);
-                }
-            } catch (error) {
-                console.error("Error fetching data: ", error);
-                toast({ title: 'Error', description: 'Failed to fetch configuration data.', variant: 'destructive' });
+        if (!isAuthLoading) {
+            if(canViewPage) {
+                fetchData();
+            } else {
+                setIsLoading(false);
             }
-            setIsLoading(false);
-        };
-        fetchData();
-    }, [toast]);
+        }
+    }, [isAuthLoading, canViewPage]);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch roles, users, projects, departments
+            const [rolesSnap, usersSnap, projectsSnap, deptsSnap] = await Promise.all([
+                getDocs(collection(db, 'roles')),
+                getDocs(collection(db, 'users')),
+                getDocs(collection(db, 'projects')),
+                getDocs(collection(db, 'departments'))
+            ]);
+            setRoles(rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role)));
+            setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+            setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+            
+            // Fetch workflow
+            const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+            const workflowSnap = await getDoc(workflowRef);
+
+            if (workflowSnap.exists() && workflowSnap.data().steps.length > 0) {
+                setSteps(workflowSnap.data().steps);
+            } else {
+                setSteps(initialSteps);
+            }
+        } catch (error) {
+            console.error("Error fetching data: ", error);
+            toast({ title: 'Error', description: 'Failed to fetch configuration data.', variant: 'destructive' });
+        }
+        setIsLoading(false);
+    };
     
     const handleAddStep = () => {
         const newStep: WorkflowStep = {
@@ -208,6 +221,37 @@ export default function WorkflowConfigurationPage() {
             setIsSaving(false);
         }
     };
+    
+    if(isAuthLoading || (isLoading && canViewPage)) {
+        return (
+            <div className="w-full max-w-4xl mx-auto pr-14">
+                <Skeleton className="h-10 w-96 mb-6" />
+                <Skeleton className="h-96 w-full" />
+            </div>
+        )
+    }
+
+    if(!canViewPage) {
+        return (
+             <div className="w-full max-w-4xl mx-auto pr-14">
+                <div className="mb-6 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Link href="/site-fund-requisition/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                        <h1 className="text-2xl font-bold">Configure Workflow</h1>
+                    </div>
+                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Access Denied</CardTitle>
+                        <CardDescription>You do not have permission to view or edit this page.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex justify-center p-8">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
 
     return (
         <div className="w-full max-w-4xl mx-auto pr-14">

@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,6 +13,8 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const initialMvacItem = {
     'WO': '',
@@ -31,8 +34,12 @@ export default function AddMvacItemPage() {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
+  const { can, isLoading } = useAuthorization();
+  
   const [mvacItem, setMvacItem] = useState(initialMvacItem);
   const [isSaving, setIsSaving] = useState(false);
+  
+  const canAddItem = can('Add Item', 'Billing Recon.MVAC');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -69,6 +76,30 @@ export default function AddMvacItemPage() {
         setIsSaving(false);
     }
   };
+  
+  if(isLoading) {
+    return (
+       <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-64 mb-6" />
+            <Skeleton className="h-96 w-full" />
+       </div>
+    )
+  }
+
+  if(!can('View', 'Billing Recon.MVAC')) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href={`/billing-recon/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Add New MVAC Item</h1>
+            </div>
+            <Card>
+                <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access MVAC management.</CardDescription></CardHeader>
+                <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -81,10 +112,12 @@ export default function AddMvacItemPage() {
             </Link>
             <h1 className="text-2xl font-bold">Add New MVAC Item</h1>
         </div>
-        <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Item
-        </Button>
+        {canAddItem && (
+            <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Item
+            </Button>
+        )}
       </div>
 
       <Card>
@@ -102,6 +135,7 @@ export default function AddMvacItemPage() {
                             name={key}
                             value={mvacItem[key as keyof typeof mvacItem]}
                             onChange={handleInputChange}
+                            disabled={!canAddItem}
                         />
                     </div>
                 ))}

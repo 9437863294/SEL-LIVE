@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -13,8 +14,9 @@ import {
   FilePlus,
   HardHat,
   FolderOpen,
+  ShieldAlert,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +32,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 interface BillingReconCardProps {
   item: {
@@ -37,6 +40,7 @@ interface BillingReconCardProps {
     text: string;
     href: string;
     description: string;
+    disabled?: boolean;
   };
 }
 
@@ -56,7 +60,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
@@ -71,7 +75,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -86,12 +90,16 @@ function BillingReconCard({ item }: BillingReconCardProps) {
 export default function ProjectDashboardPage() {
   const params = useParams();
   const router = useRouter();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const projectSlug = params.project as string;
   
   useEffect(() => {
+    if(isAuthLoading) return;
+
     const fetchProjects = async () => {
         setIsLoading(true);
         try {
@@ -104,7 +112,7 @@ export default function ProjectDashboardPage() {
         setIsLoading(false);
     };
     fetchProjects();
-  }, []);
+  }, [isAuthLoading]);
 
   const handleProjectChange = (slug: string) => {
     router.push(`/billing-recon/${slug}`);
@@ -114,16 +122,16 @@ export default function ProjectDashboardPage() {
   const projectName = currentProject?.projectName || projectSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   
   const billingItems = [
-    { icon: ClipboardList, text: 'BOQ', href: `/billing-recon/${projectSlug}/boq`, description: 'Manage Bill of Quantities.' },
-    { icon: Truck, text: 'MVAC', href: `/billing-recon/${projectSlug}/mvac`, description: 'Record supply and JMC details.' },
-    { icon: HardHat, text: 'JMC', href: `/billing-recon/${projectSlug}/jmc`, description: 'Manage the civil workstream.' },
-    { icon: Calculator, text: 'Billing', href: `/billing-recon/${projectSlug}/billing`, description: 'Generate and manage bills.' },
+    { icon: ClipboardList, text: 'BOQ', href: `/billing-recon/${projectSlug}/boq`, description: 'Manage Bill of Quantities.', disabled: !can('View', 'Billing Recon.BOQ') },
+    { icon: Truck, text: 'MVAC', href: `/billing-recon/${projectSlug}/mvac`, description: 'Record supply and JMC details.', disabled: !can('View', 'Billing Recon.MVAC') },
+    { icon: HardHat, text: 'JMC', href: `/billing-recon/${projectSlug}/jmc`, description: 'Manage the civil workstream.', disabled: !can('View', 'Billing Recon.JMC') },
+    { icon: Calculator, text: 'Billing', href: `/billing-recon/${projectSlug}/billing`, description: 'Generate and manage bills.', disabled: !can('View', 'Billing Recon.Billing') },
     { icon: FileEdit, text: 'Amendment Entry', href: '#', description: 'Manage amendments and revisions.' },
     { icon: BarChart3, text: 'Reports', href: '#', description: 'View and generate billing reports.' },
     { icon: FilePlus, text: 'Create ARD', href: '#', description: 'Create Abstract of Rate Document.' },
   ];
 
-  if (isLoading) {
+  if (isLoading || isAuthLoading) {
       return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-1/2 mb-6" />
@@ -132,6 +140,23 @@ export default function ProjectDashboardPage() {
             </div>
         </div>
       )
+  }
+  
+  if(!can('View Module', 'Billing Recon')) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+             <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Link href="/billing-recon"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">{projectName}</h1>
+                </div>
+            </div>
+            <Card>
+                <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this project dashboard.</CardDescription></CardHeader>
+                <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+            </Card>
+        </div>
+    )
   }
 
   return (

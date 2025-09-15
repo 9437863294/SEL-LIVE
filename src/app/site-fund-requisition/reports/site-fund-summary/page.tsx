@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Home, Loader2 } from 'lucide-react';
+import { ArrowLeft, Home, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -32,6 +33,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { calculateDeadline, getAssigneeForStep } from '@/lib/workflow-utils';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 interface SummaryStats {
@@ -54,6 +56,7 @@ interface StepWiseReportData {
 }
 
 export default function SiteFundSummaryPage() {
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [allRequisitions, setAllRequisitions] = useState<Requisition[]>([]);
@@ -68,38 +71,46 @@ export default function SiteFundSummaryPage() {
       project: 'all',
       applicant: 'all',
   });
+  
+  const canViewPage = can('View Summary', 'Site Fund Requisition');
 
   useEffect(() => {
-    const fetchSummaryData = async () => {
-        setIsLoading(true);
-        try {
-            const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-                getDocs(collection(db, 'requisitions')),
-                getDocs(collection(db, 'projects')),
-                getDocs(collection(db, 'users')),
-                getDoc(doc(db, 'workflows', 'site-fund-requisition'))
-            ]);
-            
-            const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
-            setAllRequisitions(requisitionsData);
-            setFilteredRequisitions(requisitionsData);
+    if (!isAuthLoading) {
+      if(canViewPage) {
+          fetchSummaryData();
+      } else {
+          setIsLoading(false);
+      }
+    }
+  }, [isAuthLoading, canViewPage]);
 
-            setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-            setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-            
-            if(workflowDoc.exists()) {
-              setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
-            }
+  const fetchSummaryData = async () => {
+      setIsLoading(true);
+      try {
+          const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
+              getDocs(collection(db, 'requisitions')),
+              getDocs(collection(db, 'projects')),
+              getDocs(collection(db, 'users')),
+              getDoc(doc(db, 'workflows', 'site-fund-requisition'))
+          ]);
+          
+          const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
+          setAllRequisitions(requisitionsData);
+          setFilteredRequisitions(requisitionsData);
 
-        } catch (error) {
-            console.error("Error fetching summary data: ", error);
-            // Handle error, e.g., show a toast notification
-        }
-        setIsLoading(false);
-    };
-    
-    fetchSummaryData();
-  }, []);
+          setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+          setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+          
+          if(workflowDoc.exists()) {
+            setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
+          }
+
+      } catch (error) {
+          console.error("Error fetching summary data: ", error);
+          // Handle error, e.g., show a toast notification
+      }
+      setIsLoading(false);
+  };
   
    useEffect(() => {
         let items = allRequisitions;
@@ -270,6 +281,47 @@ export default function SiteFundSummaryPage() {
       { title: 'Balance', value: formatCurrency(summaryStats?.balance || 0) },
       { title: 'Approved', value: formatCurrency(summaryStats?.approved || 0) },
   ];
+  
+  if (isAuthLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="flex flex-col w-full pr-14">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-24 w-full mb-6" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+                {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            </div>
+            <Skeleton className="h-6 w-48 mb-6" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+            </div>
+        </div>
+    )
+  }
+
+  if(!canViewPage) {
+    return (
+        <div className="flex flex-col w-full pr-14">
+            <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <Link href="/site-fund-requisition/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">Site Fund Summary</h1>
+                </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    )
+  }
+
 
   return (
     <div className="flex flex-col w-full pr-14">

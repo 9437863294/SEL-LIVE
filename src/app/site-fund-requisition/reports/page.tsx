@@ -1,12 +1,15 @@
 
+
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, BarChart3, PieChart } from 'lucide-react';
+import { ArrowLeft, BarChart3, PieChart, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ReportCardProps {
   item: {
@@ -14,21 +17,24 @@ interface ReportCardProps {
     title: string;
     description: string;
     href: string;
+    disabled?: boolean;
   };
 }
 
-const reportItems = [
+const reportItemsBase = [
   { 
     icon: BarChart3, 
     title: 'Site Fund Summary', 
     description: 'View a summary of all requisitions, including totals and step-wise reports.', 
-    href: '/site-fund-requisition/reports/site-fund-summary' 
+    href: '/site-fund-requisition/reports/site-fund-summary',
+    permission: 'View Summary',
   },
   { 
     icon: PieChart, 
     title: 'Planned vs Actual', 
     description: 'Compare planned requisition amounts against actual approved amounts.',
-    href: '#' 
+    href: '#',
+    permission: 'View Planned vs Actual',
   },
 ];
 
@@ -37,7 +43,7 @@ function ReportCard({ item }: ReportCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="items-center text-center">
@@ -52,7 +58,7 @@ function ReportCard({ item }: ReportCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -64,6 +70,46 @@ function ReportCard({ item }: ReportCardProps) {
 }
 
 export default function ReportsPage() {
+    const { can, isLoading } = useAuthorization();
+    const canViewPage = can('View Module', 'Site Fund Requisition'); // Assuming reports fall under the main module view
+
+    const reportItems = reportItemsBase.map(item => ({
+        ...item,
+        disabled: !can(item.permission, 'Site Fund Requisition'),
+    }));
+    
+    if (isLoading) {
+        return (
+             <div className="w-full max-w-lg pr-4">
+                <Skeleton className="h-10 w-48 mb-6" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <Skeleton className="h-56" />
+                    <Skeleton className="h-56" />
+                </div>
+            </div>
+        )
+    }
+
+    if (!canViewPage) {
+        return (
+            <div className="w-full max-w-lg pr-4">
+                <div className="mb-6 flex items-center gap-4">
+                    <Link href="/site-fund-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">Reports</h1>
+                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Access Denied</CardTitle>
+                        <CardDescription>You do not have permission to view reports.</CardDescription>
+                    </CardHeader>
+                     <CardContent className="flex justify-center p-8">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
   return (
     <div className="w-full max-w-lg pr-4">
       <div className="mb-6 flex items-center gap-4">

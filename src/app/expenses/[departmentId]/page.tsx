@@ -5,14 +5,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project, UserSettings } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 const baseTableHeaders = [
@@ -55,7 +56,8 @@ const baseTableHeaders = [
 export default function DepartmentExpensesPage() {
   const params = useParams();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: isAuthLoading } = useAuth();
+  const { can } = useAuthorization();
   const departmentId = params.departmentId as string;
   const settingsKey = `expenses_${departmentId}`;
   
@@ -72,9 +74,13 @@ export default function DepartmentExpensesPage() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
   );
+  
+  const canViewPage = can('View All', 'Expenses.Expense Requests');
+  const canCreate = can('Create', 'Expenses.Expense Requests');
+
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isAuthLoading) return;
     const fetchSettings = async () => {
       const settingsRef = doc(db, 'userSettings', user.id);
       const settingsSnap = await getDoc(settingsRef);
@@ -97,7 +103,7 @@ export default function DepartmentExpensesPage() {
       }
     };
     fetchSettings();
-  }, [user, settingsKey]);
+  }, [user, settingsKey, isAuthLoading]);
 
   const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
     if (!user) return;
@@ -132,7 +138,12 @@ export default function DepartmentExpensesPage() {
   
 
   useEffect(() => {
-    if (!departmentId) return;
+    if (!departmentId || isAuthLoading) return;
+    
+    if(!canViewPage) {
+        setIsLoading(false);
+        return;
+    }
 
     const fetchData = async () => {
       setIsLoading(true);
@@ -177,7 +188,7 @@ export default function DepartmentExpensesPage() {
     };
 
     fetchData();
-  }, [departmentId, toast]);
+  }, [departmentId, toast, isAuthLoading, canViewPage]);
   
   const getProjectName = (projectId: string) => {
     return projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
@@ -237,7 +248,7 @@ export default function DepartmentExpensesPage() {
     }
   };
 
-  if (isLoading && !department) {
+  if (isLoading || isAuthLoading) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
@@ -254,6 +265,21 @@ export default function DepartmentExpensesPage() {
         </Card>
       </div>
     );
+  }
+
+  if(!canViewPage) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+            <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">Department Expenses</h1>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -329,12 +355,14 @@ export default function DepartmentExpensesPage() {
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
-                <Link href={`/expenses/new-request?departmentId=${departmentId}`}>
-                    <Button>
-                        <Plus className="mr-2 h-4 w-4"/>
-                        New Expense Request
-                    </Button>
-                </Link>
+                {canCreate && (
+                    <Link href={`/expenses/new-request?departmentId=${departmentId}`}>
+                        <Button>
+                            <Plus className="mr-2 h-4 w-4"/>
+                            New Expense Request
+                        </Button>
+                    </Link>
+                )}
             </div>
         </div>
       

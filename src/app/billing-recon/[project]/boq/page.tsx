@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -7,12 +8,15 @@ import {
   UploadCloud,
   Eye,
   PlusSquare,
+  ShieldAlert,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface BoqCardProps {
   item: {
@@ -20,6 +24,7 @@ interface BoqCardProps {
     text: string;
     href: string;
     description: string;
+    disabled?: boolean;
   };
 }
 
@@ -28,7 +33,7 @@ function BoqCard({ item }: BoqCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
@@ -43,7 +48,7 @@ function BoqCard({ item }: BoqCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -58,12 +63,44 @@ function BoqCard({ item }: BoqCardProps) {
 export default function BoqPage() {
   const params = useParams();
   const projectSlug = params.project as string;
+  const { can, isLoading } = useAuthorization();
   
   const boqItems = [
-    { icon: UploadCloud, text: 'Import BOQ', href: `/billing-recon/${projectSlug}/boq/import`, description: 'Upload and process a new BOQ file.' },
-    { icon: Eye, text: 'View BOQ', href: `/billing-recon/${projectSlug}/boq/view`, description: 'See the details of existing BOQs.' },
-    { icon: PlusSquare, text: 'Add BOQ Items', href: `/billing-recon/${projectSlug}/boq/add`, description: 'Manually add items to a BOQ.' },
+    { icon: UploadCloud, text: 'Import BOQ', href: `/billing-recon/${projectSlug}/boq/import`, description: 'Upload and process a new BOQ file.', disabled: !can('Import', 'Billing Recon.BOQ') },
+    { icon: Eye, text: 'View BOQ', href: `/billing-recon/${projectSlug}/boq/view`, description: 'See the details of existing BOQs.', disabled: !can('View', 'Billing Recon.BOQ') },
+    { icon: PlusSquare, text: 'Add BOQ Items', href: `/billing-recon/${projectSlug}/boq/add`, description: 'Manually add items to a BOQ.', disabled: !can('Add Manual', 'Billing Recon.BOQ') },
   ];
+  
+  const canViewModule = can('View', 'Billing Recon.BOQ');
+
+  if(isLoading) {
+    return (
+       <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-64 mb-6" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <Skeleton className="h-28" />
+                <Skeleton className="h-28" />
+                <Skeleton className="h-28" />
+            </div>
+       </div>
+    )
+  }
+  
+  if(!canViewModule) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+            <Link href={`/billing-recon/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">BOQ Management</h1>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access BOQ management.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+        </Card>
+      </div>
+    );
+  }
+
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">

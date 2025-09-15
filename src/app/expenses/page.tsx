@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -6,8 +7,9 @@ import {
   Home,
   Building2,
   Receipt,
+  ShieldAlert,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +18,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 interface ExpensesCardProps {
   item: {
@@ -62,8 +65,16 @@ function ExpensesCard({ item }: ExpensesCardProps) {
 export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const canViewModule = can('View Module', 'Expenses');
 
   useEffect(() => {
+    if (isAuthLoading) return;
+    if (!canViewModule) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchDepartments = async () => {
         setIsLoading(true);
         try {
@@ -77,7 +88,7 @@ export default function ExpensesPage() {
         setIsLoading(false);
     };
     fetchDepartments();
-  }, []);
+  }, [isAuthLoading, canViewModule]);
 
   const departmentItems = departments.map(dept => ({
       icon: Building2,
@@ -86,14 +97,46 @@ export default function ExpensesPage() {
       description: `Manage expenses for the ${dept.name} department.`
   }));
 
+  const canViewSettings = can('View', 'Expenses.Settings');
   const settingsItem = { 
       icon: Receipt, 
       text: 'Settings', 
-      href: '/settings/expenses', 
+      href: canViewSettings ? '/settings/expenses' : '#',
       description: 'Configure settings for the expenses module.' 
   };
   
   const allItems = [...departmentItems, settingsItem];
+
+  if (isAuthLoading || (isLoading && canViewModule)) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <Skeleton className="h-10 w-64 mb-6" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!canViewModule) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Expenses Management</h1>
+            </div>
+             <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to access this module.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -106,9 +149,7 @@ export default function ExpensesPage() {
         <h1 className="text-2xl font-bold">Expenses Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
-        ) : allItems.length > 1 ? (
+        {allItems.length > 1 ? (
             allItems.map((item) => (
               <ExpensesCard key={item.text} item={item} />
             ))

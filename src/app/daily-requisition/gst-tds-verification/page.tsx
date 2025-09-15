@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, MoreHorizontal, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Search, MoreHorizontal, RotateCcw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -17,6 +18,7 @@ import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
 import { GstTdsVerificationDialog } from '@/components/GstTdsVerificationDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 interface EnrichedEntry extends DailyRequisitionEntry {
@@ -27,12 +29,19 @@ interface EnrichedEntry extends DailyRequisitionEntry {
 
 export default function GstTdsVerificationPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<EnrichedEntry | null>(null);
+
+  const canViewPage = can('View', 'Daily Requisition.GST & TDS Verification');
+  const canVerify = can('Verify', 'Daily Requisition.GST & TDS Verification');
+  const canReverify = can('Re-verify', 'Daily Requisition.GST & TDS Verification');
+  const canReturnToPending = can('Return to Pending', 'Daily Requisition.GST & TDS Verification');
 
 
   const fetchData = async () => {
@@ -84,8 +93,14 @@ export default function GstTdsVerificationPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if(!isAuthLoading) {
+        if(canViewPage) {
+            fetchData();
+        } else {
+            setIsLoading(false);
+        }
+    }
+  }, [isAuthLoading, canViewPage]);
 
   const handleOpenVerifyDialog = (entry: EnrichedEntry) => {
     setSelectedEntry(entry);
@@ -165,7 +180,7 @@ export default function GstTdsVerificationPage() {
                     <TableCell className="text-right">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.netAmount)}</TableCell>
                     <TableCell className="text-right">
                       {type === 'pending' ? (
-                          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)}>Verify</Button>
+                          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>Verify</Button>
                       ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -174,13 +189,17 @@ export default function GstTdsVerificationPage() {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => handleOpenVerifyDialog(entry)}>
-                                    {type === 'verified' ? 'Re-verify' : 'Review & Verify'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handleReturnToPending(entry)} className="text-destructive">
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                    Return to Pending
-                                </DropdownMenuItem>
+                                {canReverify && (
+                                    <DropdownMenuItem onSelect={() => handleOpenVerifyDialog(entry)}>
+                                        {type === 'verified' ? 'Re-verify' : 'Review & Verify'}
+                                    </DropdownMenuItem>
+                                )}
+                                {canReturnToPending && (
+                                    <DropdownMenuItem onSelect={() => handleReturnToPending(entry)} className="text-destructive">
+                                        <RotateCcw className="mr-2 h-4 w-4" />
+                                        Return to Pending
+                                    </DropdownMenuItem>
+                                )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                       )}
@@ -200,6 +219,30 @@ export default function GstTdsVerificationPage() {
   const pendingEntries = useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
   const verifiedEntries = useMemo(() => entries.filter(e => e.status === 'Verified'), [entries]);
   const needsReviewEntries = useMemo(() => entries.filter(e => e.status === 'Needs Review'), [entries]);
+
+  if(isAuthLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    )
+  }
+
+  if (!canViewPage) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+            <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">GST & TDS Verification</h1>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+        </Card>
+      </div>
+    );
+  }
 
 
   return (

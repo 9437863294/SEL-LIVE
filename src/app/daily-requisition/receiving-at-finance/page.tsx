@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, MoreHorizontal, RotateCcw, XCircle } from 'lucide-react';
+import { ArrowLeft, Search, MoreHorizontal, RotateCcw, XCircle, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -19,6 +20,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 interface EnrichedEntry extends DailyRequisitionEntry {
   projectName: string;
@@ -28,11 +30,18 @@ interface EnrichedEntry extends DailyRequisitionEntry {
 export default function ReceivingAtFinancePage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  const canViewPage = can('View', 'Daily Requisition.Receiving at Finance');
+  const canMarkAsReceived = can('Mark as Received', 'Daily Requisition.Receiving at Finance');
+  const canReturnToPending = can('Return to Pending', 'Daily Requisition.Receiving at Finance');
+  const canCancel = can('Cancel', 'Daily Requisition.Receiving at Finance');
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -69,8 +78,12 @@ export default function ReceivingAtFinancePage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!isAuthLoading && canViewPage) {
+        fetchData();
+    } else if (!isAuthLoading && !canViewPage) {
+        setIsLoading(false);
+    }
+  }, [isAuthLoading, canViewPage]);
 
   const handleStatusUpdate = async (ids: string[], newStatus: 'Pending' | 'Received' | 'Cancelled') => {
       if (ids.length === 0) return;
@@ -135,7 +148,7 @@ export default function ReceivingAtFinancePage() {
               />
             </div>
             {type === 'pending' && (
-                <Button onClick={() => handleStatusUpdate(Array.from(selectedIds), 'Received')} disabled={selectedIds.size === 0}>
+                <Button onClick={() => handleStatusUpdate(Array.from(selectedIds), 'Received')} disabled={selectedIds.size === 0 || !canMarkAsReceived}>
                     Mark as Received
                 </Button>
             )}
@@ -143,7 +156,7 @@ export default function ReceivingAtFinancePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                {type === 'pending' && <TableHead className="w-[50px]"><Checkbox checked={selectedIds.size === filteredData.length && filteredData.length > 0} onCheckedChange={handleSelectAll} /></TableHead>}
+                {type === 'pending' && <TableHead className="w-[50px]"><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.size === filteredData.length && filteredData.length > 0} onCheckedChange={handleSelectAll} /></TableHead>}
                 <TableHead>Reception No.</TableHead>
                 {type === 'pending' ? <TableHead>Date</TableHead> : <TableHead>Received At</TableHead>}
                 {type !== 'pending' && <TableHead>Received By</TableHead>}
@@ -161,7 +174,7 @@ export default function ReceivingAtFinancePage() {
               ) : filteredData.length > 0 ? (
                 filteredData.map(entry => (
                   <TableRow key={entry.id}>
-                    {type === 'pending' && <TableCell><Checkbox checked={selectedIds.has(entry.id)} onCheckedChange={(checked) => { const newIds = new Set(selectedIds); if (checked) newIds.add(entry.id); else newIds.delete(entry.id); setSelectedIds(newIds); }} /></TableCell>}
+                    {type === 'pending' && <TableCell><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.has(entry.id)} onCheckedChange={(checked) => { const newIds = new Set(selectedIds); if (checked) newIds.add(entry.id); else newIds.delete(entry.id); setSelectedIds(newIds); }} /></TableCell>}
                     <TableCell>{entry.receptionNo}</TableCell>
                     <TableCell>{type === 'pending' ? entry.date : entry.receivedAt}</TableCell>
                     {type !== 'pending' && <TableCell>{entry.receivedBy || 'N/A'}</TableCell>}
@@ -176,10 +189,12 @@ export default function ReceivingAtFinancePage() {
                                     <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={() => handleStatusUpdate([entry.id], 'Pending')}>
-                                        <RotateCcw className="mr-2 h-4 w-4" /> Return
-                                    </DropdownMenuItem>
-                                    {type === 'received' && (
+                                    {canReturnToPending && (
+                                        <DropdownMenuItem onSelect={() => handleStatusUpdate([entry.id], 'Pending')}>
+                                            <RotateCcw className="mr-2 h-4 w-4" /> Return
+                                        </DropdownMenuItem>
+                                    )}
+                                    {type === 'received' && canCancel && (
                                       <AlertDialogTrigger asChild>
                                           <DropdownMenuItem className="text-destructive">
                                               <XCircle className="mr-2 h-4 w-4" /> Cancel
@@ -216,6 +231,30 @@ export default function ReceivingAtFinancePage() {
   const pendingEntries = useMemo(() => entries.filter(e => e.status !== 'Received' && e.status !== 'Cancelled'), [entries]);
   const receivedEntries = useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
   const cancelledEntries = useMemo(() => entries.filter(e => e.status === 'Cancelled'), [entries]);
+
+  if (isAuthLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    )
+  }
+
+  if (!canViewPage) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+            <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">Receiving at Finance</h1>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
