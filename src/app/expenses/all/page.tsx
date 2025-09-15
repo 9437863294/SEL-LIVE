@@ -329,14 +329,6 @@ export default function AllExpensesPage() {
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
-                {canCreate && (
-                    <Link href={`/expenses/new-request`}>
-                        <Button>
-                            <Plus className="mr-2 h-4 w-4"/>
-                            New Expense Request
-                        </Button>
-                    </Link>
-                )}
             </div>
         </div>
       
