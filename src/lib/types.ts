@@ -1,14 +1,5 @@
 
 
-
-
-
-
-
-
-
-
-
 export type Email = {
   id: string;
   sender: string;
@@ -107,7 +98,8 @@ export const permissionModules = {
   },
   'Expenses': {
     'View Module': [],
-    'Expense Requests': ['Create', 'View All'],
+    'Departments': ['View', 'Create', 'Edit'],
+    'View All': [], // Can view all departments' expenses
     'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
   },
   'Settings': {

@@ -5,32 +5,34 @@ import { useCallback } from 'react';
 export const useAuthorization = () => {
   const { permissions, loading } = useAuth();
 
-  const can = useCallback((action: string, module: string): boolean => {
+  const can = useCallback((action: string, module: string, scope?: string): boolean => {
     if (loading) {
-      return false; // Don't grant permission while permissions are loading
+      return false; 
     }
 
-    const moduleKeyParts = module.split('.');
-    let modulePermissions: string[] | undefined;
+    // Module.SubModule.Scope -> e.g. Expenses.Departments.dept_id_123
+    const scopedPermissionKey = scope ? `${module}.${scope}` : module;
 
-    if (moduleKeyParts.length > 1) {
-        // Handle nested modules like 'Daily Requisition.Entry Sheet'
-        const mainModule = moduleKeyParts[0];
-        const subModule = moduleKeyParts.slice(1).join('.');
-        
-        // This is a simplification. The permissions object keys are 'Module.SubModule'
-        const fullKey = `${mainModule}.${subModule}`;
-        modulePermissions = permissions[fullKey];
-
-    } else {
-       modulePermissions = permissions[module];
+    // Check for scoped permission first
+    if (scope && permissions[scopedPermissionKey]?.includes(action)) {
+      return true;
     }
     
-    if (!modulePermissions) {
-      return false;
+    // Fallback to general module permission
+    const modulePermissions = permissions[module];
+    if (modulePermissions?.includes(action)) {
+      return true;
     }
 
-    return modulePermissions.includes(action);
+    // Special check for 'View All' which grants 'View' on all scopes within that module
+    if (action === 'View' && scope) {
+      const viewAllModule = module.split('.')[0]; // e.g., 'Expenses' from 'Expenses.Departments'
+      if (permissions[viewAllModule]?.includes('View All')) {
+        return true;
+      }
+    }
+    
+    return false;
   }, [permissions, loading]);
 
   return { can, isLoading: loading };

@@ -74,8 +74,8 @@ export default function DepartmentExpensesPage() {
     baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
   );
   
-  const canViewPage = can('View All', 'Expenses.Expense Requests');
-  const canCreate = can('Create', 'Expenses.Expense Requests');
+  const canViewPage = can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses');
+  const canCreate = can('Create', 'Expenses.Departments', departmentId);
 
 
   useEffect(() => {

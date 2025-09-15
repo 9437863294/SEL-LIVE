@@ -15,7 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Department } from '@/lib/types';
@@ -92,12 +92,16 @@ export default function ExpensesPage() {
     fetchDepartments();
   }, [isAuthLoading, canViewModule]);
 
-  const departmentItems = departments.map(dept => ({
-      icon: Building2,
-      text: dept.name,
-      href: `/expenses/${dept.id}`,
-      description: `Manage expenses for the ${dept.name} department.`
-  }));
+  const departmentItems = useMemo(() => {
+    return departments
+      .filter(dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses'))
+      .map(dept => ({
+        icon: Building2,
+        text: dept.name,
+        href: `/expenses/${dept.id}`,
+        description: `Manage expenses for the ${dept.name} department.`
+    }));
+  }, [departments, can]);
 
   if (isAuthLoading || (isLoading && canViewModule)) {
     return (
@@ -147,11 +151,8 @@ export default function ExpensesPage() {
             ))
         ) : (
             <div className="col-span-full text-center py-10">
-                <p className="text-muted-foreground">No active departments found.</p>
-                <p className="text-sm text-muted-foreground">You can add departments in the settings.</p>
-                <Link href="/settings/department" className="mt-4 inline-block">
-                    <Button>Go to Department Settings</Button>
-                </Link>
+                <p className="text-muted-foreground">You do not have permission to view any active departments.</p>
+                <p className="text-sm text-muted-foreground">Please contact an administrator if you believe this is an error.</p>
             </div>
         )}
       </div>
