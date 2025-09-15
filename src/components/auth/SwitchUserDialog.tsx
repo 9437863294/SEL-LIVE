@@ -21,7 +21,7 @@ import type { User } from '@/lib/types';
 import { Loader2, Search } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { useAuth } from './AuthProvider';
 
 interface SwitchUserDialogProps {
@@ -31,7 +31,7 @@ interface SwitchUserDialogProps {
 
 export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps) {
   const { toast } = useToast();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshUserData } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -55,47 +55,47 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
       fetchUsers();
     }
   }, [isOpen, toast]);
+  
+  const resetDialog = () => {
+    setSearchTerm('');
+    setPassword('');
+    setSelectedUser(null);
+  };
 
   const handleSwitchUser = async () => {
-    if (!selectedUser || !password) {
-        toast({ title: "Error", description: "Please enter the password for the selected user.", variant: "destructive" });
+    if (!selectedUser || !password || !currentUser || !currentUser.email) {
+        toast({ title: "Error", description: "An unexpected error occurred. Please try again.", variant: "destructive" });
         return;
     }
     setIsSwitching(true);
-
-    const originalUserEmail = currentUser?.email;
     
     try {
-        // Sign out the current user first
-        await signOut(auth);
-
-        // Sign in as the new user
-        await signInWithEmailAndPassword(auth, selectedUser.email, password);
+        // Re-authenticate the admin user with their own password
+        const credential = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(auth.currentUser!, credential);
+        
+        // If re-authentication is successful, start the impersonation session
+        sessionStorage.setItem('impersonationUserId', selectedUser.id);
+        sessionStorage.setItem('originalAdminUser', JSON.stringify(currentUser));
         
         toast({
             title: "Switched User",
-            description: `Successfully signed in as ${selectedUser.name}.`,
+            description: `You are now viewing the application as ${selectedUser.name}.`,
         });
-
+        
         onOpenChange(false);
-        setPassword('');
-        setSelectedUser(null);
-        // The AuthProvider will handle refreshing user data and page reload
+        resetDialog();
+        refreshUserData(); // Trigger the provider to update context based on session storage
         
     } catch (error: any) {
         console.error("Error switching user:", error);
         toast({
             title: "Switch Failed",
-            description: "Could not sign in as the selected user. Check the password and try again.",
+            description: error.code === 'auth/wrong-password' 
+                ? 'Your admin password was incorrect.' 
+                : 'Could not switch user.',
             variant: "destructive",
         });
-        
-        // Attempt to sign back in as the original user
-        if (originalUserEmail) {
-            // This is tricky without the original user's password.
-            // For now, we'll just log the error and prompt them to re-login manually.
-            console.error("Failed to automatically log back in as original user. Manual login required.");
-        }
     } finally {
         setIsSwitching(false);
     }
@@ -112,12 +112,15 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
   );
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+        if(!open) resetDialog();
+        onOpenChange(open);
+    }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Switch User</DialogTitle>
           <DialogDescription>
-            Select a user to sign in as. You will need their password.
+            Select a user to impersonate. You will need to enter your own password to confirm.
           </DialogDescription>
         </DialogHeader>
         <div className="relative mt-4">
@@ -153,13 +156,13 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         </ScrollArea>
         {selectedUser && (
             <div className="mt-4 space-y-2">
-                <Label htmlFor="password">Password for {selectedUser.name}</Label>
+                <Label htmlFor="password">Enter your admin password to confirm</Label>
                 <Input
                     id="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password..."
+                    placeholder="Enter your password..."
                 />
             </div>
         )}
@@ -169,7 +172,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
           </DialogClose>
           <Button type="button" onClick={handleSwitchUser} disabled={!selectedUser || !password || isSwitching}>
             {isSwitching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Switch
+            Switch to {selectedUser?.name || 'User'}
           </Button>
         </DialogFooter>
       </DialogContent>

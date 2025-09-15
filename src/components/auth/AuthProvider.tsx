@@ -15,6 +15,8 @@ interface AuthContextType {
   permissions: Record<string, string[]>;
   loading: boolean;
   refreshUserData: () => Promise<void>;
+  isImpersonating: boolean;
+  originalUser: User | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -22,52 +24,96 @@ const AuthContext = createContext<AuthContextType>({
   permissions: {},
   loading: true,
   refreshUserData: async () => {},
+  isImpersonating: false,
+  originalUser: null,
 });
 
 const publicRoutes = ['/login'];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [originalUser, setOriginalUser] = useState<User | null>(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
   const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null) => {
-    if (firebaseUser) {
-      const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      
-      if (userDocSnap.exists()) {
-        const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
-        setUser(userData);
+    if (!firebaseUser) {
+        setUser(null);
+        setPermissions({});
+        setOriginalUser(null);
+        setIsImpersonating(false);
+        sessionStorage.removeItem('impersonationUserId');
+        sessionStorage.removeItem('originalAdminUser');
+        setLoading(false);
+        return;
+    }
 
-        if (userData.role) {
-            const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
-            const roleSnap = await getDocs(rolesQuery);
-            if (!roleSnap.empty) {
-                const roleData = roleSnap.docs[0].data() as Role;
-                setPermissions(roleData.permissions || {});
+    try {
+        const impersonationUserId = sessionStorage.getItem('impersonationUserId');
+        const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
+
+        let userToLoadId = firebaseUser.uid;
+        let isImpersonationSession = false;
+
+        // Check for an active impersonation session
+        if (impersonationUserId && storedOriginalUser) {
+            const originalAdminData = JSON.parse(storedOriginalUser) as User;
+            // Ensure the currently logged-in Firebase user is the original admin
+            if (firebaseUser.uid === originalAdminData.id) {
+                userToLoadId = impersonationUserId;
+                setOriginalUser(originalAdminData);
+                isImpersonationSession = true;
             } else {
-                 console.warn(`Role '${userData.role}' not found for user ${userData.email}.`);
+                 // Mismatch, clear session and load the actual user
+                sessionStorage.removeItem('impersonationUserId');
+                sessionStorage.removeItem('originalAdminUser');
+            }
+        }
+        
+        setIsImpersonating(isImpersonationSession);
+
+        const userDocRef = doc(db, 'users', userToLoadId);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+            const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
+            setUser(userData);
+
+            // Fetch permissions for the loaded user (original or impersonated)
+            if (userData.role) {
+                const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
+                const roleSnap = await getDocs(rolesQuery);
+                if (!roleSnap.empty) {
+                    const roleData = roleSnap.docs[0].data() as Role;
+                    setPermissions(roleData.permissions || {});
+                } else {
+                    console.warn(`Role '${userData.role}' not found.`);
+                    setPermissions({});
+                }
+            } else {
+                 console.warn(`User has no role assigned.`);
                  setPermissions({});
             }
         } else {
-            console.warn(`User ${userData.email} has no role assigned.`);
+            // If the user doc doesn't exist, sign out to prevent being stuck.
+            console.error("User document not found in Firestore for UID:", userToLoadId);
+            setUser(null);
             setPermissions({});
+            await auth.signOut();
         }
 
-      } else {
-        console.error("User document not found in Firestore for UID:", firebaseUser.uid);
+    } catch (error) {
+        console.error("Error during user data fetch:", error);
         setUser(null);
         setPermissions({});
-      }
-    } else {
-      setUser(null);
-      setPermissions({});
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
-  }, []);
+}, []);
+
 
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -82,8 +128,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         fetchUserData(firebaseUser);
     });
-    return () => unsubscribe();
-  }, [fetchUserData]);
+
+    // Listen for storage changes to sync impersonation state across tabs
+    const handleStorageChange = (event: StorageEvent) => {
+        if (event.key === 'impersonationUserId' || event.key === 'originalAdminUser') {
+            refreshUserData();
+        }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+        unsubscribe();
+        window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [fetchUserData, refreshUserData]);
 
   useEffect(() => {
     if (loading) return;
@@ -109,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Render children only if the route is public, or if loading is finished for a private route
   if (isPublicRoute || !loading) {
      return (
-        <AuthContext.Provider value={{ user, permissions, loading, refreshUserData }}>
+        <AuthContext.Provider value={{ user, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
             {children}
         </AuthContext.Provider>
     );

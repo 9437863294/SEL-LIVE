@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -29,11 +29,33 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { SwitchUserDialog } from './auth/SwitchUserDialog';
 
 
+function ImpersonationBanner() {
+    const { user, originalUser, refreshUserData } = useAuth();
+
+    const handleSwitchBack = () => {
+        sessionStorage.removeItem('impersonationUserId');
+        sessionStorage.removeItem('originalAdminUser');
+        refreshUserData(); // This will trigger a re-render and state update
+    };
+
+    if (!originalUser) return null;
+
+    return (
+        <div className="bg-yellow-500 text-yellow-900 text-center py-2 px-4 text-sm font-semibold">
+            You are currently viewing as {user?.name}. 
+            <Button variant="link" className="text-yellow-900 h-auto p-0 ml-2 underline" onClick={handleSwitchBack}>
+                Switch back to {originalUser.name}
+            </Button>
+        </div>
+    );
+}
+
+
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, isImpersonating } = useAuth();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isSwitchUserOpen, setIsSwitchUserOpen] = useState(false);
   const { can } = useAuthorization();
@@ -48,7 +70,10 @@ export default function Header() {
   const canSwitchUser = can('Switch User', 'Settings.User Management');
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isImpersonating) { // Don't show pending tasks for impersonated user
+        setPendingTasks([]);
+        return;
+    }
 
     const q = query(
       collection(db, 'requisitions'),
@@ -78,7 +103,7 @@ export default function Header() {
     fetchSupportingData();
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isImpersonating]);
   
   const handleViewTask = (task: Requisition) => {
     setSelectedRequisition(task);
@@ -93,6 +118,7 @@ export default function Header() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+      sessionStorage.clear(); // Clear impersonation session on sign out
       toast({
         title: 'Signed Out',
         description: 'You have been successfully signed out.',
@@ -128,6 +154,7 @@ export default function Header() {
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <ImpersonationBanner />
         <div className="flex h-16 items-center px-4 md:px-6">
           <div className="flex items-center gap-4">
               <Link href="/">
@@ -175,9 +202,9 @@ export default function Header() {
                       <Lock className="mr-2 h-4 w-4" />
                       <span>Change Password</span>
                     </DropdownMenuItem>
-                     {canSwitchUser && (
+                     {canSwitchUser && !isImpersonating && (
                         <DropdownMenuItem onSelect={() => setIsSwitchUserOpen(true)}>
-                            <Users className="mr-2 h-4 w-4" />
+                            <LogIn className="mr-2 h-4 w-4" />
                             <span>Switch User</span>
                         </DropdownMenuItem>
                     )}
