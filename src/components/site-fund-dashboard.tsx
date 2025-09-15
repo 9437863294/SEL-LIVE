@@ -15,7 +15,7 @@ const stats = [
 
 export function SiteFundDashboard() {
   return (
-    <div className="flex flex-col w-full h-full pr-14">
+    <div className="flex flex-col w-full h-[calc(100vh-8rem)] pr-14">
       <Tabs defaultValue="all-requisitions" className="flex flex-col h-full">
         <div className="flex-shrink-0">
             <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
@@ -26,8 +26,8 @@ export function SiteFundDashboard() {
             </TabsList>
         </div>
         <div className="flex-grow overflow-auto">
-            <div className="pt-6">
-                <TabsContent value="dashboard">
+            <div className="pt-6 h-full">
+                <TabsContent value="dashboard" className="h-full">
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                         {stats.map((stat, index) => (
                             <Card key={index}>
@@ -42,13 +42,13 @@ export function SiteFundDashboard() {
                         ))}
                     </div>
                 </TabsContent>
-                <TabsContent value="all-requisitions">
+                <TabsContent value="all-requisitions" className="h-full">
                    <AllRequisitionsTab />
                 </TabsContent>
-                <TabsContent value="pending-tasks">
+                <TabsContent value="pending-tasks" className="h-full">
                     <MyPendingTasksTab />
                 </TabsContent>
-                <TabsContent value="history">
+                <TabsContent value="history" className="h-full">
                     <p className="text-muted-foreground">Your history will be shown here.</p>
                 </TabsContent>
             </div>
