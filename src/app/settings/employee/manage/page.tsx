@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -18,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const initialNewEmployeeState = {
   employeeId: '',
@@ -391,78 +393,80 @@ export default function ManageEmployeePage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">
-                   <Checkbox
-                        checked={selectedEmployeeIds.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
-                        onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                        aria-label="Select all"
-                        disabled={!canDelete}
-                    />
-                </TableHead>
-                <TableHead>Employee ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Designation</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 10 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-48" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-28" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                    <TableCell className="text-right space-x-2">
-                       <Skeleton className="h-8 w-16 inline-block" />
-                       <Skeleton className="h-8 w-16 inline-block" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : filteredEmployees.length > 0 ? (
-                filteredEmployees.map((emp) => (
-                  <TableRow key={emp.id} data-state={selectedEmployeeIds.includes(emp.id) && "selected"}>
-                    <TableCell>
-                      <Checkbox
-                          checked={selectedEmployeeIds.includes(emp.id)}
-                          onCheckedChange={(checked) => handleSelectEmployee(emp.id, !!checked)}
-                          aria-label={`Select employee ${emp.name}`}
+          <ScrollArea className="h-[calc(100vh-20rem)]">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="w-[50px]">
+                     <Checkbox
+                          checked={selectedEmployeeIds.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
+                          onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                          aria-label="Select all"
                           disabled={!canDelete}
                       />
-                    </TableCell>
-                    <TableCell className="font-medium">{emp.employeeId}</TableCell>
-                    <TableCell>{emp.name}</TableCell>
-                    <TableCell>{emp.email}</TableCell>
-                    <TableCell>{emp.phone}</TableCell>
-                    <TableCell>{emp.department || 'N/A'}</TableCell>
-                    <TableCell>{emp.designation || 'N/A'}</TableCell>
-                    <TableCell>{emp.status}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)} disabled={!canDelete}><Trash2 className="h-4 w-4" /></Button>
+                  </TableHead>
+                  <TableHead>Employee ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Designation</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 10 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell className="text-right space-x-2">
+                         <Skeleton className="h-8 w-16 inline-block" />
+                         <Skeleton className="h-8 w-16 inline-block" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredEmployees.length > 0 ? (
+                  filteredEmployees.map((emp) => (
+                    <TableRow key={emp.id} data-state={selectedEmployeeIds.includes(emp.id) && "selected"}>
+                      <TableCell>
+                        <Checkbox
+                            checked={selectedEmployeeIds.includes(emp.id)}
+                            onCheckedChange={(checked) => handleSelectEmployee(emp.id, !!checked)}
+                            aria-label={`Select employee ${emp.name}`}
+                            disabled={!canDelete}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">{emp.employeeId}</TableCell>
+                      <TableCell>{emp.name}</TableCell>
+                      <TableCell>{emp.email}</TableCell>
+                      <TableCell>{emp.phone}</TableCell>
+                      <TableCell>{emp.department || 'N/A'}</TableCell>
+                      <TableCell>{emp.designation || 'N/A'}</TableCell>
+                      <TableCell>{emp.status}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)} disabled={!canDelete}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center h-24">
+                      No employees found.
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center h-24">
-                    No employees found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         </CardContent>
       </Card>
 

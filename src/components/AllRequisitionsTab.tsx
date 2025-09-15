@@ -59,6 +59,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from './ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ScrollArea } from './ui/scroll-area';
 
 
 const formSchema = z.object({
@@ -674,69 +675,71 @@ export default function AllRequisitionsTab() {
                 </DialogContent>
             </Dialog>
         </div>
-      <div className="border rounded-lg overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead>Request ID</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Project</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Entered By</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Attachments</TableHead>
-              <TableHead className="text-center">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayedRequisitions.length > 0 ? (
-              displayedRequisitions.map((req) => (
-                <TableRow key={req.id}>
-                  <TableCell className="font-medium">{req.requisitionId}</TableCell>
-                  <TableCell>{format(new Date(req.date), 'dd MMM, yyyy')}</TableCell>
-                  <TableCell>{getProjectName(req.projectId)}</TableCell>
-                  <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
-                  <TableCell>{req.raisedBy}</TableCell>
-                  <TableCell>{req.description}</TableCell>
-                  <TableCell>{req.amount.toLocaleString()}</TableCell>
-                  <TableCell>{req.stage}</TableCell>
-                  <TableCell>{req.status}</TableCell>
-                  <TableCell>{req.attachments?.length || 0}</TableCell>
-                  <TableCell className="text-center">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Details
-                        </DropdownMenuItem>
-                        {req.stage === 'Request Receiving' && (
-                          <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
+        <div className="border rounded-lg">
+        <ScrollArea className="h-[calc(100vh-22rem)]">
+          <Table>
+            <TableHeader className="sticky top-0 bg-background z-10">
+              <TableRow className="bg-muted/50">
+                <TableHead>Request ID</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Entered By</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Stage</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Attachments</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayedRequisitions.length > 0 ? (
+                displayedRequisitions.map((req) => (
+                  <TableRow key={req.id}>
+                    <TableCell className="font-medium">{req.requisitionId}</TableCell>
+                    <TableCell>{format(new Date(req.date), 'dd MMM, yyyy')}</TableCell>
+                    <TableCell>{getProjectName(req.projectId)}</TableCell>
+                    <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
+                    <TableCell>{req.raisedBy}</TableCell>
+                    <TableCell>{req.description}</TableCell>
+                    <TableCell>{req.amount.toLocaleString()}</TableCell>
+                    <TableCell>{req.stage}</TableCell>
+                    <TableCell>{req.status}</TableCell>
+                    <TableCell>{req.attachments?.length || 0}</TableCell>
+                    <TableCell className="text-center">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            View Details
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          {req.stage === 'Request Receiving' && (
+                            <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center h-24">
+                    No requisitions found.
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={11} className="text-center h-24">
-                  No requisitions found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
+        </ScrollArea>
       </div>
       {selectedRequisition && (
         <ViewRequisitionDialog

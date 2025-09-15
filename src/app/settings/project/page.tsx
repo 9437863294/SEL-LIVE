@@ -40,6 +40,7 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const initialNewProjectState = {
   projectName: '',
@@ -308,64 +309,66 @@ export default function ManageProjectPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Sr. No.</TableHead>
-                <TableHead>Project Name</TableHead>
-                <TableHead>Site Code</TableHead>
-                <TableHead>Project Site</TableHead>
-                <TableHead>Project Division</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Site in-charge</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-5 w-10" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                    <TableCell className="text-right space-x-2">
-                       <Skeleton className="h-8 w-16 inline-block" />
-                       <Skeleton className="h-8 w-16 inline-block" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : projects.length > 0 ? (
-                projects.map((proj, index) => (
-                  <TableRow key={proj.id}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell className="font-medium">{proj.projectName}</TableCell>
-                    <TableCell>{proj.siteCode}</TableCell>
-                    <TableCell>{proj.projectSite}</TableCell>
-                    <TableCell>{proj.projectDivision}</TableCell>
-                    <TableCell>{proj.location}</TableCell>
-                    <TableCell>{proj.siteInCharge}</TableCell>
-                    <TableCell>{proj.status}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
+          <ScrollArea className="h-[calc(100vh-15rem)]">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center h-24">
-                    No projects found.
-                  </TableCell>
+                  <TableHead>Sr. No.</TableHead>
+                  <TableHead>Project Name</TableHead>
+                  <TableHead>Site Code</TableHead>
+                  <TableHead>Project Site</TableHead>
+                  <TableHead>Project Division</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Site in-charge</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-5 w-10" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell className="text-right space-x-2">
+                         <Skeleton className="h-8 w-16 inline-block" />
+                         <Skeleton className="h-8 w-16 inline-block" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : projects.length > 0 ? (
+                  projects.map((proj, index) => (
+                    <TableRow key={proj.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell className="font-medium">{proj.projectName}</TableCell>
+                      <TableCell>{proj.siteCode}</TableCell>
+                      <TableCell>{proj.projectSite}</TableCell>
+                      <TableCell>{proj.projectDivision}</TableCell>
+                      <TableCell>{proj.location}</TableCell>
+                      <TableCell>{proj.siteInCharge}</TableCell>
+                      <TableCell>{proj.status}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center h-24">
+                      No projects found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         </CardContent>
       </Card>
 
