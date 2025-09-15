@@ -20,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc, writeBatch } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
@@ -286,10 +286,30 @@ export default function EntrySheetPage() {
     }
   }
 
-  const handleDeleteEntry = async (entryId: string) => {
+  const handleDeleteEntry = async (entry: EnrichedDailyRequisitionEntry) => {
       try {
-          await deleteDoc(doc(db, 'dailyRequisitions', entryId));
-          toast({ title: 'Success', description: 'Entry deleted successfully.' });
+          const batch = writeBatch(db);
+
+          // Find and update the associated expense request
+          if (entry.depNo) {
+            const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entry.depNo));
+            const expenseSnap = await getDocs(expenseQuery);
+            if (!expenseSnap.empty) {
+                const expenseDocRef = expenseSnap.docs[0].ref;
+                batch.update(expenseDocRef, {
+                    receptionNo: '',
+                    receptionDate: ''
+                });
+            }
+          }
+
+          // Delete the daily requisition entry
+          const entryRef = doc(db, 'dailyRequisitions', entry.id);
+          batch.delete(entryRef);
+          
+          await batch.commit();
+
+          toast({ title: 'Success', description: 'Entry deleted and expense request updated.' });
           fetchAllData();
       } catch (error) {
           console.error("Error deleting entry:", error);
@@ -578,7 +598,7 @@ export default function EntrySheetPage() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteEntry(entry.id)}>Delete</AlertDialogAction>
+                                    <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>
