@@ -9,6 +9,7 @@ import {
   Receipt,
   ShieldAlert,
   Layers,
+  BarChart3,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -113,8 +114,15 @@ export default function ExpensesPage() {
       href: canViewAll ? '/expenses/all' : '#',
       description: 'View a consolidated report of all expenses.'
   };
+  
+  const reportsItem = {
+      icon: BarChart3,
+      text: 'Reports',
+      href: '/expenses/reports', // Assuming a new reports page
+      description: 'View expense summaries and reports.'
+  };
 
-  const allItems = [consolidatedItem, ...departmentItems, settingsItem];
+  const allItems = [consolidatedItem, reportsItem, ...departmentItems, settingsItem];
 
   if (isAuthLoading || (isLoading && canViewModule)) {
     return (
@@ -158,7 +166,7 @@ export default function ExpensesPage() {
         <h1 className="text-2xl font-bold">Expenses Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {allItems.length > 1 ? (
+        {allItems.length > 2 ? ( // Check for more than just reports and settings
             allItems.map((item) => (
               <ExpensesCard key={item.text} item={item} />
             ))
