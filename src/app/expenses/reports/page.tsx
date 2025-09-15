@@ -20,7 +20,6 @@ import { DateRange } from 'react-day-picker';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 
 const pivotOptions = [
@@ -28,7 +27,12 @@ const pivotOptions = [
     { value: 'departmentName', label: 'Department' },
     { value: 'headOfAccount', label: 'Head of Account' },
     { value: 'subHeadOfAccount', label: 'Sub-Head of Account' },
+];
+
+const columnOptions = [
     { value: 'month', label: 'Month' },
+    { value: 'projectName', label: 'Project' },
+    { value: 'departmentName', label: 'Department' },
 ];
 
 const valueOptions = [
@@ -40,45 +44,6 @@ interface EnrichedExpense extends ExpenseRequest {
     projectName: string;
     departmentName: string;
     month: string;
-}
-
-interface MultiSelectProps {
-  label: string;
-  options: { value: string; label: string }[];
-  selected: string[];
-  onSelectedChange: (selected: string[]) => void;
-  disabledOptions?: string[];
-}
-
-function MultiSelectDropdown({ label, options, selected, onSelectedChange, disabledOptions = [] }: MultiSelectProps) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="w-full justify-between">
-          <span>{label}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel>{label}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {options.map((option) => (
-          <DropdownMenuCheckboxItem
-            key={option.value}
-            checked={selected.includes(option.value)}
-            onCheckedChange={(checked) => {
-              const newSelected = checked
-                ? [...selected, option.value]
-                : selected.filter((item) => item !== option.value);
-              onSelectedChange(newSelected);
-            }}
-            disabled={disabledOptions.includes(option.value)}
-          >
-            {option.label}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 
@@ -97,8 +62,9 @@ export default function ExpenseReportsPage() {
     });
     
     const [pivotConfig, setPivotConfig] = useState({
-        rows: ['projectName'] as string[],
-        columns: ['month'] as string[],
+        groupBy: 'projectName', // Parent
+        thenBy: 'departmentName', // Child
+        columns: 'month',
         value: 'amount',
     });
 
@@ -157,20 +123,24 @@ export default function ExpenseReportsPage() {
     }, [filters, allExpenses, isLoading]);
     
     const pivotData = useMemo(() => {
-        if (pivotConfig.rows.length === 0 || pivotConfig.columns.length === 0 || filteredExpenses.length === 0) {
+        const { groupBy, thenBy, columns, value } = pivotConfig;
+        if (!groupBy || !columns || filteredExpenses.length === 0) {
             return { rows: [], columns: [], data: new Map(), columnTotals: new Map() };
         }
 
-        const getCompositeKey = (item: EnrichedExpense, fields: string[]) => {
-            return fields.map(field => String(item[field as keyof EnrichedExpense])).join(' | ');
+        const getRowKey = (item: EnrichedExpense) => {
+            const parent = item[groupBy as keyof EnrichedExpense] || 'N/A';
+            const child = thenBy ? item[thenBy as keyof EnrichedExpense] || 'N/A' : null;
+            return child ? `${parent} | ${child}` : `${parent}`;
         };
+        
+        const getColumnKey = (item: EnrichedExpense) => String(item[columns as keyof EnrichedExpense] || 'N/A');
 
-        const uniqueRowValues = Array.from(new Set(filteredExpenses.map(item => getCompositeKey(item, pivotConfig.rows)))).sort();
-        const uniqueColumnValues = Array.from(new Set(filteredExpenses.map(item => getCompositeKey(item, pivotConfig.columns)))).sort();
+        const uniqueRowValues = Array.from(new Set(filteredExpenses.map(getRowKey))).sort();
+        const uniqueColumnValues = Array.from(new Set(filteredExpenses.map(getColumnKey))).sort();
         
         const dataMap = new Map<string, any>();
-        const columnTotals = new Map<string, number>();
-        uniqueColumnValues.forEach(col => columnTotals.set(col, 0));
+        const columnTotals = new Map<string, number>(uniqueColumnValues.map(col => [col, 0]));
 
         uniqueRowValues.forEach(rowValue => {
             const rowData: { [key: string]: number | string } = { __rowLabel: rowValue };
@@ -178,12 +148,11 @@ export default function ExpenseReportsPage() {
 
             uniqueColumnValues.forEach(colValue => {
                 const filtered = filteredExpenses.filter(item => 
-                    getCompositeKey(item, pivotConfig.rows) === rowValue &&
-                    getCompositeKey(item, pivotConfig.columns) === colValue
+                    getRowKey(item) === rowValue && getColumnKey(item) === colValue
                 );
 
                 let cellValue = 0;
-                if (pivotConfig.value === 'amount') {
+                if (value === 'amount') {
                     cellValue = filtered.reduce((acc, curr) => acc + curr.amount, 0);
                 } else { // count
                     cellValue = filtered.length;
@@ -230,6 +199,15 @@ export default function ExpenseReportsPage() {
     
     const grandTotal = Array.from(pivotData.columnTotals.values()).reduce((a, b) => a + b, 0);
     
+    const handleGroupByChange = (value: string) => {
+        const newThenBy = pivotConfig.thenBy === value ? '' : pivotConfig.thenBy;
+        setPivotConfig(prev => ({...prev, groupBy: value, thenBy: newThenBy}));
+    };
+    
+    const handleThenByChange = (value: string) => {
+        setPivotConfig(prev => ({...prev, thenBy: value}));
+    };
+    
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
@@ -245,26 +223,30 @@ export default function ExpenseReportsPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><TableIcon className="h-5 w-5" /> Report Configuration</CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div className="space-y-2">
-                        <Label>Rows</Label>
-                        <MultiSelectDropdown
-                            label="Select Rows"
-                            options={pivotOptions}
-                            selected={pivotConfig.rows}
-                            onSelectedChange={(selected) => setPivotConfig(prev => ({ ...prev, rows: selected }))}
-                            disabledOptions={pivotConfig.columns}
-                        />
+                        <Label>Group By (Parent)</Label>
+                        <Select value={pivotConfig.groupBy} onValueChange={handleGroupByChange}>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectContent>{pivotOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
+                        </Select>
                     </div>
                      <div className="space-y-2">
+                        <Label>Then By (Child)</Label>
+                        <Select value={pivotConfig.thenBy} onValueChange={handleThenByChange} disabled={!pivotConfig.groupBy}>
+                            <SelectTrigger><SelectValue placeholder="None"/></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="">None</SelectItem>
+                                {pivotOptions.filter(opt => opt.value !== pivotConfig.groupBy).map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
                         <Label>Columns</Label>
-                        <MultiSelectDropdown
-                            label="Select Columns"
-                            options={pivotOptions}
-                            selected={pivotConfig.columns}
-                            onSelectedChange={(selected) => setPivotConfig(prev => ({ ...prev, columns: selected }))}
-                            disabledOptions={pivotConfig.rows}
-                        />
+                         <Select value={pivotConfig.columns} onValueChange={(value) => setPivotConfig(prev => ({...prev, columns: value}))}>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectContent>{columnOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
+                        </Select>
                     </div>
                     <div className="space-y-2">
                         <Label>Values</Label>
@@ -300,7 +282,7 @@ export default function ExpenseReportsPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>{pivotConfig.rows.map(r => pivotOptions.find(o => o.value === r)?.label).join(' / ')}</TableHead>
+                                        <TableHead>{pivotConfig.groupBy ? pivotOptions.find(o => o.value === pivotConfig.groupBy)?.label : 'Group'}{pivotConfig.thenBy ? ` / ${pivotOptions.find(o => o.value === pivotConfig.thenBy)?.label}` : ''}</TableHead>
                                         {pivotData.columns.map(col => <TableHead key={col} className="text-right whitespace-nowrap">{col}</TableHead>)}
                                         <TableHead className="text-right font-bold whitespace-nowrap">Grand Total (Row)</TableHead>
                                     </TableRow>
@@ -342,7 +324,3 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
-
-    
-
-    
