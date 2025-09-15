@@ -63,7 +63,7 @@ export default function ExpenseReportsPage() {
     
     const [pivotConfig, setPivotConfig] = useState({
         groupBy: 'projectName', // Parent
-        thenBy: 'departmentName', // Child
+        thenBy: '', // Child
         columns: 'month',
         value: 'amount',
     });
@@ -205,7 +205,7 @@ export default function ExpenseReportsPage() {
     };
     
     const handleThenByChange = (value: string) => {
-        setPivotConfig(prev => ({...prev, thenBy: value}));
+        setPivotConfig(prev => ({...prev, thenBy: value === 'none' ? '' : value}));
     };
     
     return (
@@ -233,10 +233,10 @@ export default function ExpenseReportsPage() {
                     </div>
                      <div className="space-y-2">
                         <Label>Then By (Child)</Label>
-                        <Select value={pivotConfig.thenBy} onValueChange={handleThenByChange} disabled={!pivotConfig.groupBy}>
+                        <Select value={pivotConfig.thenBy || 'none'} onValueChange={handleThenByChange} disabled={!pivotConfig.groupBy}>
                             <SelectTrigger><SelectValue placeholder="None"/></SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="">None</SelectItem>
+                                <SelectItem value="none">None</SelectItem>
                                 {pivotOptions.filter(opt => opt.value !== pivotConfig.groupBy).map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
                             </SelectContent>
                         </Select>
