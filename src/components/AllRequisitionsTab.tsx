@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -625,7 +624,7 @@ export default function AllRequisitionsTab() {
 
   return (
     <div className="w-full">
-        <div className="flex justify-end items-center gap-4 mb-4">
+        <div className="sticky top-0 bg-background z-10 py-4 flex justify-end items-center gap-4 mb-4">
             {canViewAll && (
               <div className="flex items-center space-x-2">
                   <Switch 
@@ -676,10 +675,9 @@ export default function AllRequisitionsTab() {
             </Dialog>
         </div>
         <div className="border rounded-lg">
-        <ScrollArea className="h-[calc(100vh-22rem)]">
           <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow className="bg-muted/50">
+            <TableHeader>
+              <TableRow>
                 <TableHead>Request ID</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Project</TableHead>
@@ -739,7 +737,6 @@ export default function AllRequisitionsTab() {
               )}
             </TableBody>
           </Table>
-        </ScrollArea>
       </div>
       {selectedRequisition && (
         <ViewRequisitionDialog
@@ -754,5 +751,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-
-    
