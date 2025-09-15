@@ -41,7 +41,7 @@ export default function SettingsLayout({
       >
         <TooltipProvider delayDuration={0}>
           <div className="flex-1 p-2">
-            <nav className="flex flex-col items-center gap-1">
+            <nav className="flex flex-col gap-1">
               {visibleNavItems.map(item => (
                 <Tooltip key={item.label}>
                     <TooltipTrigger asChild>
@@ -53,7 +53,7 @@ export default function SettingsLayout({
                                 !isExpanded && "h-10 w-10 p-0"
                             )}
                          >
-                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-start p-2")}>
                                 <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
                                 <span className={cn(!isExpanded && "sr-only")}>{item.label}</span>
                             </div>
