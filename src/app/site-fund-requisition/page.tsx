@@ -28,7 +28,7 @@ export default function SiteFundRequisitionPage() {
   
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="flex flex-col h-screen">
         <header className="sticky top-0 z-10 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center gap-4">
@@ -41,15 +41,15 @@ export default function SiteFundRequisitionPage() {
                 </div>
             </div>
         </header>
-        <main className="container mx-auto p-4 sm:p-6 lg:p-8">
-            <Skeleton className="h-[500px] w-full" />
+        <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
+            <Skeleton className="h-full w-full" />
         </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex flex-col h-[calc(100vh-6rem)]">
         <SiteFundDashboard />
     </div>
   );

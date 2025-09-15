@@ -14,7 +14,7 @@ const stats = [
 
 export function SiteFundDashboard() {
   return (
-    <div className="flex flex-col w-full h-[calc(100vh-8rem)]">
+    <div className="flex flex-col w-full h-full">
       <Tabs defaultValue="all-requisitions" className="flex flex-col h-full">
         <div className="flex-shrink-0">
           <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
@@ -24,7 +24,7 @@ export function SiteFundDashboard() {
             <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
           </TabsList>
         </div>
-        <div className="flex-grow overflow-auto">
+        <div className="flex-grow overflow-y-auto">
           <div className="pt-6 h-full pr-4">
             <TabsContent value="dashboard" className="h-full">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">

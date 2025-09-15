@@ -674,9 +674,9 @@ export default function AllRequisitionsTab() {
                 </DialogContent>
             </Dialog>
         </div>
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-hidden flex-grow">
           <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
+            <TableHeader>
               <TableRow>
                 <TableHead>Request ID</TableHead>
                 <TableHead>Date</TableHead>
