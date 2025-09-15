@@ -134,12 +134,12 @@ export default function ExpenseReportsPage() {
     }, [filters, allExpenses, isLoading]);
     
     const pivotData = useMemo(() => {
-        const { rows: rowFields, column, value } = pivotConfig;
-        if (rowFields.length === 0 || !column || filteredExpenses.length === 0) {
+        const { rows: rowFields, column: colField, value: valueField } = pivotConfig;
+        if (rowFields.length === 0 || !colField || filteredExpenses.length === 0) {
             return { rows: [], columns: [], grandTotal: 0 };
         }
 
-        const columnValues = Array.from(new Set(filteredExpenses.map(item => String(item[column as keyof EnrichedExpense] || 'N/A')))).sort();
+        const columnValues = Array.from(new Set(filteredExpenses.map(item => String(item[colField as keyof EnrichedExpense] || 'N/A')))).sort();
         
         const groupData = (data: EnrichedExpense[], level: number): PivotRow[] => {
             if (level >= rowFields.length) return [];
@@ -160,8 +160,8 @@ export default function ExpenseReportsPage() {
                 const rowData: Record<string, number> = { __rowTotal: 0 };
 
                 columnValues.forEach(col => {
-                    const filteredItems = items.filter(item => String(item[column as keyof EnrichedExpense] || 'N/A') === col);
-                    const cellValue = filteredItems.reduce((acc, curr) => acc + (value === 'amount' ? curr.amount : 1), 0);
+                    const filteredItems = items.filter(item => String(item[colField as keyof EnrichedExpense] || 'N/A') === col);
+                    const cellValue = filteredItems.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
                     rowData[col] = cellValue;
                     rowData.__rowTotal += cellValue;
                 });
@@ -221,10 +221,12 @@ export default function ExpenseReportsPage() {
         );
     }
     
-    const renderRows = (rows: PivotRow[]) => {
-        return rows.flatMap((row, index) => {
+    const renderRows = (rows: PivotRow[], path: string[] = []) => {
+        return rows.flatMap((row) => {
+            const currentPath = [...path, row.label];
+            const uniqueKey = `${row.level}-${currentPath.join('-')}`;
             const rowElement = (
-                <TableRow key={`${row.level}-${row.label}-${index}`} className={row.level === 0 ? 'bg-muted/50' : ''}>
+                <TableRow key={uniqueKey} className={row.level === 0 ? 'bg-muted/50' : ''}>
                     <TableCell style={{ paddingLeft: `${(row.level * 1.5) + 1}rem` }} className="font-medium whitespace-nowrap">
                         {row.label}
                     </TableCell>
@@ -239,7 +241,7 @@ export default function ExpenseReportsPage() {
                 </TableRow>
             );
             
-            const subRowElements = row.subRows ? renderRows(row.subRows) : [];
+            const subRowElements = row.subRows ? renderRows(row.subRows, currentPath) : [];
             return [rowElement, ...subRowElements];
         });
     };
@@ -288,7 +290,7 @@ export default function ExpenseReportsPage() {
                         <Label>Columns</Label>
                          <Select value={pivotConfig.column} onValueChange={(value) => setPivotConfig(prev => ({...prev, column: value}))}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
-                            <SelectContent>{pivotOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
+                            <SelectContent>{[...pivotOptions, {value: 'month', label: 'Month'}].map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                     <div className="space-y-2">
@@ -357,5 +359,4 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
-
 
