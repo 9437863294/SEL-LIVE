@@ -526,7 +526,7 @@ export default function DepartmentExpensesPage() {
                                                 variant="outline"
                                                 size="sm"
                                                 onClick={() => openEditDialog(expense)}
-                                                disabled={!canEdit || !!expense.receptionNo}
+                                                disabled={!canEdit || (!!expense.receptionNo && expense.receptionNo !== '')}
                                             >
                                                 <Edit className="mr-2 h-4 w-4" /> Edit
                                             </Button>
@@ -606,6 +606,4 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
-
-
 
