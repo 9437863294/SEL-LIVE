@@ -6,7 +6,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { doc, getDoc, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
 
 
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch role and permissions
         if (userData.role) {
             const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
-            const roleSnap = await getDoc(rolesQuery);
+            const roleSnap = await getDocs(rolesQuery);
             if (!roleSnap.empty) {
                 const roleData = roleSnap.docs[0].data() as Role;
                 setPermissions(roleData.permissions || {});
