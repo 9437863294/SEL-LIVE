@@ -13,7 +13,6 @@ import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 import type { ExpenseRequest, Project, Department, UserSettings, PivotConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { DateRange } from 'react-day-picker';
@@ -29,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const pivotOptions = [
@@ -56,6 +56,7 @@ interface PivotRow {
     isExpanded?: boolean;
     subRows?: PivotRow[];
     data: Record<string, number | string>;
+    path: string[];
 }
 
 
@@ -175,42 +176,42 @@ export default function ExpenseReportsPage() {
     
     const pivotData = useMemo(() => {
         const { rows: rowFields, columns: colFields, value: valueField } = pivotConfig;
-        if (rowFields.length === 0 || colFields.length === 0 || filteredExpenses.length === 0) {
-            return { rows: [], columns: [], grandTotalRow: {}, grandTotal: 0 };
+        if (filteredExpenses.length === 0) {
+            return { rows: [], columns: [], grandTotalRow: {}, grandTotal: 0, columnHierarchy: [] };
         }
 
-        const getColumnValues = (data: EnrichedExpense[], fields: string[]) => {
-            if (fields.length === 0) return [{ key: 'Total', values: {} }];
+        const getColumnHierarchy = (data: EnrichedExpense[], fields: string[]): any[] => {
+            if (fields.length === 0) return [];
             const field = fields[0];
             const uniqueValues = Array.from(new Set(data.map(item => String(item[field as keyof EnrichedExpense] || 'N/A')))).sort();
             
-            const result: any[] = [];
-            uniqueValues.forEach(value => {
+            return uniqueValues.map(value => {
                 const filtered = data.filter(item => String(item[field as keyof EnrichedExpense] || 'N/A') === value);
-                const subValues = getColumnValues(filtered, fields.slice(1));
-                result.push({ key: value, values: subValues });
+                return {
+                    key: value,
+                    subColumns: getColumnHierarchy(filtered, fields.slice(1)),
+                };
             });
-            return result;
         };
 
-        const flattenColumns = (cols: any[], path: string[] = []): { key: string; path: string[] }[] => {
-            if (cols.length === 0) return [];
-            let flat: { key: string; path: string[] }[] = [];
+        const flattenColumns = (cols: any[], path: string[] = []): { key: string; path: string[], colspan: number }[] => {
+            if (!cols || cols.length === 0) return [];
+            let flat: { key: string; path: string[], colspan: number }[] = [];
             cols.forEach(col => {
                 const currentPath = [...path, col.key];
-                if (col.values && Object.keys(col.values).length > 0 && col.values[0]?.key !== 'Total') {
-                     flat.push(...flattenColumns(col.values, currentPath));
+                if (col.subColumns && col.subColumns.length > 0) {
+                     flat.push(...flattenColumns(col.subColumns, currentPath));
                 } else {
-                    flat.push({ key: col.key, path: currentPath });
+                    flat.push({ key: col.key, path: currentPath, colspan: 1 });
                 }
             });
             return flat;
         };
-        
-        const columnHierarchy = getColumnValues(filteredExpenses, colFields);
-        const flatCols = flattenColumns(columnHierarchy);
 
-        const groupData = (data: EnrichedExpense[], level: number): PivotRow[] => {
+        const columnHierarchy = getColumnHierarchy(filteredExpenses, colFields);
+        const flatCols = colFields.length > 0 ? flattenColumns(columnHierarchy) : [{ key: 'Grand Total', path: [], colspan: 1 }];
+
+        const groupData = (data: EnrichedExpense[], level: number, path: string[] = []): PivotRow[] => {
             if (level >= rowFields.length) return [];
 
             const rowField = rowFields[level];
@@ -222,34 +223,25 @@ export default function ExpenseReportsPage() {
                 grouped.get(key)!.push(item);
             });
             
-            const result: PivotRow[] = [];
-            
-            Array.from(grouped.keys()).sort().forEach(key => {
+            return Array.from(grouped.keys()).sort().map(key => {
                 const items = grouped.get(key)!;
+                const newPath = [...path, key];
                 const rowData: Record<string, number> = { __rowTotal: 0 };
                 
                 flatCols.forEach(col => {
                     const colKey = col.path.join('_');
-                    const filteredItems = items.filter(item => {
-                        return col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p);
-                    });
+                    const filteredItems = items.filter(item => col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p));
                     const cellValue = filteredItems.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
                     rowData[colKey] = cellValue;
-                    rowData.__rowTotal += cellValue;
                 });
+                rowData.__rowTotal = Object.values(rowData).reduce((sum, val) => sum + (val as number), 0);
                 
-                const subRows = groupData(items, level + 1);
+                const subRows = groupData(items, level + 1, newPath);
 
-                result.push({
-                    type: 'data',
-                    level: level,
-                    label: key,
-                    data: rowData,
-                    subRows: subRows.length > 0 ? subRows : undefined
-                });
+                return {
+                    type: 'data', level, label: key, data: rowData, subRows: subRows.length > 0 ? subRows : undefined, path: newPath
+                };
             });
-
-            return result;
         };
         
         const finalRows = groupData(filteredExpenses, 0);
@@ -257,12 +249,12 @@ export default function ExpenseReportsPage() {
         const grandTotalRow: Record<string, number> = { __grandTotal: 0 };
         flatCols.forEach(col => {
             const colKey = col.path.join('_');
-            const colTotal = finalRows.reduce((sum, row) => sum + ((row.data[colKey] as number) || 0), 0);
-            grandTotalRow[colKey] = colTotal;
-            grandTotalRow.__grandTotal += colTotal;
+            const filteredForCol = filteredExpenses.filter(item => col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p));
+            grandTotalRow[colKey] = filteredForCol.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
         });
+        grandTotalRow.__grandTotal = Object.values(grandTotalRow).reduce((sum, val) => sum + val, 0);
         
-        return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal: grandTotalRow.__grandTotal };
+        return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal: grandTotalRow.__grandTotal, columnHierarchy };
 
     }, [filteredExpenses, pivotConfig]);
     
@@ -309,10 +301,9 @@ export default function ExpenseReportsPage() {
         );
     }
     
-    const renderRows = (rows: PivotRow[], path: string[] = []) => {
-        return rows.flatMap((row, index) => {
-            const currentPath = [...path, row.label];
-            const uniqueKey = `${row.level}-${currentPath.join('-')}`;
+    const renderRows = (rows: PivotRow[]) => {
+        return rows.flatMap((row) => {
+            const uniqueKey = `${row.level}-${row.path.join('-')}`;
             const rowElement = (
                 <TableRow key={uniqueKey} className={row.level === 0 ? 'bg-muted/50' : ''}>
                     <TableCell style={{ paddingLeft: `${(row.level * 1.5) + 1}rem` }} className="font-medium whitespace-nowrap">
@@ -323,15 +314,42 @@ export default function ExpenseReportsPage() {
                            {pivotConfig.value === 'amount' ? (row.data[col.path.join('_')] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data[col.path.join('_')] || 0).toLocaleString()}
                         </TableCell>
                     ))}
-                    <TableCell className="text-right font-bold">
-                        {pivotConfig.value === 'amount' ? (row.data.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data.__rowTotal || 0).toLocaleString()}
-                    </TableCell>
+                    {pivotData.columns.length > 1 && (
+                         <TableCell className="text-right font-bold">
+                            {pivotConfig.value === 'amount' ? (row.data.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data.__rowTotal || 0).toLocaleString()}
+                        </TableCell>
+                    )}
                 </TableRow>
             );
             
-            const subRowElements = row.subRows ? renderRows(row.subRows, currentPath) : [];
+            const subRowElements = row.subRows ? renderRows(row.subRows) : [];
             return [rowElement, ...subRowElements];
         });
+    };
+
+     const renderColumnHeaders = () => {
+        if (pivotData.columns.length === 0) return <TableHead>Grand Total</TableHead>;
+        
+        const maxDepth = pivotConfig.columns.length;
+        const headerRows: JSX.Element[] = [];
+
+        for (let i = 0; i < maxDepth; i++) {
+            let cells: { key: string; label: string; colspan: number }[] = [];
+            const processLevel = (cols: any[], level: number) => {
+                cols.forEach(col => {
+                    if (level === i) {
+                        const subLeafCount = (c: any): number => c.subColumns && c.subColumns.length > 0 ? c.subColumns.reduce((sum: number, sc: any) => sum + subLeafCount(sc), 0) : 1;
+                        cells.push({ key: col.key, label: col.key, colspan: subLeafCount(col) });
+                    } else if (level < i && col.subColumns) {
+                        processLevel(col.subColumns, level + 1);
+                    }
+                });
+            };
+            processLevel(pivotData.columnHierarchy, 0);
+            headerRows.push(<TableRow key={`header-row-${i}`}>{i === 0 && <TableHead rowSpan={maxDepth} className="align-bottom">{pivotConfig.rows.join(' / ')}</TableHead>}{cells.map(c => <TableHead key={c.key} colSpan={c.colspan} className="text-center">{c.label}</TableHead>)}{i === 0 && <TableHead rowSpan={maxDepth} className="text-right align-bottom">Grand Total</TableHead>}</TableRow>);
+        }
+
+        return headerRows;
     };
     
     return (
@@ -421,46 +439,60 @@ export default function ExpenseReportsPage() {
                     </div>
                 </CardContent>
             </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {isLoading ? <Skeleton className="h-80 w-full" /> : (
-                        <div className="overflow-x-auto border rounded-lg">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>
-                                            {pivotConfig.rows.map(r => pivotOptions.find(o => o.value === r)?.label).join(' / ')}
-                                        </TableHead>
-                                        {pivotData.columns.map(col => <TableHead key={col.path.join('_')} className="text-right whitespace-nowrap">{col.path.join(' - ')}</TableHead>)}
-                                        <TableHead className="text-right font-bold whitespace-nowrap">Grand Total</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {renderRows(pivotData.rows)}
-                                    <TableRow className="bg-muted font-bold text-lg">
-                                       <TableCell>Grand Total</TableCell>
-                                       {pivotData.columns.map(col => {
-                                            const colKey = col.path.join('_');
-                                            return (
-                                                <TableCell key={`total-${colKey}`} className="text-right">
-                                                    {pivotConfig.value === 'amount' ? (pivotData.grandTotalRow[colKey] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (pivotData.grandTotalRow[colKey] || 0).toLocaleString()}
-                                                </TableCell>
-                                            )
-                                       })}
-                                       <TableCell className="text-right">
-                                           {pivotConfig.value === 'amount' ? pivotData.grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : pivotData.grandTotal.toLocaleString()}
-                                       </TableCell>
-                                    </TableRow>
-                                </TableBody>
-                            </Table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            
+             {pivotConfig.rows.length === 0 && pivotConfig.columns.length === 0 ? (
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Grand Total</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-3xl font-bold">{pivotConfig.value === 'amount' ? pivotData.grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : pivotData.grandTotal.toLocaleString()}</p>
+                    </CardContent>
+                </Card>
+             ) : (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {isLoading ? <Skeleton className="h-80 w-full" /> : (
+                            <div className="overflow-x-auto border rounded-lg">
+                                <Table>
+                                    <TableHeader>
+                                        {pivotConfig.columns.length > 0 ? renderColumnHeaders() : (
+                                            <TableRow>
+                                                 <TableHead>{pivotConfig.rows.join(' / ')}</TableHead>
+                                                 <TableHead className="text-right">Grand Total</TableHead>
+                                            </TableRow>
+                                        )}
+                                    </TableHeader>
+                                    <TableBody>
+                                        {pivotData.rows.length > 0 ? renderRows(pivotData.rows) : (
+                                            <TableRow><TableCell colSpan={pivotData.columns.length + 2} className="h-24 text-center">No data for selected configuration.</TableCell></TableRow>
+                                        )}
+                                        <TableRow className="bg-muted font-bold text-lg">
+                                           <TableCell>Grand Total</TableCell>
+                                           {pivotData.columns.map(col => {
+                                                const colKey = col.path.join('_');
+                                                return (
+                                                    <TableCell key={`total-${colKey}`} className="text-right">
+                                                        {pivotConfig.value === 'amount' ? (pivotData.grandTotalRow[colKey] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (pivotData.grandTotalRow[colKey] || 0).toLocaleString()}
+                                                    </TableCell>
+                                                )
+                                           })}
+                                            {pivotData.columns.length > 1 && (
+                                                <TableCell className="text-right">
+                                                   {pivotConfig.value === 'amount' ? pivotData.grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : pivotData.grandTotal.toLocaleString()}
+                                               </TableCell>
+                                            )}
+                                        </TableRow>
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+             )}
         </div>
     );
 }
