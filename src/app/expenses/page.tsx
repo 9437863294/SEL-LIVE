@@ -69,7 +69,6 @@ export default function ExpensesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canViewModule = can('View Module', 'Expenses');
-  const canViewAll = can('View All', 'Expenses.Expense Requests');
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -99,30 +98,6 @@ export default function ExpensesPage() {
       href: `/expenses/${dept.id}`,
       description: `Manage expenses for the ${dept.name} department.`
   }));
-
-  const canViewSettings = can('View', 'Expenses.Settings');
-  const settingsItem = { 
-      icon: Receipt, 
-      text: 'Settings', 
-      href: canViewSettings ? '/settings/expenses' : '#',
-      description: 'Configure settings for the expenses module.' 
-  };
-  
-  const consolidatedItem = {
-      icon: Layers,
-      text: 'Consolidated View',
-      href: canViewAll ? '/expenses/all' : '#',
-      description: 'View a consolidated report of all expenses.'
-  };
-  
-  const reportsItem = {
-      icon: BarChart3,
-      text: 'Reports',
-      href: '/expenses/reports', // Assuming a new reports page
-      description: 'View expense summaries and reports.'
-  };
-
-  const allItems = [consolidatedItem, reportsItem, ...departmentItems, settingsItem];
 
   if (isAuthLoading || (isLoading && canViewModule)) {
     return (
@@ -166,8 +141,8 @@ export default function ExpensesPage() {
         <h1 className="text-2xl font-bold">Expenses Management</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {allItems.length > 2 ? ( // Check for more than just reports and settings
-            allItems.map((item) => (
+        {departmentItems.length > 0 ? (
+            departmentItems.map((item) => (
               <ExpensesCard key={item.text} item={item} />
             ))
         ) : (

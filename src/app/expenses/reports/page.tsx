@@ -303,7 +303,7 @@ export default function ExpenseReportsPage() {
     
     const renderRows = (rows: PivotRow[]) => {
         return rows.flatMap((row) => {
-            const uniqueKey = `${row.level}-${row.path.join('-')}`;
+            const uniqueKey = row.path.join('-');
             const rowElement = (
                 <TableRow key={uniqueKey} className={row.level === 0 ? 'bg-muted/50' : ''}>
                     <TableCell style={{ paddingLeft: `${(row.level * 1.5) + 1}rem` }} className="font-medium whitespace-nowrap">
