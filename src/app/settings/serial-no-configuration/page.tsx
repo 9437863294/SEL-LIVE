@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import type { SerialNumberConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const modules = [
     { id: 'site-fund-requisition', name: 'Site Fund Requisition' },
@@ -29,11 +30,21 @@ const initialConfigState: SerialNumberConfig = {
 
 export default function SerialNoConfigurationPage() {
     const { toast } = useToast();
+    const { can, isLoading: isAuthLoading } = useAuthorization();
     const [selectedModule, setSelectedModule] = useState<string>(modules[0].id);
     const [config, setConfig] = useState<SerialNumberConfig>(initialConfigState);
     const [isLoading, setIsLoading] = useState(true);
+    
+    const canView = can('View', 'Settings.Serial No. Config');
+    const canEdit = can('Edit', 'Settings.Serial No. Config');
 
     useEffect(() => {
+        if (isAuthLoading) return;
+        if (!canView) {
+            setIsLoading(false);
+            return;
+        };
+
         const fetchConfig = async () => {
             if (!selectedModule) return;
             setIsLoading(true);
@@ -43,7 +54,6 @@ export default function SerialNoConfigurationPage() {
                 if (docSnap.exists()) {
                     setConfig(docSnap.data() as SerialNumberConfig);
                 } else {
-                    // If no config exists, initialize with a default structure for the selected module
                     const defaultConfig = selectedModule === 'site-fund-requisition' 
                         ? { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 18 }
                         : { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 };
@@ -61,9 +71,13 @@ export default function SerialNoConfigurationPage() {
         };
 
         fetchConfig();
-    }, [selectedModule, toast]);
+    }, [selectedModule, toast, canView, isAuthLoading]);
 
     const handleSave = async () => {
+        if (!canEdit) {
+            toast({ title: 'Permission Denied', description: 'You do not have permission to edit this configuration.', variant: 'destructive'});
+            return;
+        }
         if (!selectedModule) {
             toast({ title: 'Error', description: 'Please select a module first.', variant: 'destructive' });
             return;
@@ -80,6 +94,43 @@ export default function SerialNoConfigurationPage() {
     const handleInputChange = (field: keyof SerialNumberConfig, value: string | number) => {
         setConfig(prev => ({ ...prev, [field]: value }));
     };
+    
+    if (isAuthLoading) {
+        return (
+             <div className="w-full max-w-4xl mx-auto">
+                <div className="mb-6 flex items-center gap-4">
+                    <Skeleton className="h-10 w-10" />
+                    <Skeleton className="h-8 w-64" />
+                </div>
+                <Skeleton className="h-64 w-full" />
+             </div>
+        );
+    }
+
+    if (!canView) {
+        return (
+            <div className="w-full max-w-4xl mx-auto">
+                <div className="mb-6 flex items-center gap-4">
+                  <Link href="/settings">
+                    <Button variant="ghost" size="icon">
+                      <ArrowLeft className="h-6 w-6" />
+                    </Button>
+                  </Link>
+                  <h1 className="text-2xl font-bold">Serial No. Configuration</h1>
+                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Access Denied</CardTitle>
+                        <CardDescription>You do not have permission to view this page. Please contact an administrator.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex justify-center p-8">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
 
     return (
         <div className="w-full max-w-4xl mx-auto">
@@ -133,7 +184,8 @@ export default function SerialNoConfigurationPage() {
                                     <Input 
                                         id="prefix" 
                                         value={config.prefix} 
-                                        onChange={(e) => handleInputChange('prefix', e.target.value)} 
+                                        onChange={(e) => handleInputChange('prefix', e.target.value)}
+                                        disabled={!canEdit}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -142,6 +194,7 @@ export default function SerialNoConfigurationPage() {
                                         id="format" 
                                         value={config.format}
                                         onChange={(e) => handleInputChange('format', e.target.value)} 
+                                        disabled={!canEdit}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -151,6 +204,7 @@ export default function SerialNoConfigurationPage() {
                                         placeholder="e.g. /A"
                                         value={config.suffix}
                                         onChange={(e) => handleInputChange('suffix', e.target.value)} 
+                                        disabled={!canEdit}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -160,6 +214,7 @@ export default function SerialNoConfigurationPage() {
                                         type="number" 
                                         value={config.startingIndex}
                                         onChange={(e) => handleInputChange('startingIndex', parseInt(e.target.value, 10) || 1)}
+                                        disabled={!canEdit}
                                     />
                                 </div>
                              </div>
@@ -170,7 +225,7 @@ export default function SerialNoConfigurationPage() {
                         <Link href="/settings">
                             <Button variant="outline">Cancel</Button>
                         </Link>
-                        <Button onClick={handleSave} disabled={isLoading}>Save</Button>
+                        <Button onClick={handleSave} disabled={isLoading || !canEdit}>Save</Button>
                     </div>
                 </CardContent>
             </Card>
