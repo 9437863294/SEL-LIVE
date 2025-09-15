@@ -1,11 +1,12 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Calendar as CalendarIcon, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -63,7 +64,7 @@ export default function ExpenseReportsPage() {
     
     const [pivotConfig, setPivotConfig] = useState({
         groupBy: 'projectName', // Parent
-        thenBy: '', // Child
+        thenBy: 'departmentName', // Child
         columns: 'month',
         value: 'amount',
     });
@@ -125,49 +126,55 @@ export default function ExpenseReportsPage() {
     const pivotData = useMemo(() => {
         const { groupBy, thenBy, columns, value } = pivotConfig;
         if (!groupBy || !columns || filteredExpenses.length === 0) {
-            return { rows: [], columns: [], data: new Map(), columnTotals: new Map() };
+            return { rows: [], columns: [], data: new Map(), columnTotals: new Map(), parentTotals: new Map() };
         }
 
-        const getRowKey = (item: EnrichedExpense) => {
-            const parent = item[groupBy as keyof EnrichedExpense] || 'N/A';
-            const child = thenBy ? item[thenBy as keyof EnrichedExpense] || 'N/A' : null;
-            return child ? `${parent} | ${child}` : `${parent}`;
-        };
-        
         const getColumnKey = (item: EnrichedExpense) => String(item[columns as keyof EnrichedExpense] || 'N/A');
-
-        const uniqueRowValues = Array.from(new Set(filteredExpenses.map(getRowKey))).sort();
         const uniqueColumnValues = Array.from(new Set(filteredExpenses.map(getColumnKey))).sort();
-        
-        const dataMap = new Map<string, any>();
         const columnTotals = new Map<string, number>(uniqueColumnValues.map(col => [col, 0]));
 
-        uniqueRowValues.forEach(rowValue => {
-            const rowData: { [key: string]: number | string } = { __rowLabel: rowValue };
-            let rowTotal = 0;
+        const nestedData: Map<string, { children: Map<string, any>, parentTotal: any }> = new Map();
 
-            uniqueColumnValues.forEach(colValue => {
-                const filtered = filteredExpenses.filter(item => 
-                    getRowKey(item) === rowValue && getColumnKey(item) === colValue
-                );
+        filteredExpenses.forEach(item => {
+            const parentValue = item[groupBy as keyof EnrichedExpense] || 'N/A';
+            if (!nestedData.has(parentValue)) {
+                nestedData.set(parentValue, { children: new Map(), parentTotal: {} });
+                uniqueColumnValues.forEach(col => nestedData.get(parentValue)!.parentTotal[col] = 0);
+                nestedData.get(parentValue)!.parentTotal.__rowTotal = 0;
+            }
 
-                let cellValue = 0;
-                if (value === 'amount') {
-                    cellValue = filtered.reduce((acc, curr) => acc + curr.amount, 0);
-                } else { // count
-                    cellValue = filtered.length;
-                }
-                
-                rowData[colValue] = cellValue;
-                rowTotal += cellValue;
-                columnTotals.set(colValue, (columnTotals.get(colValue) || 0) + cellValue);
-            });
+            const childValue = thenBy ? item[thenBy as keyof EnrichedExpense] || 'N/A' : 'Totals';
+            const parentGroup = nestedData.get(parentValue)!;
+            if (!parentGroup.children.has(childValue)) {
+                parentGroup.children.set(childValue, { __rowLabel: childValue });
+                 uniqueColumnValues.forEach(col => parentGroup.children.get(childValue)![col] = 0);
+                 parentGroup.children.get(childValue)!.__rowTotal = 0;
+            }
+
+            const columnKey = getColumnKey(item);
+            const cellValue = value === 'amount' ? item.amount : 1;
+
+            const childRow = parentGroup.children.get(childValue)!;
+            childRow[columnKey] = (childRow[columnKey] || 0) + cellValue;
+            childRow.__rowTotal += cellValue;
             
-            rowData.__rowTotal = rowTotal;
-            dataMap.set(rowValue, rowData);
+            parentGroup.parentTotal[columnKey] += cellValue;
+            parentGroup.parentTotal.__rowTotal += cellValue;
+            
+            columnTotals.set(columnKey, (columnTotals.get(columnKey) || 0) + cellValue);
         });
-        
-        return { rows: uniqueRowValues, columns: uniqueColumnValues, data: dataMap, columnTotals };
+
+        const sortedParentKeys = Array.from(nestedData.keys()).sort();
+        const finalRows = sortedParentKeys.flatMap(parentKey => {
+            const group = nestedData.get(parentKey)!;
+            const childKeys = Array.from(group.children.keys()).sort();
+            return [
+                { type: 'parent', label: parentKey, data: group.parentTotal },
+                ...childKeys.map(childKey => ({ type: 'child', label: childKey, data: group.children.get(childKey) }))
+            ];
+        });
+
+        return { rows: finalRows, columns: uniqueColumnValues, columnTotals };
 
     }, [filteredExpenses, pivotConfig]);
 
@@ -190,7 +197,7 @@ export default function ExpenseReportsPage() {
                     <h1 className="text-2xl font-bold">Expense Reports</h1>
                 </div>
                 <Card>
-                    <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view reports.</CardDescription></CardHeader>
+                    <CardHeader><CardTitle>Access Denied</CardTitle><p>You do not have permission to view reports.</p></CardHeader>
                     <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
@@ -282,28 +289,27 @@ export default function ExpenseReportsPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>{pivotConfig.groupBy ? pivotOptions.find(o => o.value === pivotConfig.groupBy)?.label : 'Group'}{pivotConfig.thenBy ? ` / ${pivotOptions.find(o => o.value === pivotConfig.thenBy)?.label}` : ''}</TableHead>
+                                        <TableHead>{pivotConfig.groupBy ? pivotOptions.find(o => o.value === pivotConfig.groupBy)?.label : 'Group'}</TableHead>
                                         {pivotData.columns.map(col => <TableHead key={col} className="text-right whitespace-nowrap">{col}</TableHead>)}
                                         <TableHead className="text-right font-bold whitespace-nowrap">Grand Total (Row)</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {pivotData.rows.map(rowValue => {
-                                        const rowData = pivotData.data.get(rowValue);
-                                        return (
-                                            <TableRow key={rowValue}>
-                                                <TableCell className="font-medium whitespace-nowrap">{rowValue}</TableCell>
-                                                {pivotData.columns.map(col => (
-                                                    <TableCell key={col} className="text-right">
-                                                        {pivotConfig.value === 'amount' ? (rowData[col] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (rowData[col] || 0).toLocaleString()}
-                                                    </TableCell>
-                                                ))}
-                                                <TableCell className="text-right font-bold">
-                                                    {pivotConfig.value === 'amount' ? (rowData.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (rowData.__rowTotal || 0).toLocaleString()}
+                                    {pivotData.rows.map((row, index) => (
+                                        <TableRow key={index} className={row.type === 'parent' ? 'bg-muted/50 font-bold' : ''}>
+                                            <TableCell className={cn("whitespace-nowrap", row.type === 'child' && 'pl-8')}>
+                                                {row.label}
+                                            </TableCell>
+                                            {pivotData.columns.map(col => (
+                                                <TableCell key={col} className="text-right">
+                                                    {pivotConfig.value === 'amount' ? (row.data[col] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data[col] || 0).toLocaleString()}
                                                 </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
+                                            ))}
+                                            <TableCell className="text-right font-bold">
+                                                {pivotConfig.value === 'amount' ? (row.data.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data.__rowTotal || 0).toLocaleString()}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
                                      <TableRow className="bg-muted font-bold">
                                         <TableCell>Grand Total (Column)</TableCell>
                                         {pivotData.columns.map(col => (
@@ -324,3 +330,4 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
+
