@@ -8,6 +8,7 @@ import {
   Building2,
   Receipt,
   ShieldAlert,
+  Layers,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -67,6 +68,7 @@ export default function ExpensesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canViewModule = can('View Module', 'Expenses');
+  const canViewAll = can('View All', 'Expenses.Expense Requests');
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -105,7 +107,14 @@ export default function ExpensesPage() {
       description: 'Configure settings for the expenses module.' 
   };
   
-  const allItems = [...departmentItems, settingsItem];
+  const consolidatedItem = {
+      icon: Layers,
+      text: 'Consolidated View',
+      href: canViewAll ? '/expenses/all' : '#',
+      description: 'View a consolidated report of all expenses.'
+  };
+
+  const allItems = [consolidatedItem, ...departmentItems, settingsItem];
 
   if (isAuthLoading || (isLoading && canViewModule)) {
     return (
