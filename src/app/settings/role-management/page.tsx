@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import type { Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -95,8 +95,8 @@ const initialNewRoleState = {
 
 export default function ManageRolePage() {
   const { toast } = useToast();
-  const { can } = useAuthorization();
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -106,26 +106,18 @@ export default function ManageRolePage() {
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   
-  const [canAdd, setCanAdd] = useState(false);
-  const [canEdit, setCanEdit] = useState(false);
-  const [canDelete, setCanDelete] = useState(false);
+  const canView = can('View', 'Settings.Role Management');
+  const canAdd = can('Add', 'Settings.Role Management');
+  const canEdit = can('Edit', 'Settings.Role Management');
+  const canDelete = can('Delete', 'Settings.Role Management');
 
   useEffect(() => {
-    const checkPermissions = async () => {
-        const viewAccess = await can('View', 'Role Management');
-        setHasAccess(viewAccess);
-
-        if (viewAccess) {
-            setCanAdd(await can('Add', 'Role Management'));
-            setCanEdit(await can('Edit', 'Role Management'));
-            setCanDelete(await can('Delete', 'Role Management'));
-            fetchRoles();
-        } else {
-            setIsLoading(false);
-        }
-    };
-    checkPermissions();
-  }, [can]);
+    if (!isAuthLoading && canView) {
+      fetchRoles();
+    } else if (!isAuthLoading && !canView) {
+      setIsLoading(false);
+    }
+  }, [isAuthLoading, canView]);
 
   const fetchRoles = async () => {
     setIsLoading(true);
@@ -335,7 +327,7 @@ export default function ManageRolePage() {
     </div>
   );
 
-  if (hasAccess === null || (hasAccess && isLoading)) {
+  if (isAuthLoading || (isLoading && canView)) {
     return (
         <div className="w-full max-w-6xl mx-auto">
             <div className="mb-6 flex items-center justify-between">
@@ -351,7 +343,7 @@ export default function ManageRolePage() {
     )
   }
 
-  if (hasAccess === false) {
+  if (!canView) {
     return (
         <div className="w-full max-w-4xl mx-auto">
             <div className="mb-6 flex items-center gap-4">
@@ -367,8 +359,8 @@ export default function ManageRolePage() {
                     <CardTitleShad>Access Denied</CardTitleShad>
                     <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
                 </CardHeader>
-                <CardContentShad>
-                    <ShieldAlert className="h-16 w-16 text-destructive mx-auto" />
+                <CardContentShad className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
                 </CardContentShad>
             </Card>
         </div>

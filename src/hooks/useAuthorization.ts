@@ -1,51 +1,37 @@
 
 import { useAuth } from '@/components/auth/AuthProvider';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import type { Role } from '@/lib/types';
 import { useCallback } from 'react';
 
-// Cache to store permissions for a session to reduce Firestore reads.
-const permissionsCache = new Map<string, Record<string, string[]>>();
-
 export const useAuthorization = () => {
-  const { user } = useAuth();
+  const { permissions, loading } = useAuth();
 
-  const can = useCallback(async (action: string, module: string): Promise<boolean> => {
-    if (!user || !user.role) {
-      return false;
+  const can = useCallback((action: string, module: string): boolean => {
+    if (loading) {
+      return false; // Don't grant permission while permissions are loading
     }
 
-    let rolePermissions = permissionsCache.get(user.role);
+    const moduleKeyParts = module.split('.');
+    let modulePermissions: string[] | undefined;
 
-    if (!rolePermissions) {
-      try {
-        const rolesQuery = query(collection(db, 'roles'), where('name', '==', user.role));
-        const roleSnap = await getDocs(rolesQuery);
+    if (moduleKeyParts.length > 1) {
+        // Handle nested modules like 'Daily Requisition.Entry Sheet'
+        const mainModule = moduleKeyParts[0];
+        const subModule = moduleKeyParts.slice(1).join('.');
+        
+        // This is a simplification. The permissions object keys are 'Module.SubModule'
+        const fullKey = `${mainModule}.${subModule}`;
+        modulePermissions = permissions[fullKey];
 
-        if (!roleSnap.empty) {
-          const roleData = roleSnap.docs[0].data() as Role;
-          rolePermissions = roleData.permissions || {};
-          permissionsCache.set(user.role, rolePermissions); // Cache the fetched permissions
-        } else {
-          console.warn(`Role '${user.role}' not found.`);
-          rolePermissions = {};
-          permissionsCache.set(user.role, {}); // Cache empty permissions to avoid re-fetching
-        }
-      } catch (error) {
-        console.error("Error fetching role permissions:", error);
-        return false;
-      }
+    } else {
+       modulePermissions = permissions[module];
     }
-
-    const modulePermissions = rolePermissions[module];
-
+    
     if (!modulePermissions) {
       return false;
     }
 
     return modulePermissions.includes(action);
-  }, [user]);
+  }, [permissions, loading]);
 
-  return { can };
+  return { can, isLoading: loading };
 };

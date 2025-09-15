@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                  setPermissions({});
             }
         } else {
+            console.warn(`User ${userData.email} has no role assigned.`);
             setPermissions({});
         }
 
@@ -105,8 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // Render children if the route is public, or if the user is authenticated for a private route
-  if (isPublicRoute || user) {
+  // Render children only if the route is public, or if loading is finished for a private route
+  if (isPublicRoute || !loading) {
      return (
         <AuthContext.Provider value={{ user, permissions, loading, refreshUserData }}>
             {children}
@@ -114,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // If loading is finished, not a public route, and no user, show loading spinner while redirecting
+  // Fallback for private routes while loading
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <Loader2 className="h-12 w-12 animate-spin text-primary" />
