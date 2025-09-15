@@ -49,8 +49,6 @@ export default function SiteFundRequisitionPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)]">
-        <SiteFundDashboard />
-    </div>
+    <SiteFundDashboard />
   );
 }
