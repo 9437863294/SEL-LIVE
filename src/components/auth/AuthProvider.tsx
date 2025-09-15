@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -42,7 +43,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
         setUser(userData);
 
-        // Fetch role and permissions
         if (userData.role) {
             const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
             const roleSnap = await getDocs(rolesQuery);
@@ -50,10 +50,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const roleData = roleSnap.docs[0].data() as Role;
                 setPermissions(roleData.permissions || {});
             } else {
-                 setPermissions({}); // No specific role found
+                 setPermissions({});
             }
         } else {
-            setPermissions({}); // No role assigned
+            setPermissions({});
         }
 
       } else {
@@ -73,17 +73,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (firebaseUser) {
         setLoading(true);
         await fetchUserData(firebaseUser);
-        setLoading(false);
     }
   }, [fetchUserData]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, fetchUserData);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setAuthChecked(false);
+        setLoading(true);
+        fetchUserData(firebaseUser).then(() => {
+            setAuthChecked(true);
+        });
+    });
     return () => unsubscribe();
   }, [fetchUserData]);
 
   useEffect(() => {
-    if (loading) return;
+    if (!authChecked) return;
 
     const isPublicRoute = publicRoutes.includes(pathname);
 
@@ -92,24 +97,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else if (user && isPublicRoute) {
       router.push('/');
     }
-  }, [user, loading, router, pathname]);
+  }, [user, authChecked, router, pathname]);
   
-
   const isPublicRoute = publicRoutes.includes(pathname);
-  const showLoader = loading && !isPublicRoute
-  const showChildren = !loading && ((user && !isPublicRoute) || (!user && isPublicRoute));
 
-  return (
-    <AuthContext.Provider value={{ user, permissions, loading, refreshUserData }}>
-        {showLoader ? (
-            <div className="flex min-h-screen items-center justify-center bg-background">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            </div>
-        ) : showChildren ? (
-            children
-        ) : null}
-    </AuthContext.Provider>
-  )
+  if (loading || (!authChecked && !isPublicRoute)) {
+     return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+    );
+  }
+
+  if ((user && !isPublicRoute) || (!user && isPublicRoute)) {
+     return (
+        <AuthContext.Provider value={{ user, permissions, loading, refreshUserData }}>
+            {children}
+        </AuthContext.Provider>
+    );
+  }
+
+  return null;
 }
 
 export const useAuth = () => {
