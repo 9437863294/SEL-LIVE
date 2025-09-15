@@ -153,7 +153,7 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix}${formattedIndex}${configData.suffix}`;
+            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
             setPreviewRequisitionId(requisitionId);
         } else {
             setPreviewRequisitionId('Configuration not found');
@@ -261,7 +261,7 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
             
             transaction.update(configRef, { startingIndex: newIndex + 1 });
             return requisitionId;
@@ -625,8 +625,8 @@ export default function AllRequisitionsTab() {
   );
 
   return (
-    <div className="w-full h-full flex flex-col">
-        <div className="sticky top-0 bg-background z-10 py-4 flex justify-end items-center gap-4">
+    <div className="flex flex-col h-full">
+        <div className="py-4 flex justify-end items-center gap-4">
             {canViewAll && (
               <div className="flex items-center space-x-2">
                   <Switch 
@@ -676,9 +676,9 @@ export default function AllRequisitionsTab() {
                 </DialogContent>
             </Dialog>
         </div>
-        <div className="border rounded-lg overflow-hidden flex-grow">
+        <div className="border rounded-lg flex-grow overflow-hidden">
           <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
+            <TableHeader>
               <TableRow>
                 <TableHead>Request ID</TableHead>
                 <TableHead>Date</TableHead>
