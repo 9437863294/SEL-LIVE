@@ -61,9 +61,9 @@ export default function ExpenseReportsPage() {
   const { can, isLoading } = useAuthorization();
 
   const reportItems = [
-    { icon: Building2, text: 'Department-wise Summary', href: '#', description: 'Summary of expenses for each department.', disabled: !can('View All', 'Expenses.Expense Requests') },
-    { icon: Briefcase, text: 'Project-wise Summary', href: '#', description: 'Breakdown of expenses by project.', disabled: !can('View All', 'Expenses.Expense Requests') },
-    { icon: Tags, text: 'Head of Account Summary', href: '#', description: 'Consolidated view based on account heads.', disabled: !can('View All', 'Expenses.Expense Requests') },
+    { icon: Building2, text: 'Department-wise Summary', href: '/expenses/reports/department-summary', description: 'Summary of expenses for each department.', disabled: !can('View All', 'Expenses.Expense Requests') },
+    { icon: Briefcase, text: 'Project-wise Summary', href: '/expenses/reports/project-summary', description: 'Breakdown of expenses by project.', disabled: !can('View All', 'Expenses.Expense Requests') },
+    { icon: Tags, text: 'Head of Account Summary', href: '/expenses/reports/account-summary', description: 'Consolidated view based on account heads.', disabled: !can('View All', 'Expenses.Expense Requests') },
   ];
 
   return (
