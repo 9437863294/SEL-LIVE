@@ -87,7 +87,7 @@ export default function AppearancePage() {
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/settings">
           <Button variant="ghost" size="icon">
