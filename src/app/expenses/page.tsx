@@ -94,7 +94,7 @@ export default function ExpensesPage() {
 
   const departmentItems = useMemo(() => {
     return departments
-      .filter(dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses'))
+      .filter(dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses.Expense Requests'))
       .map(dept => ({
         icon: Building2,
         text: dept.name,
