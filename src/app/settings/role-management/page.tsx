@@ -96,6 +96,7 @@ const initialNewRoleState = {
 export default function ManageRolePage() {
   const { toast } = useToast();
   const { can } = useAuthorization();
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -104,6 +105,27 @@ export default function ManageRolePage() {
 
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  
+  const [canAdd, setCanAdd] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [canDelete, setCanDelete] = useState(false);
+
+  useEffect(() => {
+    const checkPermissions = async () => {
+        const viewAccess = await can('View', 'Role Management');
+        setHasAccess(viewAccess);
+
+        if (viewAccess) {
+            setCanAdd(await can('Add', 'Role Management'));
+            setCanEdit(await can('Edit', 'Role Management'));
+            setCanDelete(await can('Delete', 'Role Management'));
+            fetchRoles();
+        } else {
+            setIsLoading(false);
+        }
+    };
+    checkPermissions();
+  }, [can]);
 
   const fetchRoles = async () => {
     setIsLoading(true);
@@ -125,14 +147,6 @@ export default function ManageRolePage() {
     setIsLoading(false);
   };
 
-  useEffect(() => {
-    if (can('View', 'Role Management')) {
-        fetchRoles();
-    } else {
-        setIsLoading(false);
-    }
-  }, [can]);
-  
   const resetAddDialog = () => {
     setNewRole(JSON.parse(JSON.stringify(initialNewRoleState)));
     setIsAddDialogOpen(false);
@@ -321,7 +335,7 @@ export default function ManageRolePage() {
     </div>
   );
 
-  if (isLoading) {
+  if (hasAccess === null || (hasAccess && isLoading)) {
     return (
         <div className="w-full max-w-6xl mx-auto">
             <div className="mb-6 flex items-center justify-between">
@@ -337,7 +351,7 @@ export default function ManageRolePage() {
     )
   }
 
-  if (!can('View', 'Role Management')) {
+  if (hasAccess === false) {
     return (
         <div className="w-full max-w-4xl mx-auto">
             <div className="mb-6 flex items-center gap-4">
@@ -374,7 +388,7 @@ export default function ManageRolePage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button disabled={!can('Add', 'Role Management')}>
+            <Button disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add New Role
             </Button>
@@ -447,8 +461,8 @@ export default function ManageRolePage() {
                       </TooltipProvider>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(role)} disabled={!can('Edit', 'Role Management')}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteRole(role.id)} disabled={!can('Delete', 'Role Management')}>Delete</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(role)} disabled={!canEdit}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteRole(role.id)} disabled={!canDelete}>Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))
