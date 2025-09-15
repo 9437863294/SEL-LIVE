@@ -20,7 +20,7 @@ export default function ExpensesLayout({
   const navItems = [
     { href: '/expenses/all', icon: Layers, label: 'Consolidated View', permission: can('View All', 'Expenses.Expense Requests') },
     { href: '/expenses/reports', icon: BarChart3, label: 'Reports', permission: can('View All', 'Expenses.Expense Requests') },
-    { href: '/settings/expenses', icon: Settings, label: 'Settings', permission: can('View', 'Expenses.Settings') }
+    { href: '/expenses/settings', icon: Settings, label: 'Settings', permission: can('View', 'Expenses.Settings') }
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);

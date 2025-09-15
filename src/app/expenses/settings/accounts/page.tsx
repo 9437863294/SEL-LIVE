@@ -193,7 +193,7 @@ export default function ManageAccountsPage() {
         <div className="w-full max-w-4xl mx-auto">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <Link href="/settings/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                 <h1 className="text-2xl font-bold">Manage Accounts</h1>
               </div>
             </div>
@@ -210,7 +210,7 @@ export default function ManageAccountsPage() {
       <div className="w-full max-w-4xl mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/settings/expenses">
+            <Link href="/expenses/settings">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
             <h1 className="text-2xl font-bold">Manage Accounts</h1>

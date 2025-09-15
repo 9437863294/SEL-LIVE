@@ -27,14 +27,14 @@ const settingsItemsBase = [
     icon: Hash, 
     title: 'Department-wise Serial Number', 
     description: 'Configure serial numbers for expense reports for each department.',
-    href: '/settings/expenses/department-serial-no',
+    href: '/expenses/settings/department-serial-no',
     permission: 'Edit Serial Nos'
   },
   { 
     icon: Tags, 
     title: 'Head of A/c Sub-Head of A/c', 
     description: 'Manage the chart of accounts for expenses.',
-    href: '/settings/expenses/accounts',
+    href: '/expenses/settings/accounts',
     permission: 'Manage Accounts'
   },
   { 
