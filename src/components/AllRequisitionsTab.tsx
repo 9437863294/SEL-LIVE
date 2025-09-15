@@ -54,9 +54,9 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
-import { Switch } from './ui/switch';
+import { Switch } from '@/components/ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -153,7 +153,7 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
             setPreviewRequisitionId(requisitionId);
         } else {
             setPreviewRequisitionId('Configuration not found');
@@ -261,7 +261,7 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
             
             transaction.update(configRef, { startingIndex: newIndex + 1 });
             return requisitionId;
@@ -753,3 +753,5 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
+    
