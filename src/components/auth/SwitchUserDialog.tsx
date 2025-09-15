@@ -93,10 +93,13 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         toast({
             title: "Switch Failed",
             description: isWrongPassword
-                ? 'Your admin password was incorrect.' 
+                ? 'Your admin password was incorrect. Please try again.' 
                 : 'Could not switch user.',
             variant: "destructive",
         });
+        if(isWrongPassword) {
+          setPassword('');
+        }
     } finally {
         setIsSwitching(false);
     }
