@@ -5,12 +5,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search, Calendar as CalendarIcon, Edit, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project, UserSettings } from '@/lib/types';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc, updateDoc } from 'firebase/firestore';
+import type { Department, ExpenseRequest, Project, UserSettings, AccountHead, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,15 +33,17 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday, parseISO } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
+import { Label } from '@/components/ui/label';
 
 
 const baseTableHeaders = [
@@ -71,8 +73,13 @@ export default function DepartmentExpensesPage() {
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
+  const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // State for column order
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
@@ -92,6 +99,8 @@ export default function DepartmentExpensesPage() {
   
   const canViewPage = can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses');
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
+  const canEdit = can('Edit', 'Expenses.Departments', departmentId);
+
 
   const handleFilterChange = (field: keyof Omit<typeof filters, 'dateRange'>, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -118,6 +127,52 @@ export default function DepartmentExpensesPage() {
   }, [expenses, filters, projects]);
 
 
+  const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const deptDocRef = doc(db, 'departments', departmentId);
+        const projectsSnap = await getDocs(collection(db, 'projects'));
+        const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId));
+        const headsSnap = await getDocs(collection(db, 'accountHeads'));
+        const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
+
+        const [deptDocSnap, expensesSnap, headsData, subHeadsData] = await Promise.all([
+          getDoc(deptDocRef),
+          getDocs(expensesQuery),
+          headsSnap,
+          subHeadsSnap,
+        ]);
+
+        if (deptDocSnap.exists()) {
+          setDepartment({ id: deptDocSnap.id, ...deptDocSnap.data() } as Department);
+        } else {
+          toast({ title: 'Error', description: 'Department not found.', variant: 'destructive' });
+        }
+        
+        setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setAccountHeads(headsData.docs.map(d => ({id: d.id, ...d.data()} as AccountHead)));
+        setSubAccountHeads(subHeadsData.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
+
+        const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
+        fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setExpenses(fetchedExpenses);
+        
+      } catch (error: any) {
+        console.error("Error fetching data:", error);
+        if (error.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This query requires a custom index. Please check your Firebase console.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        } else {
+            toast({ title: 'Error', description: 'Failed to fetch department details.', variant: 'destructive' });
+        }
+      }
+      setIsLoading(false);
+    };
+
   useEffect(() => {
     if (!user || isAuthLoading) return;
     const fetchSettings = async () => {
@@ -127,7 +182,6 @@ export default function DepartmentExpensesPage() {
         const settings = settingsSnap.data() as UserSettings;
         const pageSettings = settings.columnPreferences?.[settingsKey];
         if (pageSettings) {
-          // Ensure all base headers are present in the loaded settings
           const mergedVisibility = {
             ...baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {}),
             ...pageSettings.visibility
@@ -183,49 +237,6 @@ export default function DepartmentExpensesPage() {
         setIsLoading(false);
         return;
     }
-
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const deptDocRef = doc(db, 'departments', departmentId);
-        const projectsSnap = await getDocs(collection(db, 'projects'));
-        
-        const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId));
-
-        const [deptDocSnap, expensesSnap] = await Promise.all([
-          getDoc(deptDocRef),
-          getDocs(expensesQuery)
-        ]);
-
-        if (deptDocSnap.exists()) {
-          setDepartment({ id: deptDocSnap.id, ...deptDocSnap.data() } as Department);
-        } else {
-          toast({ title: 'Error', description: 'Department not found.', variant: 'destructive' });
-        }
-        
-        setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-
-        const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
-        // Sort in the browser instead of in the query
-        fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setExpenses(fetchedExpenses);
-        
-      } catch (error: any) {
-        console.error("Error fetching data:", error);
-        if (error.code === 'failed-precondition') {
-             toast({
-                title: 'Database Index Required',
-                description: "This query requires a custom index. Please check your Firebase console.",
-                variant: 'destructive',
-                duration: 10000,
-             });
-        } else {
-            toast({ title: 'Error', description: 'Failed to fetch department details.', variant: 'destructive' });
-        }
-      }
-      setIsLoading(false);
-    };
-
     fetchData();
   }, [departmentId, toast, isAuthLoading, canViewPage]);
   
@@ -285,6 +296,42 @@ export default function DepartmentExpensesPage() {
       default:
         return '';
     }
+  };
+  
+  const openEditDialog = (expense: ExpenseRequest) => {
+    setEditingExpense(expense);
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleUpdateExpense = async () => {
+    if (!editingExpense) return;
+    setIsSaving(true);
+    try {
+        const expenseRef = doc(db, 'expenseRequests', editingExpense.id);
+        const { id, ...dataToUpdate } = editingExpense;
+        await updateDoc(expenseRef, dataToUpdate);
+        toast({ title: 'Success', description: 'Expense request updated successfully.' });
+        setIsEditDialogOpen(false);
+        setEditingExpense(null);
+        fetchData();
+    } catch (error) {
+        console.error("Error updating expense:", error);
+        toast({ title: 'Update Failed', description: 'An error occurred while updating the request.', variant: 'destructive' });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+  
+  const handleSubHeadChange = (subHeadName: string) => {
+    if(!editingExpense) return;
+    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
+    const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
+
+    setEditingExpense({
+      ...editingExpense,
+      subHeadOfAccount: subHeadName,
+      headOfAccount: parentHead ? parentHead.name : '',
+    });
   };
 
   if (isLoading || isAuthLoading) {
@@ -453,6 +500,7 @@ export default function DepartmentExpensesPage() {
                                 {visibleHeaders.map((header) => (
                                   <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
                                 ))}
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -462,6 +510,7 @@ export default function DepartmentExpensesPage() {
                                         {visibleHeaders.map(header => (
                                             <TableCell key={header}><Skeleton className="h-5 w-full" /></TableCell>
                                         ))}
+                                        <TableCell><Skeleton className="h-8 w-16" /></TableCell>
                                     </TableRow>
                                 ))
                             ) : filteredExpenses.length > 0 ? (
@@ -472,11 +521,21 @@ export default function DepartmentExpensesPage() {
                                                 {getCellContent(header, expense)}
                                             </TableCell>
                                         ))}
+                                        <TableCell className="text-right">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openEditDialog(expense)}
+                                                disabled={!canEdit || !!expense.receptionNo}
+                                            >
+                                                <Edit className="mr-2 h-4 w-4" /> Edit
+                                            </Button>
+                                        </TableCell>
                                     </TableRow>
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={visibleHeaders.length} className="text-center h-24">
+                                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
                                         No expense requests found.
                                     </TableCell>
                                 </TableRow>
@@ -487,8 +546,66 @@ export default function DepartmentExpensesPage() {
             </CardContent>
         </Card>
     </div>
+    
+    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+                <DialogTitle>Edit Expense Request: {editingExpense?.requestNo}</DialogTitle>
+                <DialogDescription>Update the details of the expense request.</DialogDescription>
+            </DialogHeader>
+            {editingExpense && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+                   <div className="space-y-2">
+                        <Label>Project Name</Label>
+                        <Select value={editingExpense.projectId} onValueChange={(value) => setEditingExpense({...editingExpense, projectId: value})}>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </div>
+                     <div className="space-y-2">
+                        <Label>Amount</Label>
+                        <Input type="number" value={editingExpense.amount} onChange={e => setEditingExpense({...editingExpense, amount: e.target.valueAsNumber || 0})} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Name of the party</Label>
+                        <Input value={editingExpense.partyName} onChange={e => setEditingExpense({...editingExpense, partyName: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Head of A/c</Label>
+                        <Select value={editingExpense.headOfAccount} disabled>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Sub-Head of A/c</Label>
+                        <Select value={editingExpense.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </div>
+                     <div className="space-y-2 hidden md:block lg:hidden"></div>
+                    <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
+                        <Label>Description</Label>
+                        <Textarea value={editingExpense.description} onChange={e => setEditingExpense({...editingExpense, description: e.target.value})} />
+                    </div>
+                     <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
+                        <Label>Remarks</Label>
+                        <Textarea value={editingExpense.remarks} onChange={e => setEditingExpense({...editingExpense, remarks: e.target.value})} />
+                    </div>
+                </div>
+            )}
+            <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button onClick={handleUpdateExpense} disabled={isSaving}>
+                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save Changes
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
     </>
   );
 }
+
 
 
