@@ -79,6 +79,7 @@ export default function DepartmentExpensesPage() {
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
+  const [editFormData, setEditFormData] = useState<ExpenseRequest | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // State for column order
@@ -300,19 +301,21 @@ export default function DepartmentExpensesPage() {
   
   const openEditDialog = (expense: ExpenseRequest) => {
     setEditingExpense(expense);
+    setEditFormData(expense); // Set local form state for the dialog
     setIsEditDialogOpen(true);
   };
   
   const handleUpdateExpense = async () => {
-    if (!editingExpense) return;
+    if (!editFormData) return;
     setIsSaving(true);
     try {
-        const expenseRef = doc(db, 'expenseRequests', editingExpense.id);
-        const { id, ...dataToUpdate } = editingExpense;
+        const expenseRef = doc(db, 'expenseRequests', editFormData.id);
+        const { id, ...dataToUpdate } = editFormData;
         await updateDoc(expenseRef, dataToUpdate);
         toast({ title: 'Success', description: 'Expense request updated successfully.' });
         setIsEditDialogOpen(false);
         setEditingExpense(null);
+        setEditFormData(null);
         fetchData();
     } catch (error) {
         console.error("Error updating expense:", error);
@@ -323,12 +326,12 @@ export default function DepartmentExpensesPage() {
   };
   
   const handleSubHeadChange = (subHeadName: string) => {
-    if(!editingExpense) return;
+    if(!editFormData) return;
     const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
     const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
 
-    setEditingExpense({
-      ...editingExpense,
+    setEditFormData({
+      ...editFormData,
       subHeadOfAccount: subHeadName,
       headOfAccount: parentHead ? parentHead.name : '',
     });
@@ -553,32 +556,32 @@ export default function DepartmentExpensesPage() {
                 <DialogTitle>Edit Expense Request: {editingExpense?.requestNo}</DialogTitle>
                 <DialogDescription>Update the details of the expense request.</DialogDescription>
             </DialogHeader>
-            {editingExpense && (
+            {editFormData && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
                    <div className="space-y-2">
                         <Label>Project Name</Label>
-                        <Select value={editingExpense.projectId} onValueChange={(value) => setEditingExpense({...editingExpense, projectId: value})}>
+                        <Select value={editFormData.projectId} onValueChange={(value) => setEditFormData({...editFormData, projectId: value})}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
                             <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                      <div className="space-y-2">
                         <Label>Amount</Label>
-                        <Input type="number" value={editingExpense.amount} onChange={e => setEditingExpense({...editingExpense, amount: e.target.valueAsNumber || 0})} />
+                        <Input type="number" value={editFormData.amount} onChange={e => setEditFormData({...editFormData, amount: e.target.valueAsNumber || 0})} />
                     </div>
                     <div className="space-y-2">
                         <Label>Name of the party</Label>
-                        <Input value={editingExpense.partyName} onChange={e => setEditingExpense({...editingExpense, partyName: e.target.value})} />
+                        <Input value={editFormData.partyName} onChange={e => setEditFormData({...editFormData, partyName: e.target.value})} />
                     </div>
                     <div className="space-y-2">
                         <Label>Head of A/c</Label>
-                        <Select value={editingExpense.headOfAccount} disabled>
+                        <Select value={editFormData.headOfAccount} disabled>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                         </Select>
                     </div>
                     <div className="space-y-2">
                         <Label>Sub-Head of A/c</Label>
-                        <Select value={editingExpense.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                        <Select value={editFormData.subHeadOfAccount} onValueChange={handleSubHeadChange}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
@@ -586,11 +589,11 @@ export default function DepartmentExpensesPage() {
                      <div className="space-y-2 hidden md:block lg:hidden"></div>
                     <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
                         <Label>Description</Label>
-                        <Textarea value={editingExpense.description} onChange={e => setEditingExpense({...editingExpense, description: e.target.value})} />
+                        <Textarea value={editFormData.description} onChange={e => setEditFormData({...editFormData, description: e.target.value})} />
                     </div>
                      <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
                         <Label>Remarks</Label>
-                        <Textarea value={editingExpense.remarks} onChange={e => setEditingExpense({...editingExpense, remarks: e.target.value})} />
+                        <Textarea value={editFormData.remarks} onChange={e => setEditFormData({...editFormData, remarks: e.target.value})} />
                     </div>
                 </div>
             )}
@@ -606,5 +609,6 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
+
 
 
