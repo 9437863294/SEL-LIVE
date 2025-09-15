@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Calendar as CalendarIcon, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,8 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import type { ExpenseRequest, Project, Department } from '@/lib/types';
+import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
+import type { ExpenseRequest, Project, Department, UserSettings, PivotConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 
 const pivotOptions = [
@@ -53,15 +53,18 @@ interface PivotRow {
     type: 'data' | 'total';
     level: number;
     label: string;
-    data: Record<string, number | string>;
     isExpanded?: boolean;
     subRows?: PivotRow[];
+    data: Record<string, number | string>;
 }
 
 
 export default function ExpenseReportsPage() {
     const { toast } = useToast();
     const { can, isLoading: isAuthLoading } = useAuthorization();
+    const { user } = useAuth();
+    const settingsKey = 'expenses_reports_pivot';
+    const isInitialMount = useRef(true);
     
     const [allExpenses, setAllExpenses] = useState<EnrichedExpense[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -73,13 +76,50 @@ export default function ExpenseReportsPage() {
         } as DateRange | undefined,
     });
     
-    const [pivotConfig, setPivotConfig] = useState({
-        rows: ['projectName'] as string[],
-        columns: ['month'] as string[],
+    const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
+        rows: ['projectName'],
+        columns: ['month'],
         value: 'amount',
     });
 
     const canViewPage = can('View All', 'Expenses.Expense Requests');
+
+     useEffect(() => {
+        if (!user || isAuthLoading) return;
+        const fetchSettings = async () => {
+            const settingsRef = doc(db, 'userSettings', user.id);
+            const settingsSnap = await getDoc(settingsRef);
+            if (settingsSnap.exists()) {
+                const settings = settingsSnap.data() as UserSettings;
+                if (settings.pivotPreferences?.[settingsKey]) {
+                    setPivotConfig(settings.pivotPreferences[settingsKey]);
+                }
+            }
+        };
+        fetchSettings();
+    }, [user, isAuthLoading]);
+
+    const savePivotConfig = async (config: PivotConfig) => {
+        if (!user) return;
+        try {
+            const settingsRef = doc(db, 'userSettings', user.id);
+            await setDoc(settingsRef, { 
+                pivotPreferences: { 
+                    [settingsKey]: config 
+                } 
+            }, { merge: true });
+        } catch (e) {
+            console.error("Failed to save pivot config:", e);
+        }
+    };
+
+    useEffect(() => {
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+        } else {
+            savePivotConfig(pivotConfig);
+        }
+    }, [pivotConfig]);
 
     useEffect(() => {
         if (isAuthLoading) return;
@@ -136,7 +176,7 @@ export default function ExpenseReportsPage() {
     const pivotData = useMemo(() => {
         const { rows: rowFields, columns: colFields, value: valueField } = pivotConfig;
         if (rowFields.length === 0 || colFields.length === 0 || filteredExpenses.length === 0) {
-            return { rows: [], columns: [], grandTotal: 0 };
+            return { rows: [], columns: [], grandTotalRow: {}, grandTotal: 0 };
         }
 
         const getColumnValues = (data: EnrichedExpense[], fields: string[]) => {
@@ -153,16 +193,15 @@ export default function ExpenseReportsPage() {
             return result;
         };
 
-        const flattenColumns = (cols: any[]): { key: string; path: string[] }[] => {
+        const flattenColumns = (cols: any[], path: string[] = []): { key: string; path: string[] }[] => {
             if (cols.length === 0) return [];
             let flat: { key: string; path: string[] }[] = [];
             cols.forEach(col => {
+                const currentPath = [...path, col.key];
                 if (col.values && Object.keys(col.values).length > 0 && col.values[0]?.key !== 'Total') {
-                     flattenColumns(col.values).forEach(subCol => {
-                        flat.push({ key: subCol.key, path: [col.key, ...subCol.path] });
-                    });
+                     flat.push(...flattenColumns(col.values, currentPath));
                 } else {
-                    flat.push({ key: col.key, path: [col.key] });
+                    flat.push({ key: col.key, path: currentPath });
                 }
             });
             return flat;
@@ -196,9 +235,9 @@ export default function ExpenseReportsPage() {
                     });
                     const cellValue = filteredItems.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
                     rowData[colKey] = cellValue;
+                    rowData.__rowTotal += cellValue;
                 });
-                rowData.__rowTotal = Object.values(rowData).reduce((sum, val) => sum + val, 0);
-
+                
                 const subRows = groupData(items, level + 1);
 
                 result.push({
@@ -214,9 +253,16 @@ export default function ExpenseReportsPage() {
         };
         
         const finalRows = groupData(filteredExpenses, 0);
-        const grandTotal = finalRows.reduce((acc, row) => acc + (row.data.__rowTotal as number), 0);
+
+        const grandTotalRow: Record<string, number> = { __grandTotal: 0 };
+        flatCols.forEach(col => {
+            const colKey = col.path.join('_');
+            const colTotal = finalRows.reduce((sum, row) => sum + ((row.data[colKey] as number) || 0), 0);
+            grandTotalRow[colKey] = colTotal;
+            grandTotalRow.__grandTotal += colTotal;
+        });
         
-        return { rows: finalRows, columns: flatCols, grandTotal };
+        return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal: grandTotalRow.__grandTotal };
 
     }, [filteredExpenses, pivotConfig]);
     
@@ -399,10 +445,9 @@ export default function ExpenseReportsPage() {
                                        <TableCell>Grand Total</TableCell>
                                        {pivotData.columns.map(col => {
                                             const colKey = col.path.join('_');
-                                            const colTotal = pivotData.rows.reduce((sum, row) => sum + ((row.data[colKey] as number) || 0), 0);
                                             return (
                                                 <TableCell key={`total-${colKey}`} className="text-right">
-                                                    {pivotConfig.value === 'amount' ? colTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : colTotal.toLocaleString()}
+                                                    {pivotConfig.value === 'amount' ? (pivotData.grandTotalRow[colKey] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (pivotData.grandTotalRow[colKey] || 0).toLocaleString()}
                                                 </TableCell>
                                             )
                                        })}
@@ -419,4 +464,3 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
-

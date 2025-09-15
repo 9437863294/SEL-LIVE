@@ -7,6 +7,7 @@
 
 
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -152,8 +153,15 @@ export type ColumnPreference = {
   visibility: Record<string, boolean>;
 };
 
+export type PivotConfig = {
+  rows: string[];
+  columns: string[];
+  value: string;
+};
+
 export type UserSettings = {
   columnPreferences?: Record<string, ColumnPreference>;
+  pivotPreferences?: Record<string, PivotConfig>;
 };
 
 
