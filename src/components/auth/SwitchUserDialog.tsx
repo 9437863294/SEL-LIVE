@@ -85,7 +85,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         
         onOpenChange(false);
         resetDialog();
-        refreshUserData(); // Trigger the provider to update context based on session storage
+        await refreshUserData();
         
     } catch (error: any) {
         console.error("Error switching user:", error);
