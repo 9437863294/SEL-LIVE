@@ -126,8 +126,12 @@ export default function ManageRolePage() {
   };
 
   useEffect(() => {
-    fetchRoles();
-  }, []);
+    if (can('View', 'Role Management')) {
+        fetchRoles();
+    } else {
+        setIsLoading(false);
+    }
+  }, [can]);
   
   const resetAddDialog = () => {
     setNewRole(JSON.parse(JSON.stringify(initialNewRoleState)));
@@ -316,6 +320,22 @@ export default function ManageRolePage() {
       </div>
     </div>
   );
+
+  if (isLoading) {
+    return (
+        <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <Skeleton className="h-96 w-full" />
+                </CardContent>
+            </Card>
+        </div>
+    )
+  }
 
   if (!can('View', 'Role Management')) {
     return (

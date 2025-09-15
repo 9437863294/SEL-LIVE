@@ -30,7 +30,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -50,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const roleData = roleSnap.docs[0].data() as Role;
                 setPermissions(roleData.permissions || {});
             } else {
+                 console.warn(`Role '${userData.role}' not found for user ${userData.email}.`);
                  setPermissions({});
             }
         } else {
@@ -78,17 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-        setAuthChecked(false);
         setLoading(true);
-        fetchUserData(firebaseUser).then(() => {
-            setAuthChecked(true);
-        });
+        fetchUserData(firebaseUser);
     });
     return () => unsubscribe();
   }, [fetchUserData]);
 
   useEffect(() => {
-    if (!authChecked) return;
+    if (loading) return;
 
     const isPublicRoute = publicRoutes.includes(pathname);
 
@@ -97,11 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else if (user && isPublicRoute) {
       router.push('/');
     }
-  }, [user, authChecked, router, pathname]);
+  }, [user, loading, router, pathname]);
   
   const isPublicRoute = publicRoutes.includes(pathname);
-
-  if (loading || (!authChecked && !isPublicRoute)) {
+  if (loading && !isPublicRoute) {
      return (
         <div className="flex min-h-screen items-center justify-center bg-background">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -109,7 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  if ((user && !isPublicRoute) || (!user && isPublicRoute)) {
+  // Render children if the route is public, or if the user is authenticated for a private route
+  if (isPublicRoute || user) {
      return (
         <AuthContext.Provider value={{ user, permissions, loading, refreshUserData }}>
             {children}
@@ -117,7 +114,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return null;
+  // If loading is finished, not a public route, and no user, show loading spinner while redirecting
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <Loader2 className="h-12 w-12 animate-spin text-primary" />
+    </div>
+  );
 }
 
 export const useAuth = () => {
