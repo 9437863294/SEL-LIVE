@@ -99,7 +99,8 @@ export const permissionModules = {
   'Expenses': {
     'View Module': [],
     'Departments': ['View', 'Create', 'Edit'],
-    'View All': [], // Can view all departments' expenses
+    'Expense Requests': ['View All'],
+    'Reports': ['View'],
     'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
   },
   'Settings': {

@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Calendar as CalendarIcon, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -84,7 +84,7 @@ export default function ExpenseReportsPage() {
         value: 'amount',
     });
 
-    const canViewPage = can('View All', 'Expenses.Expense Requests');
+    const canViewPage = can('View', 'Expenses.Reports');
 
      useEffect(() => {
         if (!user || isAuthLoading) return;
@@ -301,7 +301,7 @@ export default function ExpenseReportsPage() {
                     <h1 className="text-2xl font-bold">Expense Reports</h1>
                 </div>
                 <Card>
-                    <CardHeader><CardTitle>Access Denied</CardTitle><p>You do not have permission to view reports.</p></CardHeader>
+                    <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view reports.</CardDescription></CardHeader>
                     <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
