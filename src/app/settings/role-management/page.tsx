@@ -69,7 +69,7 @@ const permissionModules = {
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
     'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
     'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
-    'User Management': ['View', 'Add', 'Edit', 'Delete'],
+    'User Management': ['View', 'Add', 'Edit', 'Delete', 'Switch User'],
     'Role Management': ['View', 'Add', 'Edit', 'Delete'],
     'Working Hrs': ['View', 'Edit'],
     'Serial No. Config': ['View', 'Edit'],

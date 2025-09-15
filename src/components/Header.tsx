@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2 } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { usePathname, useRouter } from 'next/navigation';
 import { auth, db } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
+import { signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import type { Requisition, Project, Department } from '@/lib/types';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { SwitchUserDialog } from './auth/SwitchUserDialog';
 
 
 export default function Header() {
@@ -33,6 +35,8 @@ export default function Header() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isSwitchUserOpen, setIsSwitchUserOpen] = useState(false);
+  const { can } = useAuthorization();
   
   const [pendingTasks, setPendingTasks] = useState<Requisition[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -40,6 +44,8 @@ export default function Header() {
 
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  
+  const canSwitchUser = can('Switch User', 'Settings.User Management');
 
   useEffect(() => {
     if (!user) return;
@@ -146,14 +152,14 @@ export default function Header() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                   <DropdownMenuItem disabled>
+                   <DropdownMenuLabel>
                       <div className="flex flex-col space-y-1">
                         <p className="text-sm font-medium leading-none">{user?.name}</p>
                         <p className="text-xs leading-none text-muted-foreground">
                           {user?.email}
                         </p>
                       </div>
-                    </DropdownMenuItem>
+                    </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem>
                       <UserIcon className="mr-2 h-4 w-4" />
@@ -169,6 +175,12 @@ export default function Header() {
                       <Lock className="mr-2 h-4 w-4" />
                       <span>Change Password</span>
                     </DropdownMenuItem>
+                     {canSwitchUser && (
+                        <DropdownMenuItem onSelect={() => setIsSwitchUserOpen(true)}>
+                            <Users className="mr-2 h-4 w-4" />
+                            <span>Switch User</span>
+                        </DropdownMenuItem>
+                    )}
                    <DropdownMenuSeparator />
                    <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
@@ -214,6 +226,7 @@ export default function Header() {
           </div>
         </div>
         <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
+        {canSwitchUser && <SwitchUserDialog isOpen={isSwitchUserOpen} onOpenChange={setIsSwitchUserOpen} />}
       </header>
       
       {selectedRequisition && (
