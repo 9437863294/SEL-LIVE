@@ -20,49 +20,29 @@ const defaultModules: Module[] = [
 
 
 export default function ModuleDashboard() {
-  const { modules, updateModuleOrder, isLoading, setModules } = useModules();
+  const { modules, updateModuleOrder, isLoading } = useModules();
   const { can } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  // This effect runs once when the component mounts to ensure the module list is clean.
-  useEffect(() => {
-    if (!isLoading) {
-        // Use a Map to ensure all module IDs are unique, with stored modules taking precedence.
-        const modulesMap = new Map<string, Module>();
-
-        // Add default modules first.
-        defaultModules.forEach(module => {
-            modulesMap.set(module.id, module);
-        });
-
-        // Add stored modules, overwriting defaults if IDs match.
-        modules.forEach(module => {
-           modulesMap.set(module.id, module);
-        });
-        
-        // Use the order from storage as the base, but ensure all default modules are present.
-        const finalModules: Module[] = [];
-        const finalModuleIds = new Set<string>();
-
-        // Add modules based on the stored order first
-        modules.forEach(storedModule => {
-            if (modulesMap.has(storedModule.id)) {
-                finalModules.push(modulesMap.get(storedModule.id)!);
-                finalModuleIds.add(storedModule.id);
-                modulesMap.delete(storedModule.id); // Remove from map to avoid re-adding
-            }
-        });
-
-        // Add any remaining modules from the map (these would be new default modules
-        // or any module that was in the default list but not in the user's saved order)
-        modulesMap.forEach(module => {
-            finalModules.push(module);
-        });
-        
-        setModules(finalModules);
+  const allModules = useMemo(() => {
+    if (isLoading) {
+      return [];
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading]);
+    // Create a map of the modules from local storage for quick lookups.
+    const savedModulesMap = new Map(modules.map(m => [m.id, m]));
+
+    // Ensure all default modules are present, using the saved version if it exists.
+    const finalModules = defaultModules.map(dm => savedModulesMap.get(dm.id) || dm);
+    
+    // Add any truly custom modules (not in the default set) that might exist in storage.
+    modules.forEach(sm => {
+        if (!defaultModules.some(dm => dm.id === sm.id)) {
+            finalModules.push(sm);
+        }
+    });
+
+    return finalModules;
+  }, [modules, isLoading]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
@@ -78,7 +58,7 @@ export default function ModuleDashboard() {
     e.preventDefault();
     if (draggedItemId === null || draggedItemId === targetId) return;
 
-    const currentModules = modules;
+    const currentModules = allModules;
     const draggedIndex = currentModules.findIndex((m) => m.id === draggedItemId);
     const targetIndex = currentModules.findIndex((m) => m.id === targetId);
 
@@ -88,7 +68,7 @@ export default function ModuleDashboard() {
     const [draggedItem] = newModules.splice(draggedIndex, 1);
     newModules.splice(targetIndex, 0, draggedItem);
     updateModuleOrder(newModules);
-  }, [draggedItemId, modules, updateModuleOrder]);
+  }, [draggedItemId, allModules, updateModuleOrder]);
   
   const handleDragEnd = useCallback(() => {
     setDraggedItemId(null);
@@ -96,8 +76,8 @@ export default function ModuleDashboard() {
   
   const currentModules = useMemo(() => {
     if (isLoading) return [];
-    return modules.filter(module => can('View Module', module.title));
-  }, [modules, can, isLoading]);
+    return allModules.filter(module => can('View Module', module.title));
+  }, [allModules, can, isLoading]);
 
   return (
     <div className="flex flex-col gap-8 h-full">
