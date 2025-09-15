@@ -89,9 +89,10 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         
     } catch (error: any) {
         console.error("Error switching user:", error);
+        const isWrongPassword = error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential';
         toast({
             title: "Switch Failed",
-            description: error.code === 'auth/wrong-password' 
+            description: isWrongPassword
                 ? 'Your admin password was incorrect.' 
                 : 'Could not switch user.',
             variant: "destructive",
