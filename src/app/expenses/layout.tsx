@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState } from 'react';
@@ -19,8 +20,8 @@ export default function ExpensesLayout({
 
   const navItems = [
     { href: '/expenses/all', icon: Layers, label: 'Consolidated View', permission: can('View All', 'Expenses.Expense Requests') },
-    { href: '/expenses/reports', icon: BarChart3, label: 'Reports', permission: can('View Module', 'Expenses.Reports') },
-    { href: '/expenses/settings', icon: Settings, label: 'Settings', permission: can('View Module', 'Expenses.Settings') }
+    { href: '/expenses/reports', icon: BarChart3, label: 'Reports', permission: can('View', 'Expenses.Reports') },
+    { href: '/expenses/settings', icon: Settings, label: 'Settings', permission: can('View', 'Expenses.Settings') }
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);
