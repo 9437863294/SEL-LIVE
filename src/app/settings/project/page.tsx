@@ -3,11 +3,14 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
+  CardHeader,
+  CardTitle as CardTitleShad,
+  CardDescription as CardDescriptionShad,
 } from '@/components/ui/card';
 import {
   Table,
@@ -35,6 +38,7 @@ import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const initialNewProjectState = {
   projectName: '',
@@ -48,6 +52,8 @@ const initialNewProjectState = {
 
 export default function ManageProjectPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -57,6 +63,19 @@ export default function ManageProjectPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
+  const canView = can('View', 'Settings.Manage Project');
+  const canAdd = can('Add', 'Settings.Manage Project');
+  const canEdit = can('Edit', 'Settings.Manage Project');
+  const canDelete = can('Delete', 'Settings.Manage Project');
+
+  useEffect(() => {
+    if (!isAuthLoading && canView) {
+        fetchProjects();
+    } else if (!isAuthLoading && !canView) {
+        setIsLoading(false);
+    }
+  }, [isAuthLoading, canView]);
+  
   const fetchProjects = async () => {
     setIsLoading(true);
     try {
@@ -76,10 +95,6 @@ export default function ManageProjectPage() {
     }
     setIsLoading(false);
   };
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
   
   const handleInputChange = (field: keyof typeof newProject, value: string) => {
     setNewProject(prev => ({ ...prev, [field]: value }));
@@ -169,6 +184,45 @@ export default function ManageProjectPage() {
     }
   };
 
+  if (isAuthLoading || (isLoading && canView)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <Skeleton className="h-96 w-full" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
+  
+  if (!canView) {
+      return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Manage Project</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitleShad>Access Denied</CardTitleShad>
+                    <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      )
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -183,7 +237,7 @@ export default function ManageProjectPage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add Project
             </Button>
@@ -297,8 +351,8 @@ export default function ManageProjectPage() {
                     <TableCell>{proj.siteInCharge}</TableCell>
                     <TableCell>{proj.status}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)}>Delete</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))
