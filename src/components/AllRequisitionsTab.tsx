@@ -70,6 +70,8 @@ const formSchema = z.object({
   attachments: z.custom<FileList>().optional(),
 });
 
+type FormValues = z.infer<typeof formSchema>;
+
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -101,7 +103,7 @@ export default function AllRequisitionsTab() {
     }
   }, [canViewAll]);
   
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       projectId: '',
@@ -151,7 +153,7 @@ export default function AllRequisitionsTab() {
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+            const requisitionId = `${configData.prefix}${formattedIndex}${configData.suffix}`;
             setPreviewRequisitionId(requisitionId);
         } else {
             setPreviewRequisitionId('Configuration not found');
@@ -220,7 +222,7 @@ export default function AllRequisitionsTab() {
       }
   };
 
-  const handleCreateRequest = async (values: z.infer<typeof formSchema>) => {
+  const handleCreateRequest = async (values: FormValues) => {
     if (!user) {
         toast({ title: 'Error', description: 'You must be logged in to create a request.', variant: 'destructive' });
         return;
@@ -308,7 +310,7 @@ export default function AllRequisitionsTab() {
     }
   }
 
-  const handleEditRequest = async (values: z.infer<typeof formSchema>) => {
+  const handleEditRequest = async (values: FormValues) => {
     if (!editingRequisition) return;
 
     try {
@@ -676,7 +678,7 @@ export default function AllRequisitionsTab() {
         </div>
         <div className="border rounded-lg overflow-hidden flex-grow">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
                 <TableHead>Request ID</TableHead>
                 <TableHead>Date</TableHead>
