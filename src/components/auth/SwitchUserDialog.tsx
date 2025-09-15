@@ -85,20 +85,25 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         
         onOpenChange(false);
         resetDialog();
-        await refreshUserData();
+        // Use reload to ensure all states and contexts are reset correctly
+        window.location.reload();
         
     } catch (error: any) {
         console.error("Error switching user:", error);
         const isWrongPassword = error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential';
-        toast({
-            title: "Switch Failed",
-            description: isWrongPassword
-                ? 'Your admin password was incorrect. Please try again.' 
-                : 'Could not switch user.',
-            variant: "destructive",
-        });
-        if(isWrongPassword) {
-          setPassword('');
+        if (isWrongPassword) {
+            toast({
+                title: "Switch Failed",
+                description: 'Your admin password was incorrect. Please try again.',
+                variant: "destructive",
+            });
+            setPassword(''); // Clear the password field
+        } else {
+            toast({
+                title: "Switch Failed",
+                description: 'Could not switch user.',
+                variant: "destructive",
+            });
         }
     } finally {
         setIsSwitching(false);

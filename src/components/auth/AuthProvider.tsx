@@ -117,10 +117,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
+    setLoading(true);
     if (firebaseUser) {
-        setLoading(true);
         await fetchUserData(firebaseUser);
+    } else {
+        await fetchUserData(null);
     }
+    setLoading(false);
   }, [fetchUserData]);
 
   useEffect(() => {
