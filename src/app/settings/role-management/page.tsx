@@ -32,8 +32,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { type Role, permissionModules } from '@/lib/types';
+import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch, query, where } from 'firebase/firestore';
+import { type Role, permissionModules, type Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -64,6 +64,7 @@ export default function ManageRolePage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   
   const [roles, setRoles] = useState<Role[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [newRole, setNewRole] = useState<{name: string, permissions: Record<string, string[]>}>(JSON.parse(JSON.stringify(initialNewRoleState)));
@@ -77,33 +78,39 @@ export default function ManageRolePage() {
   const canEdit = can('Edit', 'Settings.Role Management');
   const canDelete = can('Delete', 'Settings.Role Management');
 
-  useEffect(() => {
-    if (!isAuthLoading && canView) {
-      fetchRoles();
-    } else if (!isAuthLoading && !canView) {
-        setIsLoading(false);
-    }
-  }, [isAuthLoading, canView]);
-
-  const fetchRoles = async () => {
+  const fetchRolesAndDepartments = async () => {
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'roles'));
-      const rolesData: Role[] = [];
-      querySnapshot.forEach((doc) => {
-        rolesData.push({ id: doc.id, ...doc.data() } as Role);
-      });
+      const [rolesSnap, deptsSnap] = await Promise.all([
+        getDocs(collection(db, 'roles')),
+        getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')))
+      ]);
+      
+      const rolesData: Role[] = rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
       setRoles(rolesData);
+      
+      const deptsData: Department[] = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+      setDepartments(deptsData);
+
     } catch (error) {
-      console.error("Error fetching roles: ", error);
+      console.error("Error fetching roles or departments: ", error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch roles.',
+        description: 'Failed to fetch roles or departments.',
         variant: 'destructive',
       });
     }
     setIsLoading(false);
   };
+  
+  useEffect(() => {
+    if (!isAuthLoading && canView) {
+      fetchRolesAndDepartments();
+    } else if (!isAuthLoading && !canView) {
+        setIsLoading(false);
+    }
+  }, [isAuthLoading, canView]);
+
 
   const resetAddDialog = () => {
     setNewRole(JSON.parse(JSON.stringify(initialNewRoleState)));
@@ -162,7 +169,7 @@ export default function ManageRolePage() {
         description: `Role "${newRole.name}" added.`,
       });
       resetAddDialog();
-      fetchRoles(); 
+      fetchRolesAndDepartments(); 
     } catch (error) {
       console.error("Error adding role: ", error);
       toast({
@@ -180,7 +187,7 @@ export default function ManageRolePage() {
         title: "Success",
         description: "Role deleted successfully.",
       });
-      fetchRoles();
+      fetchRolesAndDepartments();
     } catch (error) {
       console.error("Error deleting role: ", error);
       toast({
@@ -204,6 +211,11 @@ export default function ManageRolePage() {
             });
         }
     });
+
+    departments.forEach(dept => {
+        const deptKey = `Expenses.Departments.${dept.id}`;
+        completePermissions[deptKey] = role.permissions?.[deptKey] || [];
+    })
     
     setEditingRole({ ...role, permissions: completePermissions });
     setIsEditDialogOpen(true);
@@ -222,7 +234,7 @@ export default function ManageRolePage() {
       });
       setIsEditDialogOpen(false);
       setEditingRole(null);
-      fetchRoles();
+      fetchRolesAndDepartments();
     } catch (error) {
       console.error('Error updating role: ', error);
       toast({
@@ -289,7 +301,7 @@ export default function ManageRolePage() {
                             </div>
                           )}
                            <Accordion type="multiple" className="w-full" defaultValue={Object.keys(permissions).filter(k => k !== 'View Module')}>
-                              {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module').map(([subModuleName, subPermissions]) => (
+                              {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
                                   <AccordionItem value={subModuleName} key={subModuleName}>
                                       <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
                                       <AccordionContent className="pt-4">
@@ -310,6 +322,34 @@ export default function ManageRolePage() {
                                       </AccordionContent>
                                   </AccordionItem>
                               ))}
+
+                              {/* Dynamic Departments for Expenses Module */}
+                              {moduleName === 'Expenses' && (
+                                <AccordionItem value="Departments">
+                                  <AccordionTrigger className="text-sm font-semibold">Departments</AccordionTrigger>
+                                  <AccordionContent className="pt-4 space-y-3">
+                                      {departments.map(dept => (
+                                        <div key={dept.id} className="p-3 border rounded-md">
+                                            <p className="font-medium mb-2">{dept.name}</p>
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                                {(permissionModules.Expenses.Departments as string[]).map(perm => (
+                                                    <div key={perm} className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                          id={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`}
+                                                          checked={roleData.permissions?.[`Expenses.Departments.${dept.id}`]?.includes(perm)}
+                                                          onCheckedChange={(checked) => handlePermissionChange(setData, `Expenses.Departments.${dept.id}`, perm, !!checked)}
+                                                        />
+                                                        <Label htmlFor={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`} className="font-normal leading-tight">
+                                                            {perm}
+                                                        </Label>
+                                                    </div>
+                                                ))}
+                                             </div>
+                                        </div>
+                                      ))}
+                                  </AccordionContent>
+                                </AccordionItem>
+                              )}
                           </Accordion>
                         </>
                     )}
@@ -431,7 +471,7 @@ export default function ManageRolePage() {
                       <TooltipProvider>
                         <div className="flex flex-wrap gap-1">
                           {role.permissions && Object.entries(role.permissions).map(([moduleKey, perms]) => {
-                            const displayName = moduleKey.includes('.') ? moduleKey.split('.')[1] : moduleKey;
+                            const displayName = moduleKey.includes('.') ? moduleKey.split('.').slice(1).join('.') : moduleKey;
                             const mainModule = moduleKey.split('.')[0];
                             if (perms.length > 0) {
                                 return (
@@ -495,3 +535,4 @@ export default function ManageRolePage() {
     </div>
   );
 }
+
