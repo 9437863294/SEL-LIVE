@@ -21,6 +21,14 @@ import { DateRange } from 'react-day-picker';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 
 const pivotOptions = [
@@ -28,12 +36,6 @@ const pivotOptions = [
     { value: 'departmentName', label: 'Department' },
     { value: 'headOfAccount', label: 'Head of Account' },
     { value: 'subHeadOfAccount', label: 'Sub-Head of Account' },
-];
-
-const columnOptions = [
-    { value: 'month', label: 'Month' },
-    { value: 'projectName', label: 'Project' },
-    { value: 'departmentName', label: 'Department' },
 ];
 
 const valueOptions = [
@@ -45,6 +47,15 @@ interface EnrichedExpense extends ExpenseRequest {
     projectName: string;
     departmentName: string;
     month: string;
+}
+
+interface PivotRow {
+    type: 'data' | 'total';
+    level: number;
+    label: string;
+    data: Record<string, number | string>;
+    isExpanded?: boolean;
+    subRows?: PivotRow[];
 }
 
 
@@ -63,9 +74,8 @@ export default function ExpenseReportsPage() {
     });
     
     const [pivotConfig, setPivotConfig] = useState({
-        groupBy: 'projectName', // Parent
-        thenBy: 'departmentName', // Child
-        columns: 'month',
+        rows: ['projectName'] as string[],
+        column: 'month',
         value: 'amount',
     });
 
@@ -124,60 +134,67 @@ export default function ExpenseReportsPage() {
     }, [filters, allExpenses, isLoading]);
     
     const pivotData = useMemo(() => {
-        const { groupBy, thenBy, columns, value } = pivotConfig;
-        if (!groupBy || !columns || filteredExpenses.length === 0) {
-            return { rows: [], columns: [], data: new Map(), columnTotals: new Map(), parentTotals: new Map() };
+        const { rows: rowFields, column, value } = pivotConfig;
+        if (rowFields.length === 0 || !column || filteredExpenses.length === 0) {
+            return { rows: [], columns: [], grandTotal: 0 };
         }
 
-        const getColumnKey = (item: EnrichedExpense) => String(item[columns as keyof EnrichedExpense] || 'N/A');
-        const uniqueColumnValues = Array.from(new Set(filteredExpenses.map(getColumnKey))).sort();
-        const columnTotals = new Map<string, number>(uniqueColumnValues.map(col => [col, 0]));
+        const columnValues = Array.from(new Set(filteredExpenses.map(item => String(item[column as keyof EnrichedExpense] || 'N/A')))).sort();
+        
+        const groupData = (data: EnrichedExpense[], level: number): PivotRow[] => {
+            if (level >= rowFields.length) return [];
 
-        const nestedData: Map<string, { children: Map<string, any>, parentTotal: any }> = new Map();
+            const rowField = rowFields[level];
+            const grouped = new Map<string, EnrichedExpense[]>();
 
-        filteredExpenses.forEach(item => {
-            const parentValue = item[groupBy as keyof EnrichedExpense] || 'N/A';
-            if (!nestedData.has(parentValue)) {
-                nestedData.set(parentValue, { children: new Map(), parentTotal: {} });
-                uniqueColumnValues.forEach(col => nestedData.get(parentValue)!.parentTotal[col] = 0);
-                nestedData.get(parentValue)!.parentTotal.__rowTotal = 0;
-            }
-
-            const childValue = thenBy ? item[thenBy as keyof EnrichedExpense] || 'N/A' : 'Totals';
-            const parentGroup = nestedData.get(parentValue)!;
-            if (!parentGroup.children.has(childValue)) {
-                parentGroup.children.set(childValue, { __rowLabel: childValue });
-                 uniqueColumnValues.forEach(col => parentGroup.children.get(childValue)![col] = 0);
-                 parentGroup.children.get(childValue)!.__rowTotal = 0;
-            }
-
-            const columnKey = getColumnKey(item);
-            const cellValue = value === 'amount' ? item.amount : 1;
-
-            const childRow = parentGroup.children.get(childValue)!;
-            childRow[columnKey] = (childRow[columnKey] || 0) + cellValue;
-            childRow.__rowTotal += cellValue;
+            data.forEach(item => {
+                const key = String(item[rowField as keyof EnrichedExpense] || 'N/A');
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(item);
+            });
             
-            parentGroup.parentTotal[columnKey] += cellValue;
-            parentGroup.parentTotal.__rowTotal += cellValue;
+            const result: PivotRow[] = [];
             
-            columnTotals.set(columnKey, (columnTotals.get(columnKey) || 0) + cellValue);
-        });
+            Array.from(grouped.keys()).sort().forEach(key => {
+                const items = grouped.get(key)!;
+                const rowData: Record<string, number> = { __rowTotal: 0 };
 
-        const sortedParentKeys = Array.from(nestedData.keys()).sort();
-        const finalRows = sortedParentKeys.flatMap(parentKey => {
-            const group = nestedData.get(parentKey)!;
-            const childKeys = Array.from(group.children.keys()).sort();
-            return [
-                { type: 'parent', label: parentKey, data: group.parentTotal },
-                ...childKeys.map(childKey => ({ type: 'child', label: childKey, data: group.children.get(childKey) }))
-            ];
-        });
+                columnValues.forEach(col => {
+                    const filteredItems = items.filter(item => String(item[column as keyof EnrichedExpense] || 'N/A') === col);
+                    const cellValue = filteredItems.reduce((acc, curr) => acc + (value === 'amount' ? curr.amount : 1), 0);
+                    rowData[col] = cellValue;
+                    rowData.__rowTotal += cellValue;
+                });
 
-        return { rows: finalRows, columns: uniqueColumnValues, columnTotals };
+                const subRows = groupData(items, level + 1);
+
+                result.push({
+                    type: 'data',
+                    level: level,
+                    label: key,
+                    data: rowData,
+                    subRows: subRows.length > 0 ? subRows : undefined
+                });
+            });
+
+            return result;
+        };
+        
+        const finalRows = groupData(filteredExpenses, 0);
+        const grandTotal = finalRows.reduce((acc, row) => acc + (row.data.__rowTotal as number), 0);
+
+        return { rows: finalRows, columns: columnValues, grandTotal };
 
     }, [filteredExpenses, pivotConfig]);
-
+    
+     const handleRowConfigChange = (field: string) => {
+        setPivotConfig(prev => {
+            const newRows = prev.rows.includes(field)
+                ? prev.rows.filter(r => r !== field)
+                : [...prev.rows, field];
+            return { ...prev, rows: newRows };
+        });
+    };
 
     if (isAuthLoading) {
       return (
@@ -204,15 +221,27 @@ export default function ExpenseReportsPage() {
         );
     }
     
-    const grandTotal = Array.from(pivotData.columnTotals.values()).reduce((a, b) => a + b, 0);
-    
-    const handleGroupByChange = (value: string) => {
-        const newThenBy = pivotConfig.thenBy === value ? '' : pivotConfig.thenBy;
-        setPivotConfig(prev => ({...prev, groupBy: value, thenBy: newThenBy}));
-    };
-    
-    const handleThenByChange = (value: string) => {
-        setPivotConfig(prev => ({...prev, thenBy: value === 'none' ? '' : value}));
+    const renderRows = (rows: PivotRow[]) => {
+        return rows.flatMap((row, index) => {
+            const rowElement = (
+                <TableRow key={`${row.level}-${row.label}-${index}`} className={row.level === 0 ? 'bg-muted/50' : ''}>
+                    <TableCell style={{ paddingLeft: `${(row.level * 1.5) + 1}rem` }} className="font-medium whitespace-nowrap">
+                        {row.label}
+                    </TableCell>
+                    {pivotData.columns.map(col => (
+                        <TableCell key={col} className="text-right">
+                           {pivotConfig.value === 'amount' ? (row.data[col] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data[col] || 0).toLocaleString()}
+                        </TableCell>
+                    ))}
+                    <TableCell className="text-right font-bold">
+                        {pivotConfig.value === 'amount' ? (row.data.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data.__rowTotal || 0).toLocaleString()}
+                    </TableCell>
+                </TableRow>
+            );
+            
+            const subRowElements = row.subRows ? renderRows(row.subRows) : [];
+            return [rowElement, ...subRowElements];
+        });
     };
     
     return (
@@ -230,29 +259,36 @@ export default function ExpenseReportsPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><TableIcon className="h-5 w-5" /> Report Configuration</CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                        <Label>Group By (Parent)</Label>
-                        <Select value={pivotConfig.groupBy} onValueChange={handleGroupByChange}>
-                            <SelectTrigger><SelectValue/></SelectTrigger>
-                            <SelectContent>{pivotOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
-                        </Select>
-                    </div>
-                     <div className="space-y-2">
-                        <Label>Then By (Child)</Label>
-                        <Select value={pivotConfig.thenBy || 'none'} onValueChange={handleThenByChange} disabled={!pivotConfig.groupBy}>
-                            <SelectTrigger><SelectValue placeholder="None"/></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">None</SelectItem>
-                                {pivotOptions.filter(opt => opt.value !== pivotConfig.groupBy).map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                        <Label>Rows</Label>
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="w-full justify-between">
+                                    <span>{pivotConfig.rows.length > 0 ? `${pivotConfig.rows.length} selected` : 'Select Rows'}</span>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-56">
+                                <DropdownMenuLabel>Group By</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {pivotOptions.map(opt => (
+                                    <DropdownMenuCheckboxItem
+                                        key={opt.value}
+                                        checked={pivotConfig.rows.includes(opt.value)}
+                                        onCheckedChange={() => handleRowConfigChange(opt.value)}
+                                        onSelect={(e) => e.preventDefault()}
+                                    >
+                                        {opt.label}
+                                    </DropdownMenuCheckboxItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                     <div className="space-y-2">
                         <Label>Columns</Label>
-                         <Select value={pivotConfig.columns} onValueChange={(value) => setPivotConfig(prev => ({...prev, columns: value}))}>
+                         <Select value={pivotConfig.column} onValueChange={(value) => setPivotConfig(prev => ({...prev, column: value}))}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
-                            <SelectContent>{columnOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
+                            <SelectContent>{pivotOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                     <div className="space-y-2">
@@ -289,37 +325,28 @@ export default function ExpenseReportsPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>{pivotConfig.groupBy ? pivotOptions.find(o => o.value === pivotConfig.groupBy)?.label : 'Group'}</TableHead>
+                                        <TableHead>
+                                            {pivotConfig.rows.map(r => pivotOptions.find(o => o.value === r)?.label).join(' / ')}
+                                        </TableHead>
                                         {pivotData.columns.map(col => <TableHead key={col} className="text-right whitespace-nowrap">{col}</TableHead>)}
-                                        <TableHead className="text-right font-bold whitespace-nowrap">Grand Total (Row)</TableHead>
+                                        <TableHead className="text-right font-bold whitespace-nowrap">Grand Total</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {pivotData.rows.map((row, index) => (
-                                        <TableRow key={index} className={row.type === 'parent' ? 'bg-muted/50 font-bold' : ''}>
-                                            <TableCell className={cn("whitespace-nowrap", row.type === 'child' && 'pl-8')}>
-                                                {row.label}
-                                            </TableCell>
-                                            {pivotData.columns.map(col => (
-                                                <TableCell key={col} className="text-right">
-                                                    {pivotConfig.value === 'amount' ? (row.data[col] || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data[col] || 0).toLocaleString()}
+                                    {renderRows(pivotData.rows)}
+                                    <TableRow className="bg-muted font-bold text-lg">
+                                       <TableCell>Grand Total</TableCell>
+                                       {pivotData.columns.map(col => {
+                                            const colTotal = pivotData.rows.reduce((sum, row) => sum + (row.data[col] as number || 0), 0);
+                                            return (
+                                                <TableCell key={`total-${col}`} className="text-right">
+                                                    {pivotConfig.value === 'amount' ? colTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : colTotal.toLocaleString()}
                                                 </TableCell>
-                                            ))}
-                                            <TableCell className="text-right font-bold">
-                                                {pivotConfig.value === 'amount' ? (row.data.__rowTotal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (row.data.__rowTotal || 0).toLocaleString()}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                     <TableRow className="bg-muted font-bold">
-                                        <TableCell>Grand Total (Column)</TableCell>
-                                        {pivotData.columns.map(col => (
-                                            <TableCell key={col} className="text-right">
-                                                {pivotConfig.value === 'amount' ? (pivotData.columnTotals.get(col) || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : (pivotData.columnTotals.get(col) || 0).toLocaleString()}
-                                            </TableCell>
-                                        ))}
-                                        <TableCell className="text-right">
-                                            {pivotConfig.value === 'amount' ? grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : grandTotal.toLocaleString()}
-                                        </TableCell>
+                                            )
+                                       })}
+                                       <TableCell className="text-right">
+                                           {pivotConfig.value === 'amount' ? pivotData.grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }) : pivotData.grandTotal.toLocaleString()}
+                                       </TableCell>
                                     </TableRow>
                                 </TableBody>
                             </Table>
@@ -330,4 +357,5 @@ export default function ExpenseReportsPage() {
         </div>
     );
 }
+
 
