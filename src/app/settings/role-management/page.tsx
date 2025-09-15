@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ChevronUp, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronDown, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -46,7 +47,8 @@ const permissionModules = {
   'Site Fund Requisition': [
     'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
     'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
-    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
+    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
+    'View All'
   ],
   'Daily Requisition': {
     'View Module': [],
@@ -119,7 +121,7 @@ export default function ManageRolePage() {
     if (!isAuthLoading && canView) {
       fetchRoles();
     } else if (!isAuthLoading && !canView) {
-      setIsLoading(false);
+        setIsLoading(false);
     }
   }, [isAuthLoading, canView]);
 

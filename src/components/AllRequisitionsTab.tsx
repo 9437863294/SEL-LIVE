@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -91,6 +92,14 @@ export default function AllRequisitionsTab() {
   const [statusFilter, setStatusFilter] = useState('all');
   
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
+  const canViewAll = can('View All', 'Site Fund Requisition');
+
+  useEffect(() => {
+    // If user CANNOT view all, they MUST only see their requests.
+    if (!canViewAll) {
+      setShowMyRequests(true);
+    }
+  }, [canViewAll]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -616,14 +625,16 @@ export default function AllRequisitionsTab() {
   return (
     <div className="w-full">
         <div className="flex justify-end items-center gap-4 mb-4">
-             <div className="flex items-center space-x-2">
-                <Switch 
-                    id="my-requests-switch" 
-                    checked={showMyRequests}
-                    onCheckedChange={setShowMyRequests}
-                />
-                <Label htmlFor="my-requests-switch">My Requests Only</Label>
-            </div>
+            {canViewAll && (
+              <div className="flex items-center space-x-2">
+                  <Switch 
+                      id="my-requests-switch" 
+                      checked={showMyRequests}
+                      onCheckedChange={setShowMyRequests}
+                  />
+                  <Label htmlFor="my-requests-switch">My Requests Only</Label>
+              </div>
+            )}
              <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="All Statuses" />
