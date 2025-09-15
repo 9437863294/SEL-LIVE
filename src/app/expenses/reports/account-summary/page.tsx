@@ -136,44 +136,44 @@ export default function AccountSummaryPage() {
     
     if (isAuthLoading) {
       return (
-        <div class="w-full px-4 sm:px-6 lg:px-8">
-            <Skeleton class="h-10 w-96 mb-6" />
-            <Skeleton class="h-24 w-full mb-6" />
-            <Skeleton class="h-96 w-full" />
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-96 mb-6" />
+            <Skeleton className="h-24 w-full mb-6" />
+            <Skeleton className="h-96 w-full" />
         </div>
       )
     }
 
     if (!canViewPage) {
         return (
-            <div class="w-full px-4 sm:px-6 lg:px-8">
-                <div class="mb-6 flex items-center gap-2">
-                    <Link href="/expenses/reports"><Button variant="ghost" size="icon"><ArrowLeft class="h-6 w-6" /></Button></Link>
-                    <h1 class="text-2xl font-bold">Head of Account Summary</h1>
+            <div className="w-full px-4 sm:px-6 lg:px-8">
+                <div className="mb-6 flex items-center gap-2">
+                    <Link href="/expenses/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">Head of Account Summary</h1>
                 </div>
                 <Card>
                     <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this report.</CardDescription></CardHeader>
-                    <CardContent class="flex justify-center p-8"><ShieldAlert class="h-16 w-16 text-destructive" /></CardContent>
+                    <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
         );
     }
 
     return (
-        <div class="w-full px-4 sm:px-6 lg:px-8">
-            <div class="mb-6 flex items-center gap-2">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
                 <Link href="/expenses/reports">
                     <Button variant="ghost" size="icon">
-                        <ArrowLeft class="h-6 w-6" />
+                        <ArrowLeft className="h-6 w-6" />
                     </Button>
                 </Link>
-                <h1 class="text-2xl font-bold">Head of Account Summary</h1>
+                <h1 className="text-2xl font-bold">Head of Account Summary</h1>
             </div>
 
-            <Card class="mb-6">
+            <Card className="mb-6">
                 <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
-                <CardContent class="flex flex-col md:flex-row gap-4">
-                    <div class="w-full md:w-1/3">
+                <CardContent className="flex flex-col md:flex-row gap-4">
+                    <div className="w-full md:w-1/3">
                         <Label>Date Range</Label>
                         <Popover>
                             <PopoverTrigger asChild>
@@ -185,7 +185,7 @@ export default function AccountSummaryPage() {
                                   !filters.dateRange && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon class="mr-2 h-4 w-4" />
+                                <CalendarIcon className="mr-2 h-4 w-4" />
                                 {filters.dateRange?.from ? (
                                   filters.dateRange.to ? (
                                     <>{format(filters.dateRange.from, "LLL dd, y")} - {format(filters.dateRange.to, "LLL dd, y")}</>
@@ -197,7 +197,7 @@ export default function AccountSummaryPage() {
                                 )}
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent class="w-auto p-0" align="start">
+                            <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 initialFocus
                                 mode="range"
@@ -209,7 +209,7 @@ export default function AccountSummaryPage() {
                             </PopoverContent>
                         </Popover>
                     </div>
-                    <div class="w-full md:w-1/3">
+                    <div className="w-full md:w-1/3">
                         <Label>Project</Label>
                         <Select value={filters.projectId} onValueChange={(value) => setFilters(prev => ({...prev, projectId: value}))}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
@@ -219,7 +219,7 @@ export default function AccountSummaryPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <div class="w-full md:w-1/3">
+                    <div className="w-full md:w-1/3">
                         <Label>Department</Label>
                         <Select value={filters.departmentId} onValueChange={(value) => setFilters(prev => ({...prev, departmentId: value}))}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
@@ -233,40 +233,40 @@ export default function AccountSummaryPage() {
             </Card>
             
             {isLoading ? (
-                 <div class="space-y-2">
-                    <Skeleton class="h-12 w-full" />
-                    <Skeleton class="h-12 w-full" />
-                    <Skeleton class="h-12 w-full" />
+                 <div className="space-y-2">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
                 </div>
             ) : (
                 <Accordion type="multiple" defaultValue={summary.map(s => s.headName)}>
                     {summary.map(head => (
                         <AccordionItem value={head.headName} key={head.headName}>
-                            <AccordionTrigger class="text-lg font-semibold hover:no-underline">
-                                <div class="flex justify-between w-full pr-4">
+                            <AccordionTrigger className="text-lg font-semibold hover:no-underline">
+                                <div className="flex justify-between w-full pr-4">
                                     <span>{head.headName}</span>
-                                    <span class="text-right font-bold text-primary">
+                                    <span className="text-right font-bold text-primary">
                                         {head.totalAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
                                     </span>
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent>
                                 <Card>
-                                    <CardContent class="p-0">
+                                    <CardContent className="p-0">
                                         <Table>
                                             <TableHeader>
                                                 <TableRow>
                                                     <TableHead>Sub-Head of Account</TableHead>
-                                                    <TableHead class="text-right">Total Requests</TableHead>
-                                                    <TableHead class="text-right">Total Amount</TableHead>
+                                                    <TableHead className="text-right">Total Requests</TableHead>
+                                                    <TableHead className="text-right">Total Amount</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {head.subHeads.map(sub => (
                                                     <TableRow key={sub.subHeadName}>
                                                         <TableCell>{sub.subHeadName}</TableCell>
-                                                        <TableCell class="text-right">{sub.requestCount.toLocaleString()}</TableCell>
-                                                        <TableCell class="text-right">{sub.totalAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</TableCell>
+                                                        <TableCell className="text-right">{sub.requestCount.toLocaleString()}</TableCell>
+                                                        <TableCell className="text-right">{sub.totalAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
