@@ -1,24 +1,42 @@
 
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
-import { useAuth } from './auth/AuthProvider';
-import type { Module } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import type { Module } from '@/lib/types';
+import { Landmark, FileText, CreditCard, Mail, Banknote, Receipt, Settings } from 'lucide-react';
 
-// This is the guaranteed unique list of default modules.
-const defaultModules: Module[] = [
-  { id: '1', title: 'Site Fund Requisition', content: 'Handle site fund requests and approvals.', tags: [], icon: 'Landmark' },
-  { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [], icon: 'FileText' },
-  { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
-  { id: '4', title: 'Email Management', content: 'Manage and respond to emails.', tags: [], icon: 'Mail' },
-  { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
-  { id: '6', title: 'Expenses', content: 'Track and manage project expenses.', tags: [], icon: 'Receipt' },
+const permissionModules = [
+  'Site Fund Requisition', 
+  'Daily Requisition', 
+  'Billing Recon', 
+  'Email Management',
+  'Expenses', 
+  'Settings'
 ];
 
+const moduleIcons: Record<string, string> = {
+  'Site Fund Requisition': 'Landmark',
+  'Daily Requisition': 'FileText',
+  'Billing Recon': 'CreditCard',
+  'Email Management': 'Mail',
+  'Bank Balance': 'Banknote',
+  'Expenses': 'Receipt',
+  'Settings': 'Settings',
+};
+
+const moduleDescriptions: Record<string, string> = {
+    'Site Fund Requisition': 'Handle site fund requests and approvals.',
+    'Daily Requisition': 'Handle daily material and service requests.',
+    'Billing Recon': 'Reconcile billing statements and payments.',
+    'Email Management': 'Manage and respond to emails.',
+    'Bank Balance': 'View and manage bank balance information.',
+    'Expenses': 'Track and manage project expenses.',
+    'Settings': 'Manage application-wide settings.',
+}
 
 export default function ModuleDashboard() {
   const { modules, updateModuleOrder, isLoading } = useModules();
@@ -29,21 +47,35 @@ export default function ModuleDashboard() {
     if (isLoading) {
       return [];
     }
-    // Create a map of the modules from local storage for quick lookups.
-    const savedModulesMap = new Map(modules.map(m => [m.id, m]));
 
-    // Ensure all default modules are present, using the saved version if it exists.
-    const finalModules = defaultModules.map(dm => savedModulesMap.get(dm.id) || dm);
-    
-    // Add any truly custom modules (not in the default set) that might exist in storage.
-    modules.forEach(sm => {
-        if (!defaultModules.some(dm => dm.id === sm.id)) {
-            finalModules.push(sm);
+    const availableModules = permissionModules
+        .filter(moduleName => can('View Module', moduleName))
+        .map((moduleName, index) => ({
+            id: String(index + 1),
+            title: moduleName,
+            content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
+            tags: [],
+            icon: moduleIcons[moduleName] || 'FileText',
+        }));
+
+    const savedModulesMap = new Map(modules.map(m => [m.title, m]));
+    const orderedModules = modules.map(sm => {
+        const foundModule = availableModules.find(am => am.title === sm.title);
+        if (foundModule) {
+            return {
+                ...foundModule,
+                ...savedModulesMap.get(sm.title),
+            };
         }
-    });
+        return null;
+    }).filter(Boolean) as Module[];
 
-    return finalModules;
-  }, [modules, isLoading]);
+    const newModules = availableModules.filter(
+        am => !orderedModules.some(om => om.title === am.title)
+    );
+
+    return [...orderedModules, ...newModules];
+  }, [modules, isLoading, can]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
@@ -74,11 +106,6 @@ export default function ModuleDashboard() {
   const handleDragEnd = useCallback(() => {
     setDraggedItemId(null);
   }, []);
-  
-  const currentModules = useMemo(() => {
-    if (isLoading) return [];
-    return allModules.filter(module => can('View Module', module.title));
-  }, [allModules, can, isLoading]);
 
   return (
     <div className="flex flex-col gap-8 h-full">
@@ -88,7 +115,7 @@ export default function ModuleDashboard() {
               <Skeleton key={i} className="h-28 rounded-xl" />
             ))
         ) : (
-          currentModules.map((module) => (
+          allModules.map((module) => (
             <ModuleCard
               key={module.id}
               module={module}

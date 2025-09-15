@@ -25,10 +25,7 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
     try {
       const item = window.localStorage.getItem('modules');
       if (item) {
-        let loadedModules = JSON.parse(item) as Module[];
-        // Aggressively filter out the stale modules upon loading.
-        const cleanedModules = loadedModules.filter(module => module.title !== 'Utility Module' && module.title !== 'Email Management');
-        setModules(cleanedModules);
+        setModules(JSON.parse(item));
       }
     } catch (error) {
       console.error('Failed to load modules from local storage', error);
