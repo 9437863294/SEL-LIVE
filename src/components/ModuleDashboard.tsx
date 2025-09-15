@@ -27,8 +27,8 @@ export default function ModuleDashboard() {
   // This effect runs once when the component mounts to ensure the module list is clean.
   useEffect(() => {
     if (!isLoading) {
-        // Use a Map to ensure all module IDs are unique.
-        const modulesMap = new Map();
+        // Use a Map to ensure all module IDs are unique, with stored modules taking precedence.
+        const modulesMap = new Map<string, Module>();
 
         // Add default modules first.
         defaultModules.forEach(module => {
@@ -36,12 +36,8 @@ export default function ModuleDashboard() {
         });
 
         // Add stored modules, overwriting defaults if IDs match.
-        // This also filters out any old/stale modules that are no longer in the default list
-        // unless they were custom-added. The primary goal is to ensure no duplicates from defaults.
         modules.forEach(module => {
-            if (module.title !== 'Billing Recon' || module.content !== 'This is a new module.') {
-               modulesMap.set(module.id, module);
-            }
+           modulesMap.set(module.id, module);
         });
         
         // Use the order from storage as the base, but ensure all default modules are present.
@@ -51,13 +47,14 @@ export default function ModuleDashboard() {
         // Add modules based on the stored order first
         modules.forEach(storedModule => {
             if (modulesMap.has(storedModule.id)) {
-                finalModules.push(modulesMap.get(storedModule.id));
+                finalModules.push(modulesMap.get(storedModule.id)!);
                 finalModuleIds.add(storedModule.id);
                 modulesMap.delete(storedModule.id); // Remove from map to avoid re-adding
             }
         });
 
-        // Add any remaining modules from the map (these would be new default modules)
+        // Add any remaining modules from the map (these would be new default modules
+        // or any module that was in the default list but not in the user's saved order)
         modulesMap.forEach(module => {
             finalModules.push(module);
         });
@@ -98,7 +95,7 @@ export default function ModuleDashboard() {
   }, []);
   
   const currentModules = useMemo(() => {
-    if(isLoading) return [];
+    if (isLoading) return [];
     return modules.filter(module => can('View Module', module.title));
   }, [modules, can, isLoading]);
 
