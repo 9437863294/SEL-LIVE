@@ -3,11 +3,14 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Building2 } from 'lucide-react';
+import { ArrowLeft, Plus, Building2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
+  CardHeader,
+  CardTitle as CardTitleShad,
+  CardDescription as CardDescriptionShad,
 } from '@/components/ui/card';
 import {
   Table,
@@ -35,10 +38,12 @@ import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase
 import type { Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 export default function ManageDepartmentPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -54,6 +59,19 @@ export default function ManageDepartmentPage() {
   const [editedName, setEditedName] = useState('');
   const [editedStatus, setEditedStatus] = useState<'Active' | 'Inactive'>('Active');
   const [editedHead, setEditedHead] = useState('N/A');
+  
+  const canView = can('View', 'Settings.Manage Department');
+  const canAdd = can('Add', 'Settings.Manage Department');
+  const canEdit = can('Edit', 'Settings.Manage Department');
+  const canDelete = can('Delete', 'Settings.Manage Department');
+
+  useEffect(() => {
+    if (!isAuthLoading && canView) {
+        fetchDepartments();
+    } else if (!isAuthLoading && !canView) {
+        setIsLoading(false);
+    }
+  }, [isAuthLoading, canView]);
 
   const fetchDepartments = async () => {
     setIsLoading(true);
@@ -74,10 +92,6 @@ export default function ManageDepartmentPage() {
     }
     setIsLoading(false);
   };
-
-  useEffect(() => {
-    fetchDepartments();
-  }, []);
 
   const resetAddDialog = () => {
     setNewDepartmentName('');
@@ -179,6 +193,46 @@ export default function ManageDepartmentPage() {
     }
   };
 
+  if (isAuthLoading || (isLoading && canView)) {
+    return (
+        <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <Skeleton className="h-96 w-full" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="w-full max-w-4xl mx-auto">
+          <div className="mb-6 flex items-center gap-4">
+            <Link href="/settings">
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">Manage Department</h1>
+          </div>
+          <Card>
+              <CardHeader>
+                  <CardTitleShad>Access Denied</CardTitleShad>
+                  <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
+              </CardHeader>
+              <CardContent className="flex justify-center p-8">
+                  <ShieldAlert className="h-16 w-16 text-destructive" />
+              </CardContent>
+          </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
@@ -192,7 +246,7 @@ export default function ManageDepartmentPage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add Department
             </Button>
@@ -292,8 +346,8 @@ export default function ManageDepartmentPage() {
                     <TableCell>{dept.head}</TableCell>
                     <TableCell>{dept.status}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)}>Delete</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)} disabled={!canEdit}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete}>Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))
