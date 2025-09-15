@@ -2,9 +2,9 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
@@ -35,6 +35,8 @@ import {
 import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const baseTableHeaders = [
@@ -61,6 +63,7 @@ export default function AllExpensesPage() {
   const isInitialMount = useRef(true);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
@@ -70,9 +73,31 @@ export default function AllExpensesPage() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
   );
+
+  const [filters, setFilters] = useState({
+      requestNo: '',
+      projectName: 'all',
+      departmentName: 'all',
+      partyName: '',
+  });
   
   const canViewPage = can('View All', 'Expenses.Expense Requests');
-  const canCreate = can('Create', 'Expenses.Expense Requests');
+
+  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const project = projects.find(p => p.id === exp.projectId);
+      return (
+        (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
+        (filters.partyName === '' || exp.partyName.toLowerCase().includes(filters.partyName.toLowerCase())) &&
+        (filters.projectName === 'all' || project?.projectName === filters.projectName) &&
+        (filters.departmentName === 'all' || exp.generatedByDepartment === filters.departmentName)
+      );
+    });
+  }, [expenses, filters, projects]);
 
 
   useEffect(() => {
@@ -143,12 +168,14 @@ export default function AllExpensesPage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [projectsSnap, expensesSnap] = await Promise.all([
+        const [projectsSnap, expensesSnap, deptsSnap] = await Promise.all([
           getDocs(collection(db, 'projects')),
-          getDocs(collection(db, 'expenseRequests'))
+          getDocs(collection(db, 'expenseRequests')),
+          getDocs(collection(db, 'departments'))
         ]);
         
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
 
         const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
         fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -331,6 +358,35 @@ export default function AllExpensesPage() {
                 </DropdownMenu>
             </div>
         </div>
+
+        <Card className="mb-6">
+            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search Request No..." className="pl-8" value={filters.requestNo} onChange={e => handleFilterChange('requestNo', e.target.value)} />
+                    </div>
+                    <div className="relative">
+                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search Party Name..." className="pl-8" value={filters.partyName} onChange={e => handleFilterChange('partyName', e.target.value)} />
+                    </div>
+                     <Select value={filters.projectName} onValueChange={value => handleFilterChange('projectName', value)}>
+                        <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Projects</SelectItem>
+                            {projects.map(p => <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                     <Select value={filters.departmentName} onValueChange={value => handleFilterChange('departmentName', value)}>
+                        <SelectTrigger><SelectValue placeholder="All Departments" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Departments</SelectItem>
+                            {departments.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </CardContent>
+        </Card>
       
         <Card>
             <CardContent className="p-0">
@@ -352,8 +408,8 @@ export default function AllExpensesPage() {
                                         ))}
                                     </TableRow>
                                 ))
-                            ) : expenses.length > 0 ? (
-                                expenses.map(expense => (
+                            ) : filteredExpenses.length > 0 ? (
+                                filteredExpenses.map(expense => (
                                     <TableRow key={expense.id}>
                                         {visibleHeaders.map(header => (
                                             <TableCell key={header} className="whitespace-nowrap">
@@ -378,3 +434,4 @@ export default function AllExpensesPage() {
     </>
   );
 }
+
