@@ -24,33 +24,31 @@ export function SiteFundDashboard() {
             <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
           </TabsList>
         </div>
-        <div className="flex-grow overflow-y-auto">
-          <div className="pt-6 h-full pr-4">
-            <TabsContent value="dashboard" className="h-full">
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                {stats.map((stat, index) => (
-                  <Card key={index}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                      <stat.icon className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{stat.value}</div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </TabsContent>
-            <TabsContent value="all-requisitions" className="h-full">
-              <AllRequisitionsTab />
-            </TabsContent>
-            <TabsContent value="pending-tasks" className="h-full">
-              <MyPendingTasksTab />
-            </TabsContent>
-            <TabsContent value="history" className="h-full">
-              <p className="text-muted-foreground">Your history will be shown here.</p>
-            </TabsContent>
-          </div>
+        <div className="flex-grow pt-6 pr-4">
+          <TabsContent value="dashboard" className="h-full">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {stats.map((stat, index) => (
+                <Card key={index}>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                    <stat.icon className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+          <TabsContent value="all-requisitions" className="h-full">
+            <AllRequisitionsTab />
+          </TabsContent>
+          <TabsContent value="pending-tasks" className="h-full">
+            <MyPendingTasksTab />
+          </TabsContent>
+          <TabsContent value="history" className="h-full">
+            <p className="text-muted-foreground">Your history will be shown here.</p>
+          </TabsContent>
         </div>
       </Tabs>
     </div>
