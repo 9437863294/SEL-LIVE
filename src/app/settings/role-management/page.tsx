@@ -49,23 +49,26 @@ const permissionModules = {
     'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual'
   ],
   'Daily Requisition': {
+    'View Module': [],
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
     'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
   'Billing Recon': {
+    'View Module': [],
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC'],
     'Billing': ['View', 'Create Bill', 'View Log'],
     'MVAC': ['View', 'Add Item'],
   },
   'Expenses': {
-    'Module Access': ['View'],
+    'View Module': [],
     'Expense Requests': ['Create', 'View All'],
     'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
   },
   'Settings': {
+    'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
     'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
     'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
@@ -86,7 +89,8 @@ const initialNewRoleState = {
       acc[module] = [];
     } else {
       Object.keys(sub).forEach(subModule => {
-        acc[`${module}.${subModule}`] = [];
+        const key = subModule === 'View Module' ? module : `${module}.${subModule}`;
+        acc[key] = [];
       });
     }
     return acc;
@@ -163,6 +167,22 @@ export default function ManageRolePage() {
       return { ...prevState, permissions: newPermissions };
     });
   };
+  
+  const handleViewModuleChange = (
+    setState: React.Dispatch<React.SetStateAction<any>>,
+    moduleName: string,
+    isChecked: boolean
+  ) => {
+     setState((prevState: any) => {
+      const newPermissions = { ...prevState.permissions };
+      if(isChecked) {
+        newPermissions[moduleName] = ['View Module'];
+      } else {
+        newPermissions[moduleName] = [];
+      }
+      return { ...prevState, permissions: newPermissions };
+    });
+  }
 
   const handleAddRole = async () => {
     if (!newRole.name.trim()) {
@@ -217,7 +237,7 @@ export default function ManageRolePage() {
             completePermissions[moduleName] = role.permissions?.[moduleName] || [];
         } else {
             Object.keys(sub).forEach(subModule => {
-                const key = `${moduleName}.${subModule}`;
+                const key = subModule === 'View Module' ? moduleName : `${moduleName}.${subModule}`;
                 completePermissions[key] = role.permissions?.[key] || [];
             });
         }
@@ -273,7 +293,7 @@ export default function ManageRolePage() {
              <Accordion type="multiple" defaultValue={Object.keys(permissionModules)}>
               {Object.entries(permissionModules).map(([moduleName, permissions]) => (
                 <AccordionItem value={moduleName} key={moduleName}>
-                  <AccordionTrigger className="font-medium text-base">
+                  <AccordionTrigger className="font-medium text-base hover:no-underline">
                     {moduleName}
                   </AccordionTrigger>
                   <AccordionContent className="pt-4 space-y-4">
@@ -293,29 +313,43 @@ export default function ManageRolePage() {
                             ))}
                         </div>
                     ) : (
-                        <Accordion type="multiple" className="w-full" defaultValue={Object.keys(permissions)}>
-                            {Object.entries(permissions).map(([subModuleName, subPermissions]) => (
-                                <AccordionItem value={subModuleName} key={subModuleName}>
-                                    <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
-                                    <AccordionContent className="pt-4">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                            {subPermissions.map((permission) => (
-                                                <div key={permission} className="flex items-center space-x-2">
-                                                <Checkbox
-                                                    id={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`}
-                                                    checked={roleData.permissions?.[`${moduleName}.${subModuleName}`]?.includes(permission)}
-                                                    onCheckedChange={(checked) => handlePermissionChange(setData, `${moduleName}.${subModuleName}`, permission, !!checked)}
-                                                />
-                                                <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight">
-                                                    {permission}
-                                                </Label>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </AccordionContent>
-                                </AccordionItem>
-                            ))}
-                        </Accordion>
+                        <>
+                          {Object.keys(permissions).includes('View Module') && (
+                            <div className="flex items-center space-x-2 p-2 bg-muted/50 rounded-md">
+                               <Checkbox
+                                  id={`${roleData.name}-${moduleName}-ViewModule`}
+                                  checked={roleData.permissions?.[moduleName]?.includes('View Module')}
+                                  onCheckedChange={(checked) => handleViewModuleChange(setData, moduleName, !!checked)}
+                                />
+                                <Label htmlFor={`${roleData.name}-${moduleName}-ViewModule`} className="font-semibold leading-tight text-primary">
+                                    View Module
+                                </Label>
+                            </div>
+                          )}
+                           <Accordion type="multiple" className="w-full" defaultValue={Object.keys(permissions).filter(k => k !== 'View Module')}>
+                              {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module').map(([subModuleName, subPermissions]) => (
+                                  <AccordionItem value={subModuleName} key={subModuleName}>
+                                      <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
+                                      <AccordionContent className="pt-4">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                              {subPermissions.map((permission) => (
+                                                  <div key={permission} className="flex items-center space-x-2">
+                                                  <Checkbox
+                                                      id={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`}
+                                                      checked={roleData.permissions?.[`${moduleName}.${subModuleName}`]?.includes(permission)}
+                                                      onCheckedChange={(checked) => handlePermissionChange(setData, `${moduleName}.${subModuleName}`, permission, !!checked)}
+                                                  />
+                                                  <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight">
+                                                      {permission}
+                                                  </Label>
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </AccordionContent>
+                                  </AccordionItem>
+                              ))}
+                          </Accordion>
+                        </>
                     )}
                   </AccordionContent>
                 </AccordionItem>
@@ -434,21 +468,26 @@ export default function ManageRolePage() {
                     <TableCell>
                       <TooltipProvider>
                         <div className="flex flex-wrap gap-1">
-                          {role.permissions && Object.entries(role.permissions).map(([moduleKey, perms]) => (
-                            perms.length > 0 && (
-                              <Tooltip key={moduleKey}>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="secondary" className="cursor-default">{moduleKey.replace('.', ' / ')} ({perms.length})</Badge>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="font-medium">{moduleKey.replace('.', ' / ')}</p>
-                                  <ul className="list-disc pl-4 text-muted-foreground">
-                                    {perms.map(p => <li key={p}>{p}</li>)}
-                                  </ul>
-                                </TooltipContent>
-                              </Tooltip>
-                            )
-                          ))}
+                          {role.permissions && Object.entries(role.permissions).map(([moduleKey, perms]) => {
+                            const displayName = moduleKey.includes('.') ? moduleKey.split('.')[1] : moduleKey;
+                            const mainModule = moduleKey.split('.')[0];
+                            if (perms.length > 0) {
+                                return (
+                                <Tooltip key={moduleKey}>
+                                    <TooltipTrigger asChild>
+                                    <Badge variant="secondary" className="cursor-default">{displayName} ({perms.length})</Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                    <p className="font-medium">{mainModule} / {displayName}</p>
+                                    <ul className="list-disc pl-4 text-muted-foreground">
+                                        {perms.map(p => <li key={p}>{p}</li>)}
+                                    </ul>
+                                    </TooltipContent>
+                                </Tooltip>
+                                )
+                            }
+                            return null;
+                          })}
                         </div>
                       </TooltipProvider>
                     </TableCell>
@@ -494,3 +533,5 @@ export default function ManageRolePage() {
     </div>
   );
 }
+
+    
