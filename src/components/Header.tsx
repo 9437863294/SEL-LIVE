@@ -30,12 +30,12 @@ import { SwitchUserDialog } from './auth/SwitchUserDialog';
 
 
 function ImpersonationBanner() {
-    const { user, originalUser, refreshUserData } = useAuth();
+    const { user, originalUser } = useAuth();
 
     const handleSwitchBack = () => {
         sessionStorage.removeItem('impersonationUserId');
         sessionStorage.removeItem('originalAdminUser');
-        refreshUserData(); // This will trigger a re-render and state update
+        window.location.reload();
     };
 
     if (!originalUser) return null;
