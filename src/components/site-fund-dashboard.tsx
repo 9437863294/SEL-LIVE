@@ -25,7 +25,7 @@ export function SiteFundDashboard() {
                 <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
             </TabsList>
         </div>
-        <ScrollArea className="flex-grow">
+        <div className="flex-grow overflow-auto">
             <div className="pt-6">
                 <TabsContent value="dashboard">
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -52,7 +52,7 @@ export function SiteFundDashboard() {
                     <p className="text-muted-foreground">Your history will be shown here.</p>
                 </TabsContent>
             </div>
-        </ScrollArea>
+        </div>
       </Tabs>
     </div>
   );
