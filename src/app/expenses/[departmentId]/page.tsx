@@ -2,10 +2,10 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
@@ -36,6 +36,8 @@ import {
 import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const baseTableHeaders = [
@@ -73,9 +75,30 @@ export default function DepartmentExpensesPage() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
   );
+
+  const [filters, setFilters] = useState({
+      requestNo: '',
+      projectName: 'all',
+      partyName: '',
+  });
   
   const canViewPage = can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses');
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
+
+  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const project = projects.find(p => p.id === exp.projectId);
+      return (
+        (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
+        (filters.partyName === '' || exp.partyName.toLowerCase().includes(filters.partyName.toLowerCase())) &&
+        (filters.projectName === 'all' || exp.projectId === filters.projectName)
+      );
+    });
+  }, [expenses, filters, projects]);
 
 
   useEffect(() => {
@@ -364,6 +387,28 @@ export default function DepartmentExpensesPage() {
                 )}
             </div>
         </div>
+
+        <Card className="mb-6">
+            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search Request No..." className="pl-8" value={filters.requestNo} onChange={e => handleFilterChange('requestNo', e.target.value)} />
+                    </div>
+                    <div className="relative">
+                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search Party Name..." className="pl-8" value={filters.partyName} onChange={e => handleFilterChange('partyName', e.target.value)} />
+                    </div>
+                     <Select value={filters.projectName} onValueChange={value => handleFilterChange('projectName', value)}>
+                        <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Projects</SelectItem>
+                            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </CardContent>
+        </Card>
       
         <Card>
             <CardContent className="p-0">
@@ -385,8 +430,8 @@ export default function DepartmentExpensesPage() {
                                         ))}
                                     </TableRow>
                                 ))
-                            ) : expenses.length > 0 ? (
-                                expenses.map(expense => (
+                            ) : filteredExpenses.length > 0 ? (
+                                filteredExpenses.map(expense => (
                                     <TableRow key={expense.id}>
                                         {visibleHeaders.map(header => (
                                             <TableCell key={header} className="whitespace-nowrap">
@@ -411,3 +456,4 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
+
