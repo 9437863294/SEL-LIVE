@@ -1,12 +1,13 @@
 
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
 import { useAuth } from './auth/AuthProvider';
 import type { Module } from '@/lib/types';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 // This is the guaranteed unique list of default modules.
 const defaultModules: Module[] = [
@@ -20,7 +21,7 @@ const defaultModules: Module[] = [
 
 export default function ModuleDashboard() {
   const { modules, updateModuleOrder, isLoading, setModules } = useModules();
-  const { user } = useAuth();
+  const { can } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   // This effect runs once when the component mounts to ensure the module list is clean.
@@ -96,7 +97,10 @@ export default function ModuleDashboard() {
     setDraggedItemId(null);
   }, []);
   
-  const currentModules = modules;
+  const currentModules = useMemo(() => {
+    if(isLoading) return [];
+    return modules.filter(module => can('View Module', module.title));
+  }, [modules, can, isLoading]);
 
   return (
     <div className="flex flex-col gap-8 h-full">
