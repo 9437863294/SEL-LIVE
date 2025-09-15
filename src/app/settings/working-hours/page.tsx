@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -34,6 +35,8 @@ const initialWorkingHours: WorkingHours = daysOfWeek.reduce((acc, day) => {
 
 export default function WorkingHoursPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [workingHours, setWorkingHours] = useState<WorkingHours>(initialWorkingHours);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +44,10 @@ export default function WorkingHoursPage() {
   const [isAddHolidayOpen, setIsAddHolidayOpen] = useState(false);
   const [newHolidayName, setNewHolidayName] = useState('');
   const [newHolidayDate, setNewHolidayDate] = useState<Date | undefined>();
+  
+  const canView = can('View', 'Settings.Working Hrs');
+  const canEdit = can('Edit', 'Settings.Working Hrs');
+
 
   const fetchWorkingHours = useCallback(async () => {
     const docRef = doc(db, 'settings', 'workingHours');
@@ -66,9 +73,11 @@ export default function WorkingHoursPage() {
   }, []);
 
   useEffect(() => {
-    setIsLoading(true);
-    Promise.all([fetchWorkingHours(), fetchHolidays()]).finally(() => setIsLoading(false));
-  }, [fetchWorkingHours, fetchHolidays]);
+    if (canView) {
+      setIsLoading(true);
+      Promise.all([fetchWorkingHours(), fetchHolidays()]).finally(() => setIsLoading(false));
+    }
+  }, [canView, fetchWorkingHours, fetchHolidays]);
   
   const resetHolidayForm = () => {
     setNewHolidayName('');
@@ -84,6 +93,10 @@ export default function WorkingHoursPage() {
   };
 
   const handleSaveWorkingHours = async () => {
+    if (!canEdit) {
+      toast({ title: 'Permission Denied', description: 'You do not have permission to edit working hours.', variant: 'destructive' });
+      return;
+    }
     try {
       await setDoc(doc(db, 'settings', 'workingHours'), { schedule: workingHours });
       toast({ title: 'Success', description: 'Working hours have been saved.' });
@@ -94,6 +107,10 @@ export default function WorkingHoursPage() {
   };
 
   const handleAddHoliday = async () => {
+     if (!canEdit) {
+      toast({ title: 'Permission Denied', description: 'You do not have permission to add holidays.', variant: 'destructive' });
+      return;
+    }
     if (!newHolidayName.trim() || !newHolidayDate) {
       toast({ title: 'Validation Error', description: 'Holiday name and date are required.', variant: 'destructive' });
       return;
@@ -113,6 +130,10 @@ export default function WorkingHoursPage() {
   };
   
   const handleDeleteHoliday = async (id: string) => {
+     if (!canEdit) {
+      toast({ title: 'Permission Denied', description: 'You do not have permission to delete holidays.', variant: 'destructive' });
+      return;
+    }
     try {
       await deleteDoc(doc(db, "holidays", id));
       toast({ title: "Success", description: "Holiday deleted successfully." });
@@ -122,6 +143,42 @@ export default function WorkingHoursPage() {
       toast({ title: "Error", description: "Failed to delete holiday.", variant: "destructive" });
     }
   };
+  
+  if (isAuthLoading) {
+      return (
+        <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
+                <Skeleton className="h-96 lg:col-span-3" />
+                <Skeleton className="h-80 lg:col-span-2" />
+            </div>
+        </div>
+      )
+  }
+
+  if (!canView) {
+      return (
+         <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Working Hours</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page. Please contact an administrator.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -150,6 +207,7 @@ export default function WorkingHoursPage() {
                       id={`switch-${day}`}
                       checked={workingHours[day]?.isWorkDay}
                       onCheckedChange={(checked) => handleWorkingHoursChange(day, 'isWorkDay', checked)}
+                      disabled={!canEdit}
                     />
                     <span className="text-sm text-muted-foreground">{workingHours[day]?.isWorkDay ? 'Work' : 'Off'}</span>
                   </div>
@@ -158,21 +216,21 @@ export default function WorkingHoursPage() {
                       type="time"
                       value={workingHours[day]?.startTime || '00:00'}
                       onChange={(e) => handleWorkingHoursChange(day, 'startTime', e.target.value)}
-                      disabled={!workingHours[day]?.isWorkDay}
+                      disabled={!workingHours[day]?.isWorkDay || !canEdit}
                       className="w-32"
                     />
                     <Input
                       type="time"
                       value={workingHours[day]?.endTime || '00:00'}
                       onChange={(e) => handleWorkingHoursChange(day, 'endTime', e.target.value)}
-                      disabled={!workingHours[day]?.isWorkDay}
+                      disabled={!workingHours[day]?.isWorkDay || !canEdit}
                       className="w-32"
                     />
                   </div>
                 </div>
               ))
             )}
-            <Button onClick={handleSaveWorkingHours} className="w-full">Save Hours</Button>
+            <Button onClick={handleSaveWorkingHours} className="w-full" disabled={!canEdit}>Save Hours</Button>
           </CardContent>
         </Card>
 
@@ -184,7 +242,7 @@ export default function WorkingHoursPage() {
                 <CardDescription>Manage company holidays.</CardDescription>
               </div>
               <CollapsibleTrigger asChild>
-                <Button size="sm">
+                <Button size="sm" disabled={!canEdit}>
                   <Plus className="mr-2 h-4 w-4" /> Add Holiday
                 </Button>
               </CollapsibleTrigger>
@@ -246,7 +304,7 @@ export default function WorkingHoursPage() {
                         <TableCell className="font-medium">{holiday.name}</TableCell>
                         <TableCell>{format(new Date(holiday.date), 'dd MMM, yyyy')}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteHoliday(holiday.id)}>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteHoliday(holiday.id)} disabled={!canEdit}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </TableCell>
