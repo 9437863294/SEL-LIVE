@@ -33,7 +33,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import type { Role } from '@/lib/types';
+import { type Role, permissionModules } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -42,46 +42,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad, CardContent as CardContentShad } from '@/components/ui/card';
 
-
-const permissionModules = {
-  'Site Fund Requisition': [
-    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
-    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
-    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
-    'View All'
-  ],
-  'Daily Requisition': {
-    'View Module': [],
-    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
-    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
-    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
-    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
-  },
-  'Billing Recon': {
-    'View Module': [],
-    'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC'],
-    'Billing': ['View', 'Create Bill', 'View Log'],
-    'MVAC': ['View', 'Add Item'],
-  },
-  'Expenses': {
-    'View Module': [],
-    'Expense Requests': ['Create', 'View All'],
-    'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
-  },
-  'Settings': {
-    'View Module': [],
-    'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
-    'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
-    'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
-    'User Management': ['View', 'Add', 'Edit', 'Delete', 'Switch User'],
-    'Role Management': ['View', 'Add', 'Edit', 'Delete'],
-    'Working Hrs': ['View', 'Edit'],
-    'Serial No. Config': ['View', 'Edit'],
-    'Appearance': ['View', 'Edit'],
-    'Email Authorization': ['View', 'Send Request', 'Revoke'],
-  },
-};
 
 const initialNewRoleState = {
   name: '',

@@ -7,16 +7,7 @@ import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Module } from '@/lib/types';
-import { Landmark, FileText, CreditCard, Mail, Banknote, Receipt, Settings } from 'lucide-react';
-
-const permissionModules = [
-  'Site Fund Requisition', 
-  'Daily Requisition', 
-  'Billing Recon', 
-  'Email Management',
-  'Expenses', 
-  'Settings'
-];
+import { permissionModules } from '@/lib/types';
 
 const moduleIcons: Record<string, string> = {
   'Site Fund Requisition': 'Landmark',
@@ -47,11 +38,11 @@ export default function ModuleDashboard() {
     if (isLoading) {
       return [];
     }
-
-    const availableModules = permissionModules
+    
+    const availableModules = Object.keys(permissionModules)
         .filter(moduleName => can('View Module', moduleName))
         .map((moduleName, index) => ({
-            id: String(index + 1),
+            id: String(index + 1), // Using index for a temporary stable ID
             title: moduleName,
             content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
             tags: [],
@@ -59,12 +50,14 @@ export default function ModuleDashboard() {
         }));
 
     const savedModulesMap = new Map(modules.map(m => [m.title, m]));
+    
     const orderedModules = modules.map(sm => {
         const foundModule = availableModules.find(am => am.title === sm.title);
         if (foundModule) {
+            // Use the saved module data, but ensure it's still available based on permissions
             return {
-                ...foundModule,
-                ...savedModulesMap.get(sm.title),
+                ...foundModule, // a copy with default icon/desc if needed
+                ...savedModulesMap.get(sm.title), // overlay saved data
             };
         }
         return null;
