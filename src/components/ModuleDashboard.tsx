@@ -14,6 +14,7 @@ const defaultModules: Module[] = [
   { id: '1', title: 'Site Fund Requisition', content: 'Handle site fund requests and approvals.', tags: [], icon: 'Landmark' },
   { id: '2', title: 'Daily Requisition', content: 'Handle daily material and service requests.', tags: [], icon: 'FileText' },
   { id: '3', title: 'Billing Recon', content: 'Reconcile billing statements and payments.', tags: [], icon: 'CreditCard' },
+  { id: '4', title: 'Email Management', content: 'Manage and respond to emails.', tags: [], icon: 'Mail' },
   { id: '5', title: 'Bank Balance', content: 'View and manage bank balance information.', tags: [], icon: 'Banknote' },
   { id: '6', title: 'Expenses', content: 'Track and manage project expenses.', tags: [], icon: 'Receipt' },
 ];
