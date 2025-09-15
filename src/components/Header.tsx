@@ -143,14 +143,6 @@ export default function Header() {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   }
   
-  const getPageTitle = () => {
-    if (pathname.startsWith('/site-fund-requisition')) return 'Site Fund Requisition';
-    if (pathname.startsWith('/settings')) return 'Settings';
-    return '';
-  }
-  
-  const pageTitle = getPageTitle();
-
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -162,7 +154,7 @@ export default function Header() {
                     <Home className="h-5 w-5" />
                 </Button>
               </Link>
-              {pageTitle && <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>}
+              <h1 className="text-lg font-semibold text-foreground">Siddhartha Engineering Limited</h1>
           </div>
 
 
