@@ -1,7 +1,8 @@
 
+
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Calendar as CalendarIcon, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -226,15 +227,17 @@ export default function ExpenseReportsPage() {
             return Array.from(grouped.keys()).sort().map(key => {
                 const items = grouped.get(key)!;
                 const newPath = [...path, key];
-                const rowData: Record<string, number> = { __rowTotal: 0 };
+                const rowData: Record<string, number> = {};
+                let rowTotal = 0;
                 
                 flatCols.forEach(col => {
                     const colKey = col.path.join('_');
                     const filteredItems = items.filter(item => col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p));
                     const cellValue = filteredItems.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
                     rowData[colKey] = cellValue;
+                    rowTotal += cellValue;
                 });
-                rowData.__rowTotal = Object.values(rowData).reduce((sum, val) => sum + (val as number), 0);
+                rowData['__rowTotal'] = rowTotal;
                 
                 const subRows = groupData(items, level + 1, newPath);
 
@@ -244,17 +247,23 @@ export default function ExpenseReportsPage() {
             });
         };
         
-        const finalRows = groupData(filteredExpenses, 0);
+        let finalRows: PivotRow[] = [];
+        if (rowFields.length > 0) {
+            finalRows = groupData(filteredExpenses, 0);
+        }
 
-        const grandTotalRow: Record<string, number> = { __grandTotal: 0 };
+        const grandTotalRow: Record<string, number> = {};
+        let grandTotal = 0;
         flatCols.forEach(col => {
             const colKey = col.path.join('_');
             const filteredForCol = filteredExpenses.filter(item => col.path.every((p, i) => String(item[colFields[i] as keyof EnrichedExpense]) === p));
-            grandTotalRow[colKey] = filteredForCol.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
+            const colTotal = filteredForCol.reduce((acc, curr) => acc + (valueField === 'amount' ? curr.amount : 1), 0);
+            grandTotalRow[colKey] = colTotal;
+            grandTotal += colTotal;
         });
-        grandTotalRow.__grandTotal = Object.values(grandTotalRow).reduce((sum, val) => sum + val, 0);
+        grandTotalRow['__grandTotal'] = grandTotal;
         
-        return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal: grandTotalRow.__grandTotal, columnHierarchy };
+        return { rows: finalRows, columns: flatCols, grandTotalRow, grandTotal, columnHierarchy };
 
     }, [filteredExpenses, pivotConfig]);
     
@@ -328,9 +337,18 @@ export default function ExpenseReportsPage() {
     };
 
      const renderColumnHeaders = () => {
-        if (pivotData.columns.length === 0) return <TableHead>Grand Total</TableHead>;
+        if (pivotData.columns.length === 0) return null;
         
         const maxDepth = pivotConfig.columns.length;
+        if (maxDepth === 0) {
+            return (
+                <TableRow>
+                    <TableHead>{pivotConfig.rows.join(' / ')}</TableHead>
+                    <TableHead className="text-right">Grand Total</TableHead>
+                </TableRow>
+            );
+        }
+
         const headerRows: JSX.Element[] = [];
 
         for (let i = 0; i < maxDepth; i++) {
@@ -346,7 +364,7 @@ export default function ExpenseReportsPage() {
                 });
             };
             processLevel(pivotData.columnHierarchy, 0);
-            headerRows.push(<TableRow key={`header-row-${i}`}>{i === 0 && <TableHead rowSpan={maxDepth} className="align-bottom">{pivotConfig.rows.join(' / ')}</TableHead>}{cells.map(c => <TableHead key={c.key} colSpan={c.colspan} className="text-center">{c.label}</TableHead>)}{i === 0 && <TableHead rowSpan={maxDepth} className="text-right align-bottom">Grand Total</TableHead>}</TableRow>);
+            headerRows.push(<TableRow key={`header-row-${i}`}>{i === 0 && <TableHead rowSpan={maxDepth} className="align-bottom">{pivotConfig.rows.join(' / ')}</TableHead>}{cells.map(c => <TableHead key={c.key} colSpan={c.colspan} className="text-center">{c.label}</TableHead>)}{i === 0 && pivotData.columns.length > 1 && <TableHead rowSpan={maxDepth} className="text-right align-bottom">Grand Total</TableHead>}</TableRow>);
         }
 
         return headerRows;
@@ -459,17 +477,15 @@ export default function ExpenseReportsPage() {
                             <div className="overflow-x-auto border rounded-lg">
                                 <Table>
                                     <TableHeader>
-                                        {pivotConfig.columns.length > 0 ? renderColumnHeaders() : (
-                                            <TableRow>
-                                                 <TableHead>{pivotConfig.rows.join(' / ')}</TableHead>
-                                                 <TableHead className="text-right">Grand Total</TableHead>
-                                            </TableRow>
-                                        )}
+                                       {renderColumnHeaders()}
                                     </TableHeader>
                                     <TableBody>
-                                        {pivotData.rows.length > 0 ? renderRows(pivotData.rows) : (
+                                        {pivotData.rows.length > 0 ? (
+                                            renderRows(pivotData.rows)
+                                        ) : pivotConfig.columns.length > 0 ? (
                                             <TableRow><TableCell colSpan={pivotData.columns.length + 2} className="h-24 text-center">No data for selected configuration.</TableCell></TableRow>
-                                        )}
+                                        ) : null}
+                                        
                                         <TableRow className="bg-muted font-bold text-lg">
                                            <TableCell>Grand Total</TableCell>
                                            {pivotData.columns.map(col => {
