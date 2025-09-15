@@ -57,6 +57,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from './ui/switch';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 const formSchema = z.object({
@@ -82,11 +83,14 @@ export default function AllRequisitionsTab() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can } = useAuthorization();
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [showMyRequests, setShowMyRequests] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  
+  const canCreate = can('Create Requisition', 'Site Fund Requisition');
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -634,7 +638,7 @@ export default function AllRequisitionsTab() {
             </Select>
             <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
                 <DialogTrigger asChild>
-                    <Button>New Request</Button>
+                    <Button disabled={!canCreate}>New Request</Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-4xl">
                     <DialogHeader>
