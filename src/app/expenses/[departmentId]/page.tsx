@@ -58,7 +58,7 @@ export default function DepartmentExpensesPage() {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
-  const departmentId = params.departmentId as string;
+  const departmentId = Array.isArray(params.departmentId) ? params.departmentId[0] : params.departmentId;
   const settingsKey = `expenses_${departmentId}`;
   
   const isInitialMount = useRef(true);
