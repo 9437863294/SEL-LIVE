@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search } from 'lucide-react';
+import { ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert, Search, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
@@ -33,11 +33,15 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { format } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday } from 'date-fns';
+import { DateRange } from 'react-day-picker';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
 
 
 const baseTableHeaders = [
@@ -80,19 +84,32 @@ export default function DepartmentExpensesPage() {
       requestNo: '',
       projectName: 'all',
       partyName: '',
+      dateRange: {
+        from: startOfMonth(new Date()),
+        to: endOfMonth(new Date()),
+      } as DateRange | undefined,
   });
   
   const canViewPage = can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses');
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
 
-  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+  const handleFilterChange = (field: keyof Omit<typeof filters, 'dateRange'>, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
+  };
+  
+  const handleDateRangeChange = (dateRange: DateRange | undefined) => {
+    setFilters(prev => ({...prev, dateRange}));
   };
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
       const project = projects.find(p => p.id === exp.projectId);
+      const expDate = new Date(exp.createdAt);
+      const isDateMatch = filters.dateRange?.from && filters.dateRange?.to 
+                ? expDate >= filters.dateRange.from && expDate <= filters.dateRange.to
+                : true;
       return (
+        isDateMatch &&
         (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
         (filters.partyName === '' || exp.partyName.toLowerCase().includes(filters.partyName.toLowerCase())) &&
         (filters.projectName === 'all' || exp.projectId === filters.projectName)
@@ -389,8 +406,8 @@ export default function DepartmentExpensesPage() {
         </div>
 
         <Card className="mb-6">
-            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <CardContent className="p-4 flex flex-col items-start gap-4">
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="relative">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input placeholder="Search Request No..." className="pl-8" value={filters.requestNo} onChange={e => handleFilterChange('requestNo', e.target.value)} />
@@ -406,6 +423,23 @@ export default function DepartmentExpensesPage() {
                             {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                         </SelectContent>
                     </Select>
+                     <Popover>
+                        <PopoverTrigger asChild>
+                            <Button id="date" variant={"outline"} className={cn("w-full justify-start text-left font-normal", !filters.dateRange && "text-muted-foreground")}>
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {filters.dateRange?.from ? (filters.dateRange.to ? <>{format(filters.dateRange.from, "LLL dd, y")} - {format(filters.dateRange.to, "LLL dd, y")}</> : format(filters.dateRange.from, "LLL dd, y")) : <span>Pick a date range</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar initialFocus mode="range" defaultMonth={filters.dateRange?.from} selected={filters.dateRange} onSelect={handleDateRangeChange} numberOfMonths={2}/>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button variant="ghost" onClick={() => handleDateRangeChange({ from: startOfToday(), to: endOfToday() })}>Today</Button>
+                    <Button variant="ghost" onClick={() => handleDateRangeChange({ from: startOfWeek(new Date()), to: endOfWeek(new Date()) })}>This Week</Button>
+                    <Button variant="ghost" onClick={() => handleDateRangeChange({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) })}>This Month</Button>
+                    <Button variant="ghost" onClick={() => handleDateRangeChange({ from: startOfMonth(subMonths(new Date(), 1)), to: endOfMonth(subMonths(new Date(), 1)) })}>Last Month</Button>
                 </div>
             </CardContent>
         </Card>
@@ -456,4 +490,5 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
+
 
