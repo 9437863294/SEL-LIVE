@@ -19,6 +19,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { DateRange } from 'react-day-picker';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Label } from '@/components/ui/label';
 
 interface DepartmentSummary {
     departmentName: string;
@@ -104,46 +105,46 @@ export default function DepartmentSummaryPage() {
 
     if (isAuthLoading) {
       return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-            <Skeleton className="h-10 w-96 mb-6" />
-            <Skeleton className="h-24 w-full mb-6" />
-            <Skeleton className="h-96 w-full" />
+        <div class="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton class="h-10 w-96 mb-6" />
+            <Skeleton class="h-24 w-full mb-6" />
+            <Skeleton class="h-96 w-full" />
         </div>
       )
     }
 
     if (!canViewPage) {
         return (
-            <div className="w-full px-4 sm:px-6 lg:px-8">
-                <div className="mb-6 flex items-center gap-2">
-                    <Link href="/expenses/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">Department-wise Summary</h1>
+            <div class="w-full px-4 sm:px-6 lg:px-8">
+                <div class="mb-6 flex items-center gap-2">
+                    <Link href="/expenses/reports"><Button variant="ghost" size="icon"><ArrowLeft class="h-6 w-6" /></Button></Link>
+                    <h1 class="text-2xl font-bold">Department-wise Summary</h1>
                 </div>
                 <Card>
                     <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this report.</CardDescription></CardHeader>
-                    <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+                    <CardContent class="flex justify-center p-8"><ShieldAlert class="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
         );
     }
 
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-            <div className="mb-6 flex items-center gap-2">
+        <div class="w-full px-4 sm:px-6 lg:px-8">
+            <div class="mb-6 flex items-center gap-2">
                 <Link href="/expenses/reports">
                     <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-6 w-6" />
+                        <ArrowLeft class="h-6 w-6" />
                     </Button>
                 </Link>
-                <h1 className="text-2xl font-bold">Department-wise Summary</h1>
+                <h1 class="text-2xl font-bold">Department-wise Summary</h1>
             </div>
 
-            <Card className="mb-6">
+            <Card class="mb-6">
                 <CardHeader>
                     <CardTitle>Filters</CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col md:flex-row gap-4">
-                    <div className="w-full md:w-1/3">
+                <CardContent class="flex flex-col md:flex-row gap-4">
+                    <div class="w-full md:w-1/3">
                          <Label>Date Range</Label>
                          <Popover>
                             <PopoverTrigger asChild>
@@ -155,7 +156,7 @@ export default function DepartmentSummaryPage() {
                                   !filters.dateRange && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon class="mr-2 h-4 w-4" />
                                 {filters.dateRange?.from ? (
                                   filters.dateRange.to ? (
                                     <>
@@ -170,7 +171,7 @@ export default function DepartmentSummaryPage() {
                                 )}
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
+                            <PopoverContent class="w-auto p-0" align="start">
                               <Calendar
                                 initialFocus
                                 mode="range"
@@ -182,7 +183,7 @@ export default function DepartmentSummaryPage() {
                             </PopoverContent>
                           </Popover>
                     </div>
-                     <div className="w-full md:w-1/3">
+                     <div class="w-full md:w-1/3">
                         <Label>Project</Label>
                         <Select value={filters.projectId} onValueChange={(value) => setFilters(prev => ({...prev, projectId: value}))}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
@@ -205,24 +206,24 @@ export default function DepartmentSummaryPage() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Department</TableHead>
-                                <TableHead className="text-right">Total Requests</TableHead>
-                                <TableHead className="text-right">Total Amount</TableHead>
+                                <TableHead class="text-right">Total Requests</TableHead>
+                                <TableHead class="text-right">Total Amount</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                                        <TableCell className="text-right"><Skeleton className="h-5 w-16 ml-auto" /></TableCell>
-                                        <TableCell className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableCell>
+                                        <TableCell><Skeleton class="h-5 w-32" /></TableCell>
+                                        <TableCell class="text-right"><Skeleton class="h-5 w-16 ml-auto" /></TableCell>
+                                        <TableCell class="text-right"><Skeleton class="h-5 w-24 ml-auto" /></TableCell>
                                     </TableRow>
                                 ))
                             ) : summary.map(s => (
                                 <TableRow key={s.departmentName}>
-                                    <TableCell className="font-medium">{s.departmentName}</TableCell>
-                                    <TableCell className="text-right">{s.requestCount.toLocaleString()}</TableCell>
-                                    <TableCell className="text-right font-semibold">{s.totalAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</TableCell>
+                                    <TableCell class="font-medium">{s.departmentName}</TableCell>
+                                    <TableCell class="text-right">{s.requestCount.toLocaleString()}</TableCell>
+                                    <TableCell class="text-right font-semibold">{s.totalAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
