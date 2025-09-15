@@ -3,7 +3,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -12,14 +12,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import type { EmployeePosition } from '@/lib/types';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [positions, setPositions] = useState<EmployeePosition[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  
+  const canView = can('View', 'Settings.Employee Management');
+
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (canView) {
+      fetchPositions(1);
+    }
+  }, [isAuthLoading, canView]);
 
   const fetchPositions = async (page: number) => {
     setIsLoading(true);
@@ -43,9 +55,37 @@ export default function EmployeePositionDetailsPage() {
     }
   };
 
-  useEffect(() => {
-    fetchPositions(1);
-  }, []);
+
+  if (isAuthLoading) {
+      return (
+        <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6"><Skeleton className="h-10 w-96" /></div>
+            <Skeleton className="h-96 w-full" />
+        </div>
+      )
+  }
+
+  if (!canView) {
+    return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings/employee">
+                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+              </Link>
+              <h1 className="text-2xl font-bold">All Employee Position Details</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -141,3 +181,5 @@ export default function EmployeePositionDetailsPage() {
     </div>
   );
 }
+
+    

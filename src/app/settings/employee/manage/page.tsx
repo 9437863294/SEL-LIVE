@@ -3,9 +3,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Users, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Search, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionShad } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import type { Employee, Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const initialNewEmployeeState = {
   employeeId: '',
@@ -30,6 +31,8 @@ const initialNewEmployeeState = {
 
 export default function ManageEmployeePage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +51,21 @@ export default function ManageEmployeePage() {
       department: 'all',
       status: 'all',
   });
+
+  const canView = can('View', 'Settings.Employee Management');
+  const canAdd = can('Add', 'Settings.Employee Management');
+  const canEdit = can('Edit', 'Settings.Employee Management');
+  const canDelete = can('Delete', 'Settings.Employee Management');
+
+
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (!canView) {
+        setIsLoading(false);
+        return;
+    };
+    fetchData();
+  }, [isAuthLoading, canView]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -74,9 +92,6 @@ export default function ManageEmployeePage() {
     setIsLoading(false);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -220,6 +235,40 @@ export default function ManageEmployeePage() {
       });
     }
   };
+  
+  if (isAuthLoading) {
+    return (
+        <div className="w-full max-w-7xl mx-auto">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card><CardContent className="p-0"><Skeleton className="h-96 w-full" /></CardContent></Card>
+        </div>
+    )
+  }
+
+  if (!canView) {
+    return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings/employee">
+                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Manage Employee</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescriptionShad>You do not have permission to view this page.</CardDescriptionShad>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -234,7 +283,7 @@ export default function ManageEmployeePage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!canAdd}>
               <Plus className="mr-2 h-4 w-4" />
               Add Employee
             </Button>
@@ -331,7 +380,7 @@ export default function ManageEmployeePage() {
             </div>
             {selectedEmployeeIds.length > 0 && (
                 <div className="sm:ml-auto mt-4 sm:mt-0">
-                    <Button variant="destructive" onClick={handleDeleteSelected}>
+                    <Button variant="destructive" onClick={handleDeleteSelected} disabled={!canDelete}>
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete ({selectedEmployeeIds.length})
                     </Button>
@@ -350,6 +399,7 @@ export default function ManageEmployeePage() {
                         checked={selectedEmployeeIds.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
                         onCheckedChange={(checked) => handleSelectAll(!!checked)}
                         aria-label="Select all"
+                        disabled={!canDelete}
                     />
                 </TableHead>
                 <TableHead>Employee ID</TableHead>
@@ -388,6 +438,7 @@ export default function ManageEmployeePage() {
                           checked={selectedEmployeeIds.includes(emp.id)}
                           onCheckedChange={(checked) => handleSelectEmployee(emp.id, !!checked)}
                           aria-label={`Select employee ${emp.name}`}
+                          disabled={!canDelete}
                       />
                     </TableCell>
                     <TableCell className="font-medium">{emp.employeeId}</TableCell>
@@ -398,8 +449,8 @@ export default function ManageEmployeePage() {
                     <TableCell>{emp.designation || 'N/A'}</TableCell>
                     <TableCell>{emp.status}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)}><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)} disabled={!canDelete}><Trash2 className="h-4 w-4" /></Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -478,3 +529,4 @@ export default function ManageEmployeePage() {
   );
 }
 
+    

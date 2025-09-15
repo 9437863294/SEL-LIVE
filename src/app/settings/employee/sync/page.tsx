@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox, ArrowRight, ArrowLeft as ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeft, DownloadCloud, Loader2, Check, Inbox, ArrowRight, ArrowLeft as ArrowLeftIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +14,8 @@ import { collection, writeBatch, doc, getDocs, query, where } from 'firebase/fir
 import { syncGreytHR } from '@/ai';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type FetchedEmployee = {
   employeeId: string;
@@ -27,6 +29,8 @@ type FetchedEmployee = {
 
 export default function SyncEmployeePage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  
   const [step, setStep] = useState<'initial' | 'fetched' | 'importing' | 'completed'>('initial');
   const [isFetching, setIsFetching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -35,6 +39,8 @@ export default function SyncEmployeePage() {
   const [importProgress, setImportProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+
+  const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
 
   const handleFetch = async (page = 1) => {
     setIsFetching(true);
@@ -129,6 +135,37 @@ export default function SyncEmployeePage() {
         title: 'Import Complete',
         description: `Successfully imported ${importedCount} of ${employeesToImport.length} selected employees.`,
     });
+  }
+  
+  if (isAuthLoading) {
+      return (
+         <div className="w-full max-w-5xl mx-auto">
+            <div className="mb-6"><Skeleton className="h-10 w-96" /></div>
+            <Skeleton className="h-64 w-full" />
+        </div>
+      )
+  }
+
+  if (!canSync) {
+    return (
+        <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings/employee">
+                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Sync & Import from GreytHR</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to sync employees from GreytHR.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
   }
 
   return (
@@ -282,3 +319,5 @@ export default function SyncEmployeePage() {
     </div>
   );
 }
+
+    
