@@ -55,7 +55,7 @@ export default function SerialNoConfigurationPage() {
                     setConfig(docSnap.data() as SerialNumberConfig);
                 } else {
                     const defaultConfig = selectedModule === 'site-fund-requisition' 
-                        ? { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 18 }
+                        ? { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 10 }
                         : { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 };
                     setConfig(defaultConfig);
                 }

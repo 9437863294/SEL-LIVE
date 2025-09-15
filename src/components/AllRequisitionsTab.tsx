@@ -626,7 +626,7 @@ export default function AllRequisitionsTab() {
 
   return (
     <div className="flex flex-col h-full">
-        <div className="py-4 flex justify-end items-center gap-4">
+        <div className="sticky top-0 bg-background z-10 py-4 flex justify-end items-center gap-4">
             {canViewAll && (
               <div className="flex items-center space-x-2">
                   <Switch 
@@ -678,7 +678,7 @@ export default function AllRequisitionsTab() {
         </div>
         <div className="border rounded-lg flex-grow overflow-hidden">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
                 <TableHead>Request ID</TableHead>
                 <TableHead>Date</TableHead>
