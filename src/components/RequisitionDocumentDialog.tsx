@@ -63,7 +63,8 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
       await updateDoc(reqRef, {
         attachments: arrayUnion(...attachmentUrls),
-        documentStatus: 'Uploaded'
+        documentStatus: 'Uploaded',
+        documentStatusUpdatedAt: new Date(),
       });
       
       toast({ title: "Success", description: `${filesToUpload.length} file(s) uploaded successfully.` });
@@ -86,12 +87,16 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
       await deleteObject(storageRef);
 
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
+      const newAttachments = currentAttachments.filter(att => att.url !== attachment.url);
+      
       await updateDoc(reqRef, {
-        attachments: arrayRemove(attachment)
+        attachments: arrayRemove(attachment),
+        documentStatus: newAttachments.length > 1 ? 'Uploaded' : 'Pending', // Back to pending if last doc deleted
+        documentStatusUpdatedAt: new Date(),
       });
       
       toast({ title: "Success", description: "Attachment deleted." });
-      setCurrentAttachments(prev => prev.filter(att => att.url !== attachment.url));
+      setCurrentAttachments(newAttachments.slice(0, -1));
       onUploadComplete();
     } catch (error) {
         console.error("Error deleting attachment:", error);

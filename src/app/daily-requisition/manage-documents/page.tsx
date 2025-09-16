@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Files, Loader2, ShieldAlert, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Upload, Files, Loader2, ShieldAlert, MoreHorizontal, File as FileIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -50,7 +50,7 @@ export default function ManageDocumentsPage() {
               id: doc.id, 
               ...data,
               date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : String(data.date),
-              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy HH:mm') : String(data.createdAt),
+              createdAt: data.createdAt && (data.createdAt as any).toDate ? format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : String(data.createdAt),
           } as DailyRequisitionEntry
       });
       setRequisitions(entries);
@@ -110,7 +110,8 @@ export default function ManageDocumentsPage() {
         const reqRef = doc(db, 'dailyRequisitions', id);
         await updateDoc(reqRef, { 
             documentStatus: status,
-            documentStatusUpdatedById: user.id 
+            documentStatusUpdatedById: user.id,
+            documentStatusUpdatedAt: new Date(),
         });
         toast({ title: 'Status Updated', description: `Entry marked as ${status}.`});
         fetchRequisitions(); // Refresh data
@@ -134,6 +135,7 @@ export default function ManageDocumentsPage() {
                             <TableHead>Date</TableHead>
                             {type === 'uploaded' && <TableHead>Attachments</TableHead>}
                             {type === 'missing' && <TableHead>Status</TableHead>}
+                            {(type === 'missing' || type === 'uploaded') && <TableHead>Timestamp</TableHead>}
                             {type === 'missing' && <TableHead>Action Taken By</TableHead>}
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
@@ -142,7 +144,7 @@ export default function ManageDocumentsPage() {
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={i}>
-                                    <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 6 : 5)}>
+                                    <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 7 : 6)}>
                                         <Skeleton className="h-6 w-full" />
                                     </TableCell>
                                 </TableRow>
@@ -155,6 +157,11 @@ export default function ManageDocumentsPage() {
                                     <TableCell>{req.date as string}</TableCell>
                                     {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
                                     {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
+                                    {(type === 'missing' || type === 'uploaded') && (
+                                        <TableCell>
+                                            {req.documentStatusUpdatedAt ? format(req.documentStatusUpdatedAt.toDate(), 'dd MMM, yy HH:mm') : 'N/A'}
+                                        </TableCell>
+                                    )}
                                     {type === 'missing' && <TableCell>{req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}</TableCell>}
                                     <TableCell className="text-right">
                                         {type === 'pending' ? (
@@ -191,7 +198,7 @@ export default function ManageDocumentsPage() {
                             ))
                         ) : (
                              <TableRow>
-                                <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 6 : 5)} className="h-24 text-center">
+                                <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 7 : 6)} className="h-24 text-center">
                                     No entries found.
                                 </TableCell>
                             </TableRow>

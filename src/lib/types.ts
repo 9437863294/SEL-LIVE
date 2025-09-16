@@ -323,6 +323,7 @@ export type DailyRequisitionEntry = {
   receivedById?: string;
   documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
   documentStatusUpdatedById?: string; // ID of user who marked as missing/not required
+  documentStatusUpdatedAt?: any; // Timestamp
   userRoles?: Record<string, string>;
   igstAmount?: number;
   tdsAmount?: number;
