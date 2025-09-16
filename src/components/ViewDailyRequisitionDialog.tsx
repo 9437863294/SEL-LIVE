@@ -65,6 +65,26 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
       }
   };
 
+  const handleDocumentStatusUpdate = async (newDocStatus: 'Missing' | 'Not Required') => {
+    if (!entry || !user) return;
+    setIsActionLoading(true);
+    try {
+        await updateDoc(doc(db, 'dailyRequisitions', entry.id), {
+            documentStatus: newDocStatus,
+            documentStatusUpdatedById: user.id,
+            documentStatusUpdatedAt: new Date(),
+        });
+        toast({ title: 'Success', description: `Document status set to ${newDocStatus}.` });
+        onActionComplete?.();
+        onOpenChange(false);
+    } catch (error) {
+        console.error("Error updating document status:", error);
+        toast({ title: 'Error', description: 'Failed to update document status.', variant: 'destructive' });
+    } finally {
+        setIsActionLoading(false);
+    }
+  };
+
 
   if (!entry) return null;
 
@@ -75,6 +95,8 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
   const canReceive = can('Mark as Received', 'Daily Requisition.Receiving at Finance');
   const canReturn = can('Return to Pending', 'Daily Requisition.Receiving at Finance');
   const canCancel = can('Cancel', 'Daily Requisition.Receiving at Finance');
+  const canMarkMissing = can('Mark as Missing', 'Daily Requisition.Manage Documents');
+  const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -145,7 +167,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                                </a>
                              </Button>
                              <Button asChild variant="outline" size="sm">
-                               <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
+                               <a href={file.url} download={file.name}>
                                   <Download className="mr-2 h-4 w-4" /> Download
                                </a>
                              </Button>
@@ -158,7 +180,7 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
             </div>
         </div>
 
-        <DialogFooter className="mt-4 pr-4 no-print">
+        <DialogFooter className="mt-4 pr-4 no-print flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" /> Print
           </Button>
@@ -175,6 +197,18 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
             <Button variant="secondary" onClick={() => handleStatusUpdate('Pending')} disabled={isActionLoading}>
                 {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Return to Pending
+            </Button>
+          )}
+           {entry.documentStatus === 'Pending' && canMarkMissing && (
+            <Button variant="secondary" onClick={() => handleDocumentStatusUpdate('Missing')} disabled={isActionLoading}>
+                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Mark as Missing
+            </Button>
+          )}
+          {entry.documentStatus === 'Pending' && canMarkNotRequired && (
+            <Button variant="secondary" onClick={() => handleDocumentStatusUpdate('Not Required')} disabled={isActionLoading}>
+                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Mark as Not Required
             </Button>
           )}
           {entry.status !== 'Cancelled' && canCancel && (
