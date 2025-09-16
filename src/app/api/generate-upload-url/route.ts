@@ -3,10 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import 'server-only';
-import { config } from 'dotenv';
-
-// Load environment variables from .env file
-config();
 
 // This is a more robust way to initialize Firebase Admin SDK in Next.js server environments.
 // It ensures that we don't try to re-initialize the app on every hot-reload.
