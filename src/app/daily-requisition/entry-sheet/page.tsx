@@ -276,43 +276,56 @@ export default function EntrySheetPage() {
       }
   };
 
-
   const handleAddEntry = async () => {
     setIsSaving(true);
     const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
     const selectedExpenseRequest = expenseRequests.find(req => req.requestNo === formState.depNo);
 
     try {
-        let finalEntryData: DailyRequisitionEntry | null = null;
         let generatedReceptionNo = '';
 
         await runTransaction(db, async (transaction) => {
-            // 1. Get and update serial number config
             const configDoc = await transaction.get(configRef);
             if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
             const configData = configDoc.data() as SerialNumberConfig;
             const newIndex = configData.startingIndex;
             const formattedIndex = String(newIndex).padStart(4, '0');
-            const receptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
-            generatedReceptionNo = receptionNo; // Store for use outside transaction
+            generatedReceptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
             transaction.update(configRef, { startingIndex: newIndex + 1 });
-            
-            // This part happens after the transaction, so we just prepare the data here.
         });
-        
-        // 2. Upload files to storage (outside transaction)
-        const attachmentUrls: Attachment[] = [];
-        if (selectedFiles.length > 0) {
-            for (const file of selectedFiles) {
-                const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
-                const storageRef = ref(storage, storagePath);
-                await uploadBytes(storageRef, file);
-                const downloadURL = await getDownloadURL(storageRef);
-                attachmentUrls.push({ name: file.name, url: downloadURL });
+
+        const uploadPromises = selectedFiles.map(async (file) => {
+            const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
+            
+            const signedUrlResponse = await fetch('/api/generate-upload-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: file.name,
+                    contentType: file.type,
+                    path: storagePath,
+                }),
+            });
+
+            if (!signedUrlResponse.ok) {
+                const errorData = await signedUrlResponse.json();
+                throw new Error(errorData.error || 'Failed to get signed URL');
             }
-        }
-        
-        // 3. Create the documents in Firestore (as a batch write or a final transaction)
+
+            const { url } = await signedUrlResponse.json();
+
+            await fetch(url, {
+                method: 'PUT',
+                body: file,
+                headers: { 'Content-Type': file.type },
+            });
+            
+            const downloadURL = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media`;
+            return { name: file.name, url: downloadURL };
+        });
+
+        const attachmentUrls = await Promise.all(uploadPromises);
+
         const newEntryData = {
             receptionNo: generatedReceptionNo,
             depNo: formState.depNo,
@@ -341,7 +354,7 @@ export default function EntrySheetPage() {
         
         await batch.commit();
 
-        finalEntryData = {
+        const finalEntryData = {
             id: newEntryRef.id,
             ...newEntryData,
             date: format(newEntryData.date.toDate(), 'MMMM do, yyyy'),
@@ -360,9 +373,9 @@ export default function EntrySheetPage() {
             setIsChecklistOpen(true);
         }
         
-        setFormState(initialFormState); // Reset form
+        setFormState(initialFormState);
         setSelectedFiles([]);
-        fetchAllData(); // Refresh data from Firestore
+        fetchAllData();
 
     } catch (error: any) {
         console.error("Error in transaction:", error);
@@ -979,6 +992,7 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
 
 
 
