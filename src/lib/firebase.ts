@@ -9,7 +9,7 @@ import { getStorage } from "firebase/storage";
 const firebaseConfig = {
   projectId: "module-hub-uc7tw",
   appId: "1:1098805626846:web:53c37d00f62dbbc19dbf4f",
-  storageBucket: "module-hub-uc7tw.appspot.com",
+  storageBucket: "module-hub-uc7tw.firebasestorage.app",
   apiKey: "AIzaSyBRnB-SvnQWuNipl2SOnuV4opME0ZmsdPQ",
   authDomain: "module-hub-uc7tw.firebaseapp.com",
   messagingSenderId: "1098805626846",
