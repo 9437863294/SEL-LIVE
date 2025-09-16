@@ -15,8 +15,9 @@ const getAdminApp = () => {
   const serviceAccount = {
     projectId: process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    // Replace the literal \n with actual newlines
-    privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    // The private key from the .env file might be wrapped in quotes and will have escaped newlines.
+    // We need to remove the quotes and then replace the escaped newlines with actual newlines.
+    privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/^"|"$/g, '').replace(/\\n/g, '\n'),
   };
 
   if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
