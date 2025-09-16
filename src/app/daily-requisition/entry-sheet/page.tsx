@@ -18,8 +18,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc, writeBatch } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
@@ -295,32 +296,10 @@ export default function EntrySheetPage() {
         const attachmentUrls: Attachment[] = [];
         for (const file of selectedFiles) {
           const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
-          
-          const signedUrlResponse = await fetch('/api/generate-upload-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: storagePath, contentType: file.type }),
-          });
-
-          if (!signedUrlResponse.ok) {
-            const errorBody = await signedUrlResponse.json();
-            throw new Error(errorBody.error || 'Failed to generate upload URL.');
-          }
-
-          const { url } = await signedUrlResponse.json();
-
-          const uploadResponse = await fetch(url, {
-            method: 'PUT',
-            headers: { 'Content-Type': file.type },
-            body: file,
-          });
-
-          if (!uploadResponse.ok) {
-            throw new Error(`Upload failed for ${file.name}`);
-          }
-          
-          const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media`;
-          attachmentUrls.push({ name: file.name, url: publicUrl });
+          const storageRef = ref(storage, storagePath);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+          attachmentUrls.push({ name: file.name, url: downloadURL });
         }
 
 
