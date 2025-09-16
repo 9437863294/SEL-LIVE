@@ -32,7 +32,8 @@ export default function ManageDocumentsPage() {
   
   const canViewPage = can('View', 'Daily Requisition.Manage Documents');
   const canUpload = can('Upload', 'Daily Requisition.Manage Documents');
-  const canUpdateStatus = can('Update Status', 'Daily Requisition.Manage Documents');
+  const canMarkMissing = can('Mark as Missing', 'Daily Requisition.Manage Documents');
+  const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
 
   const fetchRequisitions = async () => {
     setIsLoading(true);
@@ -178,16 +179,16 @@ export default function ManageDocumentsPage() {
                                                     <DropdownMenuItem onSelect={() => openDialog(req)} disabled={!canUpload}>
                                                         <Upload className="mr-2 h-4 w-4" /> Upload
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')} disabled={!canUpdateStatus}>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')} disabled={!canMarkMissing}>
                                                         Mark as Missing
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')} disabled={!canUpdateStatus}>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')} disabled={!canMarkNotRequired}>
                                                         Mark as Not Required
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         ) : type === 'missing' ? (
-                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }} disabled={!canUpdateStatus}>
+                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }} disabled={!canMarkMissing && !canMarkNotRequired}>
                                                 Move to Pending
                                             </Button>
                                         ) : (
