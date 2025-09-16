@@ -55,7 +55,7 @@ export default function LoginPage() {
       style={{ backgroundImage: `url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2F1744115358081.jpg?alt=media&token=3352f270-d899-4d18-bd83-b40a052e3061')` }}
     >
         <div className="absolute inset-0 bg-black/30" />
-      <div className="relative grid grid-cols-1 md:grid-cols-2 max-w-4xl w-full rounded-2xl shadow-2xl overflow-hidden bg-background">
+      <div className="relative grid grid-cols-1 md:grid-cols-2 max-w-4xl w-full rounded-2xl shadow-2xl overflow-hidden bg-background/90">
         <div className="hidden md:flex items-center justify-center bg-primary/10 p-12 relative">
            <div className="absolute -top-16 -left-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
            <div className="absolute -bottom-16 -right-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
