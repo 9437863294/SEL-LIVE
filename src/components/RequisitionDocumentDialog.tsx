@@ -9,7 +9,6 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,13 +62,14 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
 
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
       await updateDoc(reqRef, {
-        attachments: arrayUnion(...attachmentUrls)
+        attachments: arrayUnion(...attachmentUrls),
+        documentStatus: 'Uploaded'
       });
       
       toast({ title: "Success", description: `${filesToUpload.length} file(s) uploaded successfully.` });
       setFilesToUpload([]);
       setCurrentAttachments(prev => [...prev, ...attachmentUrls]);
-      onUploadComplete(); // Refresh the list on the parent page
+      onUploadComplete();
     } catch (error) {
       console.error("Upload failed:", error);
       toast({ title: "Upload Failed", description: "Could not upload files.", variant: "destructive" });
@@ -81,12 +81,10 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   const handleDeleteAttachment = async (attachment: Attachment) => {
     if (!requisition) return;
     try {
-      // Delete from storage
       const storagePath = `daily-requisitions/${requisition.receptionNo}/${attachment.name}`;
       const storageRef = ref(storage, storagePath);
       await deleteObject(storageRef);
 
-      // Remove from firestore
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
       await updateDoc(reqRef, {
         attachments: arrayRemove(attachment)
@@ -109,7 +107,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   if (!requisition) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={resetAndClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Manage Documents for {requisition.receptionNo}</DialogTitle>
