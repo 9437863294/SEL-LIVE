@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
-import { Printer, Paperclip, Download } from 'lucide-react';
+import { Printer, Paperclip, Download, Eye } from 'lucide-react';
 import Link from 'next/link';
+import { format } from 'date-fns';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -88,15 +89,22 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                   <div className="mt-2 space-y-2">
                     {entry.attachments.map((file, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                         <div className="flex items-center gap-2">
-                           <Paperclip className="h-4 w-4" />
-                           <span className="text-sm font-medium">{file.name}</span>
+                         <div className="flex items-center gap-2 overflow-hidden">
+                           <Paperclip className="h-4 w-4 shrink-0" />
+                           <span className="text-sm font-medium truncate">{file.name}</span>
                          </div>
-                         <Button asChild variant="outline" size="sm">
-                           <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
-                              <Download className="mr-2 h-4 w-4" /> Download
-                           </a>
-                         </Button>
+                         <div className="flex items-center shrink-0">
+                             <Button asChild variant="outline" size="sm" className="mr-2">
+                               <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                  <Eye className="mr-2 h-4 w-4" /> View
+                               </a>
+                             </Button>
+                             <Button asChild variant="outline" size="sm">
+                               <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
+                                  <Download className="mr-2 h-4 w-4" /> Download
+                               </a>
+                             </Button>
+                         </div>
                       </div>
                     ))}
                   </div>
