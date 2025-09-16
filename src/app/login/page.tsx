@@ -64,7 +64,7 @@ export default function LoginPage() {
             data-ai-hint="hot air balloon"
           />
         </div>
-        <div className="p-8 md:p-12 flex flex-col justify-center">
+        <div className="p-8 md:p-12 flex flex-col justify-center items-center">
             <div className="relative h-32 w-full max-w-[60%]">
                 <Image
                     src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
@@ -74,10 +74,10 @@ export default function LoginPage() {
                     priority
                 />
             </div>
-            <p className="text-muted-foreground mt-2 mb-8">Welcome! Please sign in to continue.</p>
+            <p className="text-muted-foreground text-center mt-2 mb-8">Welcome! Please sign in to continue.</p>
 
-            <form onSubmit={handleSignIn} className="space-y-6">
-                <div className="space-y-2">
+            <form onSubmit={handleSignIn} className="space-y-6 w-full max-w-sm">
+                <div className="space-y-2 text-left">
                     <Label htmlFor="email">Email</Label>
                     <Input
                         id="email"
@@ -89,7 +89,7 @@ export default function LoginPage() {
                         className="bg-muted/50 border-0 focus:bg-background"
                     />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 text-left">
                     <Label htmlFor="password">Password</Label>
                     <Input
                         id="password"
