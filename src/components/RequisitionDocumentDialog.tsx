@@ -81,8 +81,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   const handleDeleteAttachment = async (attachmentToDelete: Attachment) => {
     if (!requisition) return;
     
-    // Optimistically update UI
-    const previousAttachments = [...currentAttachments];
+    const originalAttachments = [...currentAttachments];
     setCurrentAttachments(prev => prev.filter(att => att.url !== attachmentToDelete.url));
 
     try {
@@ -91,25 +90,27 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
       await deleteObject(storageRef);
 
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
-      const newAttachments = currentAttachments.filter(att => att.url !== attachmentToDelete.url);
       
       await updateDoc(reqRef, {
         attachments: arrayRemove(attachmentToDelete),
-        documentStatus: newAttachments.length > 0 ? 'Uploaded' : 'Pending',
         documentStatusUpdatedAt: new Date(),
       });
+
+       const remainingAttachments = originalAttachments.filter(att => att.url !== attachmentToDelete.url);
+      if (remainingAttachments.length === 0) {
+        await updateDoc(reqRef, { documentStatus: 'Pending' });
+      }
       
       toast({ title: "Success", description: "Attachment deleted." });
     } catch (error) {
         console.error("Error deleting attachment:", error);
-        // Revert optimistic UI update on failure
-        setCurrentAttachments(previousAttachments);
+        setCurrentAttachments(originalAttachments);
         toast({ title: "Error", description: "Failed to delete attachment.", variant: "destructive" });
     }
   };
   
   const handleClose = () => {
-    onUploadComplete(); // Refresh the main list when closing
+    onUploadComplete();
     onOpenChange(false);
     setFilesToUpload([]);
   };
@@ -117,7 +118,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   if (!requisition) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Manage Documents for {requisition.receptionNo}</DialogTitle>
@@ -173,7 +174,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
                                         <div key={i} className="flex items-center gap-2 text-sm p-1 bg-muted/50 rounded-md">
                                             <FileIcon className="h-4 w-4" />
                                             <span className="flex-1 truncate">{file.name}</span>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFilesToUpload(filesToUpload.filter((_, index) => index !== i))}>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFilesToUpload(prevFiles => prevFiles.filter((_, index) => index !== i))}>
                                                 <X className="h-3 w-3" />
                                             </Button>
                                         </div>
