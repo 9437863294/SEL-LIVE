@@ -365,7 +365,7 @@ export default function ManageRolePage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center justify-between">
                 <Skeleton className="h-10 w-48" />
                 <Skeleton className="h-10 w-32" />
@@ -404,7 +404,7 @@ export default function ManageRolePage() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/settings">
@@ -535,4 +535,3 @@ export default function ManageRolePage() {
     </div>
   );
 }
-
