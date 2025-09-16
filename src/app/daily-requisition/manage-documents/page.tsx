@@ -15,6 +15,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RequisitionDocumentDialog } from '@/components/RequisitionDocumentDialog';
+import { format } from 'date-fns';
 
 export default function ManageDocumentsPage() {
   const { toast } = useToast();
@@ -33,7 +34,16 @@ export default function ManageDocumentsPage() {
     try {
       const q = query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
-      const entries = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyRequisitionEntry));
+      const entries = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          // Convert Firestore Timestamps to strings
+          return { 
+              id: doc.id, 
+              ...data,
+              date: data.date && data.date.toDate ? format(data.date.toDate(), 'dd MMM, yyyy') : data.date,
+              createdAt: data.createdAt && data.createdAt.toDate ? format(data.createdAt.toDate(), 'dd MMM, yyyy') : data.createdAt,
+          } as DailyRequisitionEntry
+      });
       setRequisitions(entries);
     } catch (error) {
       console.error("Error fetching requisitions:", error);
