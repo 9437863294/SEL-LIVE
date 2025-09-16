@@ -18,7 +18,7 @@ import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import type { DailyRequisitionEntry, Attachment } from '@/lib/types';
-import { Loader2, Upload, Paperclip, Download, Trash2, File as FileIcon, X } from 'lucide-react';
+import { Loader2, Upload, Paperclip, Download, Trash2, File as FileIcon, X, Eye } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 
 interface RequisitionDocumentDialogProps {
@@ -132,6 +132,11 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
                                     <div className="flex items-center shrink-0">
                                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
                                             <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                                <Eye className="h-4 w-4" />
+                                            </a>
+                                        </Button>
+                                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                                            <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
                                                 <Download className="h-4 w-4" />
                                             </a>
                                         </Button>
