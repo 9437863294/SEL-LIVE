@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import 'server-only';
+import { config } from 'dotenv';
+
+// Load environment variables from .env file
+config();
 
 // This is a more robust way to initialize Firebase Admin SDK in Next.js server environments.
 // It ensures that we don't try to re-initialize the app on every hot-reload.
@@ -15,13 +19,12 @@ const getAdminApp = () => {
   const serviceAccount = {
     projectId: process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    // The private key from the .env file might be wrapped in quotes and will have escaped newlines.
-    // We need to remove the quotes and then replace the escaped newlines with actual newlines.
-    privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/^"|"$/g, '').replace(/\\n/g, '\n'),
+    // The private key is now correctly formatted by dotenv
+    privateKey: process.env.FIREBASE_PRIVATE_KEY,
   };
 
   if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
-    throw new Error('Firebase Admin SDK service account credentials are not set in environment variables.');
+    throw new Error('Firebase Admin SDK service account credentials are not set correctly in environment variables.');
   }
 
   return initializeApp({
@@ -55,6 +58,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Error generating signed URL:', error);
     // Provide a more descriptive error message in the response
-    return NextResponse.json({ error: 'Failed to generate upload URL. ' + (error as Error).message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: 'Failed to generate upload URL. ' + errorMessage }, { status: 500 });
   }
 }
