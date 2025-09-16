@@ -4,7 +4,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer, File as FileIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,14 +13,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, User } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, User, Attachment } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogDescription as DialogDescriptionShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc, writeBatch } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
@@ -165,6 +166,7 @@ export default function EntrySheetPage() {
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(25);
@@ -267,6 +269,12 @@ export default function EntrySheetPage() {
         }));
     }
   };
+  
+   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+        setSelectedFiles(Array.from(e.target.files));
+      }
+  };
 
 
   const handleAddEntry = async () => {
@@ -276,6 +284,8 @@ export default function EntrySheetPage() {
 
     try {
         let finalEntryData: DailyRequisitionEntry | null = null;
+        let generatedReceptionNo = '';
+
         await runTransaction(db, async (transaction) => {
             // 1. Get and update serial number config
             const configDoc = await transaction.get(configRef);
@@ -284,41 +294,59 @@ export default function EntrySheetPage() {
             const newIndex = configData.startingIndex;
             const formattedIndex = String(newIndex).padStart(4, '0');
             const receptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
+            generatedReceptionNo = receptionNo; // Store for use outside transaction
             transaction.update(configRef, { startingIndex: newIndex + 1 });
-
-            // 2. Create the new daily requisition entry
-            const newEntryData = {
-                receptionNo: receptionNo,
-                depNo: formState.depNo,
-                date: Timestamp.fromDate(formState.date),
-                projectId: formState.projectId,
-                departmentId: formState.departmentId,
-                description: formState.description,
-                partyName: formState.partyName,
-                grossAmount: parseFloat(formState.grossAmount) || 0,
-                netAmount: parseFloat(formState.netAmount) || 0,
-                createdAt: Timestamp.now(),
-            };
             
-            const newEntryRef = doc(collection(db, 'dailyRequisitions'));
-            transaction.set(newEntryRef, newEntryData);
-            
-            // 3. Update the expense request if one was selected
-            if (selectedExpenseRequest) {
-                const expenseRef = doc(db, 'expenseRequests', selectedExpenseRequest.id);
-                transaction.update(expenseRef, { 
-                    receptionNo: receptionNo,
-                    receptionDate: format(formState.date, 'yyyy-MM-dd'),
-                });
-            }
-            
-            finalEntryData = {
-                id: newEntryRef.id,
-                ...newEntryData,
-                date: format(newEntryData.date.toDate(), 'MMMM do, yyyy'),
-                createdAt: format(newEntryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
-            } as DailyRequisitionEntry;
+            // This part happens after the transaction, so we just prepare the data here.
         });
+        
+        // 2. Upload files to storage (outside transaction)
+        const attachmentUrls: Attachment[] = [];
+        if (selectedFiles.length > 0) {
+            for (const file of selectedFiles) {
+                const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
+                const storageRef = ref(storage, storagePath);
+                await uploadBytes(storageRef, file);
+                const downloadURL = await getDownloadURL(storageRef);
+                attachmentUrls.push({ name: file.name, url: downloadURL });
+            }
+        }
+        
+        // 3. Create the documents in Firestore (as a batch write or a final transaction)
+        const newEntryData = {
+            receptionNo: generatedReceptionNo,
+            depNo: formState.depNo,
+            date: Timestamp.fromDate(formState.date),
+            projectId: formState.projectId,
+            departmentId: formState.departmentId,
+            description: formState.description,
+            partyName: formState.partyName,
+            grossAmount: parseFloat(formState.grossAmount) || 0,
+            netAmount: parseFloat(formState.netAmount) || 0,
+            createdAt: Timestamp.now(),
+            attachments: attachmentUrls,
+        };
+        
+        const newEntryRef = doc(collection(db, 'dailyRequisitions'));
+        const batch = writeBatch(db);
+        batch.set(newEntryRef, newEntryData);
+        
+        if (selectedExpenseRequest) {
+            const expenseRef = doc(db, 'expenseRequests', selectedExpenseRequest.id);
+            batch.update(expenseRef, { 
+                receptionNo: generatedReceptionNo,
+                receptionDate: format(formState.date, 'yyyy-MM-dd'),
+            });
+        }
+        
+        await batch.commit();
+
+        finalEntryData = {
+            id: newEntryRef.id,
+            ...newEntryData,
+            date: format(newEntryData.date.toDate(), 'MMMM do, yyyy'),
+            createdAt: format(newEntryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
+        } as DailyRequisitionEntry;
         
         toast({ title: 'Success', description: 'New entry added to the database.' });
         setIsAddDialogOpen(false);
@@ -333,6 +361,7 @@ export default function EntrySheetPage() {
         }
         
         setFormState(initialFormState); // Reset form
+        setSelectedFiles([]);
         fetchAllData(); // Refresh data from Firestore
 
     } catch (error: any) {
@@ -552,6 +581,27 @@ export default function EntrySheetPage() {
             <Label htmlFor="netAmount">Net Amount</Label>
             <Input id="netAmount" type="number" value={formState.netAmount} onChange={(e) => handleFormChange('netAmount', e.target.value)} />
         </div>
+         {!isEdit && (
+          <div className="md:col-span-3 space-y-2">
+            <Label htmlFor="attachments">Attachments</Label>
+            <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+            {selectedFiles.length > 0 && (
+                <div className="mt-2 space-y-2">
+                    {selectedFiles.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                            <div className="flex items-center gap-2">
+                                <FileIcon className="w-4 h-4" />
+                                <span className="text-sm">{file.name}</span>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            )}
+          </div>
+        )}
       </>
   );
 
@@ -835,7 +885,7 @@ export default function EntrySheetPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button variant="outline">Cancel</Button>
+                  <Button variant="outline" onClick={() => { setSelectedFiles([]); }}>Cancel</Button>
                 </DialogClose>
                 <Button onClick={handleAddEntry} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -929,6 +979,7 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
 
 
 

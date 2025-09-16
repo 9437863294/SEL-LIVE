@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -6,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
-import { Printer } from 'lucide-react';
+import { Printer, Paperclip, Download } from 'lucide-react';
+import Link from 'next/link';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -80,6 +82,27 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                 <div><Label>Gross Amount</Label><p className="font-medium">{formatCurrency(entry.grossAmount)}</p></div>
                 <div><Label>Net Amount</Label><p className="font-medium">{formatCurrency(entry.netAmount)}</p></div>
               </div>
+              
+              {entry.attachments && entry.attachments.length > 0 && (
+                <div>
+                  <Label>Attachments</Label>
+                  <div className="mt-2 space-y-2">
+                    {entry.attachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                         <div className="flex items-center gap-2">
+                           <Paperclip className="h-4 w-4" />
+                           <span className="text-sm font-medium">{file.name}</span>
+                         </div>
+                         <Button asChild variant="outline" size="sm">
+                           <Link href={file.url} target="_blank" rel="noopener noreferrer">
+                              <Download className="mr-2 h-4 w-4" /> Download
+                           </Link>
+                         </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
         </div>
 

@@ -330,4 +330,5 @@ export type DailyRequisitionEntry = {
   verificationNotes?: string;
   verifiedAt?: any; // Timestamp
   gstNo?: string;
+  attachments?: Attachment[];
 };
