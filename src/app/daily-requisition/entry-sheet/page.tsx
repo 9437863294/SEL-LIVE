@@ -2,9 +2,9 @@
 
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, User } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogDescription as DialogDescriptionShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,6 +28,8 @@ import { ChecklistDialog } from '@/components/ChecklistDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useReactToPrint } from 'react-to-print';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
@@ -49,9 +51,101 @@ const initialFormState = {
 
 type SortKey = keyof DailyRequisitionEntry | '';
 
+const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: EnrichedDailyRequisitionEntry[], projects: Project[], expenses: ExpenseRequest[], user: User | null }>(({ entries, projects, expenses, user }, ref) => {
+    if (!entries || entries.length === 0) return null;
+    
+    return (
+        <div ref={ref} className="printable-area">
+            {entries.map((entry, index) => {
+                const project = projects.find(p => p.id === entry.projectId);
+                const expenseRequest = expenses.find(e => e.requestNo === entry.depNo);
+                return (
+                    <div key={entry.id} className="p-6 border rounded-lg break-after-page" style={{ pageBreakAfter: 'always' }}>
+                        <div className="text-center mb-4">
+                            <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
+                            <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
+                        </div>
+                        <h3 className="text-lg font-semibold text-center mb-4 underline">Check List for Payment</h3>
+                        
+                        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-4">
+                            <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Reception No:</span>
+                                <span>{entry.receptionNo}</span>
+                            </div>
+                             <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Reception Date:</span>
+                                <span>{entry.date}</span>
+                            </div>
+                            <div className="flex">
+                                <span className="font-medium w-32 shrink-0">DEP No:</span>
+                                <span>{entry.depNo}</span>
+                            </div>
+                            <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Project Name:</span>
+                                <span>{project?.projectName || 'N/A'}</span>
+                            </div>
+                        </div>
+
+                        <div className="my-4 border-b border-black"></div>
+
+                        <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
+                            <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Name of the party:</span>
+                                <span className="font-semibold">{entry.partyName}</span>
+                            </div>
+                             <div className="flex gap-x-4">
+                                <div className="flex"><span className="font-medium w-24 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span></div>
+                                <div className="flex"><span className="font-medium w-24 shrink-0">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span></div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
+                            <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Head of A/c:</span>
+                                <span>{expenseRequest?.headOfAccount || 'N/A'}</span>
+                            </div>
+                             <div className="flex">
+                                <span className="font-medium w-32 shrink-0">Sub-Head of A/c:</span>
+                                <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 text-sm mb-8">
+                            <p className="font-medium">Description:</p>
+                            <p className="pl-4 min-h-[50px]">{entry.description}</p>
+                        </div>
+                        
+                        <div className="mt-16 grid grid-cols-2 gap-x-24 gap-y-12 text-sm">
+                            <div className="border-t border-black pt-1">Prepared by</div>
+                            <div className="border-t border-black pt-1">Authorised by</div>
+                            <div className="border-t border-black pt-1">Checked by</div>
+                            <div className="border-t border-black pt-1">Approved by</div>
+                            <div className="border-t border-black pt-1">Verified by</div>
+                            <div className="border-t border-black pt-1">A/c Dept</div>
+                        </div>
+
+                        <div className="mt-16 flex justify-between text-sm">
+                            <div>
+                                <span className="font-medium">Printed By:</span>
+                                <span> {user?.name || 'N/A'}</span>
+                            </div>
+                             <div>
+                                <span className="font-medium">Timestamp:</span>
+                                <span> {format(new Date(), 'dd-MMM-yyyy HH:mm:ss')}</span>
+                            </div>
+                        </div>
+                    </div>
+                )
+            })}
+        </div>
+    )
+});
+PrintableChecklists.displayName = 'PrintableChecklists';
+
+
 export default function EntrySheetPage() {
   const { toast } = useToast();
-  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { user, loading: isAuthLoading } = useAuthorization();
 
   const [entries, setEntries] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
@@ -78,6 +172,9 @@ export default function EntrySheetPage() {
   
   const [isChecklistOpen, setIsChecklistOpen] = useState(false);
   const [checklistData, setChecklistData] = useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
+  
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const printComponentRef = useRef<HTMLDivElement>(null);
   
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
   const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
@@ -367,6 +464,14 @@ export default function EntrySheetPage() {
       });
       setIsChecklistOpen(true);
   }
+  
+  const handlePrintSelected = useReactToPrint({
+    content: () => printComponentRef.current,
+  });
+
+  const selectedEntriesToPrint = useMemo(() => {
+    return entries.filter(entry => selectedIds.has(entry.id));
+  }, [entries, selectedIds]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -383,6 +488,24 @@ export default function EntrySheetPage() {
     { key: 'grossAmount', label: 'Gross Amount' },
     { key: 'netAmount', label: 'Net Amount' },
   ];
+  
+  const handleSelectAll = (checked: boolean | 'indeterminate') => {
+    if (checked) {
+        setSelectedIds(new Set(paginatedEntries.map(e => e.id)));
+    } else {
+        setSelectedIds(new Set());
+    }
+  };
+  
+  const handleSelectRow = (id: string, checked: boolean) => {
+    const newSelectedIds = new Set(selectedIds);
+    if(checked) {
+        newSelectedIds.add(id);
+    } else {
+        newSelectedIds.delete(id);
+    }
+    setSelectedIds(newSelectedIds);
+  };
 
   const renderFormFields = (isEdit = false) => (
       <>
@@ -476,6 +599,12 @@ export default function EntrySheetPage() {
             <h1 className="text-2xl font-bold">Entry Sheet</h1>
           </div>
           <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+                <Button variant="outline" onClick={handlePrintSelected} disabled={!canViewChecklist}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print ({selectedIds.size}) Checklist(s)
+                </Button>
+            )}
             <Button variant="outline">
               <Upload className="mr-2 h-4 w-4" />
               Import from Excel
@@ -527,6 +656,13 @@ export default function EntrySheetPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>
+                        <Checkbox
+                            checked={selectedIds.size > 0 && selectedIds.size === paginatedEntries.length}
+                            onCheckedChange={handleSelectAll}
+                            aria-label="Select all"
+                        />
+                    </TableHead>
                     {headers.map(header => (
                       <TableHead key={header.key} onClick={() => handleSort(header.key)}>
                           <div className="flex items-center cursor-pointer">
@@ -541,7 +677,13 @@ export default function EntrySheetPage() {
                 <TableBody>
                   <TooltipProvider>
                   {paginatedEntries.map((entry) => (
-                    <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
+                    <TableRow key={entry.id} data-state={selectedIds.has(entry.id) && "selected"}>
+                      <TableCell>
+                        <Checkbox
+                            checked={selectedIds.has(entry.id)}
+                            onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
+                        />
+                      </TableCell>
                       <TableCell>{entry.createdAt}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
                       <TableCell>{entry.date}</TableCell>
@@ -762,6 +904,11 @@ export default function EntrySheetPage() {
             expenseRequest={checklistData.expenseRequest}
         />
       )}
+      
+      <div className="hidden">
+        <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
+      </div>
     </>
   );
 }
+
