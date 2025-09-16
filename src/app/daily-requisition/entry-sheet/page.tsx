@@ -176,6 +176,7 @@ export default function EntrySheetPage() {
   const [checklistData, setChecklistData] = useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const printComponentRef = useRef<HTMLDivElement>(null);
   
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
@@ -469,6 +470,10 @@ export default function EntrySheetPage() {
   
   const handlePrintSelected = useReactToPrint({
     content: () => printComponentRef.current,
+    onAfterPrint: () => {
+        setIsSelectionMode(false);
+        setSelectedIds(new Set());
+    }
   });
 
   const selectedEntriesToPrint = useMemo(() => {
@@ -601,20 +606,27 @@ export default function EntrySheetPage() {
             <h1 className="text-2xl font-bold">Entry Sheet</h1>
           </div>
           <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-                <Button variant="outline" onClick={handlePrintSelected} disabled={!canViewChecklist}>
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print ({selectedIds.size}) Checklist(s)
-                </Button>
+            {isSelectionMode ? (
+                <>
+                    <Button variant="outline" onClick={() => setIsSelectionMode(false)}>Cancel Selection</Button>
+                    <Button onClick={handlePrintSelected} disabled={selectedIds.size === 0}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Confirm & Print ({selectedIds.size})
+                    </Button>
+                </>
+            ) : (
+                <>
+                    <Button variant="outline" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
+                        <Printer className="mr-2 h-4 w-4" /> Print Checklists
+                    </Button>
+                    <Button variant="outline">
+                        <Upload className="mr-2 h-4 w-4" /> Import from Excel
+                    </Button>
+                    <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
+                        <Plus className="mr-2 h-4 w-4" /> Add New Entry
+                    </Button>
+                </>
             )}
-            <Button variant="outline">
-              <Upload className="mr-2 h-4 w-4" />
-              Import from Excel
-            </Button>
-            <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add New Entry
-            </Button>
           </div>
         </div>
         
@@ -658,13 +670,15 @@ export default function EntrySheetPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>
-                        <Checkbox
-                            checked={selectedIds.size > 0 && selectedIds.size === paginatedEntries.length}
-                            onCheckedChange={handleSelectAll}
-                            aria-label="Select all"
-                        />
-                    </TableHead>
+                    {isSelectionMode && (
+                        <TableHead>
+                            <Checkbox
+                                checked={selectedIds.size > 0 && selectedIds.size === paginatedEntries.length}
+                                onCheckedChange={handleSelectAll}
+                                aria-label="Select all"
+                            />
+                        </TableHead>
+                    )}
                     {headers.map(header => (
                       <TableHead key={header.key} onClick={() => handleSort(header.key)}>
                           <div className="flex items-center cursor-pointer">
@@ -680,12 +694,14 @@ export default function EntrySheetPage() {
                   <TooltipProvider>
                   {paginatedEntries.map((entry) => (
                     <TableRow key={entry.id} data-state={selectedIds.has(entry.id) && "selected"}>
-                      <TableCell>
-                        <Checkbox
-                            checked={selectedIds.has(entry.id)}
-                            onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
-                        />
-                      </TableCell>
+                      {isSelectionMode && (
+                        <TableCell>
+                          <Checkbox
+                              checked={selectedIds.has(entry.id)}
+                              onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>{entry.createdAt}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
                       <TableCell>{entry.date}</TableCell>
@@ -913,4 +929,5 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
 
