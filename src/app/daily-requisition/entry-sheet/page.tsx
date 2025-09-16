@@ -30,6 +30,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useReactToPrint } from 'react-to-print';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
@@ -145,7 +146,8 @@ PrintableChecklists.displayName = 'PrintableChecklists';
 
 export default function EntrySheetPage() {
   const { toast } = useToast();
-  const { user, loading: isAuthLoading } = useAuthorization();
+  const { user } = useAuth();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [entries, setEntries] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
