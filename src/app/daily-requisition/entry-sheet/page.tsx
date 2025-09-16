@@ -31,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useReactToPrint } from 'react-to-print';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
@@ -276,6 +277,10 @@ export default function EntrySheetPage() {
   };
 
   const handleAddEntry = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'User not found.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
     const selectedExpenseRequest = expenseRequests.find(req => req.requestNo === formState.depNo);
@@ -330,6 +335,16 @@ export default function EntrySheetPage() {
         }
         
         await batch.commit();
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Create Daily Requisition',
+            details: {
+                receptionNo: generatedReceptionNo,
+                partyName: formState.partyName,
+                amount: formState.netAmount,
+            },
+        });
 
         const finalEntryData = {
             id: newEntryRef.id,
