@@ -33,13 +33,13 @@ function DailyRequisitionCard({ item }: DailyRequisitionCardProps) {
                 item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="flex-col items-start gap-4 space-y-2 p-6">
-                <div className="bg-primary/10 p-3 rounded-lg">
+            <CardHeader className="flex-col items-center text-center gap-4 p-6">
+                <div className="bg-primary/10 p-3 rounded-full">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <div>
-                    <CardTitle className="text-xl font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-sm pt-1">{item.description}</CardDescription>
+                <div className="space-y-1">
+                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
         </Card>
@@ -77,7 +77,7 @@ export default function DailyRequisitionPage() {
         </Link>
         <h1 className="text-2xl font-bold">Daily Requisition</h1>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
         {dailyRequisitionItems.map((item) => (
           <DailyRequisitionCard key={item.text} item={item} />
         ))}
