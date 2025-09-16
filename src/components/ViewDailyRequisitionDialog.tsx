@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -94,9 +93,9 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                            <span className="text-sm font-medium">{file.name}</span>
                          </div>
                          <Button asChild variant="outline" size="sm">
-                           <Link href={file.url} target="_blank" rel="noopener noreferrer">
+                           <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
                               <Download className="mr-2 h-4 w-4" /> Download
-                           </Link>
+                           </a>
                          </Button>
                       </div>
                     ))}

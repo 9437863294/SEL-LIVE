@@ -304,7 +304,8 @@ export default function EntrySheetPage() {
           });
 
           if (!signedUrlResponse.ok) {
-            throw new Error('Failed to generate upload URL.');
+            const errorBody = await signedUrlResponse.json();
+            throw new Error(errorBody.error || 'Failed to generate upload URL.');
           }
 
           const { url } = await signedUrlResponse.json();
