@@ -155,8 +155,7 @@ export default function Header() {
                   <Image
                     src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=1079330a-042c-49f7-9355-08d01cec5bf8"
                     alt="Company Logo"
-                    width={90}
-                    height={40}
+                    fill
                     style={{ objectFit: 'contain' }}
                     priority
                   />
