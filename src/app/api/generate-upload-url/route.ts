@@ -6,7 +6,7 @@ import { getStorage } from 'firebase-admin/storage';
 // Ensure this file is not bundled on the client
 import 'server-only';
 
-// Initialize Firebase Admin SDK
+// Construct the service account object from environment variables
 const serviceAccount = {
   projectId: process.env.FIREBASE_PROJECT_ID,
   clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
@@ -16,6 +16,7 @@ const serviceAccount = {
 
 const BUCKET_NAME = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
+// Initialize Firebase Admin SDK only if it hasn't been initialized yet
 if (getApps().length === 0) {
   try {
     initializeApp({

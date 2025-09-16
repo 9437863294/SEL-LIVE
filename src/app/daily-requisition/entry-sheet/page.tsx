@@ -297,7 +297,6 @@ export default function EntrySheetPage() {
         for (const file of selectedFiles) {
           const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
           
-          // 1. Get signed URL from our API
           const signedUrlResponse = await fetch('/api/generate-upload-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -310,7 +309,6 @@ export default function EntrySheetPage() {
 
           const { url } = await signedUrlResponse.json();
 
-          // 2. Upload file to the signed URL
           const uploadResponse = await fetch(url, {
             method: 'PUT',
             headers: { 'Content-Type': file.type },
@@ -321,8 +319,7 @@ export default function EntrySheetPage() {
             throw new Error(`Upload failed for ${file.name}`);
           }
           
-          // 3. Get the public download URL
-          const publicUrl = `https://storage.googleapis.com/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/${storagePath}`;
+          const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media`;
           attachmentUrls.push({ name: file.name, url: publicUrl });
         }
 
