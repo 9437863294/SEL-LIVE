@@ -153,7 +153,7 @@ export default function Header() {
               <Link href="/">
                 <div className="relative h-10 w-28">
                     <Image
-                      src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20logo.png?alt=media&token=f7768d50-1c82-4be6-a223-1d912d6c167f"
+                      src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20%20logo.png?alt=media&token=f7768d50-1c82-4be6-a223-1d912d6c167f"
                       alt="Company Logo"
                       fill
                       style={{ objectFit: 'contain' }}
