@@ -36,7 +36,6 @@ export default function ManageDocumentsPage() {
       const querySnapshot = await getDocs(q);
       const entries = querySnapshot.docs.map(doc => {
           const data = doc.data();
-          // Convert Firestore Timestamps to strings
           return { 
               id: doc.id, 
               ...data,
@@ -105,13 +104,13 @@ export default function ManageDocumentsPage() {
                             ))
                         ) : data.length > 0 ? (
                             data.map(req => (
-                                <TableRow key={req.id}>
+                                <TableRow key={req.id} onClick={() => openDialog(req)} className="cursor-pointer">
                                     <TableCell className="font-medium">{req.receptionNo}</TableCell>
                                     <TableCell>{req.partyName}</TableCell>
                                     <TableCell>{req.date}</TableCell>
                                     {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
                                     <TableCell className="text-right">
-                                        <Button size="sm" variant="outline" onClick={() => openDialog(req)}>
+                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openDialog(req); }}>
                                             {type === 'pending' ? <Upload className="mr-2 h-4 w-4" /> : <Files className="mr-2 h-4 w-4" />}
                                             {type === 'pending' ? 'Upload' : 'Manage'}
                                         </Button>
