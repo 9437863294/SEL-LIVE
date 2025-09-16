@@ -87,6 +87,7 @@ export const permissionModules = {
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
     'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
+    'Manage Documents': ['View', 'Upload', 'Update Status'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
   'Billing Recon': {

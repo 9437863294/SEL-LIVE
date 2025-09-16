@@ -30,8 +30,9 @@ export default function ManageDocumentsPage() {
   const [selectedRequisition, setSelectedRequisition] = useState<DailyRequisitionEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
-  const canEdit = can('Edit', 'Daily Requisition.Entry Sheet');
+  const canViewPage = can('View', 'Daily Requisition.Manage Documents');
+  const canUpload = can('Upload', 'Daily Requisition.Manage Documents');
+  const canUpdateStatus = can('Update Status', 'Daily Requisition.Manage Documents');
 
   const fetchRequisitions = async () => {
     setIsLoading(true);
@@ -51,6 +52,7 @@ export default function ManageDocumentsPage() {
               ...data,
               date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : String(data.date),
               createdAt: data.createdAt && (data.createdAt as any).toDate ? format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : String(data.createdAt),
+              documentStatusUpdatedAt: data.documentStatusUpdatedAt ? data.documentStatusUpdatedAt.toDate() : null,
           } as DailyRequisitionEntry
       });
       setRequisitions(entries);
@@ -134,8 +136,8 @@ export default function ManageDocumentsPage() {
                             <TableHead>Party Name</TableHead>
                             <TableHead>Date</TableHead>
                             {type === 'uploaded' && <TableHead>Attachments</TableHead>}
-                            {type === 'missing' && <TableHead>Status</TableHead>}
                             {(type === 'missing' || type === 'uploaded') && <TableHead>Timestamp</TableHead>}
+                            {type === 'missing' && <TableHead>Status</TableHead>}
                             {type === 'missing' && <TableHead>Action Taken By</TableHead>}
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
@@ -156,12 +158,12 @@ export default function ManageDocumentsPage() {
                                     <TableCell>{req.partyName}</TableCell>
                                     <TableCell>{req.date as string}</TableCell>
                                     {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
-                                    {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
                                     {(type === 'missing' || type === 'uploaded') && (
                                         <TableCell>
-                                            {req.documentStatusUpdatedAt ? format(req.documentStatusUpdatedAt.toDate(), 'dd MMM, yy HH:mm') : 'N/A'}
+                                            {req.documentStatusUpdatedAt ? format(req.documentStatusUpdatedAt, 'dd MMM, yy HH:mm') : 'N/A'}
                                         </TableCell>
                                     )}
+                                    {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
                                     {type === 'missing' && <TableCell>{req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}</TableCell>}
                                     <TableCell className="text-right">
                                         {type === 'pending' ? (
@@ -173,19 +175,19 @@ export default function ManageDocumentsPage() {
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                                    <DropdownMenuItem onSelect={() => openDialog(req)}>
+                                                    <DropdownMenuItem onSelect={() => openDialog(req)} disabled={!canUpload}>
                                                         <Upload className="mr-2 h-4 w-4" /> Upload
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')}>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')} disabled={!canUpdateStatus}>
                                                         Mark as Missing
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')}>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')} disabled={!canUpdateStatus}>
                                                         Mark as Not Required
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         ) : type === 'missing' ? (
-                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }}>
+                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }} disabled={!canUpdateStatus}>
                                                 Move to Pending
                                             </Button>
                                         ) : (
@@ -198,7 +200,7 @@ export default function ManageDocumentsPage() {
                             ))
                         ) : (
                              <TableRow>
-                                <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 7 : 6)} className="h-24 text-center">
+                                <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 8 : 7)} className="h-24 text-center">
                                     No entries found.
                                 </TableCell>
                             </TableRow>
@@ -272,7 +274,7 @@ export default function ManageDocumentsPage() {
         onOpenChange={setIsDialogOpen}
         requisition={selectedRequisition}
         onUploadComplete={fetchRequisitions}
-        canEdit={canEdit}
+        canEdit={canUpload}
       />
     </>
   );

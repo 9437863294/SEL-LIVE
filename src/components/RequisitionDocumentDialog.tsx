@@ -19,6 +19,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import type { DailyRequisitionEntry, Attachment } from '@/lib/types';
 import { Loader2, Upload, Paperclip, Download, Trash2, File as FileIcon, X, Eye } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
+import { useAuth } from './auth/AuthProvider';
 
 interface RequisitionDocumentDialogProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ interface RequisitionDocumentDialogProps {
 
 export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, onUploadComplete, canEdit }: RequisitionDocumentDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [currentAttachments, setCurrentAttachments] = useState<Attachment[]>([]);
@@ -47,7 +49,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   };
 
   const handleUpload = async () => {
-    if (!requisition || filesToUpload.length === 0) return;
+    if (!requisition || filesToUpload.length === 0 || !user) return;
     setIsUploading(true);
 
     try {
@@ -65,6 +67,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
         attachments: arrayUnion(...attachmentUrls),
         documentStatus: 'Uploaded',
         documentStatusUpdatedAt: new Date(),
+        documentStatusUpdatedById: user.id,
       });
       
       toast({ title: "Success", description: `${filesToUpload.length} file(s) uploaded successfully.` });
@@ -79,7 +82,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   };
 
   const handleDeleteAttachment = async (attachmentToDelete: Attachment) => {
-    if (!requisition) return;
+    if (!requisition || !user) return;
     
     const originalAttachments = [...currentAttachments];
     setCurrentAttachments(prev => prev.filter(att => att.url !== attachmentToDelete.url));
@@ -91,15 +94,18 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
 
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
       
-      await updateDoc(reqRef, {
+      const updateData: any = {
         attachments: arrayRemove(attachmentToDelete),
         documentStatusUpdatedAt: new Date(),
-      });
+        documentStatusUpdatedById: user.id,
+      };
 
-       const remainingAttachments = originalAttachments.filter(att => att.url !== attachmentToDelete.url);
+      const remainingAttachments = originalAttachments.filter(att => att.url !== attachmentToDelete.url);
       if (remainingAttachments.length === 0) {
-        await updateDoc(reqRef, { documentStatus: 'Pending' });
+        updateData.documentStatus = 'Pending';
       }
+      
+      await updateDoc(reqRef, updateData);
       
       toast({ title: "Success", description: "Attachment deleted." });
     } catch (error) {
