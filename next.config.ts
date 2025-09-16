@@ -23,6 +23,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+        port: '',
+        pathname: '/v0/b/module-hub-uc7tw.firebasestorage.app/**',
+      },
     ],
   },
   allowedDevOrigins: [
