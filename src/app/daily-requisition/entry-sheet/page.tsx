@@ -950,6 +950,7 @@ export default function EntrySheetPage() {
             project={projects.find(p => p.id === selectedEntry.projectId)}
             department={departments.find(d => d.id === selectedEntry.departmentId)}
             expenseRequest={expenseRequests.find(req => req.requestNo === selectedEntry.depNo)}
+            onActionComplete={fetchAllData}
         />
       )}
 

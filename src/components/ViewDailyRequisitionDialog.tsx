@@ -6,9 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
-import { Printer, Paperclip, Download, Eye } from 'lucide-react';
+import { Printer, Paperclip, Download, Eye, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from './auth/AuthProvider';
+import { useToast } from '@/hooks/use-toast';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useState } from 'react';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -17,19 +23,58 @@ interface ViewDailyRequisitionDialogProps {
   project?: Project;
   department?: Department;
   expenseRequest?: ExpenseRequest | null;
+  onActionComplete?: () => void;
 }
 
-export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest }: ViewDailyRequisitionDialogProps) {
+export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest, onActionComplete }: ViewDailyRequisitionDialogProps) {
+  const { can } = useAuthorization();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   const handlePrint = () => {
     window.print();
   };
+
+  const handleStatusUpdate = async (newStatus: 'Pending' | 'Received' | 'Cancelled') => {
+      if (!entry || !user) return;
+      setIsActionLoading(true);
+      try {
+          const updateData: any = { status: newStatus };
+          if (newStatus === 'Received') {
+            updateData.receivedAt = new Date();
+            updateData.receivedById = user?.id;
+          }
+          if(newStatus === 'Pending') {
+            updateData.receivedAt = null;
+            updateData.receivedById = null;
+          }
+          await updateDoc(doc(db, 'dailyRequisitions', entry.id), updateData);
+          
+          toast({
+            title: 'Success',
+            description: `Entry marked as ${newStatus.toLowerCase()}.`,
+          });
+          onActionComplete?.();
+          onOpenChange(false);
+      } catch (error) {
+        console.error("Error updating entry status: ", error);
+        toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' });
+      } finally {
+          setIsActionLoading(false);
+      }
+  };
+
 
   if (!entry) return null;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
+  
+  const canReceive = can('Mark as Received', 'Daily Requisition.Receiving at Finance');
+  const canReturn = can('Return to Pending', 'Daily Requisition.Receiving at Finance');
+  const canCancel = can('Cancel', 'Daily Requisition.Receiving at Finance');
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -120,6 +165,24 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
+          {entry.status !== 'Received' && entry.status !== 'Cancelled' && canReceive && (
+            <Button onClick={() => handleStatusUpdate('Received')} disabled={isActionLoading}>
+                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Mark as Received
+            </Button>
+          )}
+          {entry.status === 'Received' && canReturn && (
+            <Button variant="secondary" onClick={() => handleStatusUpdate('Pending')} disabled={isActionLoading}>
+                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Return to Pending
+            </Button>
+          )}
+          {entry.status !== 'Cancelled' && canCancel && (
+             <Button variant="destructive" onClick={() => handleStatusUpdate('Cancelled')} disabled={isActionLoading}>
+                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Cancel
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
