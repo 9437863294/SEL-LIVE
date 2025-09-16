@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -293,34 +292,12 @@ export default function EntrySheetPage() {
             generatedReceptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
             transaction.update(configRef, { startingIndex: newIndex + 1 });
         });
-
+        
         const uploadPromises = selectedFiles.map(async (file) => {
             const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
-            
-            const signedUrlResponse = await fetch('/api/generate-upload-url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    filename: file.name,
-                    contentType: file.type,
-                    path: storagePath,
-                }),
-            });
-
-            if (!signedUrlResponse.ok) {
-                const errorData = await signedUrlResponse.json();
-                throw new Error(errorData.error || 'Failed to get signed URL');
-            }
-
-            const { url } = await signedUrlResponse.json();
-
-            await fetch(url, {
-                method: 'PUT',
-                body: file,
-                headers: { 'Content-Type': file.type },
-            });
-            
-            const downloadURL = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media`;
+            const fileRef = ref(storage, storagePath);
+            await uploadBytes(fileRef, file);
+            const downloadURL = await getDownloadURL(fileRef);
             return { name: file.name, url: downloadURL };
         });
 
@@ -992,8 +969,3 @@ export default function EntrySheetPage() {
     </>
   );
 }
-
-
-
-
-
