@@ -67,7 +67,7 @@ export default function LoginPage() {
         <div className="p-8 md:p-12 flex flex-col justify-center">
             <div className="relative h-24 w-96">
                 <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=f2a38849-6c50-420c-8c5b-8f2b9efc3517"
+                    src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
                     alt="Company Logo"
                     fill
                     style={{ objectFit: 'contain' }}
