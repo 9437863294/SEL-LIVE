@@ -16,10 +16,10 @@ const getAdminApp = () => {
   }
 
   // Construct the service account object from environment variables
+  // The private key is now correctly formatted by dotenv
   const serviceAccount = {
     projectId: process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    // The private key is now correctly formatted by dotenv
     privateKey: process.env.FIREBASE_PRIVATE_KEY,
   };
 
