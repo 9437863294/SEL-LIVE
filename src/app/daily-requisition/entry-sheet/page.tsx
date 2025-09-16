@@ -293,15 +293,39 @@ export default function EntrySheetPage() {
             transaction.update(configRef, { startingIndex: newIndex + 1 });
         });
         
-        const uploadPromises = selectedFiles.map(async (file) => {
-            const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
-            const fileRef = ref(storage, storagePath);
-            await uploadBytes(fileRef, file);
-            const downloadURL = await getDownloadURL(fileRef);
-            return { name: file.name, url: downloadURL };
-        });
+        const attachmentUrls: Attachment[] = [];
+        for (const file of selectedFiles) {
+          const storagePath = `daily-requisitions/${generatedReceptionNo}/${file.name}`;
+          
+          // 1. Get signed URL from our API
+          const signedUrlResponse = await fetch('/api/generate-upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: storagePath, contentType: file.type }),
+          });
 
-        const attachmentUrls = await Promise.all(uploadPromises);
+          if (!signedUrlResponse.ok) {
+            throw new Error('Failed to generate upload URL.');
+          }
+
+          const { url } = await signedUrlResponse.json();
+
+          // 2. Upload file to the signed URL
+          const uploadResponse = await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type },
+            body: file,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error(`Upload failed for ${file.name}`);
+          }
+          
+          // 3. Get the public download URL
+          const publicUrl = `https://storage.googleapis.com/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/${storagePath}`;
+          attachmentUrls.push({ name: file.name, url: publicUrl });
+        }
+
 
         const newEntryData = {
             receptionNo: generatedReceptionNo,
