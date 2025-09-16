@@ -151,14 +151,16 @@ export default function Header() {
         <div className="flex h-16 items-center px-4 md:px-6">
           <div className="flex items-center gap-4">
               <Link href="/">
-                <Image
-                  src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20%20logo.png?alt=media&token=f7768d50-1c82-4be6-a223-1d912d6c167f"
-                  alt="Company Logo"
-                  width={112}
-                  height={40}
-                  style={{ objectFit: 'contain' }}
-                  priority
-                />
+                <div className="relative h-10 w-28">
+                  <Image
+                    src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=1079330a-042c-49f7-9355-08d01cec5bf8"
+                    alt="Company Logo"
+                    width={90}
+                    height={40}
+                    style={{ objectFit: 'contain' }}
+                    priority
+                  />
+                </div>
               </Link>
               <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
           </div>
