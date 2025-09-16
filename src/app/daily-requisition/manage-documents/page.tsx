@@ -154,35 +154,35 @@ export default function ManageDocumentsPage() {
                             ))
                         ) : data.length > 0 ? (
                             data.map(req => (
-                                <TableRow key={req.id} onClick={() => openDialog(req)} className="cursor-pointer">
-                                    <TableCell className="font-medium">{req.receptionNo}</TableCell>
-                                    <TableCell>{req.partyName}</TableCell>
-                                    <TableCell>{req.date as string}</TableCell>
-                                    {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
+                                <TableRow key={req.id}>
+                                    <TableCell className="font-medium" onClick={() => openDialog(req)}>{req.receptionNo}</TableCell>
+                                    <TableCell onClick={() => openDialog(req)}>{req.partyName}</TableCell>
+                                    <TableCell onClick={() => openDialog(req)}>{req.date as string}</TableCell>
+                                    {type === 'uploaded' && <TableCell onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
                                     {(type === 'missing' || type === 'uploaded') && (
-                                        <TableCell>
+                                        <TableCell onClick={() => openDialog(req)}>
                                             {req.documentStatusUpdatedAt ? format(req.documentStatusUpdatedAt, 'dd MMM, yy HH:mm') : 'N/A'}
                                         </TableCell>
                                     )}
-                                    {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
-                                    {type === 'missing' && <TableCell>{req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}</TableCell>}
+                                    {type === 'missing' && <TableCell onClick={() => openDialog(req)}>{req.documentStatus}</TableCell>}
+                                    {type === 'missing' && <TableCell onClick={() => openDialog(req)}>{req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}</TableCell>}
                                     <TableCell className="text-right">
                                         {type === 'pending' ? (
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+                                                    <Button variant="ghost" className="h-8 w-8 p-0">
                                                         <span className="sr-only">Open menu</span>
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                                <DropdownMenuContent align="end">
                                                     <DropdownMenuItem onSelect={() => openDialog(req)} disabled={!canUpload}>
                                                         <Upload className="mr-2 h-4 w-4" /> Upload
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')} disabled={!canMarkMissing}>
+                                                    <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Missing'); }} disabled={!canMarkMissing}>
                                                         Mark as Missing
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')} disabled={!canMarkNotRequired}>
+                                                    <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Not Required'); }} disabled={!canMarkNotRequired}>
                                                         Mark as Not Required
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
