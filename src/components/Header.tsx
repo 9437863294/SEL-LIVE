@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -150,11 +151,17 @@ export default function Header() {
         <div className="flex h-16 items-center px-4 md:px-6">
           <div className="flex items-center gap-4">
               <Link href="/">
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Home className="h-5 w-5" />
-                </Button>
+                <div className="relative h-10 w-28">
+                    <Image
+                      src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.appspot.com/o/Logo%2FSEL%20logo.png?alt=media&token=f7768d50-1c82-4be6-a223-1d912d6c167f"
+                      alt="Company Logo"
+                      fill
+                      style={{ objectFit: 'contain' }}
+                      priority
+                    />
+                </div>
               </Link>
-              <h1 className="text-lg font-semibold text-foreground">Siddhartha Engineering Limited</h1>
+              <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
           </div>
 
 
