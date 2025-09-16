@@ -21,7 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, runTransaction, Timestamp, query, where, orderBy, deleteDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
 import { ChecklistDialog } from '@/components/ChecklistDialog';
@@ -454,7 +454,7 @@ export default function EntrySheetPage() {
       Object.values(entry).some(value => 
         String(value).toLowerCase().includes(filterText.toLowerCase())
       ) &&
-      (!dateFilter || new Date(entry.date).toDateString() === dateFilter.toDateString())
+      (!dateFilter || isSameDay(new Date(entry.originalDate), dateFilter))
     );
 
     const startIndex = (currentPage - 1) * itemsPerPage;
