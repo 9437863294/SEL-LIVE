@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,6 +15,8 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import type { SerialNumberConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const modules = [
     { id: 'site-fund-requisition', name: 'Site Fund Requisition' },
@@ -30,10 +32,12 @@ const initialConfigState: SerialNumberConfig = {
 
 export default function SerialNoConfigurationPage() {
     const { toast } = useToast();
+    const { user } = useAuth();
     const { can, isLoading: isAuthLoading } = useAuthorization();
     const [selectedModule, setSelectedModule] = useState<string>(modules[0].id);
     const [config, setConfig] = useState<SerialNumberConfig>(initialConfigState);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
     
     const canView = can('View', 'Settings.Serial No. Config');
     const canEdit = can('Edit', 'Settings.Serial No. Config');
@@ -78,16 +82,24 @@ export default function SerialNoConfigurationPage() {
             toast({ title: 'Permission Denied', description: 'You do not have permission to edit this configuration.', variant: 'destructive'});
             return;
         }
-        if (!selectedModule) {
+        if (!selectedModule || !user) {
             toast({ title: 'Error', description: 'Please select a module first.', variant: 'destructive' });
             return;
         }
+        setIsSaving(true);
         try {
             await setDoc(doc(db, 'serialNumberConfigs', selectedModule), config);
+            await logUserActivity({
+                userId: user.id,
+                action: 'Update Serial No. Config',
+                details: { module: selectedModule, newConfig: config }
+            });
             toast({ title: 'Success', description: 'Configuration saved successfully.' });
         } catch (error) {
             console.error("Error saving configuration: ", error);
             toast({ title: 'Error', description: 'Failed to save configuration.', variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
         }
     };
     
@@ -225,7 +237,10 @@ export default function SerialNoConfigurationPage() {
                         <Link href="/settings">
                             <Button variant="outline">Cancel</Button>
                         </Link>
-                        <Button onClick={handleSave} disabled={isLoading || !canEdit}>Save</Button>
+                        <Button onClick={handleSave} disabled={isLoading || !canEdit || isSaving}>
+                           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                           Save
+                        </Button>
                     </div>
                 </CardContent>
             </Card>

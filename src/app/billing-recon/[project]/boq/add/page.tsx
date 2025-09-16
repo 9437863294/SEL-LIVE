@@ -12,6 +12,8 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const initialBoqItem = {
     'ITEMS SPECS': '',
@@ -30,6 +32,7 @@ const initialBoqItem = {
 
 export default function AddBoqItemPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
   const [boqItem, setBoqItem] = useState(initialBoqItem);
@@ -41,6 +44,10 @@ export default function AddBoqItemPage() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     // Basic validation
     if (!boqItem['SL. No.'] || !boqItem['DESCRIPTION OF ITEMS']) {
@@ -55,6 +62,17 @@ export default function AddBoqItemPage() {
     
     try {
         await addDoc(collection(db, 'projects', projectSlug, 'boqItems'), boqItem);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Add BOQ Item',
+            details: {
+                project: projectSlug,
+                itemSlNo: boqItem['SL. No.'],
+                itemDescription: boqItem['DESCRIPTION OF ITEMS'],
+            }
+        });
+
         toast({
             title: 'Item Added',
             description: 'The new BOQ item has been successfully saved.',

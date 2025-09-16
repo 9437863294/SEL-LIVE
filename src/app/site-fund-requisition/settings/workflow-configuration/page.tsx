@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,6 +19,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 const initialSteps: WorkflowStep[] = [
@@ -56,6 +57,7 @@ const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update',
 
 export default function WorkflowConfigurationPage() {
     const { toast } = useToast();
+    const { user } = useAuth();
     const { can, isLoading: isAuthLoading } = useAuthorization();
     
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
@@ -209,10 +211,16 @@ export default function WorkflowConfigurationPage() {
     };
 
     const handleSave = async () => {
+        if (!user) return;
         setIsSaving(true);
         try {
             const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
             await setDoc(workflowRef, { steps: steps });
+            await logUserActivity({
+                userId: user.id,
+                action: 'Update Site Fund Workflow',
+                details: { stepCount: steps.length }
+            });
             toast({ title: 'Success', description: 'Workflow configuration saved.' });
         } catch (error) {
             console.error("Error saving workflow: ", error);
@@ -265,8 +273,8 @@ export default function WorkflowConfigurationPage() {
                     <h1 className="text-2xl font-bold">Configure Workflow</h1>
                 </div>
                 <Button onClick={handleSave} disabled={isSaving}>
-                    <Save className="mr-2 h-4 w-4" />
-                    {isSaving ? 'Saving...' : 'Save'}
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                    Save
                 </Button>
             </div>
 

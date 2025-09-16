@@ -13,6 +13,8 @@ import { db } from '@/lib/firebase';
 import { collection, writeBatch, doc } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 type BoqItem = {
     [key: string]: any;
@@ -20,6 +22,7 @@ type BoqItem = {
 
 export default function ImportBoqPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
   const [file, setFile] = useState<File | null>(null);
@@ -76,6 +79,10 @@ export default function ImportBoqPage() {
       });
       return;
     }
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsImporting(true);
 
     try {
@@ -88,6 +95,16 @@ export default function ImportBoqPage() {
         });
 
         await batch.commit();
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Import BOQ',
+            details: {
+                project: projectSlug,
+                fileName: file?.name || 'N/A',
+                itemCount: jsonData.length,
+            }
+        });
 
         toast({
             title: 'Import Successful',

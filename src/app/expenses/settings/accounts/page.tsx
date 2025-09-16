@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -20,6 +19,8 @@ import type { AccountHead, SubAccountHead } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const initialAccountData = {
     'Purchase': ['Payment to Supplier', 'Interest to Creditor'],
@@ -38,6 +39,7 @@ const initialAccountData = {
 
 export default function ManageAccountsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   
   const [heads, setHeads] = useState<AccountHead[]>([]);
@@ -106,24 +108,37 @@ export default function ManageAccountsPage() {
       toast({ title: 'Validation Error', description: 'Name cannot be empty.', variant: 'destructive' });
       return;
     }
+    if (!user) return;
     try {
+      let action = '';
+      let details: Record<string, any> = {};
+
       switch (dialogMode) {
         case 'addHead':
           await addDoc(collection(db, 'accountHeads'), { name });
+          action = 'Add Account Head';
+          details = { headName: name };
           break;
         case 'addSubHead':
           if (!selectedHeadId) return;
           await addDoc(collection(db, 'subAccountHeads'), { name, headId: selectedHeadId });
+          action = 'Add Sub-Account Head';
+          details = { subHeadName: name, parentHeadId: selectedHeadId };
           break;
         case 'editHead':
           if (!currentHead) return;
           await updateDoc(doc(db, 'accountHeads', currentHead.id), { name });
+          action = 'Edit Account Head';
+          details = { headId: currentHead.id, newName: name, oldName: currentHead.name };
           break;
         case 'editSubHead':
           if (!currentSubHead) return;
           await updateDoc(doc(db, 'subAccountHeads', currentSubHead.id), { name, headId: selectedHeadId });
+          action = 'Edit Sub-Account Head';
+          details = { subHeadId: currentSubHead.id, newName: name, oldName: currentSubHead.name };
           break;
       }
+      await logUserActivity({ userId: user.id, action, details });
       toast({ title: 'Success', description: 'Account data saved successfully.' });
       fetchData();
       setIsDialogOpen(false);
@@ -132,13 +147,15 @@ export default function ManageAccountsPage() {
     }
   };
 
-  const handleDelete = async (type: 'head' | 'subhead', id: string) => {
+  const handleDelete = async (type: 'head' | 'subhead', id: string, itemName: string) => {
+    if (!user) return;
     try {
       if (type === 'head') {
         await deleteDoc(doc(db, 'accountHeads', id));
       } else {
         await deleteDoc(doc(db, 'subAccountHeads', id));
       }
+      await logUserActivity({ userId: user.id, action: `Delete ${type === 'head' ? 'Account Head' : 'Sub-Account Head'}`, details: { id, name: itemName }});
       toast({ title: 'Success', description: 'Item deleted.' });
       fetchData();
     } catch (error) {
@@ -147,6 +164,7 @@ export default function ManageAccountsPage() {
   };
   
   const handleSeedData = async () => {
+    if (!user) return;
     setIsSeeding(true);
     const batch = writeBatch(db);
     
@@ -162,6 +180,9 @@ export default function ManageAccountsPage() {
           }
       }
       await batch.commit();
+
+      await logUserActivity({ userId: user.id, action: 'Seed Account Data', details: {} });
+
       toast({ title: 'Success', description: 'Initial account data has been seeded.' });
       fetchData();
     } catch (error) {
@@ -285,7 +306,7 @@ export default function ManageAccountsPage() {
                                           </AlertDialogHeader>
                                           <AlertDialogFooter>
                                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                              <AlertDialogAction onClick={() => handleDelete('subhead', subHead.id)}>Delete</AlertDialogAction>
+                                              <AlertDialogAction onClick={() => handleDelete('subhead', subHead.id, subHead.name)}>Delete</AlertDialogAction>
                                           </AlertDialogFooter>
                                       </AlertDialogContent>
                                   </AlertDialog>

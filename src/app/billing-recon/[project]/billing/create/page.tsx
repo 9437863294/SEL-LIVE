@@ -15,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { BillItem, JmcEntry, BoqItem } from '@/lib/types';
 import { JmcItemSelectorDialog } from '@/components/JmcItemSelectorDialog';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 const initialBillDetails = {
@@ -25,6 +27,7 @@ const initialBillDetails = {
 
 export default function CreateBillingPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
   const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<BillItem[]>([]);
@@ -91,6 +94,10 @@ export default function CreateBillingPage() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     if (!projectSlug || !details.billNo || !details.woNo || items.length === 0) {
         toast({
@@ -103,12 +110,26 @@ export default function CreateBillingPage() {
     }
     
     try {
+        const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
         const billData = {
             ...details,
             items: items.map(item => ({...item, billedQty: parseFloat(item.billedQty)})), // Ensure billedQty is a number
             createdAt: serverTimestamp()
         };
         await addDoc(collection(db, 'projects', projectSlug, 'bills'), billData);
+        
+        await logUserActivity({
+            userId: user.id,
+            action: 'Create Bill',
+            details: {
+                project: projectSlug,
+                billNo: details.billNo,
+                workOrderNo: details.woNo,
+                itemCount: items.length,
+                totalAmount: totalAmount,
+            }
+        });
+
         toast({
             title: 'Bill Created',
             description: 'The new bill has been successfully saved.',

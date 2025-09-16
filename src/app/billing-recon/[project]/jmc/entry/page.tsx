@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -17,6 +16,8 @@ import type { BoqItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const initialJmcDetails = {
     jmcNo: '',
@@ -37,6 +38,7 @@ type JmcItem = typeof initialItem;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
   const [details, setDetails] = useState(initialJmcDetails);
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
@@ -165,6 +167,10 @@ export default function JmcEntryPage() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     if (!details.jmcNo || !details.woNo || items.some(item => !item.boqSlNo)) {
         toast({
@@ -183,6 +189,18 @@ export default function JmcEntryPage() {
             createdAt: new Date().toISOString()
         };
         await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Create JMC Entry',
+            details: {
+                project: projectSlug,
+                jmcNo: details.jmcNo,
+                workOrderNo: details.woNo,
+                itemCount: items.length,
+            }
+        });
+
         toast({
             title: 'JMC Entry Created',
             description: 'The new JMC entry with all its items has been successfully saved.',

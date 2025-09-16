@@ -24,6 +24,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 const expenseFormSchema = z.object({
@@ -143,6 +144,10 @@ function NewExpenseRequestForm() {
   };
 
   const handleSave = async (data: ExpenseFormValues) => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     
     try {
@@ -176,6 +181,16 @@ function NewExpenseRequestForm() {
         };
 
         await addDoc(collection(db, 'expenseRequests'), newExpenseRequest);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Create Expense Request',
+            details: {
+                requestNo: newRequestNo,
+                department: selectedDept.name,
+                amount: data.amount,
+            }
+        });
 
         if (!partyNames.includes(data.partyName)) {
             setPartyNames(prev => [...prev, data.partyName].sort());
@@ -263,7 +278,7 @@ function NewExpenseRequestForm() {
                         <FormItem className="space-y-2">
                           <FormLabel>Amount</FormLabel>
                           <FormControl>
-                            <Input type="number" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                            <Input type="number" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

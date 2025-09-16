@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -44,6 +43,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 const baseTableHeaders = [
@@ -306,12 +306,22 @@ export default function DepartmentExpensesPage() {
   };
   
   const handleUpdateExpense = async () => {
-    if (!editFormData) return;
+    if (!editFormData || !user) return;
     setIsSaving(true);
     try {
         const expenseRef = doc(db, 'expenseRequests', editFormData.id);
         const { id, ...dataToUpdate } = editFormData;
         await updateDoc(expenseRef, dataToUpdate);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Update Expense Request',
+            details: {
+                requestNo: editFormData.requestNo,
+                department: department?.name || 'N/A',
+            }
+        });
+
         toast({ title: 'Success', description: 'Expense request updated successfully.' });
         setIsEditDialogOpen(false);
         setEditingExpense(null);
@@ -609,6 +619,3 @@ export default function DepartmentExpensesPage() {
     </>
   );
 }
-
-
-

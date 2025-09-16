@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -15,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const initialMvacItem = {
     'WO': '',
@@ -32,6 +33,7 @@ const initialMvacItem = {
 
 export default function AddMvacItemPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
   const { can, isLoading } = useAuthorization();
@@ -47,6 +49,10 @@ export default function AddMvacItemPage() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     if (!mvacItem['WO'] || !mvacItem['BOQ Sl. No.']) {
         toast({
@@ -60,6 +66,17 @@ export default function AddMvacItemPage() {
     
     try {
         await addDoc(collection(db, 'projects', projectSlug, 'mvacItems'), mvacItem);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Add MVAC Item',
+            details: {
+                project: projectSlug,
+                workOrderNo: mvacItem['WO'],
+                boqSlNo: mvacItem['BOQ Sl. No.'],
+            }
+        });
+
         toast({
             title: 'Item Added',
             description: 'The new MVAC item has been successfully saved.',

@@ -12,6 +12,8 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 const initialWorkOrderItem = {
@@ -26,6 +28,7 @@ const initialWorkOrderItem = {
 
 export default function CreateWorkOrderPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
   const [item, setItem] = useState(initialWorkOrderItem);
@@ -37,6 +40,10 @@ export default function CreateWorkOrderPage() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     if (!item['WO No'] || !item['Project'] || !item['Vendor']) {
         toast({
@@ -54,6 +61,17 @@ export default function CreateWorkOrderPage() {
           projectSlug: projectSlug, // Tag work order with project slug
         }
         await addDoc(collection(db, 'workOrders'), workOrderData);
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Create Work Order',
+            details: {
+                project: projectSlug,
+                workOrderNo: item['WO No'],
+                vendor: item['Vendor'],
+            }
+        });
+
         toast({
             title: 'Work Order Created',
             description: 'The new work order has been successfully saved.',

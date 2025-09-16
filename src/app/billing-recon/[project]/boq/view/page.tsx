@@ -37,6 +37,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { JmcEntry, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 type BoqItem = {
@@ -68,6 +70,7 @@ const baseTableHeaders = [
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
@@ -202,6 +205,7 @@ export default function ViewBoqPage() {
   };
   
   const handleClearBoq = async () => {
+    if (!user) return;
     setIsDeleting(true);
     try {
         const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
@@ -218,6 +222,12 @@ export default function ViewBoqPage() {
         });
 
         await batch.commit();
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Clear BOQ',
+            details: { project: projectSlug, clearedItemCount: querySnapshot.size }
+        });
 
         toast({
             title: 'BOQ Cleared',
@@ -237,6 +247,7 @@ export default function ViewBoqPage() {
   }
 
   const handleDeleteSelected = async () => {
+    if (!user) return;
     setIsDeleting(true);
     const batch = writeBatch(db);
     const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
@@ -246,6 +257,13 @@ export default function ViewBoqPage() {
 
     try {
         await batch.commit();
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Delete BOQ Items',
+            details: { project: projectSlug, deletedItemCount: selectedItemIds.length }
+        });
+
         toast({
             title: 'Success',
             description: `${selectedItemIds.length} item(s) deleted successfully.`,
@@ -260,9 +278,17 @@ export default function ViewBoqPage() {
   };
   
   const handleDeleteSingle = async (id: string) => {
+    if (!user) return;
     setIsDeleting(true);
     try {
         await deleteDoc(doc(db, 'projects', projectSlug, 'boqItems', id));
+
+        await logUserActivity({
+            userId: user.id,
+            action: 'Delete BOQ Item',
+            details: { project: projectSlug, itemId: id }
+        });
+
         toast({
             title: 'Success',
             description: 'Item deleted successfully.',

@@ -28,10 +28,13 @@ import * as XLSX from 'xlsx';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import type { JmcEntry } from '@/lib/types';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 
 export default function JmcLogPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
@@ -69,10 +72,15 @@ export default function JmcLogPage() {
     fetchJmcEntries();
   }, [projectSlug]);
 
-  const handleDelete = async (id: string | null) => {
-    if (!id || !projectSlug) return;
+  const handleDelete = async (entry: JmcEntry) => {
+    if (!user) return;
     try {
-      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', id));
+      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', entry.id));
+      await logUserActivity({
+        userId: user.id,
+        action: 'Delete JMC Entry',
+        details: { project: projectSlug, jmcNo: entry.jmcNo }
+      });
       toast({ title: 'Success', description: 'JMC entry deleted successfully.' });
       fetchJmcEntries();
     } catch (error) {
@@ -206,7 +214,7 @@ export default function JmcLogPage() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry.id); }}>Delete</AlertDialogAction>
+                                    <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>
