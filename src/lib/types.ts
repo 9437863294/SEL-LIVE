@@ -1,5 +1,4 @@
 
-
 export type Email = {
   id: string;
   sender: string;
@@ -320,6 +319,7 @@ export type DailyRequisitionEntry = {
   netAmount: number;
   depNo: string;
   status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review';
+  documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
   userRoles?: Record<string, string>; // e.g. { 'verifier': 'userId1', 'approver': 'userId2' }
   igstAmount?: number;
   tdsAmount?: number;

@@ -3,12 +3,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Files, Loader2, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Upload, Files, Loader2, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, doc, updateDoc } from 'firebase/firestore';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -16,6 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RequisitionDocumentDialog } from '@/components/RequisitionDocumentDialog';
 import { format } from 'date-fns';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
 
 export default function ManageDocumentsPage() {
   const { toast } = useToast();
@@ -35,12 +37,16 @@ export default function ManageDocumentsPage() {
       const q = query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       const entries = querySnapshot.docs.map(doc => {
-          const data = doc.data();
+          const data = doc.data() as Omit<DailyRequisitionEntry, 'id'>;
+          // Set default documentStatus if it's missing
+          if (!data.documentStatus) {
+            data.documentStatus = (data.attachments && data.attachments.length > 0) ? 'Uploaded' : 'Pending';
+          }
           return { 
               id: doc.id, 
               ...data,
-              date: data.date && data.date.toDate ? format(data.date.toDate(), 'dd MMM, yyyy') : data.date,
-              createdAt: data.createdAt && data.createdAt.toDate ? format(data.createdAt.toDate(), 'dd MMM, yyyy') : data.createdAt,
+              date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : data.date,
+              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy') : data.createdAt,
           } as DailyRequisitionEntry
       });
       setRequisitions(entries);
@@ -59,19 +65,29 @@ export default function ManageDocumentsPage() {
         setIsLoading(false);
       }
     }
-  }, [isAuthLoading, canViewPage]);
+  }, [isAuthLoading, canViewPage, toast]);
 
-  const { pendingUploads, uploadedList } = useMemo(() => {
+  const { pendingUploads, uploadedList, missingList } = useMemo(() => {
     const pending: DailyRequisitionEntry[] = [];
     const uploaded: DailyRequisitionEntry[] = [];
+    const missing: DailyRequisitionEntry[] = [];
+
     requisitions.forEach(req => {
-      if (!req.attachments || req.attachments.length === 0) {
-        pending.push(req);
-      } else {
-        uploaded.push(req);
+      switch(req.documentStatus) {
+        case 'Uploaded':
+          uploaded.push(req);
+          break;
+        case 'Missing':
+        case 'Not Required':
+          missing.push(req);
+          break;
+        case 'Pending':
+        default:
+          pending.push(req);
+          break;
       }
     });
-    return { pendingUploads: pending, uploadedList: uploaded };
+    return { pendingUploads: pending, uploadedList: uploaded, missingList: missing };
   }, [requisitions]);
 
   const openDialog = (req: DailyRequisitionEntry) => {
@@ -79,7 +95,19 @@ export default function ManageDocumentsPage() {
     setIsDialogOpen(true);
   };
   
-  const renderTable = (data: DailyRequisitionEntry[], type: 'pending' | 'uploaded') => {
+  const handleUpdateStatus = async (id: string, status: 'Missing' | 'Not Required' | 'Pending') => {
+    try {
+        const reqRef = doc(db, 'dailyRequisitions', id);
+        await updateDoc(reqRef, { documentStatus: status });
+        toast({ title: 'Status Updated', description: `Entry marked as ${status}.`});
+        fetchRequisitions(); // Refresh data
+    } catch (error) {
+        console.error("Error updating status:", error);
+        toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive'});
+    }
+  }
+
+  const renderTable = (data: DailyRequisitionEntry[], type: 'pending' | 'uploaded' | 'missing') => {
     return (
         <Card>
             <CardContent className="p-0">
@@ -90,6 +118,7 @@ export default function ManageDocumentsPage() {
                             <TableHead>Party Name</TableHead>
                             <TableHead>Date</TableHead>
                             {type === 'uploaded' && <TableHead>Attachments</TableHead>}
+                            {type === 'missing' && <TableHead>Status</TableHead>}
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -109,11 +138,37 @@ export default function ManageDocumentsPage() {
                                     <TableCell>{req.partyName}</TableCell>
                                     <TableCell>{req.date}</TableCell>
                                     {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
+                                    {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
                                     <TableCell className="text-right">
-                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openDialog(req); }}>
-                                            {type === 'pending' ? <Upload className="mr-2 h-4 w-4" /> : <Files className="mr-2 h-4 w-4" />}
-                                            {type === 'pending' ? 'Upload' : 'Manage'}
-                                        </Button>
+                                        {type === 'pending' ? (
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+                                                        <span className="sr-only">Open menu</span>
+                                                        <MoreHorizontal className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onSelect={() => openDialog(req)}>
+                                                        <Upload className="mr-2 h-4 w-4" /> Upload
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Missing')}>
+                                                        Mark as Missing
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onSelect={() => handleUpdateStatus(req.id, 'Not Required')}>
+                                                        Mark as Not Required
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        ) : type === 'missing' ? (
+                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }}>
+                                                Move to Pending
+                                            </Button>
+                                        ) : (
+                                            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openDialog(req); }}>
+                                                <Files className="mr-2 h-4 w-4" /> Manage
+                                            </Button>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -171,15 +226,19 @@ export default function ManageDocumentsPage() {
         </div>
         
         <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="pending">Pending for Upload ({pendingUploads.length})</TabsTrigger>
             <TabsTrigger value="uploaded">Uploaded List ({uploadedList.length})</TabsTrigger>
+            <TabsTrigger value="missing">Missing / Not Required ({missingList.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="pending" className="mt-4">
             {renderTable(pendingUploads, 'pending')}
           </TabsContent>
           <TabsContent value="uploaded" className="mt-4">
             {renderTable(uploadedList, 'uploaded')}
+          </TabsContent>
+          <TabsContent value="missing" className="mt-4">
+            {renderTable(missingList, 'missing')}
           </TabsContent>
         </Tabs>
       </div>
