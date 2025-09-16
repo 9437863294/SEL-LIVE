@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad, CardContent as CardContentShad } from '@/components/ui/card';
@@ -34,6 +35,7 @@ const initialNewUserState = {
 
 export default function ManageUserPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -165,6 +167,10 @@ export default function ManageUserPage() {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleRowClick = (userId: string) => {
+    router.push(`/settings/user-management/${userId}/logs`);
   };
   
   if (isAuthLoading || (isLoading && canView)) {
@@ -312,7 +318,7 @@ export default function ManageUserPage() {
                   ))
                 ) : users.length > 0 ? (
                   users.map((user) => (
-                    <TableRow key={user.id}>
+                    <TableRow key={user.id} onClick={() => handleRowClick(user.id)} className="cursor-pointer">
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.mobile}</TableCell>
@@ -323,7 +329,7 @@ export default function ManageUserPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(user)} disabled={!canEdit}>Edit</Button>
+                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); openEditDialog(user);}} disabled={!canEdit}>Edit</Button>
                       </TableCell>
                     </TableRow>
                   ))
