@@ -51,13 +51,13 @@ function SettingsCard({ item }: SettingsCardProps) {
                 (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="flex-col items-start gap-4 space-y-2 p-6">
+            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
                 <div className="bg-primary/10 p-3 rounded-lg">
-                  <item.icon className="w-6 h-6 text-primary" />
+                <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <div>
-                    <CardTitle className="text-xl font-bold">{item.title}</CardTitle>
-                    <CardDescription className="text-sm pt-1">{item.description}</CardDescription>
+                <div className="flex-1">
+                    <CardTitle className="text-base font-bold">{item.title}</CardTitle>
+                    <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
         </Card>
@@ -88,8 +88,8 @@ export default function DailyRequisitionSettingsPage() {
             <div className="w-full px-4 sm:px-6 lg:px-8">
                 <Skeleton className="h-10 w-80 mb-6" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <Skeleton className="h-48" />
-                    <Skeleton className="h-48" />
+                    <Skeleton className="h-28" />
+                    <Skeleton className="h-28" />
                 </div>
             </div>
         );
@@ -125,7 +125,7 @@ export default function DailyRequisitionSettingsPage() {
         </Link>
         <h1 className="text-2xl font-bold">Daily Requisition Settings</h1>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {authorizedSettingsItems.map((item) => (
           <SettingsCard key={item.title} item={item} />
         ))}
