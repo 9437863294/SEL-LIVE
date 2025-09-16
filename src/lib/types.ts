@@ -1,4 +1,5 @@
 
+
 export type Email = {
   id: string;
   sender: string;
@@ -319,6 +320,7 @@ export type DailyRequisitionEntry = {
   netAmount: number;
   depNo: string;
   status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review';
+  receivedById?: string; // ID of user who marked as received/cancelled
   documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
   userRoles?: Record<string, string>; // e.g. { 'verifier': 'userId1', 'approver': 'userId2' }
   igstAmount?: number;
@@ -331,4 +333,5 @@ export type DailyRequisitionEntry = {
   verifiedAt?: any; // Timestamp
   gstNo?: string;
   attachments?: Attachment[];
+  receivedAt?: any;
 };

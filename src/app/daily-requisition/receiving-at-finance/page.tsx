@@ -54,7 +54,7 @@ export default function ReceivingAtFinancePage() {
 
       const projects = new Map(projectsSnap.docs.map(doc => [doc.id, (doc.data() as Project).projectName]));
       const fetchedUsers = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-      const usersMap = new Map(fetchedUsers.map(u => [u.id, u.email]));
+      const usersMap = new Map(fetchedUsers.map(u => [u.id, u.name]));
       setUsers(fetchedUsers);
 
       const data = reqsSnap.docs.map(doc => {
@@ -159,9 +159,9 @@ export default function ReceivingAtFinancePage() {
                 {type === 'pending' && <TableHead className="w-[50px]"><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.size === filteredData.length && filteredData.length > 0} onCheckedChange={handleSelectAll} /></TableHead>}
                 <TableHead>Reception No.</TableHead>
                 {type === 'pending' ? <TableHead>Date</TableHead> : <TableHead>Received At</TableHead>}
-                {type !== 'pending' && <TableHead>Received By</TableHead>}
                 <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
+                {type !== 'pending' && <TableHead>Action Taken By</TableHead>}
                 <TableHead className="text-right">Net Amount</TableHead>
                 {type !== 'pending' && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
@@ -169,7 +169,7 @@ export default function ReceivingAtFinancePage() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-8" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
               ) : filteredData.length > 0 ? (
                 filteredData.map(entry => (
@@ -177,9 +177,9 @@ export default function ReceivingAtFinancePage() {
                     {type === 'pending' && <TableCell><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.has(entry.id)} onCheckedChange={(checked) => { const newIds = new Set(selectedIds); if (checked) newIds.add(entry.id); else newIds.delete(entry.id); setSelectedIds(newIds); }} /></TableCell>}
                     <TableCell>{entry.receptionNo}</TableCell>
                     <TableCell>{type === 'pending' ? entry.date : entry.receivedAt}</TableCell>
-                    {type !== 'pending' && <TableCell>{entry.receivedBy || 'N/A'}</TableCell>}
                     <TableCell>{entry.projectName}</TableCell>
                     <TableCell>{entry.partyName}</TableCell>
+                    {type !== 'pending' && <TableCell>{entry.receivedBy || 'N/A'}</TableCell>}
                     <TableCell className="text-right">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.netAmount)}</TableCell>
                     {type !== 'pending' && (
                       <TableCell className="text-right">
