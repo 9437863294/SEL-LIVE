@@ -1,10 +1,11 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, LogIn, LogOut } from 'lucide-react';
+import { ArrowLeft, LogIn, LogOut, FilePlus, FilePen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,14 +14,18 @@ import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebas
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { User } from '@/lib/types';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
-// This is a mock type for logs, you would define this based on your actual log structure
 type UserLog = {
     id: string;
-    action: 'Login' | 'Logout' | string;
+    action: 'Login' | 'Logout' | 'Create User' | 'Update User' | string;
     timestamp: any;
-    ipAddress?: string;
-    userAgent?: string;
+    details: Record<string, any>;
 };
 
 export default function UserLogsPage() {
@@ -35,30 +40,24 @@ export default function UserLogsPage() {
         const fetchUserDataAndLogs = async () => {
             setIsLoading(true);
             try {
-                // Fetch user data
                 const userDocRef = doc(db, 'users', userId);
                 const userDocSnap = await getDoc(userDocRef);
                 if (userDocSnap.exists()) {
                     setUser({ id: userDocSnap.id, ...userDocSnap.data() } as User);
                 }
 
-                // Fetch user logs (this is a mock query, you'll need a real 'userLogs' collection)
                 const logsQuery = query(collection(db, 'userLogs'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
                 const logsSnapshot = await getDocs(logsQuery);
                 const logsData = logsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserLog));
-                
-                // Add some mock data if no real logs are found
-                if(logsData.length === 0){
-                    setLogs([
-                        { id: '1', action: 'Login', timestamp: new Date(), ipAddress: '192.168.1.1' },
-                        { id: '2', action: 'Logout', timestamp: new Date(Date.now() - 3600000), ipAddress: '192.168.1.1' },
-                    ]);
-                } else {
-                    setLogs(logsData);
-                }
+                setLogs(logsData);
 
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error fetching user logs:", error);
+                 if (error.code === 'failed-precondition') {
+                    // This error means a composite index is required by Firestore.
+                    // You would typically create this in the Firebase console.
+                    console.error("Firestore index required. Please create a composite index for 'userLogs' on 'userId' and 'timestamp'.");
+                }
             }
             setIsLoading(false);
         };
@@ -70,9 +69,41 @@ export default function UserLogsPage() {
         switch(action) {
             case 'Login': return <LogIn className="h-4 w-4 text-green-500" />;
             case 'Logout': return <LogOut className="h-4 w-4 text-red-500" />;
+            case 'Create User': return <FilePlus className="h-4 w-4 text-blue-500" />;
+            case 'Update User': return <FilePen className="h-4 w-4 text-orange-500" />;
             default: return null;
         }
+    };
+
+    const renderDetails = (details: Record<string, any>) => {
+      const entries = Object.entries(details);
+      if (entries.length === 0) return 'N/A';
+      
+      const detailsString = entries.map(([key, value]) => `${key}: ${value}`).join(', ');
+
+      if (detailsString.length < 50) return detailsString;
+
+      return (
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger>
+                    <p className="truncate max-w-xs">{detailsString}</p>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <div className="max-w-sm space-y-1">
+                        {entries.map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                                <span className="font-semibold mr-2">{key}:</span>
+                                <span>{String(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+      );
     }
+
 
     return (
         <div className="w-full max-w-4xl mx-auto">
@@ -99,8 +130,8 @@ export default function UserLogsPage() {
                             <TableRow>
                                 <TableHead className="w-[50px]"></TableHead>
                                 <TableHead>Action</TableHead>
+                                <TableHead>Details</TableHead>
                                 <TableHead>Timestamp</TableHead>
-                                <TableHead>IP Address</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -115,8 +146,8 @@ export default function UserLogsPage() {
                                     <TableRow key={log.id}>
                                         <TableCell>{getIcon(log.action)}</TableCell>
                                         <TableCell className="font-medium">{log.action}</TableCell>
-                                        <TableCell>{format(log.timestamp.toDate ? log.timestamp.toDate() : log.timestamp, 'PPpp')}</TableCell>
-                                        <TableCell>{log.ipAddress || 'N/A'}</TableCell>
+                                        <TableCell>{renderDetails(log.details)}</TableCell>
+                                        <TableCell>{format(log.timestamp.toDate(), 'PPpp')}</TableCell>
                                     </TableRow>
                                 ))
                             ) : (
@@ -134,3 +165,5 @@ export default function UserLogsPage() {
     );
 }
 
+
+    

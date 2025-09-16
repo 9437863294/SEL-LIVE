@@ -22,6 +22,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { logUserActivity } from '@/lib/activity-logger';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 
 const initialNewUserState = {
@@ -36,6 +38,7 @@ const initialNewUserState = {
 export default function ManageUserPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { user: adminUser } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -110,6 +113,11 @@ export default function ManageUserPage() {
       });
       return;
     }
+    if (!adminUser) {
+        toast({ title: 'Authentication Error', description: 'Admin user not found.', variant: 'destructive'});
+        return;
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
       const authUser = userCredential.user;
@@ -123,6 +131,17 @@ export default function ManageUserPage() {
       };
       
       await setDoc(doc(db, 'users', authUser.uid), userData);
+
+      // Log this activity
+      await logUserActivity({
+          userId: adminUser.id,
+          action: 'Create User',
+          details: {
+              createdUserName: newUser.name,
+              createdUserEmail: newUser.email,
+              assignedRole: newUser.role,
+          }
+      });
 
       toast({
         title: 'Success',
@@ -146,12 +165,22 @@ export default function ManageUserPage() {
   };
   
   const handleUpdateUser = async () => {
-    if (!editingUser) return;
+    if (!editingUser || !adminUser) return;
   
     try {
       const userRef = doc(db, 'users', editingUser.id);
       const { id, ...dataToUpdate } = editingUser;
       await updateDoc(userRef, dataToUpdate);
+
+      await logUserActivity({
+          userId: adminUser.id,
+          action: 'Update User',
+          details: {
+              updatedUserName: editingUser.name,
+              updatedUserEmail: editingUser.email
+          }
+      });
+
       toast({
         title: 'Success',
         description: 'User updated successfully.',
@@ -400,5 +429,7 @@ export default function ManageUserPage() {
     </div>
   );
 }
+
+    
 
     
