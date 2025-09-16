@@ -34,6 +34,7 @@ export default function ManageDocumentsPage() {
   const canUpload = can('Upload', 'Daily Requisition.Manage Documents');
   const canMarkMissing = can('Mark as Missing', 'Daily Requisition.Manage Documents');
   const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
+  const canMoveToPending = can('Move to Pending', 'Daily Requisition.Manage Documents');
 
   const fetchRequisitions = async () => {
     setIsLoading(true);
@@ -188,7 +189,7 @@ export default function ManageDocumentsPage() {
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         ) : type === 'missing' ? (
-                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }} disabled={!canMarkMissing && !canMarkNotRequired}>
+                                             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, 'Pending'); }} disabled={!canMoveToPending}>
                                                 Move to Pending
                                             </Button>
                                         ) : (
