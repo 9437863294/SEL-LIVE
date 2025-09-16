@@ -70,7 +70,6 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
       toast({ title: "Success", description: `${filesToUpload.length} file(s) uploaded successfully.` });
       setFilesToUpload([]);
       setCurrentAttachments(prev => [...prev, ...attachmentUrls]);
-      onUploadComplete();
     } catch (error) {
       console.error("Upload failed:", error);
       toast({ title: "Upload Failed", description: "Could not upload files.", variant: "destructive" });
@@ -79,40 +78,46 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
     }
   };
 
-  const handleDeleteAttachment = async (attachment: Attachment) => {
+  const handleDeleteAttachment = async (attachmentToDelete: Attachment) => {
     if (!requisition) return;
+    
+    // Optimistically update UI
+    const previousAttachments = [...currentAttachments];
+    setCurrentAttachments(prev => prev.filter(att => att.url !== attachmentToDelete.url));
+
     try {
-      const storagePath = `daily-requisitions/${requisition.receptionNo}/${attachment.name}`;
+      const storagePath = `daily-requisitions/${requisition.receptionNo}/${attachmentToDelete.name}`;
       const storageRef = ref(storage, storagePath);
       await deleteObject(storageRef);
 
       const reqRef = doc(db, 'dailyRequisitions', requisition.id);
-      const newAttachments = currentAttachments.filter(att => att.url !== attachment.url);
+      const newAttachments = currentAttachments.filter(att => att.url !== attachmentToDelete.url);
       
       await updateDoc(reqRef, {
-        attachments: arrayRemove(attachment),
-        documentStatus: newAttachments.length > 1 ? 'Uploaded' : 'Pending', // Back to pending if last doc deleted
+        attachments: arrayRemove(attachmentToDelete),
+        documentStatus: newAttachments.length > 0 ? 'Uploaded' : 'Pending',
         documentStatusUpdatedAt: new Date(),
       });
       
       toast({ title: "Success", description: "Attachment deleted." });
-      setCurrentAttachments(newAttachments.slice(0, -1));
-      onUploadComplete();
     } catch (error) {
         console.error("Error deleting attachment:", error);
+        // Revert optimistic UI update on failure
+        setCurrentAttachments(previousAttachments);
         toast({ title: "Error", description: "Failed to delete attachment.", variant: "destructive" });
     }
   };
   
-  const resetAndClose = () => {
-    setFilesToUpload([]);
+  const handleClose = () => {
+    onUploadComplete(); // Refresh the main list when closing
     onOpenChange(false);
-  }
+    setFilesToUpload([]);
+  };
 
   if (!requisition) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={resetAndClose}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Manage Documents for {requisition.receptionNo}</DialogTitle>
@@ -139,7 +144,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
                                             </a>
                                         </Button>
                                          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                                            <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
+                                            <a href={file.url} download={file.name}>
                                                 <Download className="h-4 w-4" />
                                             </a>
                                         </Button>
@@ -185,7 +190,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
             )}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={resetAndClose}>Close</Button>
+          <Button type="button" variant="outline" onClick={handleClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
