@@ -309,9 +309,9 @@ export type EmployeePosition = {
 
 export type DailyRequisitionEntry = {
   id: string;
-  createdAt: string;
+  createdAt: any; // Keep as timestamp for sorting
   receptionNo: string;
-  date: string;
+  date: any; // Can be timestamp or string after formatting
   projectId: string;
   departmentId: string;
   description: string;
@@ -320,9 +320,10 @@ export type DailyRequisitionEntry = {
   netAmount: number;
   depNo: string;
   status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review';
-  receivedById?: string; // ID of user who marked as received/cancelled
+  receivedById?: string;
   documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
-  userRoles?: Record<string, string>; // e.g. { 'verifier': 'userId1', 'approver': 'userId2' }
+  documentStatusUpdatedById?: string; // ID of user who marked as missing/not required
+  userRoles?: Record<string, string>;
   igstAmount?: number;
   tdsAmount?: number;
   cgstAmount?: number;

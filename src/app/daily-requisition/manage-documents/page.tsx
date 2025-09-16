@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, doc, updateDoc } from 'firebase/firestore';
-import type { DailyRequisitionEntry } from '@/lib/types';
+import type { DailyRequisitionEntry, User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,13 +17,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RequisitionDocumentDialog } from '@/components/RequisitionDocumentDialog';
 import { format } from 'date-fns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function ManageDocumentsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [requisitions, setRequisitions] = useState<DailyRequisitionEntry[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRequisition, setSelectedRequisition] = useState<DailyRequisitionEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -34,11 +36,13 @@ export default function ManageDocumentsPage() {
   const fetchRequisitions = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const entries = querySnapshot.docs.map(doc => {
+      const [q, usersSnap] = await Promise.all([
+        getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'))),
+        getDocs(collection(db, 'users'))
+      ]);
+
+      const entries = q.docs.map(doc => {
           const data = doc.data() as Omit<DailyRequisitionEntry, 'id'>;
-          // Set default documentStatus if it's missing
           if (!data.documentStatus) {
             data.documentStatus = (data.attachments && data.attachments.length > 0) ? 'Uploaded' : 'Pending';
           }
@@ -46,10 +50,12 @@ export default function ManageDocumentsPage() {
               id: doc.id, 
               ...data,
               date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : data.date,
-              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy') : data.createdAt,
+              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy HH:mm') : data.createdAt,
           } as DailyRequisitionEntry
       });
       setRequisitions(entries);
+
+      setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     } catch (error) {
       console.error("Error fetching requisitions:", error);
       toast({ title: "Error", description: "Failed to load requisition entries.", variant: "destructive" });
@@ -96,9 +102,16 @@ export default function ManageDocumentsPage() {
   };
   
   const handleUpdateStatus = async (id: string, status: 'Missing' | 'Not Required' | 'Pending') => {
+    if (!user) {
+        toast({ title: 'Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
     try {
         const reqRef = doc(db, 'dailyRequisitions', id);
-        await updateDoc(reqRef, { documentStatus: status });
+        await updateDoc(reqRef, { 
+            documentStatus: status,
+            documentStatusUpdatedById: user.id 
+        });
         toast({ title: 'Status Updated', description: `Entry marked as ${status}.`});
         fetchRequisitions(); // Refresh data
     } catch (error) {
@@ -108,6 +121,8 @@ export default function ManageDocumentsPage() {
   }
 
   const renderTable = (data: DailyRequisitionEntry[], type: 'pending' | 'uploaded' | 'missing') => {
+    const usersMap = new Map(users.map(u => [u.id, u.name]));
+    
     return (
         <Card>
             <CardContent className="p-0">
@@ -119,6 +134,7 @@ export default function ManageDocumentsPage() {
                             <TableHead>Date</TableHead>
                             {type === 'uploaded' && <TableHead>Attachments</TableHead>}
                             {type === 'missing' && <TableHead>Status</TableHead>}
+                            {type === 'missing' && <TableHead>Action Taken By</TableHead>}
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -136,9 +152,10 @@ export default function ManageDocumentsPage() {
                                 <TableRow key={req.id} onClick={() => openDialog(req)} className="cursor-pointer">
                                     <TableCell className="font-medium">{req.receptionNo}</TableCell>
                                     <TableCell>{req.partyName}</TableCell>
-                                    <TableCell>{req.date}</TableCell>
+                                    <TableCell>{req.date as string}</TableCell>
                                     {type === 'uploaded' && <TableCell>{req.attachments?.length || 0}</TableCell>}
                                     {type === 'missing' && <TableCell>{req.documentStatus}</TableCell>}
+                                    {type === 'missing' && <TableCell>{req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}</TableCell>}
                                     <TableCell className="text-right">
                                         {type === 'pending' ? (
                                             <DropdownMenu>
@@ -174,7 +191,7 @@ export default function ManageDocumentsPage() {
                             ))
                         ) : (
                              <TableRow>
-                                <TableCell colSpan={type === 'pending' ? 4 : 5} className="h-24 text-center">
+                                <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 6 : 5)} className="h-24 text-center">
                                     No entries found.
                                 </TableCell>
                             </TableRow>
