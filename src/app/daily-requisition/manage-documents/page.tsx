@@ -31,7 +31,7 @@ export default function ManageDocumentsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
-  const canUpload = can('Edit', 'Daily Requisition.Entry Sheet');
+  const canEdit = can('Edit', 'Daily Requisition.Entry Sheet');
 
   const fetchRequisitions = async () => {
     setIsLoading(true);
@@ -49,8 +49,8 @@ export default function ManageDocumentsPage() {
           return { 
               id: doc.id, 
               ...data,
-              date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : data.date,
-              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy HH:mm') : data.createdAt,
+              date: data.date && (data.date as any).toDate ? format((data.date as any).toDate(), 'dd MMM, yyyy') : String(data.date),
+              createdAt: data.createdAt && (data.createdAt as any).toDate ? format((data.createdAt as any).toDate(), 'dd MMM, yyyy HH:mm') : String(data.createdAt),
           } as DailyRequisitionEntry
       });
       setRequisitions(entries);
@@ -142,7 +142,7 @@ export default function ManageDocumentsPage() {
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={i}>
-                                    <TableCell colSpan={type === 'pending' ? 4 : 5}>
+                                    <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 6 : 5)}>
                                         <Skeleton className="h-6 w-full" />
                                     </TableCell>
                                 </TableRow>
@@ -165,7 +165,7 @@ export default function ManageDocumentsPage() {
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
+                                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                                                     <DropdownMenuItem onSelect={() => openDialog(req)}>
                                                         <Upload className="mr-2 h-4 w-4" /> Upload
                                                     </DropdownMenuItem>
@@ -265,7 +265,7 @@ export default function ManageDocumentsPage() {
         onOpenChange={setIsDialogOpen}
         requisition={selectedRequisition}
         onUploadComplete={fetchRequisitions}
-        canEdit={canUpload}
+        canEdit={canEdit}
       />
     </>
   );
