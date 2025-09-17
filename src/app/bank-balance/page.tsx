@@ -178,26 +178,28 @@ export default function BankBalanceDashboard() {
                 </div>
             </div>
             <Dialog open={isDailyEntryOpen} onOpenChange={setIsDailyEntryOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle>Daily Entry</DialogTitle>
                         <DialogDescription>Select an entry type to proceed.</DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-3 gap-4 pt-4">
                         <Link href="/bank-balance/expenses" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-red-50 hover:bg-red-100 border-red-200">
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-red-50 hover:bg-red-100 border-red-200">
                                 <ArrowDown className="h-8 w-8 text-red-600 mb-2" />
-                                <p className="font-semibold text-red-800">Expenses</p>
+                                <p className="font-semibold text-red-800 text-center">Payment</p>
                             </Card>
                         </Link>
-                        <Card className="flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-green-50 hover:bg-green-100 border-green-200">
-                            <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
-                            <p className="font-semibold text-green-800">Receipts</p>
-                        </Card>
+                         <Link href="/bank-balance/receipts" onClick={() => setIsDailyEntryOpen(false)}>
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-green-50 hover:bg-green-100 border-green-200">
+                                <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
+                                <p className="font-semibold text-green-800 text-center">Receipts</p>
+                            </Card>
+                        </Link>
                         <Link href="/bank-balance/internal-transaction" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
                                 <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
-                                <p className="font-semibold text-blue-800">Internal Transaction</p>
+                                <p className="font-semibold text-blue-800 text-center">Internal Transaction</p>
                             </Card>
                         </Link>
                     </div>
