@@ -353,6 +353,7 @@ export type BankAccount = {
   branch: string;
   ifsc: string;
   currentBalance: number;
+  drawingPower: number;
 };
 
 export type BankTransaction = {

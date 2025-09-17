@@ -49,8 +49,20 @@ export default function BankBalanceDashboard() {
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
     };
+    
+    const { totalDrawingPower, totalCurrentBalance, utilization } = (() => {
+        const ccAccounts = accounts.filter(acc => acc.accountType === 'Cash Credit');
+        const totalDP = ccAccounts.reduce((sum, acc) => sum + (acc.drawingPower || 0), 0);
+        const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
-    const totalClosingUtilization = accounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
+        const util = totalDP > 0 ? (totalCCBalance / totalDP) * 100 : 0;
+        
+        return { 
+            totalDrawingPower: totalDP,
+            totalCurrentBalance: totalCCBalance,
+            utilization: util,
+        };
+    })();
 
     if (authLoading || (isLoading && canView)) {
         return (
@@ -94,16 +106,27 @@ export default function BankBalanceDashboard() {
                 <Card className="mb-6 bg-blue-50 border-blue-200">
                     <CardHeader>
                         <div className="flex justify-between items-start">
-                            <CardTitle className="flex items-center gap-2 text-blue-800"><Banknote />Total Balance</CardTitle>
+                             <CardTitle className="flex items-center gap-2 text-blue-800"><Scale /> Available Fund</CardTitle>
+                             <div className="text-right">
+                                <p className="text-sm text-blue-600">Total Drawing Power</p>
+                                <p className="font-bold text-blue-900">{formatCurrency(totalDrawingPower)}</p>
+                            </div>
                         </div>
                          <CardDescription>
-                            Total balance as of {format(new Date(), 'MMMM do, yyyy')}.
+                            Total available drawing power as of {format(new Date(), 'MMMM do, yyyy')}.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="flex justify-between items-end">
+                         <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-4xl font-bold text-blue-900">{formatCurrency(totalClosingUtilization)}</p>
+                                <p className="text-4xl font-bold text-blue-900">{formatCurrency(totalDrawingPower - totalCurrentBalance)}</p>
+                                <p className="text-sm text-muted-foreground">{formatCurrency(totalCurrentBalance)} utilized</p>
+                            </div>
+                            <div className="w-1/3">
+                               <p className="text-right text-sm font-medium">{utilization.toFixed(2)}%</p>
+                               <div className="w-full bg-blue-200 rounded-full h-2.5">
+                                 <div className="bg-blue-600 h-2.5 rounded-full" style={{width: `${utilization}%`}}></div>
+                               </div>
                             </div>
                         </div>
                     </CardContent>

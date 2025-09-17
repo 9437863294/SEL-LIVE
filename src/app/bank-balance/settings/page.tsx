@@ -61,7 +61,7 @@ export default function BankBalanceSettingsPage() {
     
   const settingsItems = [
     { icon: Landmark, text: 'Bank Configuration', href: '/bank-balance/accounts', description: 'Manage bank details, accounts, and other configurations.' },
-    { icon: TrendingUp, text: 'DP Management', href: '#', description: 'Manage Drawing Power for different banks and accounts.', disabled: true },
+    { icon: TrendingUp, text: 'DP Management', href: '/bank-balance/dp-management', description: 'Manage Drawing Power for different banks and accounts.' },
     { icon: Percent, text: 'Interest Rate Management', href: '#', description: 'Set daily interest rates for each bank account.', disabled: true },
     { icon: CalendarDays, text: 'Monthly Interest', href: '#', description: 'Enter projected and actual monthly interest amounts.', disabled: true },
     { icon: CreditCard, text: 'Opening Utilization', href: '#', description: 'Enter and track opening utilization for active banks.', disabled: true },
