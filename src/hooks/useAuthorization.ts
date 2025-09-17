@@ -1,4 +1,5 @@
 
+
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useCallback } from 'react';
 
@@ -9,19 +10,29 @@ export const useAuthorization = () => {
     if (loading) {
       return false; 
     }
+    
+    // Direct check for simple modules or top-level module actions
+    if (permissions[module]?.includes(action)) {
+      return true;
+    }
 
-    // Module.SubModule.Scope -> e.g. Expenses.Departments.dept_id_123
+    // Check for nested "View Module" permission, e.g., permissions['Expenses']['View Module']
+    if (action === 'View Module' && permissions[module] && typeof permissions[module] === 'object' && !Array.isArray(permissions[module])) {
+      const nestedPermissions = permissions[module] as Record<string, string[]>;
+      if (nestedPermissions['View Module']) {
+        return true;
+      }
+    }
+    
+    // Check for scoped permissions, e.g., Expenses.Departments.dept_id_123
     const scopedPermissionKey = scope ? `${module}.${scope}` : module;
-
-    // Check for scoped permission first
     if (scope && permissions[scopedPermissionKey]?.includes(action)) {
       return true;
     }
-    
-    // Fallback to general module permission
-    const modulePermissions = permissions[module];
-    if (modulePermissions?.includes(action)) {
-      return true;
+
+    // Fallback for sub-module actions without a scope, e.g., can('View', 'Expenses.Reports')
+    if (module.includes('.') && permissions[module]?.includes(action)) {
+        return true;
     }
 
     // Special check for 'View All' which grants 'View' on all scopes within that module
@@ -33,7 +44,7 @@ export const useAuthorization = () => {
     }
     
     return false;
-  }, [permissions]);
+  }, [permissions, loading]);
 
   return { can, isLoading: loading };
 };
