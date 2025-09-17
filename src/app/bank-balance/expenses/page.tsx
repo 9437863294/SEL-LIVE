@@ -42,7 +42,7 @@ import { format, compareDesc } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -57,6 +57,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Switch } from '@/components/ui/switch';
 
 
 const initialExpenseItem = {
@@ -73,6 +74,19 @@ const initialExpenseItem = {
 
 type ExpenseItem = typeof initialExpenseItem;
 
+interface PaymentSettings {
+  mandatoryFields: {
+    paymentRequestRefNo: boolean;
+    utrNumber: boolean;
+    paymentMethod: boolean;
+    paymentRefNo: boolean;
+    approvalCopy: boolean;
+    bankTransferCopy: boolean;
+  };
+  paymentMethods: { id: string, name: string }[];
+}
+
+
 export default function ExpensesEntryPage() {
   const { toast } = useToast();
   // Entry Tab State
@@ -82,7 +96,11 @@ export default function ExpensesEntryPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
-  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0]?.id ?? null);
+  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(null);
+
+  // Settings State
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
 
   // Log Tab State
   const [logEntries, setLogEntries] = useState<BankExpense[]>([]);
@@ -111,9 +129,36 @@ export default function ExpensesEntryPage() {
       }
       setIsLogLoading(false);
   };
+  
+  const fetchPaymentSettings = async () => {
+    setIsSettingsLoading(true);
+    try {
+        const settingsDoc = await getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'));
+        const methodsSnap = await getDocs(collection(db, 'paymentMethods'));
+
+        const mandatoryFields = settingsDoc.exists() 
+            ? settingsDoc.data().mandatoryFields 
+            : {
+                paymentRequestRefNo: false,
+                utrNumber: false,
+                paymentMethod: false,
+                paymentRefNo: false,
+                approvalCopy: false,
+                bankTransferCopy: false,
+              };
+        const paymentMethods = methodsSnap.docs.map(d => ({id: d.id, name: d.data().name}));
+
+        setPaymentSettings({ mandatoryFields, paymentMethods });
+    } catch (e) {
+        console.error("Error fetching payment settings", e);
+        toast({ title: 'Error', description: 'Could not load payment entry settings.', variant: 'destructive' });
+    }
+    setIsSettingsLoading(false);
+  }
 
   useEffect(() => {
     fetchBankAccountsAndExpenses();
+    fetchPaymentSettings();
   }, [toast]);
   
   const filteredLogEntries = useMemo(() => {
@@ -168,22 +213,45 @@ export default function ExpensesEntryPage() {
   }
 
   const handleSave = async () => {
-    if (!date || !selectedBank || expenses.length === 0 || expenses.some(e => !e.description || e.amount <= 0)) {
-        toast({ title: 'Validation Error', description: 'Please fill all required fields for each expense.', variant: 'destructive' });
+    if (!date || !selectedBank) {
+        toast({ title: 'Validation Error', description: 'Please select a date and a bank account.', variant: 'destructive' });
         return;
     }
+    
+    // Validation
+    const mandatory = paymentSettings?.mandatoryFields;
+    for(const expense of expenses) {
+        if (!expense.description || expense.amount <= 0) {
+            toast({ title: 'Validation Error', description: `Please fill out Description and Amount for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' });
+            return;
+        }
+        if (mandatory) {
+            if(mandatory.paymentRequestRefNo && !expense.paymentRequestRefNo) {
+                toast({ title: 'Validation Error', description: `Payment Request Ref No. is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+            if(mandatory.utrNumber && !expense.utrNumber) {
+                toast({ title: 'Validation Error', description: `UTR Number is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+            if(mandatory.paymentMethod && !expense.paymentMethod) {
+                toast({ title: 'Validation Error', description: `Payment Method is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+            if(mandatory.paymentRefNo && !expense.paymentRefNo) {
+                toast({ title: 'Validation Error', description: `Payment Ref No. is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+            if(mandatory.approvalCopy && !expense.approvalCopy) {
+                toast({ title: 'Validation Error', description: `Approval Copy is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+            if(mandatory.bankTransferCopy && !expense.bankTransferCopy) {
+                toast({ title: 'Validation Error', description: `Bank Transfer Copy is required for Payment #${expenses.indexOf(expense) + 1}.`, variant: 'destructive' }); return;
+            }
+        }
+    }
+
     setIsSaving(true);
     
     try {
         await runTransaction(db, async (transaction) => {
-            const bankAccountRef = doc(db, 'bankAccounts', selectedBank);
-            const bankAccountDoc = await transaction.get(bankAccountRef);
-            if (!bankAccountDoc.exists()) throw new Error("Bank account not found.");
-            
-            let totalExpenseAmount = 0;
-
             for (const expense of expenses) {
-                totalExpenseAmount += expense.amount;
                 let approvalCopyUrl = '';
                 let bankTransferCopyUrl = '';
 
@@ -223,9 +291,9 @@ export default function ExpensesEntryPage() {
         const newId = Date.now();
         const newInitialExpense = { ...initialExpenseItem, id: newId };
         setExpenses([newInitialExpense]);
+        setOpenCollapsibleId(newId);
         setDate(new Date());
         setSelectedBank('');
-        setOpenCollapsibleId(newId);
         fetchBankAccountsAndExpenses(); // Refresh log data
 
     } catch (error) {
@@ -342,16 +410,16 @@ export default function ExpensesEntryPage() {
               </div>
 
               <div className="space-y-4">
-                {expenses.map((expense, index) => (
+                {isSettingsLoading ? <Skeleton className="h-64" /> : expenses.map((expense, index) => (
                   <Collapsible 
                     key={expense.id} 
                     open={openCollapsibleId === expense.id}
                     onOpenChange={(isOpen) => setOpenCollapsibleId(isOpen ? expense.id : null)}
                     className="border p-4 rounded-lg"
                   >
-                    <div className="flex justify-between items-center cursor-pointer">
-                      <CollapsibleTrigger asChild>
-                        <div className="flex flex-col flex-grow">
+                    <div className="flex justify-between items-center">
+                      <CollapsibleTrigger asChild className="flex-grow cursor-pointer">
+                        <div className="flex flex-col">
                           <div className="flex justify-between items-center w-full">
                              <h4 className="text-lg font-semibold">Payment #{index + 1}</h4>
                              <div className="flex items-center gap-4">
@@ -385,38 +453,37 @@ export default function ExpensesEntryPage() {
                       
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="space-y-2">
-                            <Label>Payment Request Ref No.</Label>
+                            <Label>Payment Request Ref No. {paymentSettings?.mandatoryFields.paymentRequestRefNo && <span className="text-destructive">*</span>}</Label>
                             <Input placeholder="Enter Ref No." value={expense.paymentRequestRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRequestRefNo', e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                            <Label>UTR Number</Label>
+                            <Label>UTR Number {paymentSettings?.mandatoryFields.utrNumber && <span className="text-destructive">*</span>}</Label>
                             <Input placeholder="Enter UTR No." value={expense.utrNumber} onChange={(e) => handleExpenseChange(expense.id, 'utrNumber', e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                            <Label>Amount</Label>
+                            <Label>Amount <span className="text-destructive">*</span></Label>
                             <Input type="number" placeholder="0.00" value={expense.amount || ''} onChange={(e) => handleExpenseChange(expense.id, 'amount', e.target.valueAsNumber || 0)} />
                           </div>
                        </div>
                        
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="space-y-2">
-                            <Label>Payment Method</Label>
+                            <Label>Payment Method {paymentSettings?.mandatoryFields.paymentMethod && <span className="text-destructive">*</span>}</Label>
                              <Select value={expense.paymentMethod} onValueChange={(val) => handleExpenseChange(expense.id, 'paymentMethod', val)}>
                                 <SelectTrigger><SelectValue placeholder="Select method"/></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="NEFT">NEFT</SelectItem>
-                                    <SelectItem value="RTGS">RTGS</SelectItem>
-                                    <SelectItem value="IMPS">IMPS</SelectItem>
-                                    <SelectItem value="Cash">Cash</SelectItem>
+                                    {paymentSettings?.paymentMethods.map(method => (
+                                        <SelectItem key={method.id} value={method.name}>{method.name}</SelectItem>
+                                    ))}
                                 </SelectContent>
                              </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>Payment Ref No.</Label>
+                            <Label>Payment Ref No. {paymentSettings?.mandatoryFields.paymentRefNo && <span className="text-destructive">*</span>}</Label>
                             <Input placeholder="Enter Payment Ref" value={expense.paymentRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRefNo', e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                             <Label>Approval Copy</Label>
+                             <Label>Approval Copy {paymentSettings?.mandatoryFields.approvalCopy && <span className="text-destructive">*</span>}</Label>
                               <div className="flex items-center gap-2">
                                 <Input type="file" id={`approval-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'approvalCopy', e.target.files ? e.target.files[0] : null)} />
                                 <Label htmlFor={`approval-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
@@ -432,7 +499,7 @@ export default function ExpensesEntryPage() {
                        </div>
 
                        <div className="space-y-2">
-                          <Label>Bank Transfer Copy</Label>
+                          <Label>Bank Transfer Copy {paymentSettings?.mandatoryFields.bankTransferCopy && <span className="text-destructive">*</span>}</Label>
                            <div className="flex items-center gap-2">
                             <Input type="file" id={`transfer-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'bankTransferCopy', e.target.files ? e.target.files[0] : null)} />
                             <Label htmlFor={`transfer-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
@@ -559,5 +626,3 @@ export default function ExpensesEntryPage() {
     </div>
   );
 }
-
-    

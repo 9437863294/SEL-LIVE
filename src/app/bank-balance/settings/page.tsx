@@ -12,6 +12,7 @@ import {
   CreditCard,
   List,
   Target,
+  FilePen,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -68,6 +69,7 @@ export default function BankBalanceSettingsPage() {
     { icon: List, text: 'Daily Utilization Log', href: '/bank-balance/daily-log', description: 'View daily transaction logs and manage utilization.' },
     { icon: Percent, text: 'Interest Rate', href: '/bank-balance/interest-rate', description: 'Set and track interest rates for each bank account.', disabled: false },
     { icon: CalendarDays, text: 'Monthly Interest', href: '/bank-balance/monthly-interest', description: 'Enter projected and actual monthly interest amounts.', disabled: false },
+    { icon: FilePen, text: 'Payment Entry Settings', href: '/bank-balance/settings/payment-entry', description: 'Customize payment entry form fields and options.' },
   ];
 
   return (
