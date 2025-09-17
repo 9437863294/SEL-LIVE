@@ -1,7 +1,8 @@
 
+
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   File,
   Inbox,
@@ -16,6 +17,7 @@ import {
   MessageSquare,
   Check,
   CheckCheck,
+  Paperclip,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -35,8 +37,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { NewChatDialog } from '@/components/NewChatDialog';
 import type { User, Chat, Message } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -49,10 +52,14 @@ export default function ChatSystemPage() {
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [attachment, setAttachment] = useState<File | null>(null);
 
   const [isLoadingChats, setIsLoadingChats] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
 
   useEffect(() => {
@@ -178,33 +185,74 @@ export default function ChatSystemPage() {
         handleSelectChat(newChat as Chat);
     }
   };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachment(e.target.files[0]);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentUser || !selectedChat) return;
+    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
 
-    const messageData = {
-        content: newMessage,
+    setIsSending(true);
+    
+    let messageData: Partial<Message> = {
         senderId: currentUser.id,
         timestamp: serverTimestamp(),
-        type: 'text' as const,
         readBy: [currentUser.id]
     };
-
-    const chatRef = doc(db, 'chats', selectedChat.id);
-    const messagesRef = collection(chatRef, 'messages');
-
-    await addDoc(messagesRef, messageData);
     
-    await updateDoc(chatRef, {
-        lastMessage: {
-            text: newMessage,
-            senderId: currentUser.id,
-            timestamp: serverTimestamp(),
-        }
-    });
+    let lastMessageText = newMessage.trim();
 
-    setNewMessage('');
+    try {
+        if (attachment) {
+            const isImage = attachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, attachment);
+            const downloadURL = await getDownloadURL(storageRef);
+
+            messageData = {
+                ...messageData,
+                type: isImage ? 'image' : 'document',
+                mediaUrl: downloadURL,
+                fileName: attachment.name,
+                content: newMessage.trim(), // Include text with attachment
+            };
+            lastMessageText = attachment.name;
+        } else {
+            messageData = {
+                ...messageData,
+                type: 'text',
+                content: newMessage.trim(),
+            };
+        }
+
+        const chatRef = doc(db, 'chats', selectedChat.id);
+        const messagesRef = collection(chatRef, 'messages');
+
+        await addDoc(messagesRef, messageData);
+        
+        await updateDoc(chatRef, {
+            lastMessage: {
+                text: lastMessageText,
+                senderId: currentUser.id,
+                timestamp: serverTimestamp(),
+            }
+        });
+
+        setNewMessage('');
+        setAttachment(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    } catch (error) {
+        console.error("Error sending message:", error);
+    } finally {
+        setIsSending(false);
+    }
   };
   
   const handleSelectChat = async (chat: Chat) => {
@@ -241,6 +289,30 @@ export default function ChatSystemPage() {
   };
 
   const chatPartner = selectedChat ? getOtherMember(selectedChat) : null;
+  
+  const renderMessageContent = (message: Message) => {
+    switch (message.type) {
+        case 'image':
+            return (
+                <div>
+                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName} className="max-w-xs rounded-lg my-2" />}
+                    {message.content && <p className="text-sm">{message.content}</p>}
+                </div>
+            );
+        case 'document':
+            return (
+                <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-400">
+                        {message.fileName}
+                    </a>
+                </div>
+            );
+        case 'text':
+        default:
+            return <p className="text-sm">{message.content}</p>;
+    }
+  }
 
   return (
     <>
@@ -343,8 +415,8 @@ export default function ChatSystemPage() {
 
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
-                                        <div className={cn("rounded-lg px-3 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                                            <p className="text-sm">{message.content}</p>
+                                        <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                            {renderMessageContent(message)}
                                             <div className="flex items-center justify-end gap-1 mt-1">
                                                 {message.timestamp?.toDate && (
                                                    <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
@@ -363,13 +435,33 @@ export default function ChatSystemPage() {
                     </ScrollArea>
                     <div className="p-4 border-t">
                         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                            <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()}>
+                                <Paperclip className="h-5 w-5" />
+                            </Button>
+                            <Input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
                             <Input 
                                 placeholder="Type a message..."
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
+                                disabled={isSending}
                             />
-                            <Button type="submit"><Send className="h-4 w-4" /></Button>
+                            <Button type="submit" disabled={isSending}>
+                                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            </Button>
                         </form>
+                         {attachment && (
+                            <div className="text-sm mt-2 p-2 bg-muted rounded-md flex items-center justify-between">
+                                <span className="truncate">Attaching: {attachment.name}</span>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             ) : (
@@ -389,3 +481,4 @@ export default function ChatSystemPage() {
     </>
   );
 }
+

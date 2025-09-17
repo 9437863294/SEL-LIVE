@@ -252,6 +252,7 @@ export type Message = {
     timestamp: any; // Firestore Timestamp
     type: 'text' | 'image' | 'document';
     mediaUrl?: string;
+    fileName?: string;
     readBy: string[];
     isDeleted?: boolean;
 }
