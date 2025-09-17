@@ -123,7 +123,7 @@ export default function BillingReconPage() {
   if (isAuthLoading || (isLoading && canViewModule)) {
       return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
-          <Skeleton className="h-10 w-80 mb-6" />
+          <Skeleton className="h-10 w-80 mb-8" />
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {Array.from({ length: 4 }).map((_, i) => (
                   <Card key={i} className="h-28"><CardHeader><Skeleton className="h-5 w-3/4" /><Skeleton className="h-4 w-1/2 mt-1" /></CardHeader></Card>
@@ -136,9 +136,9 @@ export default function BillingReconPage() {
   if (!canViewModule) {
       return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
-             <div className="mb-6 flex items-center gap-2">
+             <div className="mb-8 flex items-center gap-2">
                 <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+                <h1 className="text-2xl font-bold">Billing & Reconciliation</h1>
             </div>
             <Card>
                 <CardHeader>
@@ -156,14 +156,14 @@ export default function BillingReconPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href="/">
                 <Button variant="ghost" size="icon">
                     <Home className="h-6 w-6" />
                 </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+            <h1 className="text-2xl font-bold">Billing & Reconciliation</h1>
         </div>
         <Link href="/billing-recon/settings">
             <Button variant="ghost" size="icon">
