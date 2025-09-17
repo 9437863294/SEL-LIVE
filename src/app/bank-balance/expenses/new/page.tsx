@@ -341,15 +341,6 @@ export default function NewPaymentPage() {
                       </Button>
                     </div>
                     <CollapsibleContent className="mt-4 space-y-4">
-                       <div className="space-y-2">
-                        <Label>Description</Label>
-                        <Textarea 
-                          placeholder="e.g. Office supplies" 
-                          value={expense.description} 
-                          onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
-                        />
-                      </div>
-                      
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="space-y-2">
                             <Label>Payment Request Ref No. {paymentSettings?.mandatoryFields.paymentRequestRefNo && <span className="text-destructive">*</span>}</Label>
@@ -377,11 +368,13 @@ export default function NewPaymentPage() {
                                 </SelectContent>
                              </Select>
                           </div>
-                          <div className="space-y-2">
+                           <div className="space-y-2">
                             <Label>Payment Ref No. {paymentSettings?.mandatoryFields.paymentRefNo && <span className="text-destructive">*</span>}</Label>
                             <Input placeholder="Enter Payment Ref" value={expense.paymentRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRefNo', e.target.value)} />
                           </div>
-                          <div className="space-y-2">
+                       </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="space-y-2">
                              <Label>Approval Copy {paymentSettings?.mandatoryFields.approvalCopy && <span className="text-destructive">*</span>}</Label>
                               <div className="flex items-center gap-2">
                                 <Input type="file" id={`approval-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'approvalCopy', e.target.files ? e.target.files[0] : null)} />
@@ -395,22 +388,29 @@ export default function NewPaymentPage() {
                                 </Button>
                               </div>
                           </div>
-                       </div>
-
-                       <div className="space-y-2">
-                          <Label>Bank Transfer Copy {paymentSettings?.mandatoryFields.bankTransferCopy && <span className="text-destructive">*</span>}</Label>
-                           <div className="flex items-center gap-2">
-                            <Input type="file" id={`transfer-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'bankTransferCopy', e.target.files ? e.target.files[0] : null)} />
-                            <Label htmlFor={`transfer-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
-                                {expense.bankTransferCopy ? expense.bankTransferCopy.name : 'No file selected'}
-                            </Label>
-                            <Button asChild variant="outline">
-                                <Label htmlFor={`transfer-copy-${expense.id}`} className="cursor-pointer">
-                                    <Upload className="mr-2 h-4 w-4"/> Upload
+                           <div className="space-y-2">
+                              <Label>Bank Transfer Copy {paymentSettings?.mandatoryFields.bankTransferCopy && <span className="text-destructive">*</span>}</Label>
+                               <div className="flex items-center gap-2">
+                                <Input type="file" id={`transfer-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'bankTransferCopy', e.target.files ? e.target.files[0] : null)} />
+                                <Label htmlFor={`transfer-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                                    {expense.bankTransferCopy ? expense.bankTransferCopy.name : 'No file selected'}
                                 </Label>
-                            </Button>
+                                <Button asChild variant="outline">
+                                    <Label htmlFor={`transfer-copy-${expense.id}`} className="cursor-pointer">
+                                        <Upload className="mr-2 h-4 w-4"/> Upload
+                                    </Label>
+                                </Button>
+                               </div>
                            </div>
                        </div>
+                       <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea 
+                          placeholder="e.g. Office supplies" 
+                          value={expense.description} 
+                          onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
+                        />
+                      </div>
                     </CollapsibleContent>
                   </Collapsible>
                 ))}
