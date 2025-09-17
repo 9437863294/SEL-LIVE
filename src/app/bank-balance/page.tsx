@@ -212,7 +212,7 @@ export default function BankBalanceDashboard() {
                                 <p className="font-semibold text-red-800 text-center">Payment</p>
                             </Card>
                         </Link>
-                         <Link href="/bank-balance/receipts" onClick={() => setIsDailyEntryOpen(false)}>
+                         <Link href="/bank-balance/receipts/new" onClick={() => setIsDailyEntryOpen(false)}>
                             <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-green-50 hover:bg-green-100 border-green-200">
                                 <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
                                 <p className="font-semibold text-green-800 text-center">Receipts</p>
