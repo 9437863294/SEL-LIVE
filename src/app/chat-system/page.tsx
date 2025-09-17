@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -168,11 +167,14 @@ export default function ChatSystemPage() {
             }
             
             const messagesRef = collection(db, 'chats', chatData.id, 'messages');
-            const unreadQuery = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
-
-            const unsubUnread = onSnapshot(unreadQuery, (messagesSnapshot) => {
-                setUnreadCounts(prev => ({ ...prev, [chatData.id]: messagesSnapshot.size }));
+            const unsubUnread = onSnapshot(messagesRef, (messagesSnapshot) => {
+                const unreadCount = messagesSnapshot.docs.filter(doc => {
+                    const data = doc.data();
+                    return data.senderId !== currentUser.id && !data.readBy?.includes(currentUser.id);
+                }).length;
+                setUnreadCounts(prev => ({ ...prev, [chatData.id]: unreadCount }));
             });
+
             allListeners.push(unsubUnread);
             
             userChats.push(chatData);
@@ -381,7 +383,7 @@ export default function ChatSystemPage() {
     const q = query(messagesRef);
     const snapshot = await getDocs(q);
     
-    const unreadDocs = snapshot.docs.filter(d => !d.data().readBy.includes(currentUser.id));
+    const unreadDocs = snapshot.docs.filter(d => d.data().senderId !== currentUser.id && !d.data().readBy.includes(currentUser.id));
 
     if (unreadDocs.length > 0) {
       const batch = writeBatch(db);
