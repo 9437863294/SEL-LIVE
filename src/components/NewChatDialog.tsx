@@ -95,6 +95,8 @@ export function NewChatDialog({ isOpen, onOpenChange, onSelectUser }: NewChatDia
             members: memberIds,
             memberDetails,
             groupAdmins: [currentUser.id],
+            createdBy: currentUser.id,
+            createdAt: serverTimestamp(),
             lastMessage: {
                 text: `${currentUser.name} created the group "${groupName}"`,
                 senderId: 'system',

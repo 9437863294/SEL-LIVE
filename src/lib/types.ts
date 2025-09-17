@@ -249,9 +249,13 @@ export type Chat = {
         senderId: string;
         timestamp: any; // Firestore Timestamp
     };
+    // Group-specific fields
     groupName?: string;
     groupPhotoURL?: string;
     groupAdmins?: string[];
+    groupDescription?: string;
+    createdBy?: string; // User ID of the creator
+    createdAt?: any; // Firestore Timestamp
 }
 
 export type Message = {
