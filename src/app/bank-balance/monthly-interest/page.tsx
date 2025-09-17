@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Edit } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Edit, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format, startOfMonth, endOfMonth, subMonths, eachDayOfInterval, compareDesc, parse } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuthorization } from '@/hooks/useAuthorization';
+
 
 interface MonthlyLogEntry {
     month: string;
@@ -29,6 +31,8 @@ interface MonthlyLogEntry {
 
 export default function MonthlyInterestPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [interestData, setInterestData] = useState<MonthlyInterestData>({});
   const [initialInterestData, setInitialInterestData] = useState<MonthlyInterestData>({});
@@ -43,6 +47,9 @@ export default function MonthlyInterestPage() {
   const [activeTab, setActiveTab] = useState('entry');
 
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
+
+  const canView = can('View', 'Bank Balance.Monthly Interest');
+  const canEdit = can('Edit', 'Bank Balance.Monthly Interest');
   
   const hasUnsavedChanges = useMemo(() => {
     return JSON.stringify(interestData) !== JSON.stringify(initialInterestData);
@@ -160,11 +167,13 @@ export default function MonthlyInterestPage() {
 
 
   useEffect(() => {
-    fetchBaseData();
-  }, [fetchBaseData]);
+    if(!authLoading && canView) {
+        fetchBaseData();
+    }
+  }, [fetchBaseData, authLoading, canView]);
   
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !canView) return;
 
     const fetchAndSetInterestData = async () => {
         const docRef = doc(db, 'monthlyInterest', selectedMonth);
@@ -187,7 +196,7 @@ export default function MonthlyInterestPage() {
 
     fetchAndSetInterestData();
 
-  }, [selectedMonth, ccAccounts, calculatedProjectedInterest, isLoading]);
+  }, [selectedMonth, ccAccounts, calculatedProjectedInterest, isLoading, canView]);
   
   const handleInterestChange = (accountId: string, value: string) => {
       const numValue = parseFloat(value);
@@ -255,6 +264,39 @@ export default function MonthlyInterestPage() {
   }, [logData, logFilters]);
 
 
+  if (authLoading || (isLoading && canView)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    );
+  }
+
+  if (!canView) {
+      return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-4">
+            <Link href="/bank-balance/settings">
+                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+            </Link>
+            <div>
+                <h1 className="text-2xl font-bold">Monthly Interest</h1>
+            </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                 <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
@@ -290,7 +332,7 @@ export default function MonthlyInterestPage() {
                                     </SelectContent>
                                 </Select>
                         </div>
-                        {hasUnsavedChanges && (
+                        {hasUnsavedChanges && canEdit && (
                             <Button onClick={handleSave} disabled={isSaving}>
                                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                                 Save Monthly Interest
@@ -324,6 +366,7 @@ export default function MonthlyInterestPage() {
                                                 value={interestData[account.id]?.actual || ''}
                                                 onChange={(e) => handleInterestChange(account.id, e.target.value)}
                                                 placeholder="0.00"
+                                                disabled={!canEdit}
                                             />
                                         </div>
                                     </div>
@@ -401,7 +444,7 @@ export default function MonthlyInterestPage() {
                                             {formatCurrency(log.difference)}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <Button variant="outline" size="sm" onClick={() => handleEditFromLog(log)}>
+                                            <Button variant="outline" size="sm" onClick={() => handleEditFromLog(log)} disabled={!canEdit}>
                                                 <Edit className="mr-2 h-4 w-4" /> Edit
                                             </Button>
                                         </TableCell>
