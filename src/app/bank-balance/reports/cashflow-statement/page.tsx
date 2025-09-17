@@ -22,18 +22,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BankExpense } from '@/lib/types';
-import { format, startOfMonth, endOfMonth, eachMonthOfInterval } from 'date-fns';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import type { BankExpense, BankAccount } from '@/lib/types';
+import { format, startOfMonth, endOfMonth, eachMonthOfInterval, compareAsc, parseISO } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 
 
 interface MonthlyData {
   month: string;
+  monthLabel: string;
+  openingBalance: number;
   inflow: number;
   outflow: number;
   net: number;
+  closingBalance: number;
 }
 
 export default function CashflowStatementPage() {
@@ -45,9 +48,13 @@ export default function CashflowStatementPage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const expensesQuery = query(collection(db, 'bankExpenses'), where('isContra', '==', false));
-        const querySnapshot = await getDocs(expensesQuery);
-        const transactions = querySnapshot.docs.map(doc => doc.data() as BankExpense);
+        const [expensesQuery, accountsQuery] = await Promise.all([
+          getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', false))),
+          getDocs(collection(db, 'bankAccounts'))
+        ]);
+        
+        const transactions = expensesQuery.docs.map(doc => doc.data() as BankExpense);
+        const accounts = accountsQuery.docs.map(doc => doc.data() as BankAccount);
 
         if (transactions.length === 0) {
             setData([]);
@@ -63,6 +70,17 @@ export default function CashflowStatementPage() {
         const interval = { start: startOfMonth(firstDate), end: endOfMonth(lastDate) };
         const monthsInInterval = eachMonthOfInterval(interval);
 
+        // Calculate initial opening balance
+        let runningBalance = accounts.reduce((sum, acc) => sum + (acc.openingUtilization || 0), 0);
+        const firstMonthStart = startOfMonth(firstDate);
+        
+        const preTransactions = transactions.filter(t => t.date.toDate() < firstMonthStart);
+
+        preTransactions.forEach(t => {
+            runningBalance += t.type === 'Credit' ? t.amount : -t.amount;
+        });
+
+
         const monthlyData = monthsInInterval.map(monthStart => {
             const monthString = format(monthStart, 'yyyy-MM');
             const monthLabel = format(monthStart, 'MMMM yyyy');
@@ -71,20 +89,38 @@ export default function CashflowStatementPage() {
 
             const inflow = monthTransactions.filter(t => t.type === 'Credit').reduce((sum, t) => sum + t.amount, 0);
             const outflow = monthTransactions.filter(t => t.type === 'Debit').reduce((sum, t) => sum + t.amount, 0);
+            const net = inflow - outflow;
             
+            const openingBalance = runningBalance;
+            const closingBalance = openingBalance + net;
+
+            runningBalance = closingBalance; // Set up for next month
+
             return {
-                month: monthLabel,
+                month: monthString,
+                monthLabel,
+                openingBalance,
                 inflow,
                 outflow,
-                net: inflow - outflow,
+                net,
+                closingBalance,
             };
         });
 
         setData(monthlyData.reverse()); // Show most recent months first
 
-      } catch (error) {
+      } catch (error: any) {
           console.error("Error fetching cashflow data:", error);
-          toast({ title: 'Error', description: 'Failed to fetch transaction data.', variant: 'destructive' });
+           if (error.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This query may require a custom index. Please check the Firebase console for the 'bankExpenses' collection.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        } else {
+            toast({ title: 'Error', description: 'Failed to fetch transaction data.', variant: 'destructive' });
+        }
       }
       setIsLoading(false);
     };
@@ -92,15 +128,6 @@ export default function CashflowStatementPage() {
     fetchData();
   }, [toast]);
   
-
-  const totals = useMemo(() => {
-    return data.reduce((acc, row) => ({
-      inflow: acc.inflow + row.inflow,
-      outflow: acc.outflow + row.outflow,
-      net: acc.net + row.net,
-    }), { inflow: 0, outflow: 0, net: 0 });
-  }, [data]);
-
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -132,46 +159,37 @@ export default function CashflowStatementPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="font-bold">MONTH</TableHead>
+                    <TableHead className="text-right font-bold">OPENING BALANCE</TableHead>
                     <TableHead className="text-right font-bold">INFLOW (RECEIPTS)</TableHead>
                     <TableHead className="text-right font-bold">OUTFLOW (PAYMENTS)</TableHead>
                     <TableHead className="text-right font-bold">NET CASHFLOW</TableHead>
+                    <TableHead className="text-right font-bold">CLOSING BALANCE</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({length: 5}).map((_, i) => (
                         <TableRow key={i}>
-                            <TableCell><Skeleton className="h-6" /></TableCell>
-                            <TableCell><Skeleton className="h-6" /></TableCell>
-                            <TableCell><Skeleton className="h-6" /></TableCell>
-                            <TableCell><Skeleton className="h-6" /></TableCell>
+                            <TableCell colSpan={6}><Skeleton className="h-6" /></TableCell>
                         </TableRow>
                     ))
                   ) : data.length > 0 ? (
                     data.map((row) => (
                         <TableRow key={row.month}>
-                        <TableCell className="font-medium">{row.month}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(row.inflow)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(row.outflow)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(row.net)}</TableCell>
+                          <TableCell className="font-medium">{row.monthLabel}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(row.openingBalance)}</TableCell>
+                          <TableCell className="text-right text-green-600">{formatCurrency(row.inflow)}</TableCell>
+                          <TableCell className="text-right text-red-600">{formatCurrency(row.outflow)}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCurrency(row.net)}</TableCell>
+                          <TableCell className="text-right font-bold">{formatCurrency(row.closingBalance)}</TableCell>
                         </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                        <TableCell colSpan={4} className="text-center h-24">No transaction data found for the selected period.</TableCell>
+                        <TableCell colSpan={6} className="text-center h-24">No transaction data found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
-                {!isLoading && data.length > 0 && (
-                    <TableFooter>
-                        <TableRow className="font-bold bg-muted/50 text-lg">
-                            <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatCurrency(totals.inflow)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(totals.outflow)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(totals.net)}</TableCell>
-                        </TableRow>
-                    </TableFooter>
-                )}
               </Table>
           </div>
         </CardContent>
