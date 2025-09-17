@@ -277,48 +277,48 @@ export default function ExpensesEntryPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
-                    <div className="space-y-1">
-                        <Label className="mb-2">Date</Label>
-                        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                        <PopoverTrigger asChild>
-                            <Button
-                            variant={"outline"}
-                            className={cn(
-                                "w-full sm:w-[240px] justify-start text-left font-normal",
-                                !date && "text-muted-foreground"
-                            )}
-                            >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {date ? format(date, "PPP") : <span>Pick a date</span>}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                            <Calendar
-                                mode="single"
-                                selected={date}
-                                onSelect={(selectedDate) => {
-                                    setDate(selectedDate);
-                                    setIsDatePickerOpen(false);
-                                }}
-                                initialFocus
-                            />
-                        </PopoverContent>
-                        </Popover>
-                    </div>
-                    <div className="space-y-1">
-                        <Label className="mb-2">Select Bank</Label>
-                        <Select value={selectedBank} onValueChange={setSelectedBank}>
-                            <SelectTrigger className="w-full sm:w-[280px]">
-                                <SelectValue placeholder="Select a bank account" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {bankAccounts.map(acc => (
-                                    <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-4">
+                      <div className="space-y-1">
+                          <Label className="mb-2">Date</Label>
+                          <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                          <PopoverTrigger asChild>
+                              <Button
+                              variant={"outline"}
+                              className={cn(
+                                  "w-[240px] justify-start text-left font-normal",
+                                  !date && "text-muted-foreground"
+                              )}
+                              >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {date ? format(date, "PPP") : <span>Pick a date</span>}
+                              </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                              <Calendar
+                                  mode="single"
+                                  selected={date}
+                                  onSelect={(selectedDate) => {
+                                      setDate(selectedDate);
+                                      setIsDatePickerOpen(false);
+                                  }}
+                                  initialFocus
+                              />
+                          </PopoverContent>
+                          </Popover>
+                      </div>
+                      <div className="space-y-1">
+                          <Label className="mb-2">Select Bank</Label>
+                          <Select value={selectedBank} onValueChange={setSelectedBank}>
+                              <SelectTrigger className="w-[280px]">
+                                  <SelectValue placeholder="Select a bank account" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  {bankAccounts.map(acc => (
+                                      <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                      </div>
                   </div>
                   <div className="text-right flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
                     <p className="text-muted-foreground">Total</p>
