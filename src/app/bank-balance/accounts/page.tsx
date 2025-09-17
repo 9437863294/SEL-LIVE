@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -17,6 +17,7 @@ import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase
 import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const initialFormState: Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'> = {
   bankName: '',
@@ -30,6 +31,8 @@ const initialFormState: Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPowe
 
 export default function ManageBanksPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+  
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -38,9 +41,19 @@ export default function ManageBanksPage() {
   const [formData, setFormData] = useState<Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'>>(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const canView = can('View', 'Bank Balance.Accounts');
+  const canAdd = can('Add', 'Bank Balance.Accounts');
+  const canEdit = can('Edit', 'Bank Balance.Accounts');
+  const canDelete = can('Delete', 'Bank Balance.Accounts');
+
   useEffect(() => {
+    if (authLoading) return;
+    if (!canView) {
+        setIsLoading(false);
+        return;
+    };
     fetchAccounts();
-  }, []);
+  }, [canView, authLoading]);
 
   const fetchAccounts = async () => {
     setIsLoading(true);
@@ -58,7 +71,6 @@ export default function ManageBanksPage() {
   const openDialog = (mode: 'add' | 'edit', account?: BankAccount) => {
     setDialogMode(mode);
     if (mode === 'edit' && account) {
-        // Ensure all fields are present, providing defaults if not
         const accountData = {
           bankName: account.bankName || '',
           shortName: account.shortName || '',
@@ -114,6 +126,35 @@ export default function ManageBanksPage() {
       }
   };
 
+  if (authLoading || (isLoading && canView)) {
+      return (
+          <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
+              <Skeleton className="h-10 w-64" />
+              <Skeleton className="h-96 w-full" />
+          </div>
+      )
+  }
+  
+  if (!canView) {
+      return (
+         <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Manage Banks</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                 <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
        <div className="mb-6">
@@ -131,7 +172,7 @@ export default function ManageBanksPage() {
       <Card>
         <CardHeader>
            <div className="flex justify-end">
-              <Button onClick={() => openDialog('add')}>
+              <Button onClick={() => openDialog('add')} disabled={!canAdd}>
                 <Plus className="mr-2 h-4 w-4" /> Add Bank
               </Button>
            </div>
@@ -168,8 +209,8 @@ export default function ManageBanksPage() {
                   <TableCell>{acc.branch}</TableCell>
                   <TableCell>{acc.ifsc}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => openDialog('edit', acc)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(acc.id)} className="ml-2"><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                    <Button variant="outline" size="sm" onClick={() => openDialog('edit', acc)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDelete(acc.id)} disabled={!canDelete} className="ml-2"><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
                   </TableCell>
                 </TableRow>
               ))) : (
