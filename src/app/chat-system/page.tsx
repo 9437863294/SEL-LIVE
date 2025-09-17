@@ -70,13 +70,13 @@ import {
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { CreateEventDialog } from '@/components/CreateEventDialog';
 import { GroupChatDetailsDialog } from '@/components/GroupChatDetailsDialog';
-
+import { ChatToast } from '@/components/ChatToast';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export default function ChatSystemPage() {
   const { user: currentUser } = useAuth();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -100,7 +100,8 @@ export default function ChatSystemPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
-  
+  const activeToasts = useRef<Map<string, string>>(new Map());
+
   const getCameraPermission = useCallback(async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast({
@@ -137,65 +138,75 @@ export default function ChatSystemPage() {
     
     const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id));
     
-    const unsubscribeChats = onSnapshot(q, async (querySnapshot) => {
+    const unsubscribeChats = onSnapshot(q, (querySnapshot) => {
         const userChats: Chat[] = [];
-        const allListeners: (()=>void)[] = [];
+        const listeners: (() => void)[] = [];
 
-        for (const chatDoc of querySnapshot.docs) {
+        querySnapshot.forEach((chatDoc) => {
             const chatData = { id: chatDoc.id, ...chatDoc.data() } as Chat;
             
-            if (chatData.type === 'one-to-one') {
-                const otherMemberId = chatData.members.find(id => id !== currentUser.id);
-                if (otherMemberId) {
-                    const userDocRef = doc(db, 'users', otherMemberId);
-                    const unsubUser = onSnapshot(userDocRef, (userDoc) => {
-                        if (userDoc.exists()) {
-                            const userData = userDoc.data() as User;
-                            setChats(prevChats => prevChats.map(c => {
-                                if (c.id === chatData.id) {
-                                    return {
-                                        ...c,
-                                        memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
-                                    };
-                                }
-                                return c;
-                            }));
-                        }
-                    });
-                    allListeners.push(unsubUser);
-                }
-            }
-            
             const messagesRef = collection(db, 'chats', chatData.id, 'messages');
-            const unsubUnread = onSnapshot(messagesRef, (messagesSnapshot) => {
-                const unreadCount = messagesSnapshot.docs.filter(doc => {
-                    const data = doc.data();
-                    return data.senderId !== currentUser.id && !data.readBy?.includes(currentUser.id);
-                }).length;
-                setUnreadCounts(prev => ({ ...prev, [chatData.id]: unreadCount }));
+            const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'), limit(1));
+
+            const unsubMessages = onSnapshot(messagesQuery, (messagesSnapshot) => {
+                if (!messagesSnapshot.empty) {
+                    const lastMessage = { id: messagesSnapshot.docs[0].id, ...messagesSnapshot.docs[0].data() } as Message;
+                    // Update chat with last message
+                    setChats(prevChats => {
+                        const chatIndex = prevChats.findIndex(c => c.id === chatData.id);
+                        if (chatIndex > -1) {
+                            const updatedChats = [...prevChats];
+                            updatedChats[chatIndex] = { ...updatedChats[chatIndex], lastMessage: lastMessage as any };
+                            return updatedChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
+                        }
+                        return prevChats;
+                    });
+                    
+                    const isNew = !messagesSnapshot.docs[0].metadata.hasPendingWrites;
+                    const isUnread = !lastMessage.readBy.includes(currentUser.id);
+
+                    if (isNew && isUnread && chatData.id !== selectedChat?.id && lastMessage.senderId !== currentUser.id) {
+                        const toastId = activeToasts.current.get(chatData.id);
+                        if(toastId) dismiss(toastId);
+
+                        const newToast = toast({
+                            duration: Infinity,
+                            component: (
+                                <ChatToast
+                                    chat={chatData}
+                                    latestMessage={lastMessage}
+                                    currentUser={currentUser}
+                                    onSend={async (message, file) => {
+                                      await handleSendMessage(undefined, file, undefined, chatData.id, message);
+                                    }}
+                                    onClose={() => dismiss(newToast.id)}
+                                />
+                            )
+                        });
+                        activeToasts.current.set(chatData.id, newToast.id);
+                    }
+                }
             });
 
-            allListeners.push(unsubUnread);
-            
+            listeners.push(unsubMessages);
             userChats.push(chatData);
-        }
+        });
 
         userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
 
         setChats(userChats);
         setIsLoadingChats(false);
-
-        // This is the cleanup function for all the listeners created in this snapshot callback
+        
         return () => {
-          allListeners.forEach(unsub => unsub());
+          listeners.forEach(unsub => unsub());
         };
     });
 
-    // The main cleanup function for the useEffect hook itself
     return () => {
       unsubscribeChats();
+      activeToasts.current.forEach(toastId => dismiss(toastId));
     };
-  }, [currentUser]);
+  }, [currentUser, toast, selectedChat, dismiss]);
   
    useEffect(() => {
     const cleanupStream = () => {
@@ -290,12 +301,14 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent, fileToSend?: File, eventDetails?: EventDetails) => {
+  const handleSendMessage = async (e?: React.FormEvent, fileToSend?: File, eventDetails?: EventDetails, chatId?: string, messageText?: string) => {
     e?.preventDefault();
     
+    const targetChatId = chatId || selectedChat?.id;
+    const finalMessage = messageText ?? newMessage;
     const file = fileToSend || attachment;
 
-    if ((!newMessage.trim() && !file && !eventDetails) || !currentUser || !selectedChat) return;
+    if ((!finalMessage.trim() && !file && !eventDetails) || !currentUser || !targetChatId) return;
 
     setIsSending(true);
     
@@ -305,7 +318,7 @@ export default function ChatSystemPage() {
         readBy: [currentUser.id]
     };
     
-    let lastMessageText = newMessage.trim();
+    let lastMessageText = finalMessage.trim();
 
     try {
         if (file) {
@@ -313,7 +326,7 @@ export default function ChatSystemPage() {
             const isVideo = file.type.startsWith('video/');
             const isAudio = file.type.startsWith('audio/');
             
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${file.name}`;
+            const storagePath = `chat-attachments/${targetChatId}/${Date.now()}-${file.name}`;
             const storageRef = ref(storage, storagePath);
             await uploadBytes(storageRef, file);
             const downloadURL = await getDownloadURL(storageRef);
@@ -328,9 +341,9 @@ export default function ChatSystemPage() {
                 type,
                 mediaUrl: downloadURL,
                 fileName: file.name,
-                content: newMessage.trim(), // Include text with attachment
+                content: finalMessage.trim(), // Include text with attachment
             };
-            lastMessageText = newMessage.trim() || file.name;
+            lastMessageText = finalMessage.trim() || file.name;
         } else if (eventDetails) {
             messageData = {
                 ...messageData,
@@ -343,11 +356,11 @@ export default function ChatSystemPage() {
             messageData = {
                 ...messageData,
                 type: 'text',
-                content: newMessage.trim(),
+                content: finalMessage.trim(),
             };
         }
 
-        const chatRef = doc(db, 'chats', selectedChat.id);
+        const chatRef = doc(db, 'chats', targetChatId);
         const messagesRef = collection(chatRef, 'messages');
 
         await addDoc(messagesRef, messageData);
@@ -360,11 +373,13 @@ export default function ChatSystemPage() {
             }
         });
 
-        setNewMessage('');
-        setAttachment(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        if (imageInputRef.current) imageInputRef.current.value = '';
-        if (audioInputRef.current) audioInputRef.current.value = '';
+        if (!chatId) { // Only clear form if it's the main chat input
+            setNewMessage('');
+            setAttachment(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            if (imageInputRef.current) imageInputRef.current.value = '';
+            if (audioInputRef.current) audioInputRef.current.value = '';
+        }
 
     } catch (error) {
         console.error("Error sending message:", error);
@@ -376,6 +391,13 @@ export default function ChatSystemPage() {
   
   const handleSelectChat = async (chat: Chat) => {
     setSelectedChat(chat);
+    
+    const toastId = activeToasts.current.get(chat.id);
+    if(toastId) {
+        dismiss(toastId);
+        activeToasts.current.delete(chat.id);
+    }
+    
     if (!currentUser) return;
     
     // This logic is simplified. For robust "mark as read", you'd fetch only unread docs.
