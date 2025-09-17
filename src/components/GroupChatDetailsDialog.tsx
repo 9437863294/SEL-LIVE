@@ -233,42 +233,39 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     }
   };
 
- const handleSaveChanges = async () => {
+  const handleSaveChanges = async () => {
     if (!chat) return;
     setIsSaving(true);
-    
+  
+    const updateData: {
+      groupName: string;
+      groupDescription: string;
+      groupPhotoURL?: string;
+    } = {
+      groupName: editedName,
+      groupDescription: editedDescription,
+    };
+  
     try {
-      let photoURL = chat.groupPhotoURL;
-
-      // Only upload a new photo if one has been selected
       if (newGroupPhoto) {
-        try {
-          const photoRef = ref(storage, `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`);
-          const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
-          photoURL = await getDownloadURL(uploadResult.ref);
-        } catch (uploadError) {
-          console.error("Photo upload failed:", uploadError);
-          toast({ title: 'Error', description: 'Failed to upload new group photo. Please try again.', variant: 'destructive' });
-          setIsSaving(false);
-          return;
-        }
+        const photoRef = ref(storage, `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`);
+        const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
+        updateData.groupPhotoURL = await getDownloadURL(uploadResult.ref);
       }
-      
-      const updateData = {
-        groupName: editedName,
-        groupDescription: editedDescription,
-        groupPhotoURL: photoURL,
-      };
-
+  
       await updateDoc(doc(db, 'chats', chat.id), updateData);
-
+  
       toast({ title: 'Success', description: 'Group details updated.' });
       setIsEditing(false);
       setNewGroupPhoto(null);
       setPhotoPreview(null);
     } catch (error) {
       console.error("Failed to save changes:", error);
-      toast({ title: 'Error', description: 'Failed to save changes. Please try again.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: 'Failed to save changes. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsSaving(false);
     }
