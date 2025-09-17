@@ -314,16 +314,19 @@ export default function ChatSystemPage() {
   
   const handleSelectChat = async (chat: Chat) => {
     setSelectedChat(chat);
-    if (!currentUser || (unreadCounts[chat.id] || 0) === 0) return;
+    if (!currentUser) return;
+    
+    const messagesRef = collection(db, 'chats', chat.id, 'messages');
+    const q = query(messagesRef);
+    const messagesSnapshot = await getDocs(q);
 
-    const unreadMessages = messages.filter(msg => msg.chatId === chat.id && !msg.readBy.includes(currentUser.id));
+    const unreadMessages = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
     
     if (unreadMessages.length === 0) return;
     
     const batch = writeBatch(db);
-    unreadMessages.forEach(msg => {
-        const msgRef = doc(db, 'chats', chat.id, 'messages', msg.id);
-        batch.update(msgRef, {
+    unreadMessages.forEach(doc => {
+        batch.update(doc.ref, {
             readBy: arrayUnion(currentUser.id)
         });
     });
@@ -374,8 +377,8 @@ export default function ChatSystemPage() {
     switch (message.type) {
         case 'image':
             return (
-                <div>
-                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName} className="max-w-xs rounded-lg my-2" />}
+                <div className="space-y-2">
+                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName} className="max-w-xs rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             );
