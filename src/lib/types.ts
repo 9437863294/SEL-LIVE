@@ -359,6 +359,13 @@ export type DpLogEntry = {
   amount: number;
 };
 
+export type InterestRateLogEntry = {
+  id: string;
+  fromDate: string;
+  toDate: string | null;
+  rate: number;
+};
+
 export type BankAccount = {
   id: string;
   bankName: string;
@@ -370,7 +377,7 @@ export type BankAccount = {
   ifsc: string;
   currentBalance: number;
   drawingPower: DpLogEntry[];
-  interestRateLog: { date: string; rate: number }[];
+  interestRateLog: InterestRateLogEntry[];
   openingUtilization: number;
   openingDate: string;
 };

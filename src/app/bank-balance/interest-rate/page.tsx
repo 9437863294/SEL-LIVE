@@ -11,9 +11,9 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import type { BankAccount, BankExpense } from '@/lib/types';
+import type { BankAccount, BankExpense, InterestRateLogEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
+import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc, subDays } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -22,8 +22,6 @@ import { cn } from '@/lib/utils';
 import type { DateRange } from 'react-day-picker';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-
-type RateLogEntry = { date: string; rate: number };
 
 interface DailyInterestLog {
     id: string;
@@ -53,7 +51,7 @@ export default function InterestRatePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Manage Rates Tab State
-  const [newRateEntries, setNewRateEntries] = useState<Record<string, { date: string; rate: string }>>({});
+  const [newRateEntries, setNewRateEntries] = useState<Record<string, { fromDate: string; rate: string }>>({});
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
   const [openAddForm, setOpenAddForm] = useState<string | null>(null);
 
@@ -84,7 +82,7 @@ export default function InterestRatePage() {
         .map(acc => ({
           ...acc,
           interestRateLog: Array.isArray(acc.interestRateLog) 
-            ? acc.interestRateLog.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) 
+            ? acc.interestRateLog.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime()) 
             : [],
         }));
       setAccounts(ccAccounts);
@@ -122,8 +120,8 @@ export default function InterestRatePage() {
             let runningBalance = account.openingUtilization || 0;
             
             const getRateForDate = (date: Date): number => {
-                const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.date), new Date(b.date)));
-                const rateEntry = sortedLog.find(entry => new Date(entry.date) <= date);
+                const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.fromDate), new Date(b.fromDate)));
+                const rateEntry = sortedLog.find(entry => new Date(entry.fromDate) <= date && (!entry.toDate || new Date(entry.toDate) >= date));
                 return rateEntry ? rateEntry.rate : 0;
             }
 
@@ -207,11 +205,11 @@ export default function InterestRatePage() {
     });
   }, [dailyLogs, dateRange, bankFilter]);
   
-  const handleNewRateChange = (accountId: string, field: 'date' | 'rate', value: string) => {
+  const handleNewRateChange = (accountId: string, field: 'fromDate' | 'rate', value: string) => {
     setNewRateEntries(prev => ({
         ...prev,
         [accountId]: {
-            ...(prev[accountId] || { date: '', rate: '' }),
+            ...(prev[accountId] || { fromDate: '', rate: '' }),
             [field]: value
         }
     }));
@@ -219,7 +217,7 @@ export default function InterestRatePage() {
 
   const handleAddRate = async (accountId: string) => {
     const newEntry = newRateEntries[accountId];
-    if (!newEntry || !newEntry.date || !newEntry.rate) {
+    if (!newEntry || !newEntry.fromDate || !newEntry.rate) {
         toast({ title: 'Validation Error', description: 'Please provide both a date and a rate.', variant: 'destructive' });
         return;
     }
@@ -229,18 +227,28 @@ export default function InterestRatePage() {
     
     setIsSaving(prev => ({...prev, [accountId]: true}));
     try {
-        const updatedRateLog: RateLogEntry[] = [
-            ...(account.interestRateLog || []),
-            { date: newEntry.date, rate: parseFloat(newEntry.rate) }
-        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const updatedRateLog: InterestRateLogEntry[] = [...(account.interestRateLog || [])];
+        
+        const latestEntry = updatedRateLog.find(entry => entry.toDate === null);
+        if(latestEntry) {
+            latestEntry.toDate = format(subDays(new Date(newEntry.fromDate), 1), 'yyyy-MM-dd');
+        }
+
+        updatedRateLog.push({
+            id: crypto.randomUUID(),
+            fromDate: newEntry.fromDate,
+            toDate: null,
+            rate: parseFloat(newEntry.rate)
+        });
+
+        updatedRateLog.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
 
         await updateDoc(doc(db, 'bankAccounts', accountId), { interestRateLog: updatedRateLog });
         toast({ title: 'Success', description: 'Interest Rate log updated successfully.' });
         
-        // Refresh local state without refetching everything
         setAccounts(prev => prev.map(acc => acc.id === accountId ? {...acc, interestRateLog: updatedRateLog } : acc));
-        setNewRateEntries(prev => ({ ...prev, [accountId]: { date: '', rate: '' } }));
-        setOpenAddForm(null); // Close form on success
+        setNewRateEntries(prev => ({ ...prev, [accountId]: { fromDate: '', rate: '' } }));
+        setOpenAddForm(null);
 
     } catch (error) {
         console.error("Error saving new rate entry:", error);
@@ -250,15 +258,20 @@ export default function InterestRatePage() {
     }
   };
   
-  const handleDeleteRate = async (accountId: string, entryToDelete: RateLogEntry) => {
+  const handleDeleteRate = async (accountId: string, entryToDelete: InterestRateLogEntry) => {
     const account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
 
     setIsSaving(prev => ({...prev, [accountId]: true}));
     try {
-        const updatedRateLog = (account.interestRateLog || []).filter(entry => 
-            entry.date !== entryToDelete.date || entry.rate !== entryToDelete.rate
-        );
+        let updatedRateLog = (account.interestRateLog || []).filter(entry => entry.id !== entryToDelete.id);
+        
+        if (entryToDelete.toDate === null) {
+            updatedRateLog.sort((a,b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
+            if (updatedRateLog.length > 0) {
+                updatedRateLog[0].toDate = null;
+            }
+        }
 
         await updateDoc(doc(db, 'bankAccounts', accountId), { interestRateLog: updatedRateLog });
         toast({ title: 'Success', description: 'Rate entry deleted.' });
@@ -353,12 +366,12 @@ export default function InterestRatePage() {
                                     <CollapsibleContent className="mb-4">
                                         <div className="flex items-end gap-2 p-4 border rounded-lg">
                                             <div className="flex-1 space-y-1">
-                                                <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
+                                                <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective From</label>
                                                 <Input 
                                                     id={`date-${acc.id}`}
                                                     type="date"
-                                                    value={newRateEntries[acc.id]?.date || ''}
-                                                    onChange={e => handleNewRateChange(acc.id, 'date', e.target.value)}
+                                                    value={newRateEntries[acc.id]?.fromDate || ''}
+                                                    onChange={e => handleNewRateChange(acc.id, 'fromDate', e.target.value)}
                                                     disabled={!canAdd}
                                                 />
                                             </div>
@@ -385,24 +398,26 @@ export default function InterestRatePage() {
                                         <Table>
                                             <TableHeader>
                                                 <TableRow>
-                                                    <TableHead>Effective Date</TableHead>
+                                                    <TableHead>Effective From</TableHead>
+                                                    <TableHead>Effective To</TableHead>
                                                     <TableHead>Rate (%)</TableHead>
                                                     <TableHead className="text-right">Action</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {acc.interestRateLog.length > 0 ? acc.interestRateLog.map((rate, index) => (
-                                                    <TableRow key={index}>
-                                                        <TableCell>{format(new Date(rate.date), 'dd MMM, yyyy')}</TableCell>
+                                                {acc.interestRateLog.length > 0 ? acc.interestRateLog.map((rate) => (
+                                                    <TableRow key={rate.id}>
+                                                        <TableCell>{format(new Date(rate.fromDate), 'dd MMM, yyyy')}</TableCell>
+                                                        <TableCell>{rate.toDate ? format(new Date(rate.toDate), 'dd MMM, yyyy') : 'Current'}</TableCell>
                                                         <TableCell>{rate.rate.toFixed(2)}%</TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)} disabled={!canDelete}>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)} disabled={!canDelete || acc.interestRateLog.length <=1}>
                                                                 <Trash2 className="h-4 w-4" />
                                                             </Button>
                                                         </TableCell>
                                                     </TableRow>
                                                 )) : (
-                                                    <TableRow><TableCell colSpan={3} className="text-center h-24">No interest rate history.</TableCell></TableRow>
+                                                    <TableRow><TableCell colSpan={4} className="text-center h-24">No interest rate history.</TableCell></TableRow>
                                                 )}
                                             </TableBody>
                                         </Table>
@@ -527,5 +542,3 @@ export default function InterestRatePage() {
     </div>
   );
 }
-
-    
