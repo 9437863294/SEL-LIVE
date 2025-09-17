@@ -42,7 +42,6 @@ import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -147,15 +146,15 @@ export default function ExpensesEntryPage() {
   };
 
   const removeExpense = (id: number) => {
-    setExpenses(prev => prev.filter(exp => exp.id !== id));
-     // If the removed item was the open one, open the first one if it exists
-    if (openCollapsibleId === id) {
-        const remainingExpenses = expenses.filter(exp => exp.id !== id);
-        if (remainingExpenses.length > 0) {
-            setOpenCollapsibleId(remainingExpenses[0].id);
-        } else {
-            // If no expenses are left, we add a new one to not have an empty state
-            addExpense();
+    const newExpenses = expenses.filter(exp => exp.id !== id);
+    if (newExpenses.length === 0) {
+        const newId = Date.now();
+        setExpenses([{...initialExpenseItem, id: newId}]);
+        setOpenCollapsibleId(newId);
+    } else {
+        setExpenses(newExpenses);
+        if (openCollapsibleId === id) {
+            setOpenCollapsibleId(newExpenses[0]?.id ?? null);
         }
     }
   };
@@ -290,10 +289,11 @@ export default function ExpensesEntryPage() {
                <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
                   <div className="flex flex-wrap items-end gap-4">
                       <div className="space-y-2">
-                          <Label>Date</Label>
+                          <Label htmlFor="payment-date">Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                               <PopoverTrigger asChild>
                                   <Button
+                                  id="payment-date"
                                   variant={"outline"}
                                   className={cn(
                                       "w-[240px] justify-start text-left font-normal",
@@ -318,9 +318,9 @@ export default function ExpensesEntryPage() {
                           </Popover>
                       </div>
                       <div className="space-y-2">
-                          <Label>Select Bank</Label>
+                          <Label htmlFor="bank-select">Select Bank</Label>
                           <Select value={selectedBank} onValueChange={setSelectedBank}>
-                              <SelectTrigger className="w-[280px]">
+                              <SelectTrigger id="bank-select" className="w-[280px]">
                                   <SelectValue placeholder="Select a bank account" />
                               </SelectTrigger>
                               <SelectContent>
@@ -355,20 +355,19 @@ export default function ExpensesEntryPage() {
                       </CollapsibleTrigger>
                       <div className="flex items-center gap-4">
                          <span className="font-semibold text-lg">{formatCurrency(expense.amount)}</span>
+                         <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => removeExpense(expense.id)}>
+                            <Trash2 className="h-4 w-4" />
+                         </Button>
                       </div>
                     </div>
                     <CollapsibleContent className="mt-4 space-y-4">
-                      <div className="relative space-y-2">
+                       <div className="space-y-2">
                         <Label>Description</Label>
                         <Textarea 
                           placeholder="e.g. Office supplies" 
                           value={expense.description} 
                           onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
-                          className="pr-12"
                         />
-                        <Button variant="destructive" size="icon" className="absolute top-7 right-2 h-8 w-8" onClick={() => removeExpense(expense.id)}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
                       </div>
                       
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -547,3 +546,5 @@ export default function ExpensesEntryPage() {
     </div>
   );
 }
+
+    
