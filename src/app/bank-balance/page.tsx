@@ -50,17 +50,16 @@ export default function BankBalanceDashboard() {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
     };
     
+    const getLatestDp = (account: BankAccount) => {
+        if (!account.drawingPower || account.drawingPower.length === 0) return 0;
+        // The array is sorted on write, so the first element is the latest.
+        return account.drawingPower[0].amount || 0;
+    };
+    
     const { totalDrawingPower, totalCurrentBalance, utilization } = (() => {
         const ccAccounts = accounts.filter(acc => acc.accountType === 'Cash Credit');
         
-        const totalDP = ccAccounts.reduce((sum, acc) => {
-            if (!acc.drawingPower || acc.drawingPower.length === 0) return sum;
-            // Get the most recent DP entry
-            const latestDp = acc.drawingPower.reduce((latest, entry) => {
-                return new Date(entry.date) > new Date(latest.date) ? entry : latest;
-            });
-            return sum + (latestDp.amount || 0);
-        }, 0);
+        const totalDP = ccAccounts.reduce((sum, acc) => sum + getLatestDp(acc), 0);
 
         const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
@@ -144,6 +143,12 @@ export default function BankBalanceDashboard() {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {accounts.map(account => {
                         const isCC = account.accountType === 'Cash Credit';
+                        let displayBalance = account.currentBalance;
+                        if(isCC) {
+                            const latestDp = getLatestDp(account);
+                            displayBalance = latestDp - account.currentBalance;
+                        }
+
                         return (
                             <Card key={account.id} className={
                               account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
@@ -159,7 +164,7 @@ export default function BankBalanceDashboard() {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <p className="text-3xl font-bold mb-2">{formatCurrency(account.currentBalance)}</p>
+                                    <p className="text-3xl font-bold mb-2">{formatCurrency(displayBalance)}</p>
                                 </CardContent>
                             </Card>
                         );
