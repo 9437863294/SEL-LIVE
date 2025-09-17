@@ -465,7 +465,7 @@ export default function ChatSystemPage() {
                     {message.eventDetails.location && <p className="text-xs"><strong>Location:</strong> {message.eventDetails.location}</p>}
                     {message.eventDetails.isWhatsappCall && (
                         <Button asChild variant="link" className="p-0 h-auto text-xs">
-                           <a href="https://call.whatsapp.com/video/Lq2iC2f5b6g7H8i9J0k1L2" target="_blank" rel="noopener noreferrer">Join WhatsApp Call</a>
+                           <a href="https://call.whatsapp.com/video/Lq2iC2f5b6g7H8i9J0k1L2" target="_blank" rel="noopener noreferrer" className="text-inherit">Join WhatsApp Call</a>
                         </Button>
                     )}
                 </div>
