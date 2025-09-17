@@ -16,16 +16,19 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import type { Chat, User } from '@/lib/types';
 import { useAuth } from './auth/AuthProvider';
-import { MoreHorizontal, Shield, UserPlus, Edit, Trash2, X, Image, Link as LinkIcon, FileText, Loader2, Search } from 'lucide-react';
+import { MoreHorizontal, Shield, UserPlus, Edit, Trash2, X, Image as ImageIcon, Link as LinkIcon, FileText, Loader2, Search, Camera } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove, writeBatch, getDocs, collection } from 'firebase/firestore';
+import { db, storage } from '@/lib/firebase';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Input } from './ui/input';
 import { Checkbox } from './ui/checkbox';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 
 interface AddMembersDialogProps {
@@ -41,7 +44,7 @@ function AddMembersDialog({ isOpen, onOpenChange, currentMembers, onAddMembers }
     const [searchTerm, setSearchTerm] = useState('');
 
     const usersToAdd = useMemo(() => {
-        if (!allUsers) return []; // Guard against undefined allUsers
+        if (!allUsers) return []; 
         return allUsers.filter(user => 
             !currentMembers.includes(user.id) &&
             (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -128,7 +131,22 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
   const { toast } = useToast();
   const { users } = useAuth(); 
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [editedDescription, setEditedDescription] = useState('');
+  const [newGroupPhoto, setNewGroupPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (chat && chat.type === 'group') {
+      setEditedName(chat.groupName || '');
+      setEditedDescription(chat.groupDescription || '');
+      setNewGroupPhoto(null);
+      setPhotoPreview(null);
+    }
+  }, [chat]);
+  
   const getInitials = (name?: string) => {
     if (!name) return '??';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -175,11 +193,10 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
         await updateDoc(chatRef, {
             members: arrayRemove(currentUser.id),
             memberDetails: arrayRemove(memberToRemove),
-            // If the user leaving is also an admin, remove them from admins list
             groupAdmins: arrayRemove(currentUser.id),
         });
         toast({ title: 'Success', description: `You have left the group.` });
-        onOpenChange(false); // Close the dialog after leaving
+        onOpenChange(false);
     } catch(e) {
         toast({ title: 'Error', description: 'Could not leave group.', variant: 'destructive' });
     }
@@ -204,11 +221,49 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     }
   };
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setNewGroupPhoto(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    setIsSaving(true);
+    let photoURL = chat.groupPhotoURL;
+    try {
+      if (newGroupPhoto) {
+        const photoRef = ref(storage, `group-avatars/${chat.id}/${newGroupPhoto.name}`);
+        await uploadBytes(photoRef, newGroupPhoto);
+        photoURL = await getDownloadURL(photoRef);
+      }
+      
+      await updateDoc(doc(db, 'chats', chat.id), {
+        groupName: editedName,
+        groupDescription: editedDescription,
+        groupPhotoURL: photoURL,
+      });
+
+      toast({ title: 'Success', description: 'Group details updated.' });
+      setIsEditing(false);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to save changes.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-md p-0 gap-0">
-          <DialogHeader className="p-4 flex-row items-center space-x-4 space-y-0">
+          <DialogHeader className="p-4 flex-row items-center space-x-4 space-y-0 border-b">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenChange(false)}>
                 <X className="h-5 w-5" />
             </Button>
@@ -216,24 +271,37 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
           </DialogHeader>
           <ScrollArea className="max-h-[80vh]">
               <div className="flex flex-col items-center gap-2 p-6 border-b">
-                  <Avatar className="h-24 w-24">
-                    <AvatarImage src={chat.groupPhotoURL} />
-                    <AvatarFallback className="text-4xl">{getInitials(chat.groupName)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex items-center gap-2">
-                      <h1 className="text-2xl font-semibold">{chat.groupName}</h1>
-                      {isAdmin && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-4 w-4" /></Button>
-                      )}
+                  <div className="relative">
+                    <Avatar className="h-24 w-24">
+                        <AvatarImage src={photoPreview || chat.groupPhotoURL} />
+                        <AvatarFallback className="text-4xl">{getInitials(editedName)}</AvatarFallback>
+                    </Avatar>
+                    {isEditing && (
+                      <>
+                        <Input id="group-photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+                        <Label htmlFor="group-photo-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-1.5 cursor-pointer hover:bg-primary/90">
+                            <Camera className="h-4 w-4" />
+                        </Label>
+                      </>
+                    )}
                   </div>
+
+                  {isEditing ? (
+                    <Input className="text-2xl font-semibold text-center h-auto border-0 focus-visible:ring-1" value={editedName} onChange={(e) => setEditedName(e.target.value)} />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-semibold">{chat.groupName}</h1>
+                    </div>
+                  )}
                   <p className="text-sm text-muted-foreground">Group · {chat.memberDetails.length} members</p>
               </div>
               
               <div className="p-6 space-y-4 border-b">
                   <div className="flex items-center justify-between">
-                      <p className="text-muted-foreground">{chat.groupDescription || "Add group description"}</p>
-                      {isAdmin && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-4 w-4" /></Button>
+                      {isEditing ? (
+                          <Textarea placeholder="Add group description" value={editedDescription} onChange={(e) => setEditedDescription(e.target.value)} />
+                      ) : (
+                          <p className="text-muted-foreground">{chat.groupDescription || "Add group description"}</p>
                       )}
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -244,22 +312,17 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
               <div className="p-6 border-b">
                   <div className="flex justify-between items-center cursor-pointer">
                       <div className="flex items-center gap-3">
-                          <Image className="h-5 w-5 text-muted-foreground" />
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
                           <span>Media, links and docs</span>
                       </div>
-                      <Badge variant="secondary">7</Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-3 gap-1">
-                      <div className="relative aspect-square bg-muted rounded-md overflow-hidden">
-                        <img src="https://picsum.photos/seed/1/200/200" alt="media" className="h-full w-full object-cover" />
-                      </div>
+                      <Badge variant="secondary">0</Badge>
                   </div>
               </div>
 
               <div className="p-6">
-                  <h4 className="mb-2 text-sm font-medium text-primary">Members</h4>
+                  <h4 className="mb-2 text-sm font-medium text-primary">{chat.memberDetails.length} Members</h4>
                   <div className="space-y-1">
-                      {isAdmin && (
+                      {isAdmin && !isEditing && (
                           <div onClick={() => setIsAddMembersOpen(true)} className="flex items-center p-2 gap-3 cursor-pointer rounded-md hover:bg-muted">
                               <div className="h-10 w-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center">
                                   <UserPlus className="h-5 w-5" />
@@ -292,7 +355,7 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
                                           </Tooltip>
                                         </TooltipProvider>
                                       )}
-                                      {isAdmin && member.id !== currentUser.id && (
+                                      {isAdmin && member.id !== currentUser.id && !isEditing && (
                                           <DropdownMenu>
                                               <DropdownMenuTrigger asChild>
                                                   <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -320,7 +383,7 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
                   </div>
               </div>
           </ScrollArea>
-          <DialogFooter className="p-4 border-t">
+          <DialogFooter className="p-4 border-t flex justify-between">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                  <Button variant="destructive">Leave Group</Button>
@@ -338,6 +401,20 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            {isAdmin && (
+              isEditing ? (
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+                  <Button onClick={handleSaveChanges} disabled={isSaving}>
+                      {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" onClick={() => setIsEditing(true)}>
+                  <Edit className="mr-2 h-4 w-4" /> Edit
+                </Button>
+              )
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
