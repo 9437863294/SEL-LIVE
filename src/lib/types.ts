@@ -151,6 +151,7 @@ export type Project = {
   location: string;
   siteInCharge: string;
   status: 'Active' | 'Inactive';
+  billingRequired?: boolean;
 };
 
 export type AccountHead = {

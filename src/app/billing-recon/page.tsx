@@ -7,6 +7,7 @@ import {
   Home,
   Folder,
   ShieldAlert,
+  Settings,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ interface BillingReconCardProps {
     text: string;
     href: string;
     description: string;
+    disabled?: boolean;
   };
 }
 
@@ -43,7 +45,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
@@ -58,7 +60,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -103,6 +105,13 @@ export default function BillingReconPage() {
       href: `/billing-recon/${slugify(project.projectName)}`,
       description: `Manage all ${project.projectName}-related billing tasks.`
   }));
+
+  const settingsItem = {
+    icon: Settings,
+    text: 'Project Billing Settings',
+    href: '/billing-recon/settings',
+    description: 'Configure billing status for each project.'
+  };
   
   if (isAuthLoading || (isLoading && canViewModule)) {
       return (
@@ -152,6 +161,7 @@ export default function BillingReconPage() {
           {projectItems.map((item) => (
             <BillingReconCard key={item.text} item={item} />
           ))}
+          <BillingReconCard item={settingsItem} />
       </div>
     </div>
   );
