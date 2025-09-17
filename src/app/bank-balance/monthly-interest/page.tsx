@@ -13,7 +13,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, startOfMonth, subMonths, eachMonthOfInterval, compareDesc } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, eachDayOfInterval, compareDesc } from 'date-fns';
 
 type MonthlyInterestData = {
   [accountId: string]: {
@@ -40,7 +40,8 @@ export default function MonthlyInterestPage() {
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses'))
       ]);
-      setAccounts(accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount)));
+      const fetchedAccounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
+       setAccounts(fetchedAccounts.sort((a,b) => a.shortName.localeCompare(b.shortName)));
       setAllTransactions(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
     } catch (error) {
       console.error("Error fetching base data:", error);
@@ -50,59 +51,75 @@ export default function MonthlyInterestPage() {
   
   const calculatedProjectedInterest = useMemo(() => {
     const monthData: Record<string, number> = {};
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const selectedMonthStart = startOfMonth(new Date(year, month - 1));
+    const selectedMonthEnd = endOfMonth(new Date(year, month - 1));
+
     ccAccounts.forEach(account => {
         if (!account.openingDate) return;
+        
+        const openingDate = new Date(account.openingDate);
+        if(selectedMonthEnd < openingDate) return; // Skip if month is before account opening
 
         let runningBalance = account.openingUtilization || 0;
+        
         const getRateForDate = (date: Date): number => {
             const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.date), new Date(b.date)));
             const rateEntry = sortedLog.find(entry => new Date(entry.date) <= date);
             return rateEntry ? rateEntry.rate : 0;
         }
+        
+        // Calculate balance up to the start of the selected month
+        const preInterval = { start: openingDate, end: subMonths(selectedMonthStart, 1) };
+        if (preInterval.end >= preInterval.start) {
+            const preDays = eachDayOfInterval(preInterval);
+            preDays.forEach(day => {
+                const dayString = format(day, 'yyyy-MM-dd');
+                const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
+                const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+                const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
+                runningBalance += receipts - expenses + contra;
+            });
+        }
+        
+        let monthInterest = 0;
+        const daysInSelectedMonth = eachDayOfInterval({ start: selectedMonthStart, end: selectedMonthEnd });
 
-        const interval = { start: startOfMonth(new Date(account.openingDate)), end: new Date() };
-        const days = eachMonthOfInterval(interval).flatMap(monthStart => {
-          const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-          const daysInMonth = Array.from({length: monthEnd.getDate()}, (_, i) => new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1));
-          return daysInMonth;
-        });
-
-        days.forEach(day => {
+        daysInSelectedMonth.forEach(day => {
+            if(day < openingDate) return; // Don't calculate before opening date
+            
             const dayString = format(day, 'yyyy-MM-dd');
-            const transactionsToday = allTransactions.filter(t => 
-                t.accountId === account.id && 
-                format(t.date.toDate(), 'yyyy-MM-dd') === dayString
-            );
-
-            const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+            const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
+            
             const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+            const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
             const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
 
             const closingBalance = runningBalance + receipts - expenses + contra;
             
             const rate = getRateForDate(day);
             const dailyInterest = (closingBalance * (rate / 100)) / 365;
-
-            const monthKey = format(day, 'yyyy-MM');
-            if(monthKey === selectedMonth) {
-              if(!monthData[account.id]) monthData[account.id] = 0;
-              monthData[account.id] += dailyInterest;
-            }
-
+            
+            monthInterest += dailyInterest;
             runningBalance = closingBalance;
         });
+
+        monthData[account.id] = monthInterest;
     });
     return monthData;
   }, [ccAccounts, allTransactions, selectedMonth]);
+
 
   useEffect(() => {
     fetchBaseData();
   }, [fetchBaseData]);
   
   useEffect(() => {
-    if (isLoading) return;
+    if (ccAccounts.length === 0 && !isLoading) return;
     
     const fetchInterestData = async () => {
+        setIsLoading(true);
         const docRef = doc(db, 'monthlyInterest', selectedMonth);
         const docSnap = await getDoc(docRef);
         
@@ -113,7 +130,7 @@ export default function MonthlyInterestPage() {
 
         const newInterestData = ccAccounts.reduce((acc, account) => {
             acc[account.id] = {
-                projected: existingData[account.id]?.projected ?? calculatedProjectedInterest[account.id] ?? 0,
+                projected: calculatedProjectedInterest[account.id] ?? 0,
                 actual: existingData[account.id]?.actual ?? 0,
             };
             return acc;
@@ -125,14 +142,15 @@ export default function MonthlyInterestPage() {
 
     fetchInterestData();
 
-  }, [selectedMonth, accounts, isLoading, calculatedProjectedInterest, ccAccounts]);
+  }, [selectedMonth, ccAccounts, isLoading, calculatedProjectedInterest]);
   
   const handleInterestChange = (accountId: string, field: 'projected' | 'actual', value: string) => {
+      const numValue = parseFloat(value);
       setInterestData(prev => ({
           ...prev,
           [accountId]: {
               ...(prev[accountId] || { projected: 0, actual: 0 }),
-              [field]: parseFloat(value) || 0
+              [field]: isNaN(numValue) ? 0 : numValue
           }
       }));
   };
@@ -158,6 +176,11 @@ export default function MonthlyInterestPage() {
       label: format(date, 'MMMM yyyy'),
     };
   });
+  
+  const formatCurrency = (amount: number) => {
+    if(isNaN(amount)) return '₹ 0.00';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -201,28 +224,42 @@ export default function MonthlyInterestPage() {
                         <div className="col-span-1">Actual Interest</div>
                     </div>
                      <div className="divide-y">
-                        {ccAccounts.map(account => (
+                        {ccAccounts.length > 0 ? ccAccounts.map(account => (
                             <div key={account.id} className="grid grid-cols-3 gap-4 items-center py-3 px-4">
                                 <span className="font-medium col-span-1">{account.bankName} ({account.shortName})</span>
                                 <div className="col-span-1">
                                     <Input 
                                         type="number" 
-                                        value={interestData[account.id]?.projected || ''}
+                                        value={interestData[account.id]?.projected || 0}
                                         onChange={(e) => handleInterestChange(account.id, 'projected', e.target.value)}
                                         placeholder="0.00"
+                                        className="font-medium"
                                     />
                                 </div>
                                  <div className="col-span-1">
                                     <Input 
                                         type="number" 
-                                        value={interestData[account.id]?.actual || ''}
+                                        value={interestData[account.id]?.actual || 0}
                                         onChange={(e) => handleInterestChange(account.id, 'actual', e.target.value)}
                                         placeholder="0.00"
                                     />
                                 </div>
                             </div>
-                        ))}
+                        )) : (
+                            <p className="text-center text-muted-foreground py-10">No Cash Credit accounts configured.</p>
+                        )}
                      </div>
+                      {ccAccounts.length > 0 && (
+                        <div className="grid grid-cols-3 gap-4 font-bold text-lg border-t pt-4 px-4">
+                            <span className="col-span-1">Total</span>
+                            <span className="col-span-1">
+                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + d.projected, 0))}
+                            </span>
+                             <span className="col-span-1">
+                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + d.actual, 0))}
+                            </span>
+                        </div>
+                    )}
                 </div>
             )}
         </CardContent>
