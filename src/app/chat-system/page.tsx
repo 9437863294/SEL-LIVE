@@ -140,7 +140,7 @@ export default function ChatSystemPage() {
     
     const unsubscribeChats = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
-        const listeners: (() => void)[] = [];
+        const allListeners: (()=>void)[] = [];
 
         for (const chatDoc of querySnapshot.docs) {
             const chatData = { id: chatDoc.id, ...chatDoc.data() } as Chat;
@@ -163,17 +163,17 @@ export default function ChatSystemPage() {
                             }));
                         }
                     });
-                    listeners.push(unsubUser);
+                    allListeners.push(unsubUser);
                 }
             }
             
             const messagesRef = collection(db, 'chats', chatData.id, 'messages');
-            const unsubUnread = onSnapshot(messagesRef, (messagesSnapshot) => {
-                if(!currentUser) return;
-                const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
-                setUnreadCounts(prev => ({ ...prev, [chatData.id]: unreadCount }));
+            const unreadQuery = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
+
+            const unsubUnread = onSnapshot(unreadQuery, (messagesSnapshot) => {
+                setUnreadCounts(prev => ({ ...prev, [chatData.id]: messagesSnapshot.size }));
             });
-            listeners.push(unsubUnread);
+            allListeners.push(unsubUnread);
             
             userChats.push(chatData);
         }
@@ -185,7 +185,7 @@ export default function ChatSystemPage() {
 
         // This is the cleanup function for all the listeners created in this snapshot callback
         return () => {
-          listeners.forEach(unsub => unsub());
+          allListeners.forEach(unsub => unsub());
         };
     });
 
@@ -262,12 +262,13 @@ export default function ChatSystemPage() {
             ],
             lastMessage: {
                 text: 'Chat created',
-                senderId: '',
+                senderId: 'system',
                 timestamp: serverTimestamp(),
-            }
+            },
+            createdAt: serverTimestamp(),
         };
         const newChatRef = await addDoc(collection(db, 'chats'), newChatData);
-        const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }}
+        const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }, createdAt: new Date() }
         handleSelectChat(newChat as Chat);
     }
   };
@@ -375,11 +376,12 @@ export default function ChatSystemPage() {
     setSelectedChat(chat);
     if (!currentUser) return;
     
+    // This logic is simplified. For robust "mark as read", you'd fetch only unread docs.
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
+    const q = query(messagesRef);
     const snapshot = await getDocs(q);
     
-    const unreadDocs = snapshot.docs;
+    const unreadDocs = snapshot.docs.filter(d => !d.data().readBy.includes(currentUser.id));
 
     if (unreadDocs.length > 0) {
       const batch = writeBatch(db);
@@ -589,11 +591,15 @@ export default function ChatSystemPage() {
                                 const isSender = message.senderId === currentUser?.id;
                                 if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
                                 
+                                const senderDetails = selectedChat.memberDetails.find(m => m.id === message.senderId);
                                 const isReadByAll = selectedChat.type === 'group' ? message.readBy.length >= selectedChat.members.length - 1 : message.readBy.length > 1;
 
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
                                         <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                            {!isSender && selectedChat.type === 'group' && (
+                                                <p className="text-xs font-semibold text-primary mb-1">{senderDetails?.name || 'Unknown User'}</p>
+                                            )}
                                             {renderMessageContent(message)}
                                             <div className="flex items-center justify-end gap-1 mt-1">
                                                 {message.timestamp?.toDate && (
