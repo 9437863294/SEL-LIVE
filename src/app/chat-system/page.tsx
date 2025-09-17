@@ -39,6 +39,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 
 export default function ChatSystemPage() {
@@ -61,44 +62,58 @@ export default function ChatSystemPage() {
     
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
+        const unreadListeners: (() => void)[] = [];
+
         querySnapshot.forEach((doc) => {
             userChats.push({ id: doc.id, ...doc.data() } as Chat);
         });
         userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
 
-        for (const chat of userChats) {
-            // Set up listeners for member details if it's a one-to-one chat
-            if (chat.type === 'one-to-one') {
-                const otherMemberId = chat.members.find(id => id !== currentUser.id);
-                if (otherMemberId) {
-                    const userDocRef = doc(db, 'users', otherMemberId);
-                    onSnapshot(userDocRef, (userDoc) => {
-                        if (userDoc.exists()) {
-                            const userData = userDoc.data() as User;
-                            setChats(prevChats => prevChats.map(c => {
-                                if (c.id === chat.id) {
-                                    return {
-                                        ...c,
-                                        memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
-                                    };
-                                }
-                                return c;
-                            }));
-                        }
-                    });
+        const chatPromises = userChats.map(chat => {
+            return new Promise<void>(resolve => {
+                // Set up listeners for member details if it's a one-to-one chat
+                if (chat.type === 'one-to-one') {
+                    const otherMemberId = chat.members.find(id => id !== currentUser.id);
+                    if (otherMemberId) {
+                        const userDocRef = doc(db, 'users', otherMemberId);
+                        const unsubUser = onSnapshot(userDocRef, (userDoc) => {
+                            if (userDoc.exists()) {
+                                const userData = userDoc.data() as User;
+                                setChats(prevChats => prevChats.map(c => {
+                                    if (c.id === chat.id) {
+                                        return {
+                                            ...c,
+                                            memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
+                                        };
+                                    }
+                                    return c;
+                                }));
+                            }
+                        });
+                        // We don't store this unsubscribe, as it's for another user's presence, not chat data
+                    }
                 }
-            }
 
-            // Set up listeners for unread messages count
-            const messagesRef = collection(db, 'chats', chat.id, 'messages');
-            const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
-            onSnapshot(unreadQuery, (unreadSnapshot) => {
-                setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadSnapshot.size }));
+                // Set up listeners for unread messages count
+                const messagesRef = collection(db, 'chats', chat.id, 'messages');
+                const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
+                const unsubUnread = onSnapshot(unreadQuery, (unreadSnapshot) => {
+                    setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadSnapshot.size }));
+                });
+                unreadListeners.push(unsubUnread);
+                resolve();
             });
-        }
-        
-        setChats(userChats);
-        setIsLoadingChats(false);
+        });
+
+        Promise.all(chatPromises).then(() => {
+            setChats(userChats);
+            setIsLoadingChats(false);
+        });
+
+        return () => {
+          unsubscribe();
+          unreadListeners.forEach(unsub => unsub());
+        };
     });
 
     return () => unsubscribe();
@@ -138,7 +153,7 @@ export default function ChatSystemPage() {
     );
 
     if (existingChat) {
-        setSelectedChat(existingChat);
+        handleSelectChat(existingChat);
     } else {
         // Create a new chat
         const newChatData = {
@@ -158,7 +173,7 @@ export default function ChatSystemPage() {
         // We can't immediately get the server timestamp, so we'll use a local new Date() for immediate display.
         // The onSnapshot listener will soon update it with the real server time.
         const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }}
-        setSelectedChat(newChat as Chat);
+        handleSelectChat(newChat as Chat);
     }
   };
 
@@ -256,7 +271,8 @@ export default function ChatSystemPage() {
                         const otherMember = getOtherMember(chat);
                         const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
                         const chatAvatar = chat.type === 'group' ? undefined : otherMember?.photoURL;
-                        const hasUnread = (unreadCounts[chat.id] || 0) > 0;
+                        const unreadCount = unreadCounts[chat.id] || 0;
+                        const hasUnread = unreadCount > 0;
 
                         return (
                             <div 
@@ -275,9 +291,14 @@ export default function ChatSystemPage() {
                                     <p className={cn("font-semibold truncate", hasUnread && "font-bold text-primary")}>{chatName}</p>
                                     <p className="text-xs text-muted-foreground truncate">{chat.lastMessage?.text}</p>
                                 </div>
-                                {chat.lastMessage?.timestamp?.toDate && (
-                                     <p className="text-xs text-muted-foreground self-start">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
-                                )}
+                                <div className="flex flex-col items-end self-start">
+                                    {chat.lastMessage?.timestamp?.toDate && (
+                                        <p className="text-xs text-muted-foreground">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
+                                    )}
+                                    {hasUnread && (
+                                        <Badge className="mt-1 h-5 w-5 p-0 flex items-center justify-center">{unreadCount}</Badge>
+                                    )}
+                                </div>
                             </div>
                         )
                     })
@@ -363,3 +384,4 @@ export default function ChatSystemPage() {
     </>
   );
 }
+
