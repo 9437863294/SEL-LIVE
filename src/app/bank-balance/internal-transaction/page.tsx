@@ -107,7 +107,7 @@ export default function InternalTransactionPage() {
                 const debitData: Omit<BankExpense, 'id'> = {
                     date: Timestamp.fromDate(date),
                     accountId: item.fromAccountId,
-                    description: `Transfer to ${toAccountData.bankName} - ${toAccountData.accountNumber}`,
+                    description: `Transfer to ${toAccountData.shortName} - ${toAccountData.bankName}`,
                     amount: item.amount,
                     type: 'Debit',
                     isContra: true,
@@ -120,7 +120,7 @@ export default function InternalTransactionPage() {
                 const creditData: Omit<BankExpense, 'id'> = {
                     date: Timestamp.fromDate(date),
                     accountId: item.toAccountId,
-                    description: `Transfer from ${fromAccountData.bankName} - ${fromAccountData.accountNumber}`,
+                    description: `Transfer from ${fromAccountData.shortName} - ${fromAccountData.bankName}`,
                     amount: item.amount,
                     type: 'Credit', // This will be a credit to the bank expenses log, but a credit to the account
                     isContra: true,
@@ -205,7 +205,7 @@ export default function InternalTransactionPage() {
                             <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                             <SelectContent>
                               {bankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.bankName} - {acc.shortName}</SelectItem>
+                                <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -216,7 +216,7 @@ export default function InternalTransactionPage() {
                             <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                             <SelectContent>
                               {bankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.bankName} - {acc.shortName}</SelectItem>
+                                <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -263,4 +263,3 @@ export default function InternalTransactionPage() {
     </div>
   );
 }
-

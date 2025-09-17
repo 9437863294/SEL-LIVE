@@ -42,7 +42,6 @@ import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -244,16 +243,16 @@ export default function ExpensesEntryPage() {
               <CardDescription>Enter individual expenses for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex flex-col">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
+                    <div className="space-y-1">
                         <Label className="mb-2">Date</Label>
                         <Popover>
                         <PopoverTrigger asChild>
                             <Button
                             variant={"outline"}
                             className={cn(
-                                "w-[240px] justify-start text-left font-normal",
+                                "w-full sm:w-[240px] justify-start text-left font-normal",
                                 !date && "text-muted-foreground"
                             )}
                             >
@@ -266,21 +265,21 @@ export default function ExpensesEntryPage() {
                         </PopoverContent>
                         </Popover>
                     </div>
-                    <div className="flex flex-col">
+                    <div className="space-y-1">
                         <Label className="mb-2">Select Bank</Label>
                         <Select value={selectedBank} onValueChange={setSelectedBank}>
-                            <SelectTrigger className="w-[280px]">
+                            <SelectTrigger className="w-full sm:w-[280px]">
                                 <SelectValue placeholder="Select a bank account" />
                             </SelectTrigger>
                             <SelectContent>
                                 {bankAccounts.map(acc => (
-                                    <SelectItem key={acc.id} value={acc.id}>{acc.accountName} - {acc.bankName}</SelectItem>
+                                    <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
+                  <div className="text-right flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
                     <p className="text-muted-foreground">Total</p>
                     <p className="text-2xl font-bold">
                         {formatCurrency(totalAmount)}
@@ -378,7 +377,7 @@ export default function ExpensesEntryPage() {
                             <SelectContent>
                                 <SelectItem value="all">All Banks</SelectItem>
                                 {bankAccounts.map(acc => (
-                                    <SelectItem key={acc.id} value={acc.id}>{acc.accountName} - {acc.bankName}</SelectItem>
+                                    <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
@@ -410,7 +409,7 @@ export default function ExpensesEntryPage() {
                                     return (
                                         <TableRow key={entry.id}>
                                             <TableCell>{format(entry.date.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                            <TableCell>{bank?.accountName || 'N/A'}</TableCell>
+                                            <TableCell>{bank?.shortName || 'N/A'}</TableCell>
                                             <TableCell>{entry.description}</TableCell>
                                             <TableCell>{entry.paymentRequestRefNo}</TableCell>
                                             <TableCell>{entry.utrNumber}</TableCell>
