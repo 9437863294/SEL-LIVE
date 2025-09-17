@@ -15,6 +15,7 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 type DpLogEntry = { date: string; amount: number };
 
@@ -24,6 +25,7 @@ export default function DpManagementPage() {
   const [newDpEntries, setNewDpEntries] = useState<Record<string, { date: string; amount: string }>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
+  const [openAddForm, setOpenAddForm] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -83,6 +85,7 @@ export default function DpManagementPage() {
         // Refresh local state
         setAccounts(prev => prev.map(acc => acc.id === accountId ? {...acc, drawingPower: updatedDpLog } : acc));
         setNewDpEntries(prev => ({ ...prev, [accountId]: { date: '', amount: '' } }));
+        setOpenAddForm(null); // Close the form on success
 
     } catch (error) {
         console.error("Error saving new DP entry:", error);
@@ -168,32 +171,40 @@ export default function DpManagementPage() {
                             </Table>
                          </div>
                         
-                        <h4 className="font-semibold mb-2 mt-6">Add New DP Entry</h4>
-                        <div className="flex items-end gap-2">
-                             <div className="flex-1 space-y-1">
-                                <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
-                                <Input 
-                                    id={`date-${acc.id}`}
-                                    type="date"
-                                    value={newDpEntries[acc.id]?.date || ''}
-                                    onChange={e => handleNewDpChange(acc.id, 'date', e.target.value)}
-                                />
-                             </div>
-                              <div className="flex-1 space-y-1">
-                                <label htmlFor={`amount-${acc.id}`} className="text-xs text-muted-foreground">Amount</label>
-                                <Input
-                                    id={`amount-${acc.id}`}
-                                    type="number"
-                                    placeholder="Enter new DP amount"
-                                    value={newDpEntries[acc.id]?.amount || ''}
-                                    onChange={e => handleNewDpChange(acc.id, 'amount', e.target.value)}
-                                />
-                            </div>
-                            <Button onClick={() => handleAddDp(acc.id)} disabled={isSaving[acc.id]}>
-                                {isSaving[acc.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Plus className="mr-2 h-4 w-4"/>}
-                                Add
-                            </Button>
-                        </div>
+                        <Collapsible open={openAddForm === acc.id} onOpenChange={(isOpen) => setOpenAddForm(isOpen ? acc.id : null)}>
+                            <CollapsibleTrigger asChild>
+                                <Button variant="outline" className="w-full mt-4">
+                                     <Plus className="mr-2 h-4 w-4"/> Add New DP Entry
+                                </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-4">
+                                 <div className="flex items-end gap-2 p-4 border rounded-lg">
+                                     <div className="flex-1 space-y-1">
+                                        <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
+                                        <Input 
+                                            id={`date-${acc.id}`}
+                                            type="date"
+                                            value={newDpEntries[acc.id]?.date || ''}
+                                            onChange={e => handleNewDpChange(acc.id, 'date', e.target.value)}
+                                        />
+                                     </div>
+                                      <div className="flex-1 space-y-1">
+                                        <label htmlFor={`amount-${acc.id}`} className="text-xs text-muted-foreground">Amount</label>
+                                        <Input
+                                            id={`amount-${acc.id}`}
+                                            type="number"
+                                            placeholder="Enter new DP amount"
+                                            value={newDpEntries[acc.id]?.amount || ''}
+                                            onChange={e => handleNewDpChange(acc.id, 'amount', e.target.value)}
+                                        />
+                                    </div>
+                                    <Button onClick={() => handleAddDp(acc.id)} disabled={isSaving[acc.id]}>
+                                        {isSaving[acc.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Plus className="mr-2 h-4 w-4"/>}
+                                        Add
+                                    </Button>
+                                </div>
+                            </CollapsibleContent>
+                        </Collapsible>
                     </CardContent>
                 </Card>
             ))
