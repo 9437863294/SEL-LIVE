@@ -205,11 +205,12 @@ export default function ChatSystemPage() {
   
   useEffect(() => {
     let stream: MediaStream | null = null;
+    if (videoRef.current) {
+        stream = videoRef.current.srcObject as MediaStream;
+    }
+
     if (isCameraDialogOpen && !isPreviewing) {
         getCameraPermission();
-        if (videoRef.current) {
-            stream = videoRef.current.srcObject as MediaStream;
-        }
     }
     
     return () => {
@@ -292,7 +293,7 @@ export default function ChatSystemPage() {
                 fileName: finalAttachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = finalAttachment.name;
+            lastMessageText = newMessage.trim() || finalAttachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -361,14 +362,17 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleAttachPhoto = async () => {
+  const handleSendPhoto = async () => {
     if (!capturedImage) return;
 
+    setIsSending(true);
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
     
-    setAttachment(file);
+    // Directly call handleSendMessage with the file
+    await handleSendMessage(undefined, file);
     
+    setIsSending(false);
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
@@ -647,8 +651,9 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleAttachPhoto}>
-                            <Paperclip className="mr-2 h-4 w-4" /> Attach Photo
+                        <Button onClick={handleSendPhoto} disabled={isSending}>
+                            {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                             Send Photo
                         </Button>
                     </>
                 ) : (
