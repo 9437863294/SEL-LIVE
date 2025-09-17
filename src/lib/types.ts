@@ -250,6 +250,7 @@ export type Chat = {
         timestamp: any; // Firestore Timestamp
     };
     groupName?: string;
+    groupPhotoURL?: string;
     groupAdmin?: string;
 }
 

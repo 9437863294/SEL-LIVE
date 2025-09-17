@@ -70,6 +70,7 @@ import {
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { CreateEventDialog } from '@/components/CreateEventDialog';
+import { GroupChatDetailsDialog } from '@/components/GroupChatDetailsDialog';
 
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -95,6 +96,7 @@ export default function ChatSystemPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -374,9 +376,11 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const snapshot = await getDocs(messagesRef);
-    const unreadDocs = snapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
+    const snapshot = await getDocs(q);
     
+    const unreadDocs = snapshot.docs;
+
     if (unreadDocs.length > 0) {
       const batch = writeBatch(db);
       unreadDocs.forEach(docToUpdate => {
@@ -423,7 +427,10 @@ export default function ChatSystemPage() {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
   
-  const chatPartner = selectedChat ? getOtherMember(selectedChat) : null;
+  const chatPartner = selectedChat && selectedChat.type === 'one-to-one' ? getOtherMember(selectedChat) : null;
+  const groupMembersString = selectedChat && selectedChat.type === 'group' 
+        ? selectedChat.memberDetails.map(m => m.name).join(', ')
+        : '';
   
   const renderMessageContent = (message: Message) => {
     switch (message.type) {
@@ -509,7 +516,7 @@ export default function ChatSystemPage() {
                     chats.map(chat => {
                         const otherMember = getOtherMember(chat);
                         const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
-                        const chatAvatar = chat.type === 'group' ? undefined : otherMember?.photoURL;
+                        const chatAvatar = chat.type === 'group' ? chat.groupPhotoURL : otherMember?.photoURL;
                         const unreadCount = unreadCounts[chat.id] || 0;
                         const hasUnread = unreadCount > 0;
 
@@ -549,18 +556,27 @@ export default function ChatSystemPage() {
           <ResizablePanel defaultSize={75}>
             {selectedChat ? (
                 <div className="flex flex-col h-full">
-                   <div className="p-4 border-b flex items-center gap-4">
+                   <div 
+                        className={cn("p-4 border-b flex items-center gap-4", selectedChat.type === 'group' && "cursor-pointer hover:bg-muted/50")}
+                        onClick={() => selectedChat.type === 'group' && setIsGroupDetailsOpen(true)}
+                    >
                         <Avatar>
-                            <AvatarImage src={chatPartner?.photoURL} />
-                            <AvatarFallback>{getInitials(chatPartner?.name)}</AvatarFallback>
+                            <AvatarImage src={selectedChat.type === 'one-to-one' ? chatPartner?.photoURL : selectedChat.groupPhotoURL} />
+                            <AvatarFallback>{getInitials(selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName)}</AvatarFallback>
                         </Avatar>
                         <div>
-                            <p className="font-semibold">{chatPartner?.name}</p>
-                            {chatPartner?.isOnline ? (
-                                <p className="text-xs text-green-500">Online</p>
+                            <p className="font-semibold">{selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName}</p>
+                            {selectedChat.type === 'one-to-one' ? (
+                                chatPartner?.isOnline ? (
+                                    <p className="text-xs text-green-500">Online</p>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">
+                                        Last seen {chatPartner?.lastSeen ? formatDistanceToNowStrict(chatPartner.lastSeen.toDate(), { addSuffix: true }) : 'a while ago'}
+                                    </p>
+                                )
                             ) : (
-                                <p className="text-xs text-muted-foreground">
-                                    Last seen {chatPartner?.lastSeen ? formatDistanceToNowStrict(chatPartner.lastSeen.toDate(), { addSuffix: true }) : 'a while ago'}
+                                <p className="text-xs text-muted-foreground truncate max-w-xs">
+                                    {groupMembersString}
                                 </p>
                             )}
                         </div>
@@ -573,7 +589,7 @@ export default function ChatSystemPage() {
                                 const isSender = message.senderId === currentUser?.id;
                                 if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
                                 
-                                const isRead = selectedChat.type === 'one-to-one' && message.readBy.length > 1;
+                                const isReadByAll = selectedChat.type === 'group' ? message.readBy.length >= selectedChat.members.length - 1 : message.readBy.length > 1;
 
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
@@ -584,7 +600,7 @@ export default function ChatSystemPage() {
                                                    <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
                                                 )}
                                                 {isSender && (
-                                                  isRead 
+                                                  isReadByAll
                                                     ? <CheckCheck className="h-4 w-4 text-blue-400" /> 
                                                     : <Check className="h-4 w-4 opacity-70" />
                                                 )}
@@ -723,6 +739,11 @@ export default function ChatSystemPage() {
         isOpen={isEventDialogOpen}
         onOpenChange={setIsEventDialogOpen}
         onSendEvent={(eventDetails) => handleSendMessage(undefined, undefined, eventDetails)}
+      />
+       <GroupChatDetailsDialog
+        isOpen={isGroupDetailsOpen}
+        onOpenChange={setIsGroupDetailsOpen}
+        chat={selectedChat}
       />
     </>
   );
