@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -110,60 +109,60 @@ export default function BankBalanceDashboard() {
     return (
         <>
             <div className="w-full h-full flex flex-col px-4 sm:px-6 lg:px-8">
-                <div className="mb-6 flex items-center justify-between">
+                <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
-                        <h1 className="text-2xl font-bold">Bank Balance Dashboard</h1>
+                        <Link href="/"><Button variant="ghost" size="icon"><Home className="h-5 w-5" /></Button></Link>
+                        <h1 className="text-xl font-bold">Bank Balance Dashboard</h1>
                     </div>
                      <div className="flex items-center gap-2">
                         <Link href="/bank-balance/reports">
-                           <Button variant="outline" disabled={!can('View', 'Bank Balance.Reports')}>
+                           <Button variant="outline" size="sm" disabled={!can('View', 'Bank Balance.Reports')}>
                                 <BarChart3 className="mr-2 h-4 w-4"/>
                                 Reports
                             </Button>
                         </Link>
-                        <Button onClick={() => setIsDailyEntryOpen(true)}>
+                        <Button size="sm" onClick={() => setIsDailyEntryOpen(true)}>
                             <Plus className="mr-2 h-4 w-4"/>
                             Daily Entry
                         </Button>
                         <Link href="/bank-balance/settings">
-                            <Button variant="ghost" size="icon">
-                                <Settings className="h-5 w-5"/>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Settings className="h-4 w-4"/>
                             </Button>
                         </Link>
                     </div>
                 </div>
                 
-                <Card className="mb-6 bg-blue-50 border-blue-200">
-                    <CardHeader>
+                <Card className="mb-4 bg-blue-50 border-blue-200">
+                    <CardHeader className="p-4">
                         <div className="flex justify-between items-start">
-                             <CardTitle className="flex items-center gap-2 text-blue-800"><Scale /> Available Fund</CardTitle>
+                             <CardTitle className="flex items-center gap-2 text-md text-blue-800"><Scale className="h-5 w-5" /> Available Fund</CardTitle>
                              <div className="text-right">
-                                <p className="text-sm text-blue-600">Total Drawing Power</p>
-                                <p className="font-bold text-blue-900">{formatCurrency(totalDrawingPower)}</p>
+                                <p className="text-xs text-blue-600">Total Drawing Power</p>
+                                <p className="font-bold text-blue-900 text-sm">{formatCurrency(totalDrawingPower)}</p>
                             </div>
                         </div>
-                         <CardDescription>
+                         <CardDescription className="text-xs pt-1">
                             Total available drawing power as of {format(new Date(), 'MMMM do, yyyy')}.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-4 pt-0">
                          <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-4xl font-bold text-blue-900">{formatCurrency(totalDrawingPower - totalCurrentBalance)}</p>
-                                <p className="text-sm text-muted-foreground">{formatCurrency(totalCurrentBalance)} utilized</p>
+                                <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalDrawingPower - totalCurrentBalance)}</p>
+                                <p className="text-xs text-muted-foreground">{formatCurrency(totalCurrentBalance)} utilized</p>
                             </div>
                             <div className="w-1/3">
-                               <p className="text-right text-sm font-medium">{utilization.toFixed(2)}%</p>
-                               <div className="w-full bg-blue-200 rounded-full h-2.5">
-                                 <div className="bg-blue-600 h-2.5 rounded-full" style={{width: `${utilization}%`}}></div>
+                               <p className="text-right text-xs font-medium">{utilization.toFixed(2)}%</p>
+                               <div className="w-full bg-blue-200 rounded-full h-2">
+                                 <div className="bg-blue-600 h-2 rounded-full" style={{width: `${utilization}%`}}></div>
                                </div>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
                  <ScrollArea className="flex-grow">
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {accounts.map(account => {
                             const isCC = account.accountType === 'Cash Credit';
                             let displayBalance = account.currentBalance;
@@ -177,25 +176,25 @@ export default function BankBalanceDashboard() {
                                   account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
                                   account.bankName.includes('State Bank') ? 'bg-blue-50 border-blue-200' : ''
                                 }>
-                                    <CardHeader>
+                                    <CardHeader className="p-4">
                                         <div className="flex justify-between items-start">
-                                            <CardTitle>{account.shortName}</CardTitle>
-                                            <Banknote className="h-6 w-6 text-muted-foreground" />
+                                            <CardTitle className="text-base">{account.shortName}</CardTitle>
+                                            <Banknote className="h-5 w-5 text-muted-foreground" />
                                         </div>
-                                        <CardDescription>
-                                            {isCC ? "Today's Available Balance" : "Today's Closing Balance"}
+                                        <CardDescription className="text-xs">
+                                            {isCC ? "Available Balance" : "Closing Balance"}
                                         </CardDescription>
                                     </CardHeader>
-                                    <CardContent>
-                                        <p className="text-3xl font-bold mb-2">{formatCurrency(displayBalance)}</p>
+                                    <CardContent className="p-4 pt-0">
+                                        <p className="text-2xl font-bold mb-2">{formatCurrency(displayBalance)}</p>
                                     </CardContent>
                                 </Card>
                             );
                         })}
                          <Link href="/bank-balance/accounts">
                              <Card className="h-full border-2 border-dashed flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors">
-                                <Plus className="h-8 w-8 mb-2" />
-                                <p className="font-medium">Add New Account</p>
+                                <Plus className="h-6 w-6 mb-1" />
+                                <p className="text-sm font-medium">Add New Account</p>
                             </Card>
                         </Link>
                     </div>
