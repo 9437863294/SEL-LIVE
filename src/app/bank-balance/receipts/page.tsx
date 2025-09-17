@@ -35,7 +35,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, compareDesc } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -83,13 +83,14 @@ export default function ReceiptsEntryPage() {
       try {
         const [accountsSnap, receiptsSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), where('type', '==', 'Credit'), orderBy('date', 'desc')))
+            getDocs(query(collection(db, 'bankExpenses'), where('type', '==', 'Credit')))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
         
         const receiptsData = receiptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        receiptsData.sort((a, b) => compareDesc(a.date.toDate(), b.date.toDate()));
         setLogEntries(receiptsData);
 
       } catch (error) {
@@ -411,3 +412,5 @@ export default function ReceiptsEntryPage() {
     </div>
   );
 }
+
+    
