@@ -203,11 +203,6 @@ export default function ExpensesEntryPage() {
                 const expenseRef = doc(collection(db, 'bankExpenses'));
                 transaction.set(expenseRef, expenseData);
             }
-            
-            // This logic might be incorrect if we are moving to a calculated balance system
-            // For now, let's keep it but be aware.
-            // const newBalance = (bankAccountDoc.data().currentBalance || 0) - totalExpenseAmount;
-            // transaction.update(bankAccountRef, { currentBalance: newBalance });
         });
         
         toast({ title: 'Success', description: `${expenses.length} expense(s) saved successfully.`});
@@ -491,3 +486,5 @@ export default function ExpensesEntryPage() {
     </div>
   );
 }
+
+    
