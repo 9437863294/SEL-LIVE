@@ -42,6 +42,7 @@ import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -289,33 +290,33 @@ export default function ExpensesEntryPage() {
                <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
                   <div className="flex flex-wrap items-end gap-4">
                       <div className="space-y-2">
-                          <Label htmlFor="payment-date">Date</Label>
-                          <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                              <PopoverTrigger asChild>
-                                  <Button
-                                  id="payment-date"
-                                  variant={"outline"}
-                                  className={cn(
-                                      "w-[240px] justify-start text-left font-normal",
-                                      !date && "text-muted-foreground"
-                                  )}
-                                  >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {date ? format(date, "PPP") : <span>Pick a date</span>}
-                                  </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                  <Calendar
-                                      mode="single"
-                                      selected={date}
-                                      onSelect={(selectedDate) => {
-                                          setDate(selectedDate);
-                                          setIsDatePickerOpen(false);
-                                      }}
-                                      initialFocus
-                                  />
-                              </PopoverContent>
-                          </Popover>
+                        <Label htmlFor="payment-date">Date</Label>
+                        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                id="payment-date"
+                                variant={"outline"}
+                                className={cn(
+                                    "w-[240px] justify-start text-left font-normal",
+                                    !date && "text-muted-foreground"
+                                )}
+                                >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {date ? format(date, "PPP") : <span>Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={date}
+                                    onSelect={(selectedDate) => {
+                                        setDate(selectedDate);
+                                        setIsDatePickerOpen(false);
+                                    }}
+                                    initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
                       </div>
                       <div className="space-y-2">
                           <Label htmlFor="bank-select">Select Bank</Label>
