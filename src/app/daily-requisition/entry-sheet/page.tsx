@@ -57,8 +57,8 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
     if (!entries || entries.length === 0) return null;
     
     return (
-        <div ref={ref} className="printable-area">
-            {entries.map((entry, index) => {
+        <div ref={ref}>
+            {entries.map((entry) => {
                 const project = projects.find(p => p.id === entry.projectId);
                 const expenseRequest = expenses.find(e => e.requestNo === entry.depNo);
                 return (
@@ -979,7 +979,7 @@ export default function EntrySheetPage() {
         />
       )}
       
-      <div className="hidden">
+      <div className="printable-area hidden">
         <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
       </div>
     </>
