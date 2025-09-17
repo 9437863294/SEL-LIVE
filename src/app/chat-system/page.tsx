@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  File,
+  File as FileIconLucide,
   Inbox,
   Send,
   Trash2,
@@ -25,6 +25,7 @@ import {
   Calendar as CalendarIconLucide,
   SmilePlus,
   RotateCcw,
+  Video,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -68,6 +69,7 @@ import {
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export default function ChatSystemPage() {
   const { user: currentUser } = useAuth();
@@ -92,6 +94,7 @@ export default function ChatSystemPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   
   const getCameraPermission = useCallback(async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -120,19 +123,22 @@ export default function ChatSystemPage() {
     }
   }, [toast]);
 
-  useEffect(() => {
-    if (!currentUser) return;
+ useEffect(() => {
+    if (!currentUser) {
+      setIsLoadingChats(false);
+      return;
+    };
     setIsLoadingChats(true);
+    
     const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id));
     
-    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+    const unsubscribeChats = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
-        const listeners: (()=>void)[] = [];
+        const listeners: (() => void)[] = [];
 
         for (const chatDoc of querySnapshot.docs) {
             const chatData = { id: chatDoc.id, ...chatDoc.data() } as Chat;
             
-            // Set up listeners for member details if it's a one-to-one chat
             if (chatData.type === 'one-to-one') {
                 const otherMemberId = chatData.members.find(id => id !== currentUser.id);
                 if (otherMemberId) {
@@ -156,10 +162,8 @@ export default function ChatSystemPage() {
             }
             
             const messagesRef = collection(db, 'chats', chatData.id, 'messages');
-            const unreadQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id, '==', false)); // This is not a valid query
-            
-            // Client-side filtering for unread count
             const unsubUnread = onSnapshot(messagesRef, (messagesSnapshot) => {
+                if(!currentUser) return;
                 const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
                 setUnreadCounts(prev => ({ ...prev, [chatData.id]: unreadCount }));
             });
@@ -173,17 +177,19 @@ export default function ChatSystemPage() {
         setChats(userChats);
         setIsLoadingChats(false);
 
+        // This is the cleanup function for all the listeners created in this snapshot callback
         return () => {
           listeners.forEach(unsub => unsub());
         };
     });
 
-    return () => unsubscribe();
+    // The main cleanup function for the useEffect hook itself
+    return () => {
+      unsubscribeChats();
+    };
   }, [currentUser]);
   
    useEffect(() => {
-    let stream: MediaStream | null = null;
-    
     const cleanupStream = () => {
         if (videoRef.current && videoRef.current.srcObject) {
             const currentStream = videoRef.current.srcObject as MediaStream;
@@ -261,15 +267,26 @@ export default function ChatSystemPage() {
   };
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setAttachment(e.target.files[0]);
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast({
+            title: 'File Too Large',
+            description: `The selected file exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB size limit.`,
+            variant: 'destructive',
+        });
+        return;
+      }
+      setAttachment(file);
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, fileToSend?: File) => {
     e?.preventDefault();
     
-    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
+    const file = fileToSend || attachment;
+
+    if ((!newMessage.trim() && !file) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -282,21 +299,29 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (attachment) {
-            const isImage = attachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
+        if (file) {
+            const isImage = file.type.startsWith('image/');
+            const isVideo = file.type.startsWith('video/');
+            const isAudio = file.type.startsWith('audio/');
+            
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${file.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, attachment);
+            await uploadBytes(storageRef, file);
             const downloadURL = await getDownloadURL(storageRef);
+            
+            let type: Message['type'] = 'document';
+            if (isImage) type = 'image';
+            if (isVideo) type = 'video';
+            if (isAudio) type = 'audio';
 
             messageData = {
                 ...messageData,
-                type: isImage ? 'image' : 'document',
+                type,
                 mediaUrl: downloadURL,
-                fileName: attachment.name,
+                fileName: file.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = newMessage.trim() || attachment.name;
+            lastMessageText = newMessage.trim() || file.name;
         } else {
             messageData = {
                 ...messageData,
@@ -322,6 +347,7 @@ export default function ChatSystemPage() {
         setAttachment(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (imageInputRef.current) imageInputRef.current.value = '';
+        if (audioInputRef.current) audioInputRef.current.value = '';
 
     } catch (error) {
         console.error("Error sending message:", error);
@@ -336,22 +362,18 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    
-    // Efficiently find unread messages for the current user
-    const unreadMessagesQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id, '==', false));
     const snapshot = await getDocs(messagesRef);
-    const docsToUpdate = snapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    const unreadDocs = snapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
     
-    if (docsToUpdate.length === 0) return;
-    
-    const batch = writeBatch(db);
-    docsToUpdate.forEach(docToUpdate => {
+    if (unreadDocs.length > 0) {
+      const batch = writeBatch(db);
+      unreadDocs.forEach(docToUpdate => {
         batch.update(docToUpdate.ref, {
-            readBy: arrayUnion(currentUser.id)
+          readBy: arrayUnion(currentUser.id)
         });
-    });
-
-    await batch.commit();
+      });
+      await batch.commit();
+    }
   };
   
   const handleCapture = () => {
@@ -369,11 +391,13 @@ export default function ChatSystemPage() {
     }
   };
   
-  const handleAttachPhoto = async () => {
+   const handleSendPhoto = async () => {
     if (!capturedImage) return;
+    setIsSending(true);
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    setAttachment(file);
+    await handleSendMessage(undefined, file);
+    setIsSending(false);
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
@@ -389,8 +413,6 @@ export default function ChatSystemPage() {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
   
-  const [isSwitching, setIsSwitching] = useState(false);
-
   const chatPartner = selectedChat ? getOtherMember(selectedChat) : null;
   
   const renderMessageContent = (message: Message) => {
@@ -402,10 +424,24 @@ export default function ChatSystemPage() {
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             );
+        case 'video':
+            return (
+                <div className="space-y-2">
+                    {message.mediaUrl && <video src={message.mediaUrl} controls className="max-w-xs rounded-lg" />}
+                    {message.content && <p className="text-sm">{message.content}</p>}
+                </div>
+            );
+        case 'audio':
+             return (
+                <div className="space-y-2">
+                    {message.mediaUrl && <audio src={message.mediaUrl} controls className="w-full" />}
+                    {message.content && <p className="text-sm">{message.content}</p>}
+                </div>
+            );
         case 'document':
             return (
                 <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-blue-400">
-                    <FileText className="h-5 w-5" />
+                    <FileIconLucide className="h-5 w-5" />
                     <span className="underline">{message.fileName}</span>
                 </a>
             );
@@ -467,7 +503,7 @@ export default function ChatSystemPage() {
                                 </Avatar>
                                 <div className="flex-1 overflow-hidden">
                                     <p className={cn("font-semibold truncate", hasUnread && "font-bold text-primary")}>{chatName}</p>
-                                    <p className="text-xs text-muted-foreground truncate">{chat.lastMessage?.text}</p>
+                                    {chat.lastMessage?.text && <p className="text-xs text-muted-foreground truncate">{chat.lastMessage.text}</p>}
                                 </div>
                                 <div className="flex flex-col items-end self-start">
                                     {chat.lastMessage?.timestamp?.toDate && (
@@ -552,7 +588,7 @@ export default function ChatSystemPage() {
                                      <DropdownMenuItem onSelect={() => setIsCameraDialogOpen(true)}>
                                         <Camera className="mr-2 h-4 w-4" /> Camera
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem>
+                                     <DropdownMenuItem onSelect={() => audioInputRef.current?.click()}>
                                         <Headphones className="mr-2 h-4 w-4" /> Audio
                                     </DropdownMenuItem>
                                      <DropdownMenuItem>
@@ -569,19 +605,9 @@ export default function ChatSystemPage() {
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                            <Input
-                                ref={fileInputRef}
-                                type="file"
-                                className="hidden"
-                                onChange={handleFileChange}
-                            />
-                             <Input
-                                ref={imageInputRef}
-                                type="file"
-                                accept="image/*,video/*"
-                                className="hidden"
-                                onChange={handleFileChange}
-                            />
+                            <Input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
+                            <Input ref={imageInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
+                            <Input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
                             <Input 
                                 placeholder="Type a message..."
                                 value={newMessage}
@@ -652,9 +678,9 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleAttachPhoto} disabled={isSwitching}>
-                             {isSwitching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Attach Photo
+                        <Button onClick={handleSendPhoto} disabled={isSending}>
+                             {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Send Photo
                         </Button>
                     </>
                 ) : (
@@ -671,3 +697,5 @@ export default function ChatSystemPage() {
     </>
   );
 }
+
+    
