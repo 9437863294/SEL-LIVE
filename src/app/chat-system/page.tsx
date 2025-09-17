@@ -14,6 +14,8 @@ import {
   Loader2,
   Users,
   MessageSquare,
+  Check,
+  CheckCheck,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -310,13 +312,23 @@ export default function ChatSystemPage() {
                             messages.map(message => {
                                 const isSender = message.senderId === currentUser?.id;
                                 if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
+                                
+                                const isRead = selectedChat.type === 'one-to-one' && message.readBy.length > 1;
+
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
-                                        <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                                            <p>{message.content}</p>
-                                            {message.timestamp?.toDate && (
-                                               <p className="text-xs opacity-70 mt-1 text-right">{format(message.timestamp.toDate(), 'p')}</p>
-                                            )}
+                                        <div className={cn("rounded-lg px-3 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                            <p className="text-sm">{message.content}</p>
+                                            <div className="flex items-center justify-end gap-1 mt-1">
+                                                {message.timestamp?.toDate && (
+                                                   <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
+                                                )}
+                                                {isSender && (
+                                                  isRead 
+                                                    ? <CheckCheck className="h-4 w-4 text-blue-400" /> 
+                                                    : <Check className="h-4 w-4 opacity-70" />
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )
@@ -351,4 +363,3 @@ export default function ChatSystemPage() {
     </>
   );
 }
-
