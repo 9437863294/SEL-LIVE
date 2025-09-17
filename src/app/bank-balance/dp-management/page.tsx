@@ -137,47 +137,23 @@ export default function DpManagementPage() {
             Array.from({length: 2}).map((_, i) => <Skeleton key={i} className="h-96" />)
          ) : accounts.length > 0 ? (
             accounts.map(acc => (
-                <Card key={acc.id}>
-                    <CardHeader>
-                        <CardTitle>{acc.bankName} ({acc.shortName})</CardTitle>
-                        <CardDescription>{acc.accountNumber}</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <h4 className="font-semibold mb-2">DP History</h4>
-                         <div className="border rounded-md max-h-60 overflow-y-auto mb-4">
-                             <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Effective Date</TableHead>
-                                        <TableHead>Amount</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {acc.drawingPower.length > 0 ? acc.drawingPower.map((dp, index) => (
-                                        <TableRow key={index}>
-                                            <TableCell>{format(new Date(dp.date), 'dd MMM, yyyy')}</TableCell>
-                                            <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(dp.amount)}</TableCell>
-                                            <TableCell className="text-right">
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)}>
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    )) : (
-                                         <TableRow><TableCell colSpan={3} className="text-center h-24">No DP history.</TableCell></TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                         </div>
-                        
-                        <Collapsible open={openAddForm === acc.id} onOpenChange={(isOpen) => setOpenAddForm(isOpen ? acc.id : null)}>
-                            <CollapsibleTrigger asChild>
-                                <Button variant="outline" className="w-full mt-4">
-                                     <Plus className="mr-2 h-4 w-4"/> Add New DP Entry
-                                </Button>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-4">
+                <Collapsible asChild key={acc.id} open={openAddForm === acc.id} onOpenChange={(isOpen) => setOpenAddForm(isOpen ? acc.id : null)}>
+                    <Card>
+                        <CardHeader>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <CardTitle>{acc.bankName} ({acc.shortName})</CardTitle>
+                                    <CardDescription>{acc.accountNumber}</CardDescription>
+                                </div>
+                                <CollapsibleTrigger asChild>
+                                    <Button variant="outline">
+                                        <Plus className="mr-2 h-4 w-4"/> Add New DP Entry
+                                    </Button>
+                                </CollapsibleTrigger>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                             <CollapsibleContent className="mb-4">
                                  <div className="flex items-end gap-2 p-4 border rounded-lg">
                                      <div className="flex-1 space-y-1">
                                         <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
@@ -204,9 +180,36 @@ export default function DpManagementPage() {
                                     </Button>
                                 </div>
                             </CollapsibleContent>
-                        </Collapsible>
-                    </CardContent>
-                </Card>
+                            <h4 className="font-semibold mb-2">DP History</h4>
+                             <div className="border rounded-md max-h-60 overflow-y-auto">
+                                 <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Effective Date</TableHead>
+                                            <TableHead>Amount</TableHead>
+                                            <TableHead className="text-right">Action</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {acc.drawingPower.length > 0 ? acc.drawingPower.map((dp, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell>{format(new Date(dp.date), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(dp.amount)}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        )) : (
+                                            <TableRow><TableCell colSpan={3} className="text-center h-24">No DP history.</TableCell></TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                             </div>
+                        </CardContent>
+                    </Card>
+                </Collapsible>
             ))
          ) : (
             <Card className="col-span-full">
