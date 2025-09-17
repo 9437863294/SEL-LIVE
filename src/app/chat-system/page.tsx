@@ -62,7 +62,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-  DialogDescription
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
@@ -311,19 +312,16 @@ export default function ChatSystemPage() {
     if (!currentUser || (unreadCounts[chat.id] || 0) === 0) return;
 
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const allMessagesSnapshot = await getDocs(messagesRef);
-
-    const unreadDocs = allMessagesSnapshot.docs.filter(
-        doc => !doc.data().readBy.includes(currentUser.id)
-    );
-
+    
+    const unreadDocs = messages
+        .filter(doc => !doc.readBy.includes(currentUser.id))
+        .map(msg => doc(db, 'chats', chat.id, 'messages', msg.id));
+    
     if (unreadDocs.length === 0) return;
 
     const batch = writeBatch(db);
-    unreadDocs.forEach(messageDoc => {
-        const messageRef = doc(db, 'chats', chat.id, 'messages', messageDoc.id);
-        const currentReadBy = messageDoc.data().readBy || [];
-        batch.update(messageRef, { readBy: [...currentReadBy, currentUser.id] });
+    unreadDocs.forEach(messageDocRef => {
+        batch.update(messageDocRef, { readBy: arrayUnion(currentUser.id) });
     });
 
     await batch.commit();
@@ -592,5 +590,3 @@ export default function ChatSystemPage() {
     </>
   );
 }
-
-    
