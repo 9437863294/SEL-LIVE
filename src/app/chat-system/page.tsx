@@ -17,7 +17,7 @@ import {
   Check,
   CheckCheck,
   Paperclip,
-  Image as ImageIcon,
+  ImageIcon,
   Camera,
   Headphones,
   Contact,
@@ -67,7 +67,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import Image from 'next/image';
 
 
 export default function ChatSystemPage() {
@@ -249,10 +248,11 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, directAttachment?: File) => {
     e?.preventDefault();
+    const finalAttachment = directAttachment || attachment;
 
-    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
+    if ((!newMessage.trim() && !finalAttachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -265,21 +265,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (attachment) {
-            const isImage = attachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
+        if (finalAttachment) {
+            const isImage = finalAttachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${finalAttachment.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, attachment);
+            await uploadBytes(storageRef, finalAttachment);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: attachment.name,
+                fileName: finalAttachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = attachment.name;
+            lastMessageText = finalAttachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -378,7 +378,7 @@ export default function ChatSystemPage() {
         case 'image':
             return (
                 <div className="space-y-2">
-                    {message.mediaUrl && <Image src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} width={200} height={200} className="max-w-xs rounded-lg" />}
+                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} className="max-w-xs rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             );
@@ -608,7 +608,7 @@ export default function ChatSystemPage() {
             </DialogHeader>
             <div className="relative">
                 {isPreviewing && capturedImage ? (
-                    <Image src={capturedImage} alt="Captured preview" width={640} height={480} className="w-full aspect-video rounded-md" />
+                    <img src={capturedImage} alt="Captured preview" className="w-full aspect-video rounded-md" />
                 ) : (
                     <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted />
                 )}
