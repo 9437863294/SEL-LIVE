@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Save,
   Loader2,
   Home,
+  Edit,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,9 +31,21 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import type { DateRange } from 'react-day-picker';
 
+type UnifiedTransaction = {
+  id: string;
+  date: string;
+  fromAccountId: string;
+  toAccountId: string;
+  fromBankName: string;
+  toBankName: string;
+  amount: number;
+};
 
 const initialTransactionItem = {
   id: Date.now(),
@@ -51,22 +64,73 @@ export default function InternalTransactionPage() {
   const [transactions, setTransactions] = useState<TransactionItem[]>([initialTransactionItem]);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Log Tab State will be implemented later
+  // Log Tab State
+  const [logEntries, setLogEntries] = useState<UnifiedTransaction[]>([]);
+  const [isLogLoading, setIsLogLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
+  const fetchBankAccountsAndLog = async () => {
+    setIsLogLoading(true);
+    try {
+        const [accountsSnap, expensesSnap] = await Promise.all([
+            getDocs(collection(db, 'bankAccounts')),
+            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true), orderBy('date', 'desc')))
+        ]);
+        
+        const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
+        setBankAccounts(accounts);
+        
+        const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        
+        const groupedTransactions: Record<string, Partial<UnifiedTransaction>> = {};
+
+        contraEntries.forEach(entry => {
+            const entryDate = format(entry.date.toDate(), 'yyyy-MM-dd');
+            const key = `${entryDate}-${entry.amount}`;
+
+            if (!groupedTransactions[key]) {
+                groupedTransactions[key] = { amount: entry.amount, date: entryDate };
+            }
+
+            if (entry.type === 'Debit') {
+                groupedTransactions[key].fromAccountId = entry.accountId;
+            } else if (entry.type === 'Credit') {
+                groupedTransactions[key].toAccountId = entry.accountId;
+            }
+             groupedTransactions[key].id = entry.id; // Use one of the doc ids as a key
+        });
+
+        const unifiedLog: UnifiedTransaction[] = Object.values(groupedTransactions)
+            .filter(t => t.fromAccountId && t.toAccountId) // Ensure it's a complete pair
+            .map(t => ({
+                ...t,
+                fromBankName: accounts.find(acc => acc.id === t.fromAccountId)?.shortName || 'N/A',
+                toBankName: accounts.find(acc => acc.id === t.toAccountId)?.shortName || 'N/A',
+            } as UnifiedTransaction));
+
+        setLogEntries(unifiedLog);
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        toast({ title: 'Error', description: 'Failed to load log data.', variant: 'destructive' });
+    }
+    setIsLogLoading(false);
+  };
+  
   useEffect(() => {
-    const fetchBankAccounts = async () => {
-        try {
-            const accountsSnap = await getDocs(collection(db, 'bankAccounts'));
-            const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
-            setBankAccounts(accounts);
-        } catch (error) {
-            console.error("Error fetching bank accounts:", error);
-            toast({ title: 'Error', description: 'Failed to load bank accounts.', variant: 'destructive' });
-        }
-    };
-    fetchBankAccounts();
+    fetchBankAccountsAndLog();
   }, [toast]);
   
+  const filteredLogEntries = useMemo(() => {
+    return logEntries.filter(entry => {
+        const entryDate = new Date(entry.date);
+        const inDateRange = !dateRange || (
+            (!dateRange.from || entryDate >= dateRange.from) &&
+            (!dateRange.to || entryDate <= dateRange.to)
+        );
+        return inDateRange;
+    });
+  }, [logEntries, dateRange]);
+
 
   const handleTransactionChange = (id: number, field: keyof TransactionItem, value: any) => {
     setTransactions(prev =>
@@ -103,7 +167,6 @@ export default function InternalTransactionPage() {
                 const fromAccountData = fromAccountDoc.data();
                 const toAccountData = toAccountDoc.data();
 
-                // 1. Create Debit record
                 const debitData: Omit<BankExpense, 'id'> = {
                     date: Timestamp.fromDate(date),
                     accountId: item.fromAccountId,
@@ -116,36 +179,40 @@ export default function InternalTransactionPage() {
                 const debitRef = doc(collection(db, 'bankExpenses'));
                 transaction.set(debitRef, debitData);
 
-                // 2. Create Credit record
                 const creditData: Omit<BankExpense, 'id'> = {
                     date: Timestamp.fromDate(date),
                     accountId: item.toAccountId,
                     description: `Transfer from ${fromAccountData.shortName} - ${fromAccountData.bankName}`,
                     amount: item.amount,
-                    type: 'Credit', // This will be a credit to the bank expenses log, but a credit to the account
+                    type: 'Credit',
                     isContra: true,
                     createdAt: Timestamp.now(),
                 };
                 const creditRef = doc(collection(db, 'bankExpenses'));
                 transaction.set(creditRef, creditData);
 
-                // 3. Update balances
-                const newFromBalance = fromAccountData.currentBalance - item.amount;
-                const newToBalance = toAccountData.currentBalance + item.amount;
-                transaction.update(fromAccountRef, { currentBalance: newFromBalance });
-                transaction.update(toAccountRef, { currentBalance: newToBalance });
+                // No balance update needed as per new logic
             }
         });
         
         toast({ title: 'Success', description: `${transactions.length} transaction(s) saved successfully.`});
         setTransactions([initialTransactionItem]);
         setDate(new Date());
+        fetchBankAccountsAndLog(); // Refresh log
 
     } catch (error) {
         console.error("Error saving transactions:", error);
         toast({ title: 'Save Failed', description: 'An error occurred while saving.', variant: 'destructive' });
     }
     setIsSaving(false);
+  }
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  };
+  
+  const clearFilters = () => {
+    setDateRange(undefined);
   }
 
   return (
@@ -256,10 +323,54 @@ export default function InternalTransactionPage() {
            <Card>
                 <CardHeader>
                     <CardTitle>Transaction Log</CardTitle>
-                    <CardDescription>History of all internal transactions.</CardDescription>
+                    <CardDescription>History of all internal bank transfers.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-muted-foreground">Log will be implemented here.</p>
+                     <div className="flex flex-wrap gap-4 mb-4">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button id="date" variant={"outline"} className={cn("w-[300px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange?.from ? (dateRange.to ? (<>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>) : (format(dateRange.from, "LLL dd, y"))) : (<span>Pick a date range</span>)}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+                            </PopoverContent>
+                        </Popover>
+                        <Button onClick={clearFilters} variant="secondary">Clear Filter</Button>
+                    </div>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Date</TableHead>
+                                <TableHead>From Bank</TableHead>
+                                <TableHead>To Bank</TableHead>
+                                <TableHead>Amount</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                             {isLogLoading ? (
+                                Array.from({length: 5}).map((_, i) => <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-6" /></TableCell></TableRow>)
+                            ) : filteredLogEntries.length > 0 ? (
+                                filteredLogEntries.map(entry => (
+                                    <TableRow key={entry.id}>
+                                        <TableCell>{format(new Date(entry.date), 'dd MMM, yyyy')}</TableCell>
+                                        <TableCell>{entry.fromBankName}</TableCell>
+                                        <TableCell>{entry.toBankName}</TableCell>
+                                        <TableCell>{formatCurrency(entry.amount)}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" disabled><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                                            <Button variant="destructive" size="sm" className="ml-2" disabled><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                               <TableRow><TableCell colSpan={5} className="text-center h-24">No internal transfers found for the selected criteria.</TableCell></TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
                 </CardContent>
             </Card>
         </TabsContent>
