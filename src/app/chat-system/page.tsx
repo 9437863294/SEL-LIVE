@@ -22,7 +22,7 @@ import {
   Headphones,
   Contact,
   BarChart3,
-  Calendar,
+  Calendar as CalendarIconLucide,
   SmilePlus,
   RotateCcw,
 } from 'lucide-react';
@@ -92,7 +92,33 @@ export default function ChatSystemPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-
+  
+  const getCameraPermission = useCallback(async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast({
+        variant: 'destructive',
+        title: 'Camera Not Supported',
+        description: 'Your browser does not support camera access.',
+      });
+      setHasCameraPermission(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setHasCameraPermission(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasCameraPermission(false);
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Denied',
+        description: 'Please enable camera permissions in your browser settings to use this feature.',
+      });
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -101,59 +127,54 @@ export default function ChatSystemPage() {
     
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
-        const unreadListeners: (() => void)[] = [];
-        const userListeners: (() => void)[] = [];
+        const listeners: (()=>void)[] = [];
 
-        querySnapshot.forEach((doc) => {
-            userChats.push({ id: doc.id, ...doc.data() } as Chat);
-        });
+        for (const chatDoc of querySnapshot.docs) {
+            const chatData = { id: chatDoc.id, ...chatDoc.data() } as Chat;
+            
+            // Set up listeners for member details if it's a one-to-one chat
+            if (chatData.type === 'one-to-one') {
+                const otherMemberId = chatData.members.find(id => id !== currentUser.id);
+                if (otherMemberId) {
+                    const userDocRef = doc(db, 'users', otherMemberId);
+                    const unsubUser = onSnapshot(userDocRef, (userDoc) => {
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data() as User;
+                            setChats(prevChats => prevChats.map(c => {
+                                if (c.id === chatData.id) {
+                                    return {
+                                        ...c,
+                                        memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
+                                    };
+                                }
+                                return c;
+                            }));
+                        }
+                    });
+                    listeners.push(unsubUser);
+                }
+            }
+            
+            const messagesRef = collection(db, 'chats', chatData.id, 'messages');
+            const unreadQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id, '==', false)); // This is not a valid query
+            
+            // Client-side filtering for unread count
+            const unsubUnread = onSnapshot(messagesRef, (messagesSnapshot) => {
+                const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
+                setUnreadCounts(prev => ({ ...prev, [chatData.id]: unreadCount }));
+            });
+            listeners.push(unsubUnread);
+            
+            userChats.push(chatData);
+        }
+
         userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
 
-        const chatPromises = userChats.map(chat => {
-            return new Promise<void>(resolve => {
-                // Set up listeners for member details if it's a one-to-one chat
-                if (chat.type === 'one-to-one') {
-                    const otherMemberId = chat.members.find(id => id !== currentUser.id);
-                    if (otherMemberId) {
-                        const userDocRef = doc(db, 'users', otherMemberId);
-                        const unsubUser = onSnapshot(userDocRef, (userDoc) => {
-                            if (userDoc.exists()) {
-                                const userData = userDoc.data() as User;
-                                setChats(prevChats => prevChats.map(c => {
-                                    if (c.id === chat.id) {
-                                        return {
-                                            ...c,
-                                            memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
-                                        };
-                                    }
-                                    return c;
-                                }));
-                            }
-                        });
-                        userListeners.push(unsubUser);
-                    }
-                }
-
-                const messagesRef = collection(db, 'chats', chat.id, 'messages');
-                const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
-                const unsubUnread = onSnapshot(unreadQuery, (messagesSnapshot) => {
-                    const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
-                    setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadCount }));
-                });
-                unreadListeners.push(unsubUnread);
-                resolve();
-            });
-        });
-
-        Promise.all(chatPromises).then(() => {
-            setChats(userChats);
-            setIsLoadingChats(false);
-        });
+        setChats(userChats);
+        setIsLoadingChats(false);
 
         return () => {
-          unsubscribe();
-          unreadListeners.forEach(unsub => unsub());
-          userListeners.forEach(unsub => unsub());
+          listeners.forEach(unsub => unsub());
         };
     });
 
@@ -204,34 +225,6 @@ export default function ChatSystemPage() {
 
     return () => unsubscribe();
   }, [selectedChat]);
-  
-  const getCameraPermission = useCallback(async () => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast({
-        variant: 'destructive',
-        title: 'Camera Not Supported',
-        description: 'Your browser does not support camera access.',
-      });
-      setHasCameraPermission(false);
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      setHasCameraPermission(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setHasCameraPermission(false);
-      toast({
-        variant: 'destructive',
-        title: 'Camera Access Denied',
-        description: 'Please enable camera permissions in your browser settings to use this feature.',
-      });
-    }
-  }, [toast]);
-
 
   const handleSelectUser = async (user: User) => {
     setIsNewChatOpen(false);
@@ -269,15 +262,14 @@ export default function ChatSystemPage() {
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      handleSendMessage(undefined, e.target.files[0]);
+      setAttachment(e.target.files[0]);
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent, file?: File) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     
-    const attachmentToSend = file || attachment;
-    if ((!newMessage.trim() && !attachmentToSend) || !currentUser || !selectedChat) return;
+    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -290,21 +282,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (attachmentToSend) {
-            const isImage = attachmentToSend.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachmentToSend.name}`;
+        if (attachment) {
+            const isImage = attachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, attachmentToSend);
+            await uploadBytes(storageRef, attachment);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: attachmentToSend.name,
+                fileName: attachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = newMessage.trim() || attachmentToSend.name;
+            lastMessageText = newMessage.trim() || attachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -344,10 +336,12 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const unreadMessagesQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
-    const unreadSnapshot = await getDocs(unreadMessagesQuery);
     
-    const docsToUpdate = unreadSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    // Efficiently find unread messages for the current user
+    const unreadMessagesQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id, '==', false));
+    const snapshot = await getDocs(messagesRef);
+    const docsToUpdate = snapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    
     if (docsToUpdate.length === 0) return;
     
     const batch = writeBatch(db);
@@ -375,23 +369,6 @@ export default function ChatSystemPage() {
     }
   };
   
-  const handleSendPhoto = async () => {
-    if (!capturedImage) return;
-    setIsSwitching(true);
-    try {
-        const blob = await (await fetch(capturedImage)).blob();
-        const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        await handleSendMessage(undefined, file);
-    } catch(e) {
-        toast({ title: 'Error', description: 'Failed to send photo.', variant: 'destructive'});
-    } finally {
-        setIsSwitching(false);
-        setIsCameraDialogOpen(false);
-        setIsPreviewing(false);
-        setCapturedImage(null);
-    }
-  };
-
   const handleAttachPhoto = async () => {
     if (!capturedImage) return;
     const blob = await (await fetch(capturedImage)).blob();
@@ -585,7 +562,7 @@ export default function ChatSystemPage() {
                                         <BarChart3 className="mr-2 h-4 w-4" /> Poll
                                     </DropdownMenuItem>
                                      <DropdownMenuItem>
-                                        <Calendar className="mr-2 h-4 w-4" /> Event
+                                        <CalendarIconLucide className="mr-2 h-4 w-4" /> Event
                                     </DropdownMenuItem>
                                      <DropdownMenuItem>
                                         <SmilePlus className="mr-2 h-4 w-4" /> New Sticker
@@ -611,7 +588,7 @@ export default function ChatSystemPage() {
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 disabled={isSending}
                             />
-                            <Button type="submit" disabled={isSending}>
+                            <Button type="submit" disabled={isSending || (!newMessage.trim() && !attachment)}>
                                 {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                         </form>
@@ -675,9 +652,9 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleSendPhoto} disabled={isSwitching}>
+                        <Button onClick={handleAttachPhoto} disabled={isSwitching}>
                              {isSwitching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Send Photo
+                            Attach Photo
                         </Button>
                     </>
                 ) : (
