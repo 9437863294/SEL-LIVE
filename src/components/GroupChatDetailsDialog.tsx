@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface GroupChatDetailsDialogProps {
   isOpen: boolean;
@@ -51,7 +52,8 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
         groupAdmins: action === 'add' ? arrayUnion(memberId) : arrayRemove(memberId)
       });
       toast({ title: 'Success', description: `Admin status updated.` });
-      onOpenChange(false);
+      // The dialog will re-render with new data from the parent component's state update.
+      // No need to close it. The parent's onSnapshot will handle the update.
     } catch (e) {
       toast({ title: 'Error', description: 'Could not update admin status.', variant: 'destructive' });
     }
@@ -67,7 +69,6 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
              memberDetails: arrayRemove(memberToRemove)
          });
          toast({ title: 'Success', description: `${memberToRemove.name} has been removed from the group.` });
-         onOpenChange(false);
      } catch (e) {
         toast({ title: 'Error', description: 'Could not remove member.', variant: 'destructive' });
      }
@@ -195,3 +196,4 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     </Dialog>
   );
 }
+
