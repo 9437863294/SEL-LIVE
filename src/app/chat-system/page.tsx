@@ -617,7 +617,7 @@ const ChatPanel = () => (
 
                             return (
                                 <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
-                                    <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                    <div className={cn("rounded-lg px-4 py-2 max-w-xs", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
                                         {renderMessageContent(message, !isSender ? senderDetails?.name : undefined)}
                                         <div className="flex items-center justify-end gap-1 mt-1">
                                             {message.timestamp?.toDate && (
