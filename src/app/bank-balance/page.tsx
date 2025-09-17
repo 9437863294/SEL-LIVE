@@ -15,6 +15,7 @@ import type { BankAccount } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function BankBalanceDashboard() {
     const { toast } = useToast();
@@ -76,7 +77,7 @@ export default function BankBalanceDashboard() {
 
     if (authLoading || (isLoading && canView)) {
         return (
-            <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="w-full h-full flex flex-col px-4 sm:px-6 lg:px-8">
                 <Skeleton className="h-10 w-80 mb-6" />
                 <Skeleton className="h-48 mb-6" />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -108,7 +109,7 @@ export default function BankBalanceDashboard() {
 
     return (
         <>
-            <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="w-full h-full flex flex-col px-4 sm:px-6 lg:px-8">
                 <div className="mb-6 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
@@ -161,43 +162,44 @@ export default function BankBalanceDashboard() {
                         </div>
                     </CardContent>
                 </Card>
+                 <ScrollArea className="flex-grow">
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {accounts.map(account => {
+                            const isCC = account.accountType === 'Cash Credit';
+                            let displayBalance = account.currentBalance;
+                            if(isCC) {
+                                const latestDp = getLatestDp(account);
+                                displayBalance = latestDp - account.currentBalance;
+                            }
 
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {accounts.map(account => {
-                        const isCC = account.accountType === 'Cash Credit';
-                        let displayBalance = account.currentBalance;
-                        if(isCC) {
-                            const latestDp = getLatestDp(account);
-                            displayBalance = latestDp - account.currentBalance;
-                        }
-
-                        return (
-                            <Card key={account.id} className={
-                              account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
-                              account.bankName.includes('State Bank') ? 'bg-blue-50 border-blue-200' : ''
-                            }>
-                                <CardHeader>
-                                    <div className="flex justify-between items-start">
-                                        <CardTitle>{account.shortName}</CardTitle>
-                                        <Banknote className="h-6 w-6 text-muted-foreground" />
-                                    </div>
-                                    <CardDescription>
-                                        {isCC ? "Today's Available Balance" : "Today's Closing Balance"}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-3xl font-bold mb-2">{formatCurrency(displayBalance)}</p>
-                                </CardContent>
+                            return (
+                                <Card key={account.id} className={
+                                  account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
+                                  account.bankName.includes('State Bank') ? 'bg-blue-50 border-blue-200' : ''
+                                }>
+                                    <CardHeader>
+                                        <div className="flex justify-between items-start">
+                                            <CardTitle>{account.shortName}</CardTitle>
+                                            <Banknote className="h-6 w-6 text-muted-foreground" />
+                                        </div>
+                                        <CardDescription>
+                                            {isCC ? "Today's Available Balance" : "Today's Closing Balance"}
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <p className="text-3xl font-bold mb-2">{formatCurrency(displayBalance)}</p>
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+                         <Link href="/bank-balance/accounts">
+                             <Card className="h-full border-2 border-dashed flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                                <Plus className="h-8 w-8 mb-2" />
+                                <p className="font-medium">Add New Account</p>
                             </Card>
-                        );
-                    })}
-                     <Link href="/bank-balance/accounts">
-                         <Card className="h-full border-2 border-dashed flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors">
-                            <Plus className="h-8 w-8 mb-2" />
-                            <p className="font-medium">Add New Account</p>
-                        </Card>
-                    </Link>
-                </div>
+                        </Link>
+                    </div>
+                 </ScrollArea>
             </div>
             <Dialog open={isDailyEntryOpen} onOpenChange={setIsDailyEntryOpen}>
                 <DialogContent className="sm:max-w-lg">
