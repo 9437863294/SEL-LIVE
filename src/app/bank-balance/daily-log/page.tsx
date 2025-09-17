@@ -153,7 +153,7 @@ export default function DailyLogPage() {
          <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
                 <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">Daily Utilization Log</h1>
+                <h1 className="text-xl font-bold">Daily Utilization Log</h1>
             </div>
             <Card>
                 <CardHeader>
@@ -176,8 +176,8 @@ export default function DailyLogPage() {
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Daily Utilization Log</h1>
-            <p className="text-muted-foreground">History of all opening utilization updates.</p>
+            <h1 className="text-xl font-bold">Daily Utilization Log</h1>
+            <p className="text-sm text-muted-foreground">History of all opening utilization updates.</p>
           </div>
         </div>
       </div>

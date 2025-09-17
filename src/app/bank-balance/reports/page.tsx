@@ -97,7 +97,7 @@ export default function BankReportsPage() {
             <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
                 <div className="mb-6 flex items-center gap-4">
                     <Link href="/bank-balance"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">Bank Reports</h1>
+                    <h1 className="text-xl font-bold">Bank Reports</h1>
                 </div>
                 <Card>
                     <CardHeader>
@@ -120,7 +120,7 @@ export default function BankReportsPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Bank Reports</h1>
+        <h1 className="text-xl font-bold">Bank Reports</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {reportItems.map((item) => (

@@ -140,7 +140,7 @@ export default function ManageBanksPage() {
          <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
                 <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">Manage Banks</h1>
+                <h1 className="text-xl font-bold">Manage Banks</h1>
             </div>
             <Card>
                 <CardHeader>
@@ -163,8 +163,8 @@ export default function ManageBanksPage() {
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Manage Banks</h1>
-            <p className="text-muted-foreground">View, add, edit, or remove bank configurations.</p>
+            <h1 className="text-xl font-bold">Manage Banks</h1>
+            <p className="text-sm text-muted-foreground">View, add, edit, or remove bank configurations.</p>
           </div>
         </div>
       </div>

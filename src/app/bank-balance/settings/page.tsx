@@ -80,7 +80,7 @@ export default function BankBalanceSettingsPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Bank Settings</h1>
+        <h1 className="text-xl font-bold">Bank Settings</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {settingsItems.map((item) => (

@@ -146,7 +146,7 @@ export default function CashflowStatementPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Cashflow Statement</h1>
+        <h1 className="text-xl font-bold">Cashflow Statement</h1>
       </div>
       <Card>
         <CardContent className="pt-6">

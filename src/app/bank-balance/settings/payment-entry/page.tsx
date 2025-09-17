@@ -147,8 +147,8 @@ export default function PaymentEntrySettingsPage() {
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Payment Entry Settings</h1>
-            <p className="text-muted-foreground">Customize your payment entry form.</p>
+            <h1 className="text-xl font-bold">Payment Entry Settings</h1>
+            <p className="text-sm text-muted-foreground">Customize your payment entry form.</p>
           </div>
         </div>
       </div>

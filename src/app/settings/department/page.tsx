@@ -219,7 +219,7 @@ export default function ManageDepartmentPage() {
                 <ArrowLeft className="h-6 w-6" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Manage Department</h1>
+            <h1 className="text-xl font-bold">Manage Department</h1>
           </div>
           <Card>
               <CardHeader>
@@ -243,7 +243,7 @@ export default function ManageDepartmentPage() {
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Manage Department</h1>
+          <h1 className="text-xl font-bold">Manage Department</h1>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>

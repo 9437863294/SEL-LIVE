@@ -92,8 +92,8 @@ export default function BankPositionReportPage() {
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Bank Position Report</h1>
-            <p className="text-muted-foreground">Summary of balances across all bank accounts as of today.</p>
+            <h1 className="text-xl font-bold">Bank Position Report</h1>
+            <p className="text-sm text-muted-foreground">Summary of balances across all bank accounts as of today.</p>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">{format(new Date(), 'MMMM do, yyyy')}</p>

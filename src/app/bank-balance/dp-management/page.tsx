@@ -167,7 +167,7 @@ export default function DpManagementPage() {
          <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
                 <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">DP Management</h1>
+                <h1 className="text-xl font-bold">DP Management</h1>
             </div>
             <Card>
                 <CardHeader>
@@ -191,8 +191,8 @@ export default function DpManagementPage() {
                     <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
                 </Link>
                 <div>
-                    <h1 className="text-2xl font-bold">DP Management</h1>
-                    <p className="text-muted-foreground">Manage Drawing Power history for Cash Credit accounts.</p>
+                    <h1 className="text-xl font-bold">DP Management</h1>
+                    <p className="text-sm text-muted-foreground">Manage Drawing Power history for Cash Credit accounts.</p>
                 </div>
             </div>
        </div>
