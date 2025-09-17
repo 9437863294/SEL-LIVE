@@ -12,15 +12,17 @@ import type { User, Role } from '@/lib/types';
 
 interface AuthContextType {
   user: User | null;
+  users: User[];
   permissions: Record<string, string[]>;
   loading: boolean;
   isImpersonating: boolean;
   originalUser: User | null;
-  refreshUserData: () => Promise<void>; // Kept for manual refresh if needed, but not used in the loop
+  refreshUserData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  users: [],
   permissions: {},
   loading: true,
   isImpersonating: false,
@@ -32,6 +34,7 @@ const publicRoutes = ['/login'];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [originalUser, setOriginalUser] = useState<User | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
@@ -52,6 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+        const allUsersSnap = await getDocs(collection(db, 'users'));
+        const allUsersData = allUsersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+        setUsers(allUsersData);
+      
         const impersonationUserId = sessionStorage.getItem('impersonationUserId');
         const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
 
@@ -173,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
         {isPublicRoute || !loading ? children : null}
     </AuthContext.Provider>
   );

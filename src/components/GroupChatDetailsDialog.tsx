@@ -41,6 +41,7 @@ function AddMembersDialog({ isOpen, onOpenChange, currentMembers, onAddMembers }
     const [searchTerm, setSearchTerm] = useState('');
 
     const usersToAdd = useMemo(() => {
+        if (!allUsers) return []; // Guard against undefined allUsers
         return allUsers.filter(user => 
             !currentMembers.includes(user.id) &&
             (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase()))
