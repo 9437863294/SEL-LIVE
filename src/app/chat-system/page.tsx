@@ -34,7 +34,7 @@ import { NewChatDialog } from '@/components/NewChatDialog';
 import type { User, Chat, Message } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -49,50 +49,54 @@ export default function ChatSystemPage() {
 
   const [isLoadingChats, setIsLoadingChats] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
 
   useEffect(() => {
     if (!currentUser) return;
     setIsLoadingChats(true);
     const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id));
     
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
         querySnapshot.forEach((doc) => {
             userChats.push({ id: doc.id, ...doc.data() } as Chat);
         });
         userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
 
-        // Fetch user details for each chat in parallel
-        const fetchMemberDetails = async () => {
-            const chatsWithDetails = await Promise.all(userChats.map(async (chat) => {
-                 if (chat.type === 'one-to-one') {
-                    const otherMemberId = chat.members.find(id => id !== currentUser.id);
-                    if (otherMemberId) {
-                         const userDocRef = doc(db, 'users', otherMemberId);
-                         // We can set up a listener here if we want real-time presence in the chat list
-                         onSnapshot(userDocRef, (userDoc) => {
-                            if (userDoc.exists()) {
-                                const userData = userDoc.data() as User;
-                                setChats(prevChats => prevChats.map(c => {
-                                    if (c.id === chat.id) {
-                                        return {
-                                            ...c,
-                                            memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
-                                        };
-                                    }
-                                    return c;
-                                }));
-                            }
-                         });
-                    }
+        for (const chat of userChats) {
+            // Set up listeners for member details if it's a one-to-one chat
+            if (chat.type === 'one-to-one') {
+                const otherMemberId = chat.members.find(id => id !== currentUser.id);
+                if (otherMemberId) {
+                    const userDocRef = doc(db, 'users', otherMemberId);
+                    onSnapshot(userDocRef, (userDoc) => {
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data() as User;
+                            setChats(prevChats => prevChats.map(c => {
+                                if (c.id === chat.id) {
+                                    return {
+                                        ...c,
+                                        memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
+                                    };
+                                }
+                                return c;
+                            }));
+                        }
+                    });
                 }
-                return chat;
-            }));
-            setChats(chatsWithDetails);
-            setIsLoadingChats(false);
-        };
+            }
+
+            // Set up listeners for unread messages count
+            const messagesRef = collection(db, 'chats', chat.id, 'messages');
+            const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
+            onSnapshot(unreadQuery, (unreadSnapshot) => {
+                setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadSnapshot.size }));
+            });
+        }
         
-        fetchMemberDetails();
+        setChats(userChats);
+        setIsLoadingChats(false);
     });
 
     return () => unsubscribe();
@@ -173,7 +177,6 @@ export default function ChatSystemPage() {
 
     await addDoc(messagesRef, messageData);
     
-    // This update will be reflected automatically by the onSnapshot listener on the chats collection
     await updateDoc(chatRef, {
         lastMessage: {
             text: newMessage,
@@ -183,6 +186,26 @@ export default function ChatSystemPage() {
     });
 
     setNewMessage('');
+  };
+  
+  const handleSelectChat = async (chat: Chat) => {
+    setSelectedChat(chat);
+    if (!currentUser || (unreadCounts[chat.id] || 0) === 0) return;
+
+    const messagesRef = collection(db, 'chats', chat.id, 'messages');
+    const q = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
+    const unreadSnapshot = await getDocs(q);
+    
+    if (unreadSnapshot.empty) return;
+
+    const batch = writeBatch(db);
+    unreadSnapshot.docs.forEach(messageDoc => {
+        const messageRef = doc(db, 'chats', chat.id, 'messages', messageDoc.id);
+        const currentReadBy = messageDoc.data().readBy || [];
+        batch.update(messageRef, { readBy: [...currentReadBy, currentUser.id] });
+    });
+
+    await batch.commit();
   };
   
   const getOtherMember = (chat: Chat) => {
@@ -231,6 +254,7 @@ export default function ChatSystemPage() {
                         const otherMember = getOtherMember(chat);
                         const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
                         const chatAvatar = chat.type === 'group' ? undefined : otherMember?.photoURL;
+                        const hasUnread = (unreadCounts[chat.id] || 0) > 0;
 
                         return (
                             <div 
@@ -239,14 +263,14 @@ export default function ChatSystemPage() {
                                     "flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-muted",
                                     selectedChat?.id === chat.id && 'bg-muted'
                                 )}
-                                onClick={() => setSelectedChat(chat)}
+                                onClick={() => handleSelectChat(chat)}
                             >
                                 <Avatar>
                                     <AvatarImage src={chatAvatar} />
                                     <AvatarFallback>{getInitials(chatName)}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 overflow-hidden">
-                                    <p className="font-semibold truncate">{chatName}</p>
+                                    <p className={cn("font-semibold truncate", hasUnread && "font-bold text-primary")}>{chatName}</p>
                                     <p className="text-xs text-muted-foreground truncate">{chat.lastMessage?.text}</p>
                                 </div>
                                 {chat.lastMessage?.timestamp?.toDate && (
@@ -285,6 +309,7 @@ export default function ChatSystemPage() {
                         ) : (
                             messages.map(message => {
                                 const isSender = message.senderId === currentUser?.id;
+                                if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
                                         <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
@@ -326,3 +351,4 @@ export default function ChatSystemPage() {
     </>
   );
 }
+
