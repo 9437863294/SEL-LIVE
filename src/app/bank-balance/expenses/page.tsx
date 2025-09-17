@@ -76,6 +76,7 @@ export default function ExpensesEntryPage() {
   const { toast } = useToast();
   // Entry Tab State
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
@@ -202,7 +203,7 @@ export default function ExpensesEntryPage() {
                 transaction.set(expenseRef, expenseData);
             }
             
-            const newBalance = bankAccountDoc.data().currentBalance - totalExpenseAmount;
+            const newBalance = (bankAccountDoc.data().currentBalance || 0) - totalExpenseAmount;
             transaction.update(bankAccountRef, { currentBalance: newBalance });
         });
         
@@ -231,7 +232,7 @@ export default function ExpensesEntryPage() {
         }
 
         // Add the expense amount back to the balance
-        const newBalance = bankAccountDoc.data().currentBalance + expenseToDelete.amount;
+        const newBalance = (bankAccountDoc.data().currentBalance || 0) + expenseToDelete.amount;
         transaction.update(bankAccountRef, { currentBalance: newBalance });
 
         // Delete the expense document
@@ -288,7 +289,7 @@ export default function ExpensesEntryPage() {
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
                     <div className="space-y-1">
                         <Label className="mb-2">Date</Label>
-                        <Popover>
+                        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                         <PopoverTrigger asChild>
                             <Button
                             variant={"outline"}
@@ -302,7 +303,15 @@ export default function ExpensesEntryPage() {
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
-                            <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                            <Calendar
+                                mode="single"
+                                selected={date}
+                                onSelect={(selectedDate) => {
+                                    setDate(selectedDate);
+                                    setIsDatePickerOpen(false);
+                                }}
+                                initialFocus
+                            />
                         </PopoverContent>
                         </Popover>
                     </div>
