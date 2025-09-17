@@ -182,13 +182,12 @@ export default function DailyLogPage() {
                 <TableHead>Receipts</TableHead>
                 <TableHead>Contra</TableHead>
                 <TableHead>Closing Utilization</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-6" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6" /></TableCell></TableRow>
                 ))
               ) : filteredLogs.length > 0 ? (
                 filteredLogs.map(log => (
@@ -200,14 +199,10 @@ export default function DailyLogPage() {
                     <TableCell className="text-green-600">{formatCurrency(log.totalReceipts)}</TableCell>
                     <TableCell>{formatCurrency(log.totalContra)}</TableCell>
                     <TableCell>{formatCurrency(log.closingBalance)}</TableCell>
-                    <TableCell className="text-right">
-                        <Button variant="outline" size="sm"><Edit className="mr-2 h-4 w-4"/>Edit</Button>
-                        <Button variant="destructive" size="sm" className="ml-2"><Trash2 className="mr-2 h-4 w-4"/>Delete</Button>
-                    </TableCell>
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={8} className="text-center h-24">No logs found for the selected criteria.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center h-24">No logs found for the selected criteria.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
