@@ -37,11 +37,11 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, compareDesc } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -93,13 +93,14 @@ export default function ExpensesEntryPage() {
       try {
         const [accountsSnap, expensesSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), orderBy('date', 'desc')))
+            getDocs(query(collection(db, 'bankExpenses'), where('type', '==', 'Debit'), where('isContra', '==', false)))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
         
         const expensesData = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        expensesData.sort((a, b) => compareDesc(a.date.toDate(), b.date.toDate()));
         setLogEntries(expensesData);
 
       } catch (error) {
@@ -203,8 +204,10 @@ export default function ExpensesEntryPage() {
                 transaction.set(expenseRef, expenseData);
             }
             
-            const newBalance = (bankAccountDoc.data().currentBalance || 0) - totalExpenseAmount;
-            transaction.update(bankAccountRef, { currentBalance: newBalance });
+            // This logic might be incorrect if we are moving to a calculated balance system
+            // For now, let's keep it but be aware.
+            // const newBalance = (bankAccountDoc.data().currentBalance || 0) - totalExpenseAmount;
+            // transaction.update(bankAccountRef, { currentBalance: newBalance });
         });
         
         toast({ title: 'Success', description: `${expenses.length} expense(s) saved successfully.`});
@@ -224,22 +227,10 @@ export default function ExpensesEntryPage() {
     try {
       await runTransaction(db, async (transaction) => {
         const expenseRef = doc(db, 'bankExpenses', expenseToDelete.id);
-        const bankAccountRef = doc(db, 'bankAccounts', expenseToDelete.accountId);
-        
-        const bankAccountDoc = await transaction.get(bankAccountRef);
-        if (!bankAccountDoc.exists()) {
-          throw new Error("Associated bank account not found.");
-        }
-
-        // Add the expense amount back to the balance
-        const newBalance = (bankAccountDoc.data().currentBalance || 0) + expenseToDelete.amount;
-        transaction.update(bankAccountRef, { currentBalance: newBalance });
-
-        // Delete the expense document
         transaction.delete(expenseRef);
       });
       
-      toast({ title: 'Success', description: 'Expense deleted and balance updated.' });
+      toast({ title: 'Success', description: 'Expense deleted.' });
       fetchBankAccountsAndExpenses(); // Refresh data
 
     } catch (error) {
@@ -266,7 +257,7 @@ export default function ExpensesEntryPage() {
           <Link href="/bank-balance">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
-          <h1 className="text-2xl font-bold">Expenses Entry</h1>
+          <h1 className="text-2xl font-bold">Payment Entry</h1>
         </div>
         <Link href="/">
           <Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button>
@@ -281,8 +272,8 @@ export default function ExpensesEntryPage() {
         <TabsContent value="entry">
           <Card>
             <CardHeader>
-              <CardTitle>Record Expenses</CardTitle>
-              <CardDescription>Enter individual expenses for a specific date and bank.</CardDescription>
+              <CardTitle>Record Payments</CardTitle>
+              <CardDescription>Enter individual payments for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -343,7 +334,7 @@ export default function ExpensesEntryPage() {
                     <div className="flex justify-between items-center">
                       <CollapsibleTrigger asChild>
                         <h4 className="text-lg font-semibold cursor-pointer">
-                          Expense #{index + 1}
+                          Payment #{index + 1}
                         </h4>
                       </CollapsibleTrigger>
                       <div className="flex items-center gap-4">
@@ -392,10 +383,10 @@ export default function ExpensesEntryPage() {
               </div>
 
               <div className="flex justify-between items-center">
-                <Button variant="outline" onClick={addExpense}><Plus className="mr-2 h-4 w-4" /> Add Another Expense</Button>
+                <Button variant="outline" onClick={addExpense}><Plus className="mr-2 h-4 w-4" /> Add Another Payment</Button>
                 <Button onClick={handleSave} disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4"/>}
-                    Save Expenses
+                    Save Payments
                 </Button>
               </div>
             </CardContent>
@@ -404,8 +395,8 @@ export default function ExpensesEntryPage() {
         <TabsContent value="log">
            <Card>
                 <CardHeader>
-                    <CardTitle>Expenses Log</CardTitle>
-                    <CardDescription>History of all expense entries.</CardDescription>
+                    <CardTitle>Payments Log</CardTitle>
+                    <CardDescription>History of all payment entries.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-wrap gap-4 mb-4">
@@ -475,7 +466,7 @@ export default function ExpensesEntryPage() {
                                                         <AlertDialogHeader>
                                                             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                                             <AlertDialogDescription>
-                                                                This action cannot be undone. This will permanently delete this expense and update the account balance.
+                                                                This action cannot be undone. This will permanently delete this payment.
                                                             </AlertDialogDescription>
                                                         </AlertDialogHeader>
                                                         <AlertDialogFooter>
@@ -489,7 +480,7 @@ export default function ExpensesEntryPage() {
                                     );
                                 })
                             ) : (
-                               <TableRow><TableCell colSpan={7} className="text-center h-24">No expense records found.</TableCell></TableRow>
+                               <TableRow><TableCell colSpan={7} className="text-center h-24">No payment records found.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>

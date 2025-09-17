@@ -84,7 +84,7 @@ export default function ReceiptsEntryPage() {
       try {
         const [accountsSnap, receiptsSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), where('type', '==', 'Credit')))
+            getDocs(query(collection(db, 'bankExpenses'), where('type', '==', 'Credit'), where('isContra', '==', false)))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
@@ -156,7 +156,7 @@ export default function ReceiptsEntryPage() {
                     description: receipt.description,
                     amount: receipt.amount,
                     type: 'Credit',
-                    isContra: false, // Receipts are not contra
+                    isContra: false,
                     createdAt: Timestamp.now(),
                 };
 
@@ -301,7 +301,7 @@ export default function ReceiptsEntryPage() {
                     <CollapsibleContent className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-4">
                         <Textarea placeholder="e.g. Received from Client X" value={receipt.description} onChange={(e) => handleReceiptChange(receipt.id, 'description', e.target.value)} className="md:col-span-3"/>
                         <div className="md:col-span-2">
-                             <Input type="number" placeholder="Amount" value={receipt.amount || ''} onChange={(e) => handleReceiptChange(receipt.id, 'amount', e.target.valueAsNumber || 0)} />
+                             <Input type="number" placeholder="Amount" value={receipt.amount || ''} onChange={e => handleReceiptChange(receipt.id, 'amount', e.target.valueAsNumber || 0)} />
                         </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -413,5 +413,3 @@ export default function ReceiptsEntryPage() {
     </div>
   );
 }
-
-    
