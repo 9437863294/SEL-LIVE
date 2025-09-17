@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -12,6 +12,8 @@ import {
   Save,
   Loader2,
   Home,
+  MoreHorizontal,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,14 +34,18 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
+
 
 const initialExpenseItem = {
   id: Date.now(),
@@ -57,25 +63,60 @@ type ExpenseItem = typeof initialExpenseItem;
 
 export default function ExpensesEntryPage() {
   const { toast } = useToast();
+  // Entry Tab State
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    const fetchBankAccounts = async () => {
+  // Log Tab State
+  const [logEntries, setLogEntries] = useState<BankExpense[]>([]);
+  const [isLogLoading, setIsLogLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [bankFilter, setBankFilter] = useState('all');
+  const [searchFilter, setSearchFilter] = useState('');
+
+  const fetchBankAccountsAndExpenses = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'bankAccounts'));
-        const accounts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
+        const [accountsSnap, expensesSnap] = await Promise.all([
+            getDocs(collection(db, 'bankAccounts')),
+            getDocs(query(collection(db, 'bankExpenses'), orderBy('date', 'desc')))
+        ]);
+        
+        const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
+        
+        const expensesData = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        setLogEntries(expensesData);
+
       } catch (error) {
-        console.error("Error fetching bank accounts:", error);
-        toast({ title: 'Error', description: 'Failed to load bank accounts.', variant: 'destructive' });
+        console.error("Error fetching data:", error);
+        toast({ title: 'Error', description: 'Failed to load initial data.', variant: 'destructive' });
       }
-    };
-    fetchBankAccounts();
+      setIsLogLoading(false);
+  };
+
+  useEffect(() => {
+    fetchBankAccountsAndExpenses();
   }, [toast]);
+  
+  const filteredLogEntries = useMemo(() => {
+    return logEntries.filter(entry => {
+        const entryDate = entry.date.toDate();
+        const inDateRange = !dateRange || (
+            (!dateRange.from || entryDate >= dateRange.from) &&
+            (!dateRange.to || entryDate <= dateRange.to)
+        );
+        const bankMatch = bankFilter === 'all' || entry.accountId === bankFilter;
+        const searchMatch = !searchFilter || 
+            entry.description.toLowerCase().includes(searchFilter.toLowerCase()) ||
+            entry.paymentRequestRefNo?.toLowerCase().includes(searchFilter.toLowerCase()) ||
+            entry.utrNumber?.toLowerCase().includes(searchFilter.toLowerCase());
+            
+        return inDateRange && bankMatch && searchMatch;
+    });
+  }, [logEntries, dateRange, bankFilter, searchFilter]);
 
   const totalAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -108,7 +149,14 @@ export default function ExpensesEntryPage() {
     
     try {
         await runTransaction(db, async (transaction) => {
+            const bankAccountRef = doc(db, 'bankAccounts', selectedBank);
+            const bankAccountDoc = await transaction.get(bankAccountRef);
+            if (!bankAccountDoc.exists()) throw new Error("Bank account not found.");
+            
+            let totalExpenseAmount = 0;
+
             for (const expense of expenses) {
+                totalExpenseAmount += expense.amount;
                 let approvalCopyUrl = '';
                 let bankTransferCopyUrl = '';
 
@@ -139,30 +187,35 @@ export default function ExpensesEntryPage() {
                     createdAt: Timestamp.now(),
                 };
 
-                // Add to bankExpenses collection
                 const expenseRef = doc(collection(db, 'bankExpenses'));
                 transaction.set(expenseRef, expenseData);
-
-                // Update bank account balance
-                const bankAccountRef = doc(db, 'bankAccounts', selectedBank);
-                const bankAccountDoc = await transaction.get(bankAccountRef);
-                if (!bankAccountDoc.exists()) throw new Error("Bank account not found.");
-                
-                const newBalance = bankAccountDoc.data().currentBalance - expense.amount;
-                transaction.update(bankAccountRef, { currentBalance: newBalance });
             }
+            
+            const newBalance = bankAccountDoc.data().currentBalance - totalExpenseAmount;
+            transaction.update(bankAccountRef, { currentBalance: newBalance });
         });
         
         toast({ title: 'Success', description: `${expenses.length} expense(s) saved successfully.`});
         setExpenses([initialExpenseItem]);
         setDate(new Date());
         setSelectedBank('');
+        fetchBankAccountsAndExpenses(); // Refresh log data
 
     } catch (error) {
         console.error("Error saving expenses:", error);
         toast({ title: 'Save Failed', description: 'An error occurred while saving.', variant: 'destructive' });
     }
     setIsSaving(false);
+  }
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  };
+  
+  const clearFilters = () => {
+    setDateRange(undefined);
+    setBankFilter('all');
+    setSearchFilter('');
   }
 
   return (
@@ -230,7 +283,7 @@ export default function ExpensesEntryPage() {
                 <div className="text-right">
                   <p className="text-muted-foreground">Total</p>
                   <p className="text-2xl font-bold">
-                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalAmount)}
+                    {formatCurrency(totalAmount)}
                   </p>
                 </div>
               </div>
@@ -245,7 +298,7 @@ export default function ExpensesEntryPage() {
                         </h4>
                       </CollapsibleTrigger>
                       <div className="flex items-center gap-4">
-                         <span className="font-semibold text-lg">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(expense.amount)}</span>
+                         <span className="font-semibold text-lg">{formatCurrency(expense.amount)}</span>
                          <Button variant="destructive" size="icon" onClick={() => removeExpense(expense.id)}>
                             <Trash2 className="h-4 w-4" />
                          </Button>
@@ -300,14 +353,85 @@ export default function ExpensesEntryPage() {
           </Card>
         </TabsContent>
         <TabsContent value="log">
-          <Card>
-            <CardHeader><CardTitle>Expense Log</CardTitle></CardHeader>
-            <CardContent>
-                <p>The expense log will be displayed here.</p>
-            </CardContent>
-          </Card>
+           <Card>
+                <CardHeader>
+                    <CardTitle>Expenses Log</CardTitle>
+                    <CardDescription>History of all expense entries.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-wrap gap-4 mb-4">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button id="date" variant={"outline"} className={cn("w-[300px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange?.from ? (dateRange.to ? (<>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>) : (format(dateRange.from, "LLL dd, y"))) : (<span>Pick a date range</span>)}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+                            </PopoverContent>
+                        </Popover>
+                        <Select value={bankFilter} onValueChange={setBankFilter}>
+                            <SelectTrigger className="w-[240px]">
+                                <SelectValue placeholder="All Banks" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Banks</SelectItem>
+                                {bankAccounts.map(acc => (
+                                    <SelectItem key={acc.id} value={acc.id}>{acc.accountName} - {acc.bankName}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input placeholder="Search..." className="pl-8" value={searchFilter} onChange={e => setSearchFilter(e.target.value)} />
+                        </div>
+                        <Button onClick={clearFilters} variant="secondary">Clear Filters</Button>
+                    </div>
+
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Date</TableHead>
+                                <TableHead>Bank</TableHead>
+                                <TableHead>Description</TableHead>
+                                <TableHead>Ref No.</TableHead>
+                                <TableHead>UTR No.</TableHead>
+                                <TableHead>Amount</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isLogLoading ? (
+                                Array.from({length: 5}).map((_, i) => <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6" /></TableCell></TableRow>)
+                            ) : filteredLogEntries.length > 0 ? (
+                                filteredLogEntries.map(entry => {
+                                    const bank = bankAccounts.find(b => b.id === entry.accountId);
+                                    return (
+                                        <TableRow key={entry.id}>
+                                            <TableCell>{format(entry.date.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                            <TableCell>{bank?.accountName || 'N/A'}</TableCell>
+                                            <TableCell>{entry.description}</TableCell>
+                                            <TableCell>{entry.paymentRequestRefNo}</TableCell>
+                                            <TableCell>{entry.utrNumber}</TableCell>
+                                            <TableCell>{formatCurrency(entry.amount)}</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
+                            ) : (
+                               <TableRow><TableCell colSpan={7} className="text-center h-24">No expense records found.</TableCell></TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
         </TabsContent>
       </Tabs>
     </div>
   );
 }
+
+    
