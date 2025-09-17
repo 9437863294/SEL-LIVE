@@ -33,7 +33,7 @@ export const useAuthorization = () => {
     }
     
     return false;
-  }, [permissions, loading]);
+  }, [permissions]);
 
   return { can, isLoading: loading };
 };
