@@ -14,18 +14,18 @@ interface AuthContextType {
   user: User | null;
   permissions: Record<string, string[]>;
   loading: boolean;
-  refreshUserData: () => Promise<void>;
   isImpersonating: boolean;
   originalUser: User | null;
+  refreshUserData: () => Promise<void>; // Kept for manual refresh if needed, but not used in the loop
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   permissions: {},
   loading: true,
-  refreshUserData: async () => {},
   isImpersonating: false,
   originalUser: null,
+  refreshUserData: async () => {},
 });
 
 const publicRoutes = ['/login'];
@@ -58,16 +58,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let userToLoadId = firebaseUser.uid;
         let isImpersonationSession = false;
 
-        // Check for an active impersonation session
         if (impersonationUserId && storedOriginalUser) {
             const originalAdminData = JSON.parse(storedOriginalUser) as User;
-            // Ensure the currently logged-in Firebase user is the original admin
             if (firebaseUser.uid === originalAdminData.id) {
                 userToLoadId = impersonationUserId;
                 setOriginalUser(originalAdminData);
                 isImpersonationSession = true;
             } else {
-                 // Mismatch, clear session and load the actual user
                 sessionStorage.removeItem('impersonationUserId');
                 sessionStorage.removeItem('originalAdminUser');
             }
@@ -81,14 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDocSnap.exists()) {
             const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
             setUser(userData);
-            
-             // Update user's online status and last seen
-            await updateDoc(userDocRef, {
-              isOnline: true,
-              lastSeen: serverTimestamp()
-            });
 
-            // Fetch permissions for the loaded user (original or impersonated)
             if (userData.role) {
                 const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
                 const roleSnap = await getDocs(rolesQuery);
@@ -104,54 +94,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                  setPermissions({});
             }
         } else {
-            // If the user doc doesn't exist, sign out to prevent being stuck.
-            console.error("User document not found in Firestore for UID:", userToLoadId);
+            console.error("User document not found for UID:", userToLoadId);
             setUser(null);
             setPermissions({});
             await auth.signOut();
         }
 
     } catch (error) {
-        console.error("Error during user data fetch:", error);
+        console.error("Error fetching user data:", error);
         setUser(null);
         setPermissions({});
     } finally {
         setLoading(false);
     }
-}, []);
-
-
+  }, []);
+  
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
-    setLoading(true);
-    if (firebaseUser) {
-        await fetchUserData(firebaseUser);
-    } else {
-        await fetchUserData(null);
-    }
-    setLoading(false);
+    await fetchUserData(firebaseUser);
   }, [fetchUserData]);
 
   useEffect(() => {
-    const handleBeforeUnload = async () => {
-        if (auth.currentUser) {
-            const userDocRef = doc(db, 'users', auth.currentUser.uid);
-            await updateDoc(userDocRef, {
-              isOnline: false,
-              lastSeen: serverTimestamp()
-            });
+    let currentUserId: string | null = null;
+    
+    const handleBeforeUnload = () => {
+        if (currentUserId) {
+            const userDocRef = doc(db, 'users', currentUserId);
+            updateDoc(userDocRef, { isOnline: false, lastSeen: serverTimestamp() });
         }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         setLoading(true);
         if (firebaseUser) {
-            fetchUserData(firebaseUser);
+            currentUserId = firebaseUser.uid;
+            await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
+            await fetchUserData(firebaseUser);
         } else {
-            if(user) { // Only update if a user was previously logged in
-                const userDocRef = doc(db, 'users', user.id);
-                updateDoc(userDocRef, { isOnline: false, lastSeen: serverTimestamp() });
+            if (currentUserId) {
+                handleBeforeUnload();
             }
+            currentUserId = null;
             setUser(null);
             setPermissions({});
             setLoading(false);
@@ -160,21 +143,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Listen for storage changes to sync impersonation state across tabs
-    const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === 'impersonationUserId' || event.key === 'originalAdminUser') {
-            refreshUserData();
-        }
-    };
-    window.addEventListener('storage', handleStorageChange);
-
     return () => {
         unsubscribe();
         window.removeEventListener('beforeunload', handleBeforeUnload);
-        window.removeEventListener('storage', handleStorageChange);
-        handleBeforeUnload(); // Try to set offline on component unmount
+        handleBeforeUnload();
     };
-  }, [fetchUserData, refreshUserData, user]);
+  }, [fetchUserData]);
+
 
   useEffect(() => {
     if (loading) return;
@@ -197,20 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // Render children only if the route is public, or if loading is finished for a private route
-  if (isPublicRoute || !loading) {
-     return (
-        <AuthContext.Provider value={{ user, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
-            {children}
-        </AuthContext.Provider>
-    );
-  }
-
-  // Fallback for private routes while loading
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <Loader2 className="h-12 w-12 animate-spin text-primary" />
-    </div>
+    <AuthContext.Provider value={{ user, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
+        {isPublicRoute || !loading ? children : null}
+    </AuthContext.Provider>
   );
 }
 
@@ -221,5 +186,3 @@ export const useAuth = () => {
   }
   return context;
 };
-
-    
