@@ -64,47 +64,6 @@ export default function ProjectBillingSettingsPage() {
         </Link>
         <h1 className="text-xl font-bold">Project Billing Settings</h1>
       </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Billing Status</CardTitle>
-          <CardDescription>
-            Enable or disable billing requirements for each project.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Name</TableHead>
-                  <TableHead className="text-right">Billing Required</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.projectName}</TableCell>
-                    <TableCell className="text-right">
-                       <Switch
-                        checked={project.billingRequired}
-                        onCheckedChange={(checked) => handleBillingStatusChange(project, checked)}
-                        disabled={savingId === project.id}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
