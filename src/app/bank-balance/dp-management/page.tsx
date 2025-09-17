@@ -98,7 +98,9 @@ export default function DpManagementPage() {
 
     setIsSaving(prev => ({...prev, [accountId]: true}));
     try {
-        const updatedDpLog = (account.drawingPower || []).filter(entry => entry.date !== entryToDelete.date || entry.amount !== entryToDelete.amount);
+        const updatedDpLog = (account.drawingPower || []).filter(entry => 
+            entry.date !== entryToDelete.date || entry.amount !== entryToDelete.amount
+        );
 
         await updateDoc(doc(db, 'bankAccounts', accountId), { drawingPower: updatedDpLog });
         toast({ title: 'Success', description: 'DP entry deleted.' });
