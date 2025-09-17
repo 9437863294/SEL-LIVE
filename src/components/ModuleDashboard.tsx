@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
@@ -17,6 +17,7 @@ const moduleIcons: Record<string, string> = {
   'Bank Balance': 'Banknote',
   'Expenses': 'Receipt',
   'Settings': 'Settings',
+  'Chat System': 'MessageSquare',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -27,12 +28,28 @@ const moduleDescriptions: Record<string, string> = {
     'Bank Balance': 'View and manage bank balance information.',
     'Expenses': 'Track and manage project expenses.',
     'Settings': 'Manage application-wide settings.',
+    'Chat System': 'A real-time messaging system for your team.',
 }
 
 export default function ModuleDashboard() {
-  const { modules, updateModuleOrder, isLoading } = useModules();
+  const { modules, addModule, updateModuleOrder, isLoading } = useModules();
   const { can } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoading) {
+      const chatModuleExists = modules.some(m => m.title === 'Chat System');
+      if (!chatModuleExists) {
+        addModule({
+          title: 'Chat System',
+          content: "A real-time messaging system with features like user-to-user chat, group chats, read receipts, and file sharing, built on Firebase.",
+          tags: ['chat', 'firebase', 'real-time'],
+          icon: 'MessageSquare',
+        });
+      }
+    }
+  }, [isLoading, modules, addModule]);
+
 
   const allModules = useMemo(() => {
     if (isLoading) {
@@ -48,6 +65,11 @@ export default function ModuleDashboard() {
             tags: [],
             icon: moduleIcons[moduleName] || 'FileText',
         }));
+    
+    const savedChatModule = modules.find(m => m.title === 'Chat System');
+    if (savedChatModule && !availableModules.some(m => m.title === 'Chat System')) {
+        availableModules.push(savedChatModule);
+    }
 
     const savedModulesMap = new Map(modules.map(m => [m.title, m]));
     
