@@ -33,6 +33,15 @@ interface DailyInterestLog {
     dailyInterest: number;
 }
 
+interface MonthlySummary {
+    month: string; // "August 2025"
+    banks: {
+        accountId: string;
+        accountName: string;
+        totalInterest: number;
+    }[];
+}
+
 export default function InterestRatePage() {
   const { toast } = useToast();
   // Common state
@@ -46,6 +55,7 @@ export default function InterestRatePage() {
   // Daily Log Tab State
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [dailyLogs, setDailyLogs] = useState<DailyInterestLog[]>([]);
+  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
   const [isLogLoading, setIsLogLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [bankFilter, setBankFilter] = useState('all');
@@ -142,6 +152,30 @@ export default function InterestRatePage() {
         
         logs.sort((a,b) => compareDesc(new Date(a.date), new Date(b.date)));
         setDailyLogs(logs);
+
+        // Calculate Monthly Summary
+        const monthlyData: Record<string, Record<string, { accountName: string; totalInterest: number }>> = {};
+        logs.forEach(log => {
+            const monthKey = format(new Date(log.date), 'MMMM yyyy');
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = {};
+            }
+            if (!monthlyData[monthKey][log.accountId]) {
+                monthlyData[monthKey][log.accountId] = { accountName: log.accountName, totalInterest: 0 };
+            }
+            monthlyData[monthKey][log.accountId].totalInterest += log.dailyInterest;
+        });
+
+        const summary: MonthlySummary[] = Object.entries(monthlyData).map(([month, banks]) => ({
+            month,
+            banks: Object.entries(banks).map(([accountId, data]) => ({
+                accountId,
+                accountName: data.accountName,
+                totalInterest: data.totalInterest,
+            })).sort((a, b) => a.accountName.localeCompare(b.accountName))
+        })).sort((a,b) => compareDesc(new Date(a.month), new Date(b.month)));
+        
+        setMonthlySummary(summary);
     };
 
     calculateLogs();
@@ -251,6 +285,7 @@ export default function InterestRatePage() {
             <TabsList className="mb-4">
                 <TabsTrigger value="manage-rates">Manage Rates</TabsTrigger>
                 <TabsTrigger value="daily-log">Daily Log</TabsTrigger>
+                <TabsTrigger value="monthly-summary">Monthly Summary</TabsTrigger>
             </TabsList>
             <TabsContent value="manage-rates">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -393,7 +428,49 @@ export default function InterestRatePage() {
                     </CardContent>
                 </Card>
             </TabsContent>
+            <TabsContent value="monthly-summary">
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Monthly Interest Summary</CardTitle>
+                        <CardDescription>Total interest accrued per bank for each month.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Month</TableHead>
+                                    <TableHead>Bank Name</TableHead>
+                                    <TableHead className="text-right">Total Interest</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLogLoading ? (
+                                    <TableRow><TableCell colSpan={3}><Skeleton className="h-20" /></TableCell></TableRow>
+                                ) : monthlySummary.length > 0 ? (
+                                    monthlySummary.map((summary, index) => (
+                                        summary.banks.map((bank, bankIndex) => (
+                                            <TableRow key={`${summary.month}-${bank.accountId}`}>
+                                                {bankIndex === 0 && (
+                                                    <TableCell rowSpan={summary.banks.length} className="font-medium align-top">
+                                                        {summary.month}
+                                                    </TableCell>
+                                                )}
+                                                <TableCell>{bank.accountName}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(bank.totalInterest)}</TableCell>
+                                            </TableRow>
+                                        ))
+                                    ))
+                                ) : (
+                                    <TableRow><TableCell colSpan={3} className="text-center h-24">No data to summarize.</TableCell></TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                 </Card>
+            </TabsContent>
         </Tabs>
     </div>
   );
 }
+
+    
