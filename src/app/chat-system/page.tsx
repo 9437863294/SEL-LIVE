@@ -26,6 +26,7 @@ import {
   SmilePlus,
   RotateCcw,
   Video,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -96,12 +97,27 @@ export default function ChatSystemPage() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
+
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('list');
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const activeToasts = useRef<Map<string, string>>(new Map());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    const checkSize = () => {
+      if (containerRef.current) {
+        setIsMobileView(containerRef.current.offsetWidth < 768);
+      }
+    };
+    checkSize();
+    window.addEventListener('resize', checkSize);
+    return () => window.removeEventListener('resize', checkSize);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -363,6 +379,9 @@ export default function ChatSystemPage() {
   
   const handleSelectChat = async (chat: Chat) => {
     setSelectedChat(chat);
+    if (isMobileView) {
+      setMobilePanel('chat');
+    }
     
     const toastId = activeToasts.current.get(chat.id);
     if(toastId) {
@@ -485,204 +504,221 @@ export default function ChatSystemPage() {
     return content;
 }
 
-  return (
-    <>
-      <div className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
-        <ResizablePanelGroup direction="horizontal" className="flex-1">
-          <ResizablePanel defaultSize={25} minSize={15} maxSize={30}>
-            <div className="p-2 h-full flex flex-col">
-                <div className="p-2">
-                  <Button className="w-full" onClick={() => setIsNewChatOpen(true)}>
-                      <PlusCircle className="mr-2 h-4 w-4" /> New Chat
-                  </Button>
-                </div>
-                <Separator />
-                <div className="p-2">
-                    <div className="relative">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Search chats..." className="pl-8" />
-                    </div>
-                </div>
-              <ScrollArea className="flex-1">
-                {isLoadingChats ? (
-                    Array.from({ length: 10 }).map((_, i) => (
-                      <div key={i} className="flex items-center gap-3 p-2 rounded-lg">
-                          <Skeleton className="h-10 w-10 rounded-full" />
-                          <div className="flex-1 space-y-1">
-                              <Skeleton className="h-4 w-3/4" />
-                              <Skeleton className="h-3 w-full" />
-                          </div>
-                      </div>
-                    ))
-                ) : (
-                    chats.map(chat => {
-                        const otherMember = getOtherMember(chat);
-                        const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
-                        const chatAvatar = chat.type === 'group' ? chat.groupPhotoURL : otherMember?.photoURL;
-                        const unreadCount = unreadCounts[chat.id] || 0;
-                        const hasUnread = unreadCount > 0;
-
-                        return (
-                            <div 
-                                key={chat.id} 
-                                className={cn(
-                                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-muted",
-                                    selectedChat?.id === chat.id && 'bg-muted'
-                                )}
-                                onClick={() => handleSelectChat(chat)}
-                            >
-                                <Avatar>
-                                    <AvatarImage src={chatAvatar} />
-                                    <AvatarFallback>{getInitials(chatName)}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1 overflow-hidden">
-                                    <p className={cn("font-semibold truncate", hasUnread && "font-bold text-primary")}>{chatName}</p>
-                                    {chat.lastMessage?.text && <p className="text-xs text-muted-foreground truncate">{chat.lastMessage.text}</p>}
-                                </div>
-                                <div className="flex flex-col items-end self-start">
-                                    {chat.lastMessage?.timestamp?.toDate && (
-                                        <p className="text-xs text-muted-foreground">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
-                                    )}
-                                    {hasUnread && (
-                                        <Badge className="mt-1 h-5 w-5 p-0 flex items-center justify-center">{unreadCount}</Badge>
-                                    )}
-                                </div>
-                            </div>
-                        )
-                    })
-                )}
-              </ScrollArea>
+const ChatListPanel = () => (
+    <div className="p-2 h-full flex flex-col">
+        <div className="p-2">
+            <Button className="w-full" onClick={() => setIsNewChatOpen(true)}>
+                <PlusCircle className="mr-2 h-4 w-4" /> New Chat
+            </Button>
+        </div>
+        <Separator />
+        <div className="p-2">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search chats..." className="pl-8" />
             </div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={75}>
-            {selectedChat ? (
-                <div className="flex flex-col h-full">
-                   <div 
-                        className={cn("p-4 border-b flex items-center gap-4", selectedChat.type === 'group' && "cursor-pointer hover:bg-muted/50")}
-                        onClick={() => selectedChat.type === 'group' && setIsGroupDetailsOpen(true)}
-                    >
-                        <Avatar>
-                            <AvatarImage src={selectedChat.type === 'one-to-one' ? chatPartner?.photoURL : selectedChat.groupPhotoURL} />
-                            <AvatarFallback>{getInitials(selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                            <p className="font-semibold">{selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName}</p>
-                            {selectedChat.type === 'one-to-one' ? (
-                                chatPartner?.isOnline ? (
-                                    <p className="text-xs text-green-500">Online</p>
-                                ) : (
-                                    <p className="text-xs text-muted-foreground">
-                                        Last seen {chatPartner?.lastSeen ? formatDistanceToNowStrict(chatPartner.lastSeen.toDate(), { addSuffix: true }) : 'a while ago'}
-                                    </p>
-                                )
-                            ) : (
-                                <p className="text-xs text-muted-foreground truncate max-w-xs">
-                                    {groupMembersString}
-                                </p>
-                            )}
+        </div>
+        <ScrollArea className="flex-1">
+            {isLoadingChats ? (
+                Array.from({ length: 10 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg">
+                        <Skeleton className="h-10 w-10 rounded-full" />
+                        <div className="flex-1 space-y-1">
+                            <Skeleton className="h-4 w-3/4" />
+                            <Skeleton className="h-3 w-full" />
                         </div>
-                   </div>
-                    <ScrollArea className="flex-1 p-4">
-                        {isLoadingMessages ? (
-                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-12" />
-                        ) : (
-                           <>
-                            {messages.map(message => {
-                                const isSender = message.senderId === currentUser?.id;
-                                if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
-                                
-                                const senderDetails = selectedChat.memberDetails.find(m => m.id === message.senderId);
-                                const isReadByAll = selectedChat.type === 'group' ? message.readBy.length >= selectedChat.members.length - 1 : message.readBy.length > 1;
+                    </div>
+                ))
+            ) : (
+                chats.map(chat => {
+                    const otherMember = getOtherMember(chat);
+                    const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
+                    const chatAvatar = chat.type === 'group' ? chat.groupPhotoURL : otherMember?.photoURL;
+                    const unreadCount = unreadCounts[chat.id] || 0;
+                    const hasUnread = unreadCount > 0;
 
-                                return (
-                                    <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
-                                        <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                                            {renderMessageContent(message, !isSender ? senderDetails?.name : undefined)}
-                                            <div className="flex items-center justify-end gap-1 mt-1">
-                                                {message.timestamp?.toDate && (
-                                                   <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
-                                                )}
-                                                {isSender && (
-                                                  isReadByAll
-                                                    ? <CheckCheck className="h-4 w-4 text-blue-400" /> 
+                    return (
+                        <div
+                            key={chat.id}
+                            className={cn(
+                                "flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-muted",
+                                selectedChat?.id === chat.id && 'bg-muted'
+                            )}
+                            onClick={() => handleSelectChat(chat)}
+                        >
+                            <Avatar>
+                                <AvatarImage src={chatAvatar} />
+                                <AvatarFallback>{getInitials(chatName)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 overflow-hidden">
+                                <p className={cn("font-semibold truncate", hasUnread && "font-bold text-primary")}>{chatName}</p>
+                                {chat.lastMessage?.text && <p className="text-xs text-muted-foreground truncate">{chat.lastMessage.text}</p>}
+                            </div>
+                            <div className="flex flex-col items-end self-start">
+                                {chat.lastMessage?.timestamp?.toDate && (
+                                    <p className="text-xs text-muted-foreground">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
+                                )}
+                                {hasUnread && (
+                                    <Badge className="mt-1 h-5 w-5 p-0 flex items-center justify-center">{unreadCount}</Badge>
+                                )}
+                            </div>
+                        </div>
+                    )
+                })
+            )}
+        </ScrollArea>
+    </div>
+);
+
+const ChatPanel = () => (
+    selectedChat ? (
+        <div className="flex flex-col h-full">
+            <div
+                className={cn("p-4 border-b flex items-center gap-4", selectedChat.type === 'group' && "cursor-pointer hover:bg-muted/50")}
+                onClick={() => selectedChat.type === 'group' && setIsGroupDetailsOpen(true)}
+            >
+                {isMobileView && (
+                    <Button variant="ghost" size="icon" className="mr-2" onClick={() => setMobilePanel('list')}>
+                        <ArrowLeft className="h-6 w-6" />
+                    </Button>
+                )}
+                <Avatar>
+                    <AvatarImage src={selectedChat.type === 'one-to-one' ? chatPartner?.photoURL : selectedChat.groupPhotoURL} />
+                    <AvatarFallback>{getInitials(selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName)}</AvatarFallback>
+                </Avatar>
+                <div>
+                    <p className="font-semibold">{selectedChat.type === 'one-to-one' ? chatPartner?.name : selectedChat.groupName}</p>
+                    {selectedChat.type === 'one-to-one' ? (
+                        chatPartner?.isOnline ? (
+                            <p className="text-xs text-green-500">Online</p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">
+                                Last seen {chatPartner?.lastSeen ? formatDistanceToNowStrict(chatPartner.lastSeen.toDate(), { addSuffix: true }) : 'a while ago'}
+                            </p>
+                        )
+                    ) : (
+                        <p className="text-xs text-muted-foreground truncate max-w-xs">
+                            {groupMembersString}
+                        </p>
+                    )}
+                </div>
+            </div>
+            <ScrollArea className="flex-1 p-4">
+                {isLoadingMessages ? (
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-12" />
+                ) : (
+                    <>
+                        {messages.map(message => {
+                            const isSender = message.senderId === currentUser?.id;
+                            if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
+
+                            const senderDetails = selectedChat.memberDetails.find(m => m.id === message.senderId);
+                            const isReadByAll = selectedChat.type === 'group' ? message.readBy.length >= selectedChat.members.length - 1 : message.readBy.length > 1;
+
+                            return (
+                                <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
+                                    <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                        {renderMessageContent(message, !isSender ? senderDetails?.name : undefined)}
+                                        <div className="flex items-center justify-end gap-1 mt-1">
+                                            {message.timestamp?.toDate && (
+                                                <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
+                                            )}
+                                            {isSender && (
+                                                isReadByAll
+                                                    ? <CheckCheck className="h-4 w-4 text-blue-400" />
                                                     : <Check className="h-4 w-4 opacity-70" />
-                                                )}
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
-                                )
-                            })}
-                            <div ref={messagesEndRef} />
-                           </>
-                        )}
-                    </ScrollArea>
-                    <div className="p-4 border-t">
-                        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                             <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button type="button" variant="ghost" size="icon">
-                                        <Paperclip className="h-5 w-5" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent>
-                                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                                        <FileText className="mr-2 h-4 w-4" /> Document
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                                        <ImageIcon className="mr-2 h-4 w-4" /> Photos & Videos
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => setIsCameraDialogOpen(true)}>
-                                        <Camera className="mr-2 h-4 w-4" /> Camera
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => audioInputRef.current?.click()}>
-                                        <Headphones className="mr-2 h-4 w-4" /> Audio
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem>
-                                        <Contact className="mr-2 h-4 w-4" /> Contact
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem>
-                                        <BarChart3 className="mr-2 h-4 w-4" /> Poll
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => setIsEventDialogOpen(true)}>
-                                        <CalendarIconLucide className="mr-2 h-4 w-4" /> Event
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem>
-                                        <SmilePlus className="mr-2 h-4 w-4" /> New Sticker
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <Input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
-                            <Input ref={imageInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
-                            <Input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
-                            <Input 
-                                placeholder="Type a message..."
-                                value={newMessage}
-                                onChange={(e) => setNewMessage(e.target.value)}
-                                disabled={isSending}
-                            />
-                            <Button type="submit" disabled={isSending || (!newMessage.trim() && !attachment)}>
-                                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                </div>
+                            )
+                        })}
+                        <div ref={messagesEndRef} />
+                    </>
+                )}
+            </ScrollArea>
+            <div className="p-4 border-t">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="ghost" size="icon">
+                                <Paperclip className="h-5 w-5" />
                             </Button>
-                        </form>
-                         {attachment && (
-                            <div className="text-sm mt-2 p-2 bg-muted rounded-md flex items-center justify-between">
-                                <span className="truncate">Attaching: {attachment.name}</span>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; if (imageInputRef.current) imageInputRef.current.value = ''; }}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                            </div>
-                        )}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                                <FileText className="mr-2 h-4 w-4" /> Document
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                                <ImageIcon className="mr-2 h-4 w-4" /> Photos & Videos
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setIsCameraDialogOpen(true)}>
+                                <Camera className="mr-2 h-4 w-4" /> Camera
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => audioInputRef.current?.click()}>
+                                <Headphones className="mr-2 h-4 w-4" /> Audio
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <Contact className="mr-2 h-4 w-4" /> Contact
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <BarChart3 className="mr-2 h-4 w-4" /> Poll
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setIsEventDialogOpen(true)}>
+                                <CalendarIconLucide className="mr-2 h-4 w-4" /> Event
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <SmilePlus className="mr-2 h-4 w-4" /> New Sticker
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
+                    <Input ref={imageInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
+                    <Input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+                    <Input
+                        placeholder="Type a message..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        disabled={isSending}
+                    />
+                    <Button type="submit" disabled={isSending || (!newMessage.trim() && !attachment)}>
+                        {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                </form>
+                {attachment && (
+                    <div className="text-sm mt-2 p-2 bg-muted rounded-md flex items-center justify-between">
+                        <span className="truncate">Attaching: {attachment.name}</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; if (imageInputRef.current) imageInputRef.current.value = ''; }}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                     </div>
-                </div>
-            ) : (
-                <div className="flex h-full flex-col items-center justify-center bg-muted/50">
-                    <MessageSquare className="h-16 w-16 text-muted-foreground" />
-                    <p className="mt-4 text-lg text-muted-foreground">Select a chat to start messaging</p>
-                </div>
-            )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+                )}
+            </div>
+        </div>
+    ) : (
+        <div className="flex h-full flex-col items-center justify-center bg-muted/50">
+            <MessageSquare className="h-16 w-16 text-muted-foreground" />
+            <p className="mt-4 text-lg text-muted-foreground">Select a chat to start messaging</p>
+        </div>
+    )
+);
+
+  return (
+    <>
+      <div ref={containerRef} className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
+        {isMobileView ? (
+          mobilePanel === 'list' ? <ChatListPanel /> : <ChatPanel />
+        ) : (
+          <ResizablePanelGroup direction="horizontal" className="flex-1">
+            <ResizablePanel defaultSize={25} minSize={15} maxSize={30}>
+              <ChatListPanel />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={75}>
+              <ChatPanel />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
       </div>
       <NewChatDialog 
         isOpen={isNewChatOpen} 
