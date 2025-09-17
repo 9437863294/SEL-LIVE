@@ -158,11 +158,7 @@ export default function InternalTransactionPage() {
       </div>
 
        <Card>
-            <CardHeader>
-                <CardTitle>Transaction Log</CardTitle>
-                <CardDescription>History of all internal bank transfers.</CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
                  <div className="flex flex-wrap gap-4 mb-4">
                     <Popover>
                         <PopoverTrigger asChild>
