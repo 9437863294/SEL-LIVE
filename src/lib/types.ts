@@ -119,6 +119,9 @@ export const permissionModules = {
   'Email Management': {
     'View Module': [],
   },
+  'Bank Balance': {
+      'View Module': [],
+  },
 };
 
 
