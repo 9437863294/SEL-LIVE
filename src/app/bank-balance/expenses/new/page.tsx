@@ -12,6 +12,7 @@ import {
   Save,
   Loader2,
   ChevronUp,
+  History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -247,6 +248,12 @@ export default function NewPaymentPage() {
           </Link>
           <h1 className="text-2xl font-bold">New Payment Entry</h1>
         </div>
+        <Link href="/bank-balance/expenses">
+            <Button variant="outline">
+                <History className="mr-2 h-4 w-4" />
+                Payments Log
+            </Button>
+        </Link>
       </div>
 
         <Card>
@@ -424,3 +431,4 @@ export default function NewPaymentPage() {
     </div>
   );
 }
+
