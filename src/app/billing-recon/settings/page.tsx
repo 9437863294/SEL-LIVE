@@ -56,7 +56,7 @@ export default function ProjectBillingSettingsPage() {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
         <Link href="/billing-recon">
           <Button variant="ghost" size="icon">
