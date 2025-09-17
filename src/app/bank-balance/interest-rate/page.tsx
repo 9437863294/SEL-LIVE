@@ -108,78 +108,6 @@ export default function InterestRatePage() {
     }
   }, [authLoading, canView]);
   
-  const calculatedProjectedInterest = useMemo(() => {
-    const monthData: Record<string, number> = {};
-    if (isLoading || accounts.length === 0 || allTransactions.length === 0) return monthData;
-    
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const selectedMonthStart = startOfMonth(new Date(year, month - 1));
-    const selectedMonthEnd = endOfMonth(new Date(year, month - 1));
-
-    accounts.forEach(account => {
-        if (account.accountType !== 'Cash Credit' || !account.openingDate) {
-            monthData[account.id] = 0;
-            return;
-        }
-        
-        const openingDate = new Date(account.openingDate);
-        if(selectedMonthEnd < openingDate) {
-            monthData[account.id] = 0;
-            return;
-        }
-
-        let runningBalance = account.openingUtilization || 0;
-        
-        const getRateForDate = (date: Date): number => {
-            const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.fromDate), new Date(b.fromDate)));
-            const rateEntry = sortedLog.find(entry => {
-                const from = startOfDay(new Date(entry.fromDate));
-                const to = entry.toDate ? endOfDay(new Date(entry.toDate)) : new Date(8640000000000000); // Far future date if no toDate
-                return date >= from && date <= to;
-            });
-            return rateEntry ? rateEntry.rate : 0;
-        }
-        
-        const preInterval = { start: openingDate, end: subMonths(selectedMonthStart, 1) };
-        if (preInterval.end >= preInterval.start) {
-            const preDays = eachDayOfInterval(preInterval);
-            preDays.forEach(day => {
-                const dayString = format(day, 'yyyy-MM-dd');
-                const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
-                const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-                const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
-                runningBalance += receipts - expenses + contra;
-            });
-        }
-        
-        let monthInterest = 0;
-        const daysInSelectedMonth = eachDayOfInterval({ start: selectedMonthStart, end: selectedMonthEnd });
-
-        daysInSelectedMonth.forEach(day => {
-            if(day < openingDate) return; 
-            
-            const dayString = format(day, 'yyyy-MM-dd');
-            const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
-            
-            const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-            const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-            const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
-
-            const closingBalance = runningBalance + receipts - expenses + contra;
-            
-            const rate = getRateForDate(day);
-            const dailyInterest = (closingBalance * (rate / 100)) / 365;
-            
-            monthInterest += dailyInterest;
-            runningBalance = closingBalance;
-        });
-
-        monthData[account.id] = monthInterest;
-    });
-    return monthData;
-  }, [accounts, allTransactions, selectedMonth, isLoading]);
-
   useEffect(() => {
     if (isLoading || isLogLoading || !canView) return;
 
@@ -483,7 +411,7 @@ export default function InterestRatePage() {
                                             <TableBody>
                                                 {acc.interestRateLog.length > 0 ? acc.interestRateLog.map((rate) => (
                                                     <TableRow key={rate.id}>
-                                                        <TableCell>{format(new Date(rate.fromDate), 'dd MMM, yyyy')}</TableCell>
+                                                        <TableCell>{rate.fromDate ? format(new Date(rate.fromDate), 'dd MMM, yyyy') : 'N/A'}</TableCell>
                                                         <TableCell>{rate.toDate ? format(new Date(rate.toDate), 'dd MMM, yyyy') : 'Current'}</TableCell>
                                                         <TableCell>{rate.rate.toFixed(2)}%</TableCell>
                                                         <TableCell className="text-right">
@@ -618,7 +546,3 @@ export default function InterestRatePage() {
     </div>
   );
 }
-
-    
-
-    
