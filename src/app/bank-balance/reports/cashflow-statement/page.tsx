@@ -158,30 +158,30 @@ export default function CashflowStatementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-bold">MONTH</TableHead>
-                    <TableHead className="text-right font-bold">OPENING BALANCE</TableHead>
-                    <TableHead className="text-right font-bold">INFLOW (RECEIPTS)</TableHead>
-                    <TableHead className="text-right font-bold">OUTFLOW (PAYMENTS)</TableHead>
-                    <TableHead className="text-right font-bold">NET CASHFLOW</TableHead>
-                    <TableHead className="text-right font-bold">CLOSING BALANCE</TableHead>
+                    <TableHead className="font-bold text-xs p-2">MONTH</TableHead>
+                    <TableHead className="text-right font-bold text-xs p-2">OPENING BALANCE</TableHead>
+                    <TableHead className="text-right font-bold text-xs p-2">INFLOW (RECEIPTS)</TableHead>
+                    <TableHead className="text-right font-bold text-xs p-2">OUTFLOW (PAYMENTS)</TableHead>
+                    <TableHead className="text-right font-bold text-xs p-2">NET CASHFLOW</TableHead>
+                    <TableHead className="text-right font-bold text-xs p-2">CLOSING BALANCE</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({length: 5}).map((_, i) => (
                         <TableRow key={i}>
-                            <TableCell colSpan={6}><Skeleton className="h-6" /></TableCell>
+                            <TableCell colSpan={6} className="p-2"><Skeleton className="h-5" /></TableCell>
                         </TableRow>
                     ))
                   ) : data.length > 0 ? (
                     data.map((row) => (
-                        <TableRow key={row.month}>
-                          <TableCell className="font-medium">{row.monthLabel}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(row.openingBalance)}</TableCell>
-                          <TableCell className="text-right text-green-600">{formatCurrency(row.inflow)}</TableCell>
-                          <TableCell className="text-right text-red-600">{formatCurrency(row.outflow)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(row.net)}</TableCell>
-                          <TableCell className="text-right font-bold">{formatCurrency(row.closingBalance)}</TableCell>
+                        <TableRow key={row.month} className="text-xs">
+                          <TableCell className="font-medium p-2">{row.monthLabel}</TableCell>
+                          <TableCell className="text-right p-2">{formatCurrency(row.openingBalance)}</TableCell>
+                          <TableCell className="text-right text-green-600 p-2">{formatCurrency(row.inflow)}</TableCell>
+                          <TableCell className="text-right text-red-600 p-2">{formatCurrency(row.outflow)}</TableCell>
+                          <TableCell className="text-right font-medium p-2">{formatCurrency(row.net)}</TableCell>
+                          <TableCell className="text-right font-bold p-2">{formatCurrency(row.closingBalance)}</TableCell>
                         </TableRow>
                     ))
                   ) : (
