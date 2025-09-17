@@ -18,7 +18,7 @@ import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 
-const initialFormState: Omit<BankAccount, 'id' | 'currentBalance'> = {
+const initialFormState: Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'> = {
   bankName: '',
   shortName: '',
   accountNumber: '',
@@ -35,7 +35,7 @@ export default function ManageBanksPage() {
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
-  const [formData, setFormData] = useState<Omit<BankAccount, 'id'>>(initialFormState);
+  const [formData, setFormData] = useState<Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'>>(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,12 +67,11 @@ export default function ManageBanksPage() {
           status: account.status || 'Active',
           branch: account.branch || '',
           ifsc: account.ifsc || '',
-          currentBalance: account.currentBalance || 0,
         };
         setFormData(accountData);
         setEditingId(account.id);
     } else {
-        setFormData({...initialFormState, currentBalance: 0});
+        setFormData(initialFormState);
         setEditingId(null);
     }
     setIsDialogOpen(true);
@@ -93,7 +92,7 @@ export default function ManageBanksPage() {
             await updateDoc(doc(db, 'bankAccounts', editingId), formData);
             toast({ title: 'Success', description: 'Bank account updated successfully.'});
         } else {
-            await addDoc(collection(db, 'bankAccounts'), {...formData, currentBalance: 0});
+            await addDoc(collection(db, 'bankAccounts'), {...formData, currentBalance: 0, drawingPower: [], openingUtilization: 0, openingDate: ''});
             toast({ title: 'Success', description: 'New bank account added.'});
         }
         setIsDialogOpen(false);
