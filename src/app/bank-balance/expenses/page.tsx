@@ -42,6 +42,7 @@ import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -80,7 +81,7 @@ export default function ExpensesEntryPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
-  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0].id);
+  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0]?.id);
 
   // Log Tab State
   const [logEntries, setLogEntries] = useState<BankExpense[]>([]);
@@ -211,6 +212,7 @@ export default function ExpensesEntryPage() {
         setExpenses([initialExpenseItem]);
         setDate(new Date());
         setSelectedBank('');
+        setOpenCollapsibleId(initialExpenseItem.id);
         fetchBankAccountsAndExpenses(); // Refresh log data
 
     } catch (error) {
@@ -273,38 +275,38 @@ export default function ExpensesEntryPage() {
               <CardDescription>Enter individual payments for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-4">
                       <div className="space-y-2">
-                          <Label className="mb-1 block">Date</Label>
+                          <Label>Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                          <PopoverTrigger asChild>
-                              <Button
-                              variant={"outline"}
-                              className={cn(
-                                  "w-[240px] justify-start text-left font-normal",
-                                  !date && "text-muted-foreground"
-                              )}
-                              >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {date ? format(date, "PPP") : <span>Pick a date</span>}
-                              </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                  mode="single"
-                                  selected={date}
-                                  onSelect={(selectedDate) => {
-                                      setDate(selectedDate);
-                                      setIsDatePickerOpen(false);
-                                  }}
-                                  initialFocus
-                              />
-                          </PopoverContent>
+                              <PopoverTrigger asChild>
+                                  <Button
+                                  variant={"outline"}
+                                  className={cn(
+                                      "w-[240px] justify-start text-left font-normal",
+                                      !date && "text-muted-foreground"
+                                  )}
+                                  >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {date ? format(date, "PPP") : <span>Pick a date</span>}
+                                  </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                      mode="single"
+                                      selected={date}
+                                      onSelect={(selectedDate) => {
+                                          setDate(selectedDate);
+                                          setIsDatePickerOpen(false);
+                                      }}
+                                      initialFocus
+                                  />
+                              </PopoverContent>
                           </Popover>
                       </div>
                       <div className="space-y-2">
-                          <Label className="mb-1 block">Select Bank</Label>
+                          <Label>Select Bank</Label>
                           <Select value={selectedBank} onValueChange={setSelectedBank}>
                               <SelectTrigger className="w-[280px]">
                                   <SelectValue placeholder="Select a bank account" />
