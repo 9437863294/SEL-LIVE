@@ -42,30 +42,72 @@ export default function ModuleDashboard() {
       if (!chatModuleExists) {
         addModule({
           title: 'Chat System',
-          content: `Real-time Messaging (send & receive instantly)
+          content: `User Profiles
 
-One-to-One Chats
+Upload profile picture.
 
-Group Chats with Admin Controls
+Set username & status (Active/Busy/Offline).
 
-Message Management
-
-Delete own messages
-
-Block users
+Show last seen & availability.
 
 
-Read Receipts (who read a message)
 
-File & Document Sharing (images, docs, media)
+3. Real-time Messaging
 
-User Presence
+Send & receive text instantly.
 
-Online/Offline indicator
+Sync messages across devices.
 
-Last seen timestamp
 
-Typing indicator
+
+4. One-to-One Chat
+
+Start private conversation with any user.
+
+
+
+5. Group Chats
+
+Create groups with multiple members.
+
+Assign Group Admin.
+
+Admin adds/removes members.
+
+
+
+6. Message Management
+
+Delete own messages (soft delete).
+
+Block/unblock users.
+
+
+
+7. Read Receipts
+
+Show ✔ when delivered.
+
+Show ✔✔ when read.
+
+
+
+8. File & Document Sharing
+
+Upload images, docs, media.
+
+Preview inside chat.
+
+
+
+9. User Presence
+
+Show Online/Offline.
+
+Display Typing indicator.
+
+Last seen timestamp.
+
 
 
 
@@ -74,15 +116,20 @@ Typing indicator
 
 🔧 Enhanced Chat Experience
 
-Pinned Messages (highlight important chats/messages)
+10. Pinned Messages → Pin important messages.
 
-Starred/Favorite Messages
 
-Reply & Forward messages
+11. Starred/Favorite Messages → Save messages for quick access.
 
-Message Reactions/Emojis
 
-Message Search (keyword-based search inside chat)
+12. Reply & Forward → Quote or forward messages.
+
+
+13. Reactions/Emojis → Like 👍, ❤️, 😂, etc.
+
+
+14. Message Search → Search by keywords in chat.
+
 
 
 
@@ -90,9 +137,11 @@ Message Search (keyword-based search inside chat)
 
 🔔 Notifications
 
-Push Notifications for new messages
+15. Push Notifications → Realtime alerts for new messages.
 
-Mute Chat/Group option
+
+16. Mute Chat/Group → Silence notifications temporarily.
+
 
 
 
@@ -100,11 +149,14 @@ Mute Chat/Group option
 
 👥 User & Group Management
 
-Profile Verification (optional "verified" badge)
+17. Profile Verification → "Verified" badge for trusted users.
 
-Group Roles (Admin, Moderator, Member)
 
-Broadcast Messaging (one-way announcements)
+18. Group Roles → Admin, Moderator, Member.
+
+
+19. Broadcast Messaging → One-way announcements.
+
 
 
 
@@ -112,9 +164,11 @@ Broadcast Messaging (one-way announcements)
 
 📂 Files & Media
 
-Media Gallery (all shared files/images per chat)
+20. Media Gallery → View all shared images/docs in one place.
 
-Auto File Compression (optimize uploads)
+
+21. Auto File Compression → Optimize large file uploads.
+
 
 
 
@@ -122,11 +176,14 @@ Auto File Compression (optimize uploads)
 
 🔒 Security & Privacy
 
-End-to-End Encryption (optional advanced)
+22. End-to-End Encryption → Secure private chats.
 
-Message Expiry (disappearing messages)
 
-Two-Factor Authentication (2FA)
+23. Message Expiry → Auto-delete messages after X time.
+
+
+24. Two-Factor Authentication (2FA) → Safer login.
+
 
 
 
@@ -134,9 +191,10 @@ Two-Factor Authentication (2FA)
 
 📊 Analytics & Insights
 
-Chat Statistics (messages count, active users, busiest groups)
+25. Chat Statistics → Count of messages, busiest groups.
 
-User Activity Dashboard for Admins`,
+
+26. User Activity Dashboard → See engagement levels.`,
           tags: ['chat', 'firebase', 'real-time'],
           icon: 'MessageSquare',
         });
