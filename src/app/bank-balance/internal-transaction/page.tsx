@@ -205,7 +205,9 @@ export default function InternalTransactionPage() {
                             <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                             <SelectContent>
                               {bankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
+                                <SelectItem key={acc.id} value={acc.id} disabled={acc.id === item.toAccountId}>
+                                  {acc.shortName} - {acc.bankName}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -216,7 +218,9 @@ export default function InternalTransactionPage() {
                             <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                             <SelectContent>
                               {bankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.shortName} - {acc.bankName}</SelectItem>
+                                <SelectItem key={acc.id} value={acc.id} disabled={acc.id === item.fromAccountId}>
+                                  {acc.shortName} - {acc.bankName}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
