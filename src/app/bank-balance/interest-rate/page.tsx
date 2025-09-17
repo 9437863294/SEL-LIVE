@@ -121,7 +121,11 @@ export default function InterestRatePage() {
             
             const getRateForDate = (date: Date): number => {
                 const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.fromDate), new Date(b.fromDate)));
-                const rateEntry = sortedLog.find(entry => new Date(entry.fromDate) <= date && (!entry.toDate || new Date(entry.toDate) >= date));
+                const rateEntry = sortedLog.find(entry => {
+                    const from = startOfDay(new Date(entry.fromDate));
+                    const to = entry.toDate ? endOfDay(new Date(entry.toDate)) : new Date(8640000000000000); // Far future date if no toDate
+                    return date >= from && date <= to;
+                });
                 return rateEntry ? rateEntry.rate : 0;
             }
 
@@ -542,5 +546,7 @@ export default function InterestRatePage() {
     </div>
   );
 }
+
+    
 
     
