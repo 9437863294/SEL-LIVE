@@ -205,19 +205,25 @@ export default function ChatSystemPage() {
   
   useEffect(() => {
     let stream: MediaStream | null = null;
-    if (videoRef.current) {
-        stream = videoRef.current.srcObject as MediaStream;
+    
+    const cleanupStream = () => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const currentStream = videoRef.current.srcObject as MediaStream;
+            currentStream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
     }
 
-    if (isCameraDialogOpen && !isPreviewing) {
-        getCameraPermission();
+    if (isCameraDialogOpen) {
+        if (!isPreviewing) {
+            getCameraPermission();
+        }
+    } else {
+        cleanupStream();
     }
     
     return () => {
-        // Cleanup: stop camera stream when dialog closes or component unmounts
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
+       cleanupStream();
     };
   }, [isCameraDialogOpen, isPreviewing, getCameraPermission]);
 
@@ -262,11 +268,10 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent, directAttachment?: File) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const finalAttachment = directAttachment || attachment;
-
-    if ((!newMessage.trim() && !finalAttachment) || !currentUser || !selectedChat) return;
+    
+    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -279,21 +284,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (finalAttachment) {
-            const isImage = finalAttachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${finalAttachment.name}`;
+        if (attachment) {
+            const isImage = attachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, finalAttachment);
+            await uploadBytes(storageRef, attachment);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: finalAttachment.name,
+                fileName: attachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = newMessage.trim() || finalAttachment.name;
+            lastMessageText = newMessage.trim() || attachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -322,6 +327,7 @@ export default function ChatSystemPage() {
 
     } catch (error) {
         console.error("Error sending message:", error);
+        toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive'});
     } finally {
         setIsSending(false);
     }
@@ -362,17 +368,11 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendPhoto = async () => {
+  const handleAttachPhoto = async () => {
     if (!capturedImage) return;
-
-    setIsSending(true);
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    
-    // Directly call handleSendMessage with the file
-    await handleSendMessage(undefined, file);
-    
-    setIsSending(false);
+    setAttachment(file);
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
@@ -651,9 +651,8 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleSendPhoto} disabled={isSending}>
-                            {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                             Send Photo
+                        <Button onClick={handleAttachPhoto} disabled={isSending}>
+                            Attach Photo
                         </Button>
                     </>
                 ) : (
