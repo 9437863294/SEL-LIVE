@@ -60,7 +60,7 @@ export default function ChatSystemPage() {
         querySnapshot.forEach((doc) => {
             userChats.push({ id: doc.id, ...doc.data() } as Chat);
         });
-        setChats(userChats.sort((a,b) => b.lastMessage.timestamp.toMillis() - a.lastMessage.timestamp.toMillis()));
+        setChats(userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0)));
         setIsLoadingChats(false);
     });
 
@@ -249,7 +249,9 @@ export default function ChatSystemPage() {
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
                                         <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
                                             <p>{message.content}</p>
-                                             <p className="text-xs opacity-70 mt-1 text-right">{format(message.timestamp.toDate(), 'p')}</p>
+                                            {message.timestamp && (
+                                               <p className="text-xs opacity-70 mt-1 text-right">{format(message.timestamp.toDate(), 'p')}</p>
+                                            )}
                                         </div>
                                     </div>
                                 )
