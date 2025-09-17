@@ -203,7 +203,7 @@ export default function JmcEntryPage() {
 
         toast({
             title: 'JMC Entry Created',
-            description: 'The new JMC entry with all its items has been successfully saved.',
+            description: 'The new JMC entry has been successfully saved.',
         });
         setDetails(initialJmcDetails);
         setItems([initialItem]);
@@ -229,7 +229,7 @@ export default function JmcEntryPage() {
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Create JMC Entry</h1>
+            <h1 className="text-xl font-bold">Create JMC Entry</h1>
         </div>
         <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
