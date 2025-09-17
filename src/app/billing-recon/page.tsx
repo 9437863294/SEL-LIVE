@@ -99,7 +99,9 @@ export default function BillingReconPage() {
     fetchProjects();
   }, [isAuthLoading, canViewModule]);
 
-  const projectItems = projects.map(project => ({
+  const projectItems = projects
+    .filter(project => project.billingRequired === true)
+    .map(project => ({
       icon: Folder,
       text: project.projectName,
       href: `/billing-recon/${slugify(project.projectName)}`,
