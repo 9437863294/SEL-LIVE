@@ -37,6 +37,8 @@ export default function MonthlyInterestPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [logData, setLogData] = useState<MonthlyLogEntry[]>([]);
+  
+  const [logFilters, setLogFilters] = useState({ year: 'all', bank: 'all' });
 
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
 
@@ -91,7 +93,10 @@ export default function MonthlyInterestPage() {
     const selectedMonthEnd = endOfMonth(new Date(year, month - 1));
 
     ccAccounts.forEach(account => {
-        if (!account.openingDate) return;
+        if (!account.openingDate) {
+            monthData[account.id] = 0;
+            return;
+        }
         
         const openingDate = new Date(account.openingDate);
         if(selectedMonthEnd < openingDate) {
@@ -214,6 +219,19 @@ export default function MonthlyInterestPage() {
     if(isNaN(amount)) return '₹ 0.00';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
+  
+  const logYearOptions = useMemo(() => {
+    return [...new Set(logData.map(log => log.month.split('-')[0]))].sort((a,b) => b.localeCompare(a));
+  }, [logData]);
+
+  const filteredLogData = useMemo(() => {
+    return logData.filter(log => {
+        const yearMatch = logFilters.year === 'all' || log.month.startsWith(logFilters.year);
+        const bankMatch = logFilters.bank === 'all' || log.accountId === logFilters.bank;
+        return yearMatch && bankMatch;
+    });
+  }, [logData, logFilters]);
+
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -309,7 +327,22 @@ export default function MonthlyInterestPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Monthly Interest Log</CardTitle>
-                    <CardDescription>History of all saved monthly interest data.</CardDescription>
+                    <div className="flex gap-4">
+                        <Select value={logFilters.year} onValueChange={(val) => setLogFilters(p => ({...p, year: val}))}>
+                            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Years</SelectItem>
+                                {logYearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                         <Select value={logFilters.bank} onValueChange={(val) => setLogFilters(p => ({...p, bank: val}))}>
+                            <SelectTrigger className="w-[240px]"><SelectValue placeholder="All Banks" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Banks</SelectItem>
+                                {ccAccounts.map(acc => <SelectItem key={acc.id} value={acc.id}>{acc.shortName}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -325,8 +358,8 @@ export default function MonthlyInterestPage() {
                         <TableBody>
                             {isLogLoading ? (
                                 Array.from({length: 5}).map((_, i) => <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-6" /></TableCell></TableRow>)
-                            ) : logData.length > 0 ? (
-                                logData.map(log => (
+                            ) : filteredLogData.length > 0 ? (
+                                filteredLogData.map(log => (
                                     <TableRow key={`${log.month}-${log.accountId}`}>
                                         <TableCell>{format(parse(log.month, 'yyyy-MM', new Date()), 'MMMM yyyy')}</TableCell>
                                         <TableCell>{log.accountName}</TableCell>
@@ -338,7 +371,7 @@ export default function MonthlyInterestPage() {
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow><TableCell colSpan={5} className="text-center h-24">No log data found.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={5} className="text-center h-24">No log data found for the selected filters.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
@@ -349,3 +382,4 @@ export default function MonthlyInterestPage() {
     </div>
   );
 }
+
