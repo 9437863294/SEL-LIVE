@@ -94,49 +94,47 @@
   }
 }
 
-@layer utilities {
-  @media print {
-    @page {
-      size: A4;
-      margin: 1rem;
-    }
-    body {
-      background-color: white !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .printable-area {
-      display: block !important;
-    }
-    body *:not(.printable-area):not(.printable-area *) {
-      visibility: hidden;
-    }
-    .printable-area, .printable-area * {
-      visibility: visible;
-    }
-    .printable-area {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-    }
-     /* Reset dialog styles */
-    [role="dialog"] {
-      position: static !important;
-      width: auto !important;
-      max-width: none !important;
-      height: auto !important;
-      max-height: none !important;
-      transform: none !important;
-      border: none !important;
-      box-shadow: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      overflow: visible !important;
-      animation: none !important;
-    }
-    .no-print {
-        display: none !important;
-    }
+@media print {
+  @page {
+    size: A4;
+    margin: 1rem;
+  }
+  body {
+    background-color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .printable-area {
+    display: block !important;
+  }
+  body *:not(.printable-area):not(.printable-area *) {
+    visibility: hidden;
+  }
+  .printable-area, .printable-area * {
+    visibility: visible;
+  }
+  .printable-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+    /* Reset dialog styles */
+  [role="dialog"] {
+    position: static !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    transform: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    animation: none !important;
+  }
+  .no-print {
+      display: none !important;
   }
 }
