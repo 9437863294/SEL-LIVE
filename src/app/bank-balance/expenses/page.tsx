@@ -140,11 +140,7 @@ export default function ExpensesLogPage() {
       </div>
 
        <Card>
-            <CardHeader>
-                <CardTitle>Payments History</CardTitle>
-                <CardDescription>Browse and manage all past payment entries.</CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="p-4">
                 <div className="flex flex-wrap gap-4 mb-4">
                     <Popover>
                         <PopoverTrigger asChild>
