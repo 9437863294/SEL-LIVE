@@ -177,6 +177,15 @@ export default function ChatSystemPage() {
   }, [selectedChat]);
   
   const getCameraPermission = useCallback(async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast({
+        variant: 'destructive',
+        title: 'Camera Not Supported',
+        description: 'Your browser does not support camera access.',
+      });
+      setHasCameraPermission(false);
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       setHasCameraPermission(true);
@@ -195,16 +204,20 @@ export default function ChatSystemPage() {
   }, [toast]);
   
   useEffect(() => {
+    let stream: MediaStream | null = null;
     if (isCameraDialogOpen && !isPreviewing) {
         getCameraPermission();
-    } else {
-        // Cleanup: stop camera stream when dialog closes or goes to preview
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
+        if (videoRef.current) {
+            stream = videoRef.current.srcObject as MediaStream;
         }
     }
+    
+    return () => {
+        // Cleanup: stop camera stream when dialog closes or component unmounts
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+    };
   }, [isCameraDialogOpen, isPreviewing, getCameraPermission]);
 
 
@@ -598,7 +611,13 @@ export default function ChatSystemPage() {
         onOpenChange={setIsNewChatOpen} 
         onSelectUser={handleSelectUser}
       />
-      <Dialog open={isCameraDialogOpen} onOpenChange={setIsCameraDialogOpen}>
+      <Dialog open={isCameraDialogOpen} onOpenChange={(open) => {
+        setIsCameraDialogOpen(open);
+        if (!open) {
+            setIsPreviewing(false);
+            setCapturedImage(null);
+        }
+      }}>
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Camera</DialogTitle>
@@ -610,7 +629,7 @@ export default function ChatSystemPage() {
                 {isPreviewing && capturedImage ? (
                     <img src={capturedImage} alt="Captured preview" className="w-full aspect-video rounded-md" />
                 ) : (
-                    <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted />
+                    <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted playsInline />
                 )}
                 
                 {hasCameraPermission === false && !isPreviewing && (
