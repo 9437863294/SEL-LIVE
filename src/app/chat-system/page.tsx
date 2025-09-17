@@ -319,8 +319,7 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
-    const messagesSnapshot = await getDocs(q);
+    const messagesSnapshot = await getDocs(messagesRef);
 
     const unreadMessages = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
     
