@@ -38,7 +38,7 @@ export default function MonthlyInterestPage() {
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [logData, setLogData] = useState<MonthlyLogEntry[]>([]);
   
-  const [logFilters, setLogFilters] = useState({ year: 'all', bank: 'all' });
+  const [logFilters, setLogFilters] = useState({ year: 'all', month: 'all', bank: 'all' });
 
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
 
@@ -86,7 +86,7 @@ export default function MonthlyInterestPage() {
   
   const calculatedProjectedInterest = useMemo(() => {
     const monthData: Record<string, number> = {};
-    if (ccAccounts.length === 0 || allTransactions.length === 0) return monthData;
+    if (isLoading || ccAccounts.length === 0 || allTransactions.length === 0) return monthData;
 
     const [year, month] = selectedMonth.split('-').map(Number);
     const selectedMonthStart = startOfMonth(new Date(year, month - 1));
@@ -150,7 +150,7 @@ export default function MonthlyInterestPage() {
         monthData[account.id] = monthInterest;
     });
     return monthData;
-  }, [ccAccounts, allTransactions, selectedMonth]);
+  }, [ccAccounts, allTransactions, selectedMonth, isLoading]);
 
 
   useEffect(() => {
@@ -186,7 +186,7 @@ export default function MonthlyInterestPage() {
       setInterestData(prev => ({
           ...prev,
           [accountId]: {
-              ...prev[accountId],
+              ...(prev[accountId] || { projected: 0, actual: 0 }),
               actual: isNaN(numValue) ? 0 : numValue
           }
       }));
@@ -223,12 +223,20 @@ export default function MonthlyInterestPage() {
   const logYearOptions = useMemo(() => {
     return [...new Set(logData.map(log => log.month.split('-')[0]))].sort((a,b) => b.localeCompare(a));
   }, [logData]);
+  
+  const logMonthOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: String(i + 1),
+      label: format(new Date(0, i), 'MMMM'),
+    }));
+  }, []);
 
   const filteredLogData = useMemo(() => {
     return logData.filter(log => {
         const yearMatch = logFilters.year === 'all' || log.month.startsWith(logFilters.year);
+        const monthMatch = logFilters.month === 'all' || parseInt(log.month.split('-')[1]) === parseInt(logFilters.month);
         const bankMatch = logFilters.bank === 'all' || log.accountId === logFilters.bank;
-        return yearMatch && bankMatch;
+        return yearMatch && monthMatch && bankMatch;
     });
   }, [logData, logFilters]);
 
@@ -327,12 +335,19 @@ export default function MonthlyInterestPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Monthly Interest Log</CardTitle>
-                    <div className="flex gap-4">
+                    <div className="flex flex-wrap gap-4">
                         <Select value={logFilters.year} onValueChange={(val) => setLogFilters(p => ({...p, year: val}))}>
                             <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Years</SelectItem>
                                 {logYearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <Select value={logFilters.month} onValueChange={(val) => setLogFilters(p => ({...p, month: val}))}>
+                            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Months" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Months</SelectItem>
+                                {logMonthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
                             </SelectContent>
                         </Select>
                          <Select value={logFilters.bank} onValueChange={(val) => setLogFilters(p => ({...p, bank: val}))}>
@@ -382,4 +397,3 @@ export default function MonthlyInterestPage() {
     </div>
   );
 }
-
