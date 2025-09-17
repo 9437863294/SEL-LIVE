@@ -80,6 +80,7 @@ export default function ExpensesEntryPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
+  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0].id);
 
   // Log Tab State
   const [logEntries, setLogEntries] = useState<BankExpense[]>([]);
@@ -139,7 +140,9 @@ export default function ExpensesEntryPage() {
   };
 
   const addExpense = () => {
-    setExpenses(prev => [...prev, { ...initialExpenseItem, id: Date.now() }]);
+    const newId = Date.now();
+    setExpenses(prev => [...prev, { ...initialExpenseItem, id: newId }]);
+    setOpenCollapsibleId(newId);
   };
 
   const removeExpense = (id: number) => {
@@ -324,10 +327,15 @@ export default function ExpensesEntryPage() {
 
               <div className="space-y-4">
                 {expenses.map((expense, index) => (
-                  <Collapsible key={expense.id} defaultOpen className="border p-4 rounded-lg">
+                  <Collapsible 
+                    key={expense.id} 
+                    open={openCollapsibleId === expense.id}
+                    onOpenChange={(isOpen) => setOpenCollapsibleId(isOpen ? expense.id : null)}
+                    className="border p-4 rounded-lg"
+                  >
                     <div className="flex justify-between items-center">
                       <CollapsibleTrigger asChild>
-                        <h4 className="text-lg font-semibold cursor-pointer">
+                        <h4 className="text-lg font-semibold cursor-pointer flex-grow">
                           Payment #{index + 1}
                         </h4>
                       </CollapsibleTrigger>
