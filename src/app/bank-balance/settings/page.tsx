@@ -5,7 +5,11 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   Settings,
-  Users,
+  Landmark,
+  TrendingUp,
+  Percent,
+  CalendarDays,
+  CreditCard,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -30,13 +34,13 @@ function SettingsCard({ item }: SettingsCardProps) {
                 item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
+            <CardHeader className="flex-col items-center text-center gap-4 space-y-0 p-4">
                 <div className="bg-primary/10 p-3 rounded-lg">
-                <item.icon className="w-6 h-6 text-primary" />
+                <item.icon className="w-8 h-8 text-primary" />
                 </div>
                 <div className="flex-1">
                     <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
+                    <CardDescription className="text-xs mt-1">{item.description}</CardDescription>
                 </div>
             </CardHeader>
         </Card>
@@ -56,7 +60,11 @@ function SettingsCard({ item }: SettingsCardProps) {
 export default function BankBalanceSettingsPage() {
     
   const settingsItems = [
-    { icon: Users, text: 'Manage Accounts', href: '/bank-balance/accounts', description: 'Add, edit, or remove bank accounts.' },
+    { icon: Landmark, text: 'Bank Configuration', href: '/bank-balance/accounts', description: 'Manage bank details, accounts, and other configurations.' },
+    { icon: TrendingUp, text: 'DP Management', href: '#', description: 'Manage Drawing Power for different banks and accounts.', disabled: true },
+    { icon: Percent, text: 'Interest Rate Management', href: '#', description: 'Set daily interest rates for each bank account.', disabled: true },
+    { icon: CalendarDays, text: 'Monthly Interest', href: '#', description: 'Enter projected and actual monthly interest amounts.', disabled: true },
+    { icon: CreditCard, text: 'Opening Utilization', href: '#', description: 'Enter and track opening utilization for active banks.', disabled: true },
   ];
 
   return (
@@ -67,7 +75,7 @@ export default function BankBalanceSettingsPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Bank Balance Settings</h1>
+        <h1 className="text-2xl font-bold">Bank Settings</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {settingsItems.map((item) => (
