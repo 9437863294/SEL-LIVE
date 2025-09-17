@@ -354,6 +354,7 @@ export type BankAccount = {
   ifsc: string;
   currentBalance: number;
   drawingPower: { date: string; amount: number }[];
+  interestRateLog: { date: string; rate: number }[];
   openingUtilization: number;
   openingDate: string;
 };
@@ -398,5 +399,6 @@ export type BankDailyLog = {
     totalContra: number;
     closingBalance: number;
 };
+
 
 
