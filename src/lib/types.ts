@@ -345,13 +345,15 @@ export type DailyRequisitionEntry = {
 
 export type BankAccount = {
   id: string;
-  accountName: string;
-  accountNumber: string;
   bankName: string;
-  accountType: 'Current' | 'CC';
+  shortName: string;
+  accountNumber: string;
+  accountType: 'Current Account' | 'Cash Credit';
+  status: 'Active' | 'Inactive';
+  branch: string;
+  ifsc: string;
   drawingPower?: number;
   currentBalance: number;
-  status: 'Active' | 'Inactive';
 };
 
 export type BankTransaction = {
@@ -381,4 +383,5 @@ export type BankExpense = {
     bankTransferCopyUrl?: string;
     createdAt: any; // Firestore Timestamp
 };
+
 

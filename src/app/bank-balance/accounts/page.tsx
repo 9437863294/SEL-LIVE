@@ -16,18 +16,20 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 
-const initialFormState: Omit<BankAccount, 'id'> = {
-  accountName: '',
-  accountNumber: '',
+const initialFormState: Omit<BankAccount, 'id' | 'currentBalance'> = {
   bankName: '',
-  accountType: 'Current',
-  drawingPower: 0,
-  currentBalance: 0,
+  shortName: '',
+  accountNumber: '',
+  accountType: 'Current Account',
   status: 'Active',
+  branch: '',
+  ifsc: '',
+  drawingPower: 0,
 };
 
-export default function ManageBankAccountsPage() {
+export default function ManageBanksPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,10 +59,22 @@ export default function ManageBankAccountsPage() {
   const openDialog = (mode: 'add' | 'edit', account?: BankAccount) => {
     setDialogMode(mode);
     if (mode === 'edit' && account) {
-        setFormData(account);
+        // Ensure all fields are present, providing defaults if not
+        const accountData = {
+          bankName: account.bankName || '',
+          shortName: account.shortName || '',
+          accountNumber: account.accountNumber || '',
+          accountType: account.accountType || 'Current Account',
+          status: account.status || 'Active',
+          branch: account.branch || '',
+          ifsc: account.ifsc || '',
+          drawingPower: account.drawingPower || 0,
+          currentBalance: account.currentBalance || 0,
+        };
+        setFormData(accountData);
         setEditingId(account.id);
     } else {
-        setFormData(initialFormState);
+        setFormData({...initialFormState, currentBalance: 0});
         setEditingId(null);
     }
     setIsDialogOpen(true);
@@ -71,8 +85,8 @@ export default function ManageBankAccountsPage() {
   }
 
   const handleSubmit = async () => {
-    if (!formData.accountName || !formData.accountNumber || !formData.bankName) {
-        toast({ title: 'Validation Error', description: 'Please fill in all required fields.', variant: 'destructive'});
+    if (!formData.bankName || !formData.accountNumber) {
+        toast({ title: 'Validation Error', description: 'Please fill in Bank Name and Account Number.', variant: 'destructive'});
         return;
     }
 
@@ -81,7 +95,7 @@ export default function ManageBankAccountsPage() {
             await updateDoc(doc(db, 'bankAccounts', editingId), formData);
             toast({ title: 'Success', description: 'Bank account updated successfully.'});
         } else {
-            await addDoc(collection(db, 'bankAccounts'), formData);
+            await addDoc(collection(db, 'bankAccounts'), {...formData, currentBalance: 0});
             toast({ title: 'Success', description: 'New bank account added.'});
         }
         setIsDialogOpen(false);
@@ -103,36 +117,39 @@ export default function ManageBankAccountsPage() {
       }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  };
-
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/bank-balance">
+       <div className="mb-6">
+        <div className="flex items-center gap-2">
+          <Link href="/bank-balance/settings">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
-          <h1 className="text-2xl font-bold">Manage Bank Accounts</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Manage Banks</h1>
+            <p className="text-muted-foreground">View, add, edit, or remove bank configurations.</p>
+          </div>
         </div>
-        <Button onClick={() => openDialog('add')}>
-          <Plus className="mr-2 h-4 w-4" /> Add Account
-        </Button>
       </div>
-
+      
       <Card>
+        <CardHeader>
+           <div className="flex justify-end">
+              <Button onClick={() => openDialog('add')}>
+                <Plus className="mr-2 h-4 w-4" /> Add Bank
+              </Button>
+           </div>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Account Name</TableHead>
-                <TableHead>Bank</TableHead>
-                <TableHead>Account Number</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Drawing Power</TableHead>
-                <TableHead>Current Balance</TableHead>
+                <TableHead>Bank Name</TableHead>
+                <TableHead>Short Name</TableHead>
+                <TableHead>Account No.</TableHead>
+                <TableHead>Account Type</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>IFSC</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -143,69 +160,79 @@ export default function ManageBankAccountsPage() {
                         <TableCell colSpan={8}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                 ))
-              ) : accounts.map(acc => (
+              ) : accounts.length > 0 ? (
+                accounts.map(acc => (
                 <TableRow key={acc.id}>
-                  <TableCell className="font-medium">{acc.accountName}</TableCell>
-                  <TableCell>{acc.bankName}</TableCell>
+                  <TableCell className="font-medium">{acc.bankName}</TableCell>
+                  <TableCell>{acc.shortName}</TableCell>
                   <TableCell>{acc.accountNumber}</TableCell>
                   <TableCell>{acc.accountType}</TableCell>
-                  <TableCell>{acc.accountType === 'CC' ? formatCurrency(acc.drawingPower || 0) : 'N/A'}</TableCell>
-                  <TableCell>{formatCurrency(acc.currentBalance)}</TableCell>
-                  <TableCell>{acc.status}</TableCell>
+                  <TableCell><Badge variant={acc.status === 'Active' ? 'default' : 'secondary'}>{acc.status}</Badge></TableCell>
+                  <TableCell>{acc.branch}</TableCell>
+                  <TableCell>{acc.ifsc}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => openDialog('edit', acc)}><Edit className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(acc.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    <Button variant="outline" size="sm" onClick={() => openDialog('edit', acc)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDelete(acc.id)} className="ml-2"><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))) : (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center h-24">No banks configured.</TableCell>
+                </TableRow>
+              )
+            }
             </TableBody>
           </Table>
         </CardContent>
       </Card>
       
        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{dialogMode === 'add' ? 'Add New Account' : 'Edit Account'}</DialogTitle>
+              <DialogTitle>{dialogMode === 'add' ? 'Add New Bank' : 'Edit Bank'}</DialogTitle>
               <DialogDescription>Fill in the details of the bank account.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="accountName" className="text-right">Account Name</Label>
-                <Input id="accountName" value={formData.accountName} onChange={(e) => handleFormChange('accountName', e.target.value)} className="col-span-3" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+               <div className="space-y-2">
+                <Label htmlFor="bankName">Bank Name</Label>
+                <Input id="bankName" value={formData.bankName} onChange={(e) => handleFormChange('bankName', e.target.value)} />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="bankName" className="text-right">Bank Name</Label>
-                <Input id="bankName" value={formData.bankName} onChange={(e) => handleFormChange('bankName', e.target.value)} className="col-span-3" />
+              <div className="space-y-2">
+                <Label htmlFor="shortName">Short Name</Label>
+                <Input id="shortName" value={formData.shortName} onChange={(e) => handleFormChange('shortName', e.target.value)} />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="accountNumber" className="text-right">Account Number</Label>
-                <Input id="accountNumber" value={formData.accountNumber} onChange={(e) => handleFormChange('accountNumber', e.target.value)} className="col-span-3" />
+              <div className="space-y-2">
+                <Label htmlFor="accountNumber">Account Number</Label>
+                <Input id="accountNumber" value={formData.accountNumber} onChange={(e) => handleFormChange('accountNumber', e.target.value)} />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="accountType" className="text-right">Account Type</Label>
-                 <Select value={formData.accountType} onValueChange={(v) => handleFormChange('accountType', v)} >
-                    <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+              <div className="space-y-2">
+                <Label htmlFor="accountType">Account Type</Label>
+                 <Select value={formData.accountType} onValueChange={(v: 'Current Account' | 'Cash Credit') => handleFormChange('accountType', v)} >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="Current">Current</SelectItem>
-                        <SelectItem value="CC">CC</SelectItem>
+                        <SelectItem value="Current Account">Current Account</SelectItem>
+                        <SelectItem value="Cash Credit">Cash Credit</SelectItem>
                     </SelectContent>
                 </Select>
               </div>
-               {formData.accountType === 'CC' && (
-                 <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="drawingPower" className="text-right">Drawing Power</Label>
-                    <Input id="drawingPower" type="number" value={formData.drawingPower} onChange={(e) => handleFormChange('drawingPower', e.target.valueAsNumber || 0)} className="col-span-3" />
+               {formData.accountType === 'Cash Credit' && (
+                 <div className="space-y-2">
+                    <Label htmlFor="drawingPower">Drawing Power</Label>
+                    <Input id="drawingPower" type="number" value={formData.drawingPower} onChange={(e) => handleFormChange('drawingPower', e.target.valueAsNumber || 0)} />
                  </div>
                )}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="currentBalance" className="text-right">Current Balance</Label>
-                <Input id="currentBalance" type="number" value={formData.currentBalance} onChange={(e) => handleFormChange('currentBalance', e.target.valueAsNumber || 0)} className="col-span-3" />
+              <div className="space-y-2">
+                <Label htmlFor="branch">Branch</Label>
+                <Input id="branch" value={formData.branch} onChange={(e) => handleFormChange('branch', e.target.value)} />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="status" className="text-right">Status</Label>
-                <Select value={formData.status} onValueChange={(v) => handleFormChange('status', v)} >
-                    <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+              <div className="space-y-2">
+                <Label htmlFor="ifsc">IFSC</Label>
+                <Input id="ifsc" value={formData.ifsc} onChange={(e) => handleFormChange('ifsc', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <Select value={formData.status} onValueChange={(v: 'Active' | 'Inactive') => handleFormChange('status', v)} >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="Active">Active</SelectItem>
                         <SelectItem value="Inactive">Inactive</SelectItem>
