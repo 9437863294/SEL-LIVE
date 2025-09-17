@@ -32,17 +32,13 @@ const moduleDescriptions: Record<string, string> = {
 }
 
 export default function ModuleDashboard() {
-  const { modules, addModule, updateModuleOrder, isLoading } = useModules();
+  const { modules, addModule, updateModule, updateModuleOrder, isLoading } = useModules();
   const { can } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading) {
-      const chatModuleExists = modules.some(m => m.title === 'Chat System');
-      if (!chatModuleExists) {
-        addModule({
-          title: 'Chat System',
-          content: `User Profiles
+      const chatModuleContent = `User Profiles
 
 Upload profile picture.
 
@@ -194,13 +190,27 @@ Last seen timestamp.
 25. Chat Statistics → Count of messages, busiest groups.
 
 
-26. User Activity Dashboard → See engagement levels.`,
+26. User Activity Dashboard → See engagement levels.`;
+
+      const existingChatModule = modules.find(m => m.title === 'Chat System');
+
+      if (existingChatModule) {
+        if (existingChatModule.content !== chatModuleContent) {
+          updateModule(existingChatModule.id, {
+            ...existingChatModule,
+            content: chatModuleContent,
+          });
+        }
+      } else {
+        addModule({
+          title: 'Chat System',
+          content: chatModuleContent,
           tags: ['chat', 'firebase', 'real-time'],
           icon: 'MessageSquare',
         });
       }
     }
-  }, [isLoading, modules, addModule]);
+  }, [isLoading, modules, addModule, updateModule]);
 
 
   const allModules = useMemo(() => {
