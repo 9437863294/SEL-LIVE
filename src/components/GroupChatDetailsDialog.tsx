@@ -233,7 +233,7 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     }
   };
 
- const handleSaveChanges = async () => {
+  const handleSaveChanges = async () => {
     if (!chat || !editedName.trim()) {
         toast({ title: 'Error', description: 'Group name cannot be empty.', variant: 'destructive'});
         return;
@@ -251,17 +251,10 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
   
     try {
       if (newGroupPhoto) {
-        let photoURL = '';
-        try {
-          const photoRef = ref(storage, `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`);
-          const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
-          photoURL = await getDownloadURL(uploadResult.ref);
-        } catch (uploadError) {
-          console.error("Firebase Storage upload error:", uploadError);
-          toast({ title: 'Error', description: 'Failed to upload new group photo. Please try again.', variant: 'destructive' });
-          setIsSaving(false);
-          return;
-        }
+        const storagePath = `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`;
+        const photoRef = ref(storage, storagePath);
+        const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
+        const photoURL = await getDownloadURL(uploadResult.ref);
         updateData.groupPhotoURL = photoURL;
       }
   
@@ -275,7 +268,7 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
       console.error("Failed to save changes:", error);
       toast({
         title: 'Error',
-        description: 'Failed to save changes. Please try again.',
+        description: 'Failed to save changes. Please check permissions and try again.',
         variant: 'destructive',
       });
     } finally {
@@ -452,7 +445,3 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     </>
   );
 }
-
-    
-
-    
