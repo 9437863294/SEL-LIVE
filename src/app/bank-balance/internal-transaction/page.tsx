@@ -74,16 +74,15 @@ export default function InternalTransactionPage() {
     try {
         const [accountsSnap, expensesSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true)))
+            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true), orderBy('date', 'desc')))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
         
-        const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense))
-            .sort((a,b) => b.date.toDate().getTime() - a.date.toDate().getTime());
+        const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
         
-        const groupedTransactions: Record<string, Partial<UnifiedTransaction> & { id?: string }> = {};
+        const groupedTransactions: Record<string, Partial<UnifiedTransaction> & { ids?: string[] }> = {};
 
         contraEntries.forEach(entry => {
             const contraId = entry.contraId;
@@ -91,11 +90,13 @@ export default function InternalTransactionPage() {
 
             if (!groupedTransactions[contraId]) {
                 groupedTransactions[contraId] = {
-                    id: entry.id,
+                    ids: [],
                     amount: entry.amount,
                     date: format(entry.date.toDate(), 'yyyy-MM-dd')
                 };
             }
+            
+            groupedTransactions[contraId].ids?.push(entry.id);
 
             if (entry.type === 'Debit') {
                 groupedTransactions[contraId].fromAccountId = entry.accountId;
@@ -105,9 +106,9 @@ export default function InternalTransactionPage() {
         });
 
         const unifiedLog: UnifiedTransaction[] = Object.values(groupedTransactions)
-            .filter(t => t.fromAccountId && t.toAccountId && t.id)
+            .filter(t => t.fromAccountId && t.toAccountId && t.ids && t.ids.length > 0)
             .map(t => ({
-                id: t.id!,
+                id: t.ids![0],
                 date: t.date!,
                 fromAccountId: t.fromAccountId!,
                 toAccountId: t.toAccountId!,
@@ -117,9 +118,18 @@ export default function InternalTransactionPage() {
             } as UnifiedTransaction));
 
         setLogEntries(unifiedLog);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching data:", error);
-        toast({ title: 'Error', description: 'Failed to load log data.', variant: 'destructive' });
+        if (error.code === 'failed-precondition') {
+            toast({
+                title: 'Database Index Required',
+                description: 'The query for the transaction log requires a Firestore index. Please create one for the `bankExpenses` collection on `isContra` and `date`.',
+                variant: 'destructive',
+                duration: 10000,
+            });
+        } else {
+           toast({ title: 'Error', description: 'Failed to load log data.', variant: 'destructive' });
+        }
     }
     setIsLogLoading(false);
   };
