@@ -34,8 +34,9 @@ import { NewChatDialog } from '@/components/NewChatDialog';
 import type { User, Chat, Message } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 export default function ChatSystemPage() {
@@ -104,7 +105,7 @@ export default function ChatSystemPage() {
     } else {
         // Create a new chat
         const newChatData = {
-            type: 'one-to-one',
+            type: 'one-to-one' as const,
             members: [currentUser.id, user.id],
             memberDetails: [
                 {id: currentUser.id, name: currentUser.name, photoURL: currentUser.photoURL || ''},
@@ -117,7 +118,8 @@ export default function ChatSystemPage() {
             }
         };
         const newChatRef = await addDoc(collection(db, 'chats'), newChatData);
-        setSelectedChat({id: newChatRef.id, ...newChatData} as Chat);
+        const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }}
+        setSelectedChat(newChat as Chat);
     }
   };
 
@@ -133,10 +135,12 @@ export default function ChatSystemPage() {
         readBy: [currentUser.id]
     };
 
-    await addDoc(collection(db, 'chats', selectedChat.id, 'messages'), messageData);
+    const chatRef = doc(db, 'chats', selectedChat.id);
+    const messagesRef = collection(chatRef, 'messages');
+
+    await addDoc(messagesRef, messageData);
     
-    // This part would ideally be a Cloud Function to avoid a race condition
-    await updateDoc(doc(db, 'chats', selectedChat.id), {
+    await updateDoc(chatRef, {
         lastMessage: {
             text: newMessage,
             senderId: currentUser.id,
@@ -280,5 +284,3 @@ export default function ChatSystemPage() {
     </>
   );
 }
-
-    
