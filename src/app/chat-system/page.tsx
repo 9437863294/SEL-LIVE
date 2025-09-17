@@ -249,8 +249,8 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
@@ -356,6 +356,8 @@ export default function ChatSystemPage() {
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
     
     setAttachment(file);
+    await handleSendMessage(); // Directly send the message
+    
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
