@@ -127,7 +127,7 @@ interface GroupChatDetailsDialogProps {
 }
 
 export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChatDetailsDialogProps) {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshUserData } = useAuth();
   const { toast } = useToast();
   const { users } = useAuth(); 
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
@@ -165,6 +165,7 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
         groupAdmins: action === 'add' ? arrayUnion(memberId) : arrayRemove(memberId)
       });
       toast({ title: 'Success', description: `Admin status updated.` });
+      // No need to call refreshUserData, onSnapshot should handle it.
     } catch (e) {
       toast({ title: 'Error', description: 'Could not update admin status.', variant: 'destructive' });
     }
@@ -235,37 +236,43 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
 
   const handleSaveChanges = async () => {
     if (!chat || !editedName.trim()) {
-        toast({ title: 'Error', description: 'Group name cannot be empty.', variant: 'destructive'});
-        return;
+      toast({ title: 'Error', description: 'Group name cannot be empty.', variant: 'destructive' });
+      return;
     }
     setIsSaving(true);
   
-    const updateData: {
-      groupName: string;
-      groupDescription: string;
-      groupPhotoURL?: string;
-    } = {
+    const updateData: { groupName: string; groupDescription: string; groupPhotoURL?: string; } = {
       groupName: editedName,
       groupDescription: editedDescription,
     };
   
     try {
+      // Step 1: Upload photo if a new one is selected
       if (newGroupPhoto) {
-        const storagePath = `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`;
-        const photoRef = ref(storage, storagePath);
-        const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
-        const photoURL = await getDownloadURL(uploadResult.ref);
-        updateData.groupPhotoURL = photoURL;
+        try {
+          const storagePath = `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`;
+          const photoRef = ref(storage, storagePath);
+          const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
+          const photoURL = await getDownloadURL(uploadResult.ref);
+          updateData.groupPhotoURL = photoURL;
+        } catch (uploadError) {
+          console.error("Error uploading new group photo:", uploadError);
+          toast({ title: 'Error', description: 'Failed to upload new group photo. Please try again.', variant: 'destructive' });
+          setIsSaving(false);
+          return;
+        }
       }
   
+      // Step 2: Update Firestore with new data
       await updateDoc(doc(db, 'chats', chat.id), updateData);
   
       toast({ title: 'Success', description: 'Group details updated.' });
       setIsEditing(false);
       setNewGroupPhoto(null);
       setPhotoPreview(null);
-    } catch (error) {
-      console.error("Failed to save changes:", error);
+      // Let onSnapshot handle the UI update.
+    } catch (dbError) {
+      console.error("Error saving changes to Firestore:", dbError);
       toast({
         title: 'Error',
         description: 'Failed to save changes. Please check permissions and try again.',
