@@ -346,7 +346,7 @@ export default function ExpensesEntryPage() {
 
       <Tabs defaultValue="entry">
         <TabsList className="mb-4">
-          <TabsTrigger value="entry">Entry</TabsTrigger>
+          <TabsTrigger value="entry">Payment Entry</TabsTrigger>
           <TabsTrigger value="log">Log</TabsTrigger>
         </TabsList>
         <TabsContent value="entry">
