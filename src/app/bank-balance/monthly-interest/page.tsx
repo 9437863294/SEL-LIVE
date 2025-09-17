@@ -31,6 +31,7 @@ export default function MonthlyInterestPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [interestData, setInterestData] = useState<MonthlyInterestData>({});
+  const [initialInterestData, setInitialInterestData] = useState<MonthlyInterestData>({});
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [isLoading, setIsLoading] = useState(true);
   const [isLogLoading, setIsLogLoading] = useState(true);
@@ -42,6 +43,10 @@ export default function MonthlyInterestPage() {
   const [activeTab, setActiveTab] = useState('entry');
 
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
+  
+  const hasUnsavedChanges = useMemo(() => {
+    return JSON.stringify(interestData) !== JSON.stringify(initialInterestData);
+  }, [interestData, initialInterestData]);
 
   const fetchBaseData = useCallback(async () => {
     setIsLoading(true);
@@ -176,6 +181,8 @@ export default function MonthlyInterestPage() {
         }, {} as MonthlyInterestData);
         
         setInterestData(newInterestData);
+        setInitialInterestData(JSON.parse(JSON.stringify(newInterestData)));
+
     };
 
     fetchAndSetInterestData();
@@ -199,6 +206,7 @@ export default function MonthlyInterestPage() {
         const docRef = doc(db, 'monthlyInterest', selectedMonth);
         await setDoc(docRef, interestData, { merge: true });
         toast({ title: "Success", description: "Monthly interest data saved." });
+        setInitialInterestData(JSON.parse(JSON.stringify(interestData))); // Update initial state
         fetchBaseData(); // Refresh log data
     } catch(error) {
         console.error("Error saving data: ", error);
@@ -282,10 +290,12 @@ export default function MonthlyInterestPage() {
                                     </SelectContent>
                                 </Select>
                         </div>
-                        <Button onClick={handleSave} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Monthly Interest
-                        </Button>
+                        {hasUnsavedChanges && (
+                            <Button onClick={handleSave} disabled={isSaving}>
+                                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                Save Monthly Interest
+                            </Button>
+                        )}
                    </div>
                 </CardHeader>
                 <CardContent>
