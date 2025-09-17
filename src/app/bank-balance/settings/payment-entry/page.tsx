@@ -32,12 +32,12 @@ interface PaymentMethod {
 export default function PaymentEntrySettingsPage() {
   const { toast } = useToast();
   const [mandatoryFields, setMandatoryFields] = useState<MandatoryFields>({
-    paymentRequestRefNo: false,
-    utrNumber: false,
-    paymentMethod: false,
-    paymentRefNo: false,
-    approvalCopy: false,
-    bankTransferCopy: false,
+    paymentRequestRefNo: true,
+    utrNumber: true,
+    paymentMethod: true,
+    paymentRefNo: true,
+    approvalCopy: true,
+    bankTransferCopy: true,
   });
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [newMethodName, setNewMethodName] = useState('');
@@ -51,7 +51,27 @@ export default function PaymentEntrySettingsPage() {
     try {
       const settingsDoc = await getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'));
       if (settingsDoc.exists()) {
-        setMandatoryFields(settingsDoc.data().mandatoryFields);
+        const settingsData = settingsDoc.data();
+        // Ensure all fields are present, defaulting to true if not set
+        const defaultTrueFields = {
+            paymentRequestRefNo: true,
+            utrNumber: true,
+            paymentMethod: true,
+            paymentRefNo: true,
+            approvalCopy: true,
+            bankTransferCopy: true,
+        };
+        setMandatoryFields({ ...defaultTrueFields, ...settingsData.mandatoryFields });
+      } else {
+        // If no settings exist, default all to true
+         setMandatoryFields({
+            paymentRequestRefNo: true,
+            utrNumber: true,
+            paymentMethod: true,
+            paymentRefNo: true,
+            approvalCopy: true,
+            bankTransferCopy: true,
+        });
       }
       
       const methodsSnap = await getDocs(collection(db, 'paymentMethods'));
