@@ -25,9 +25,9 @@ const reportItemsBase = [
     icon: LineChart, 
     title: 'Cashflow Statement', 
     description: 'Analyze the movement of cash over a period.', 
-    href: '#',
+    href: '/bank-balance/reports/cashflow-statement',
     permission: 'View Cashflow',
-    disabled: true,
+    disabled: false,
   },
   { 
     icon: Banknote, 
