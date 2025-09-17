@@ -27,6 +27,7 @@ interface BillingReconCardProps {
     href: string;
     description: string;
     disabled?: boolean;
+    isSettings?: boolean;
   };
 }
 
@@ -52,9 +53,12 @@ function BillingReconCard({ item }: BillingReconCardProps) {
                 <div className="bg-primary/10 p-3 rounded-lg">
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
+                <div className="flex-1 flex justify-between items-center">
+                    <div>
+                        <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                        <CardDescription className="text-xs">{item.description}</CardDescription>
+                    </div>
+                    {item.isSettings && <Settings className="w-5 h-5 text-muted-foreground" />}
                 </div>
             </CardHeader>
         </Card>
@@ -112,7 +116,8 @@ export default function BillingReconPage() {
     icon: Settings,
     text: 'Project Billing Settings',
     href: '/billing-recon/settings',
-    description: 'Configure billing status for each project.'
+    description: 'Configure billing status for each project.',
+    isSettings: true,
   };
   
   if (isAuthLoading || (isLoading && canViewModule)) {
