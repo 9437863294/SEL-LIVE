@@ -229,6 +229,31 @@ export type User = {
     settings?: UserSettings;
 };
 
+export type Chat = {
+    id: string;
+    type: 'one-to-one' | 'group';
+    members: string[];
+    memberDetails: { id: string; name: string; photoURL: string; }[];
+    lastMessage: {
+        text: string;
+        senderId: string;
+        timestamp: any; // Firestore Timestamp
+    };
+    groupName?: string;
+    groupAdmin?: string;
+}
+
+export type Message = {
+    id: string;
+    senderId: string;
+    content: string;
+    timestamp: any; // Firestore Timestamp
+    type: 'text' | 'image' | 'document';
+    mediaUrl?: string;
+    readBy: string[];
+    isDeleted?: boolean;
+}
+
 export type Role = {
   id: string;
   name: string;
@@ -430,3 +455,5 @@ export type MonthlyInterestData = {
   };
 };
 
+
+    

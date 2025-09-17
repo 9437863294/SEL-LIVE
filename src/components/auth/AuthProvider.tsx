@@ -6,7 +6,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
 
 
@@ -81,6 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDocSnap.exists()) {
             const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
             setUser(userData);
+            
+             // Update user's online status and last seen
+            await updateDoc(userDocRef, {
+              isOnline: true,
+              lastSeen: serverTimestamp()
+            });
 
             // Fetch permissions for the loaded user (original or impersonated)
             if (userData.role) {
@@ -127,10 +133,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUserData]);
 
   useEffect(() => {
+    const handleBeforeUnload = async () => {
+        if (auth.currentUser) {
+            const userDocRef = doc(db, 'users', auth.currentUser.uid);
+            await updateDoc(userDocRef, {
+              isOnline: false,
+              lastSeen: serverTimestamp()
+            });
+        }
+    };
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
         setLoading(true);
-        fetchUserData(firebaseUser);
+        if (firebaseUser) {
+            fetchUserData(firebaseUser);
+        } else {
+            setLoading(false);
+        }
     });
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     // Listen for storage changes to sync impersonation state across tabs
     const handleStorageChange = (event: StorageEvent) => {
@@ -142,7 +164,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
         unsubscribe();
+        window.removeEventListener('beforeunload', handleBeforeUnload);
         window.removeEventListener('storage', handleStorageChange);
+        handleBeforeUnload(); // Try to set offline on component unmount
     };
   }, [fetchUserData, refreshUserData]);
 
@@ -191,3 +215,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
+    

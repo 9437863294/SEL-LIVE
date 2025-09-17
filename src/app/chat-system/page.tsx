@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   File,
   Inbox,
@@ -31,23 +31,139 @@ import {
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NewChatDialog } from '@/components/NewChatDialog';
-import type { User } from '@/lib/types';
+import type { User, Chat, Message } from '@/lib/types';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { format } from 'date-fns';
 
 
 export default function ChatSystemPage() {
+  const { user: currentUser } = useAuth();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+
+  const [isLoadingChats, setIsLoadingChats] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    setIsLoadingChats(true);
+    const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const userChats: Chat[] = [];
+        querySnapshot.forEach((doc) => {
+            userChats.push({ id: doc.id, ...doc.data() } as Chat);
+        });
+        setChats(userChats.sort((a,b) => b.lastMessage.timestamp.toMillis() - a.lastMessage.timestamp.toMillis()));
+        setIsLoadingChats(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
   
-  const handleSelectUser = (user: User) => {
-    console.log("Selected user:", user.name);
-    // Here you would implement logic to create or open a chat with the selected user.
+   useEffect(() => {
+    if (!selectedChat) {
+        setMessages([]);
+        return;
+    };
+    setIsLoadingMessages(true);
+    const messagesRef = collection(db, 'chats', selectedChat.id, 'messages');
+    const q = query(messagesRef, orderBy('timestamp', 'asc'));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const chatMessages: Message[] = [];
+        querySnapshot.forEach((doc) => {
+            chatMessages.push({ id: doc.id, ...doc.data() } as Message);
+        });
+        setMessages(chatMessages);
+        setIsLoadingMessages(false);
+    });
+
+    return () => unsubscribe();
+  }, [selectedChat]);
+
+
+  const handleSelectUser = async (user: User) => {
     setIsNewChatOpen(false);
+    if(!currentUser) return;
+
+    // Check if a 1-on-1 chat already exists
+    const existingChat = chats.find(chat => 
+        chat.type === 'one-to-one' && 
+        chat.members.length === 2 && 
+        chat.members.includes(user.id)
+    );
+
+    if (existingChat) {
+        setSelectedChat(existingChat);
+    } else {
+        // Create a new chat
+        const newChatData = {
+            type: 'one-to-one',
+            members: [currentUser.id, user.id],
+            memberDetails: [
+                {id: currentUser.id, name: currentUser.name, photoURL: currentUser.photoURL || ''},
+                {id: user.id, name: user.name, photoURL: user.photoURL || ''}
+            ],
+            lastMessage: {
+                text: 'Chat created',
+                senderId: '',
+                timestamp: serverTimestamp(),
+            }
+        };
+        const newChatRef = await addDoc(collection(db, 'chats'), newChatData);
+        setSelectedChat({id: newChatRef.id, ...newChatData} as Chat);
+    }
   };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !currentUser || !selectedChat) return;
+
+    const messageData = {
+        content: newMessage,
+        senderId: currentUser.id,
+        timestamp: serverTimestamp(),
+        type: 'text',
+        readBy: [currentUser.id]
+    };
+
+    await addDoc(collection(db, 'chats', selectedChat.id, 'messages'), messageData);
+    
+    // This part would ideally be a Cloud Function to avoid a race condition
+    await updateDoc(doc(db, 'chats', selectedChat.id), {
+        lastMessage: {
+            text: newMessage,
+            senderId: currentUser.id,
+            timestamp: serverTimestamp(),
+        }
+    });
+
+    setNewMessage('');
+  };
+  
+  const getOtherMember = (chat: Chat) => {
+      if(!currentUser || !chat.memberDetails) return { name: 'Chat', photoURL: '' };
+      return chat.memberDetails.find(m => m.id !== currentUser.id);
+  }
+
+  const getInitials = (name?: string) => {
+    if (!name) return '??';
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  const chatPartner = selectedChat ? getOtherMember(selectedChat) : null;
 
   return (
     <>
       <div className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
         <ResizablePanelGroup direction="horizontal" className="flex-1">
-          <ResizablePanel defaultSize={20} minSize={15} maxSize={25}>
+          <ResizablePanel defaultSize={25} minSize={15} maxSize={30}>
             <div className="p-2 h-full flex flex-col">
                 <div className="p-2">
                   <Button className="w-full" onClick={() => setIsNewChatOpen(true)}>
@@ -55,26 +171,104 @@ export default function ChatSystemPage() {
                   </Button>
                 </div>
                 <Separator />
-              <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
-                {/* Placeholder for chat list */}
-                {Array.from({ length: 10 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted">
-                      <Skeleton className="h-10 w-10 rounded-full" />
-                      <div className="flex-1 space-y-1">
-                          <Skeleton className="h-4 w-3/4" />
-                          <Skeleton className="h-3 w-full" />
+                <div className="p-2">
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search chats..." className="pl-8" />
+                    </div>
+                </div>
+              <ScrollArea className="flex-1">
+                {isLoadingChats ? (
+                    Array.from({ length: 10 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 p-2 rounded-lg">
+                          <Skeleton className="h-10 w-10 rounded-full" />
+                          <div className="flex-1 space-y-1">
+                              <Skeleton className="h-4 w-3/4" />
+                              <Skeleton className="h-3 w-full" />
+                          </div>
                       </div>
-                  </div>
-                ))}
-              </nav>
+                    ))
+                ) : (
+                    chats.map(chat => {
+                        const otherMember = getOtherMember(chat);
+                        const chatName = chat.type === 'group' ? chat.groupName : otherMember?.name;
+                        const chatAvatar = chat.type === 'group' ? undefined : otherMember?.photoURL;
+
+                        return (
+                            <div 
+                                key={chat.id} 
+                                className={cn(
+                                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-muted",
+                                    selectedChat?.id === chat.id && 'bg-muted'
+                                )}
+                                onClick={() => setSelectedChat(chat)}
+                            >
+                                <Avatar>
+                                    <AvatarImage src={chatAvatar} />
+                                    <AvatarFallback>{getInitials(chatName)}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 overflow-hidden">
+                                    <p className="font-semibold truncate">{chatName}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{chat.lastMessage?.text}</p>
+                                </div>
+                                {chat.lastMessage?.timestamp && (
+                                     <p className="text-xs text-muted-foreground self-start">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
+                                )}
+                            </div>
+                        )
+                    })
+                )}
+              </ScrollArea>
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={80}>
-            <div className="flex h-full flex-col items-center justify-center bg-muted/50">
-                <MessageSquare className="h-16 w-16 text-muted-foreground" />
-                <p className="mt-4 text-lg text-muted-foreground">Select a chat to start messaging</p>
-              </div>
+          <ResizablePanel defaultSize={75}>
+            {selectedChat ? (
+                <div className="flex flex-col h-full">
+                   <div className="p-4 border-b flex items-center gap-4">
+                        <Avatar>
+                            <AvatarImage src={chatPartner?.photoURL} />
+                            <AvatarFallback>{getInitials(chatPartner?.name)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                            <p className="font-semibold">{chatPartner?.name}</p>
+                            <p className="text-xs text-green-500">Online</p>
+                        </div>
+                   </div>
+                    <ScrollArea className="flex-1 p-4">
+                        {isLoadingMessages ? (
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-12" />
+                        ) : (
+                            messages.map(message => {
+                                const isSender = message.senderId === currentUser?.id;
+                                return (
+                                    <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
+                                        <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                            <p>{message.content}</p>
+                                             <p className="text-xs opacity-70 mt-1 text-right">{format(message.timestamp.toDate(), 'p')}</p>
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
+                    </ScrollArea>
+                    <div className="p-4 border-t">
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                            <Input 
+                                placeholder="Type a message..."
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                            />
+                            <Button type="submit"><Send className="h-4 w-4" /></Button>
+                        </form>
+                    </div>
+                </div>
+            ) : (
+                <div className="flex h-full flex-col items-center justify-center bg-muted/50">
+                    <MessageSquare className="h-16 w-16 text-muted-foreground" />
+                    <p className="mt-4 text-lg text-muted-foreground">Select a chat to start messaging</p>
+                </div>
+            )}
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
@@ -86,3 +280,5 @@ export default function ChatSystemPage() {
     </>
   );
 }
+
+    
