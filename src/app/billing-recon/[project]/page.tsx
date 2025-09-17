@@ -133,7 +133,7 @@ export default function ProjectDashboardPage() {
   if (isLoading || isAuthLoading) {
       return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
-            <Skeleton className="h-10 w-1/2 mb-6" />
+            <Skeleton className="h-10 w-1/2 mb-8" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
             </div>
@@ -144,7 +144,7 @@ export default function ProjectDashboardPage() {
   if(!can('View Module', 'Billing Recon')) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
-             <div className="mb-6 flex items-center justify-between">
+             <div className="mb-8 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link href="/billing-recon"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                     <h1 className="text-2xl font-bold">{projectName}</h1>
@@ -160,7 +160,7 @@ export default function ProjectDashboardPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Link href="/billing-recon">
                 <Button variant="ghost" size="icon">
