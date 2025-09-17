@@ -159,7 +159,6 @@ export default function CashflowStatementPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="font-bold text-xs p-2">MONTH</TableHead>
-                    <TableHead className="text-right font-bold text-xs p-2">OPENING BALANCE</TableHead>
                     <TableHead className="text-right font-bold text-xs p-2">INFLOW (RECEIPTS)</TableHead>
                     <TableHead className="text-right font-bold text-xs p-2">OUTFLOW (PAYMENTS)</TableHead>
                     <TableHead className="text-right font-bold text-xs p-2">NET CASHFLOW</TableHead>
@@ -170,14 +169,13 @@ export default function CashflowStatementPage() {
                   {isLoading ? (
                     Array.from({length: 5}).map((_, i) => (
                         <TableRow key={i}>
-                            <TableCell colSpan={6} className="p-2"><Skeleton className="h-5" /></TableCell>
+                            <TableCell colSpan={5} className="p-2"><Skeleton className="h-5" /></TableCell>
                         </TableRow>
                     ))
                   ) : data.length > 0 ? (
                     data.map((row) => (
                         <TableRow key={row.month} className="text-xs">
                           <TableCell className="font-medium p-2">{row.monthLabel}</TableCell>
-                          <TableCell className="text-right p-2">{formatCurrency(row.openingBalance)}</TableCell>
                           <TableCell className="text-right text-green-600 p-2">{formatCurrency(row.inflow)}</TableCell>
                           <TableCell className="text-right text-red-600 p-2">{formatCurrency(row.outflow)}</TableCell>
                           <TableCell className="text-right font-medium p-2">{formatCurrency(row.net)}</TableCell>
@@ -186,7 +184,7 @@ export default function CashflowStatementPage() {
                     ))
                   ) : (
                     <TableRow>
-                        <TableCell colSpan={6} className="text-center h-24">No transaction data found.</TableCell>
+                        <TableCell colSpan={5} className="text-center h-24">No transaction data found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
