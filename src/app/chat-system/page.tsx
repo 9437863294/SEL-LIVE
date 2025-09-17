@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -56,10 +55,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+  DialogDescription
+} from '@/components/ui/dialog';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 
 export default function ChatSystemPage() {
   const { user: currentUser } = useAuth();
+  const { toast } = useToast();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -71,6 +81,10 @@ export default function ChatSystemPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  
+  const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -111,17 +125,12 @@ export default function ChatSystemPage() {
                                 }));
                             }
                         });
-                        // We don't store this unsubscribe, as it's for another user's presence, not chat data
                     }
                 }
 
-                // Set up listeners for unread messages count
                 const messagesRef = collection(db, 'chats', chat.id, 'messages');
-                const unreadQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id));
-                 onSnapshot(query(messagesRef), (messagesSnapshot) => {
-                    const totalMessages = messagesSnapshot.size;
-                    const readMessages = messagesSnapshot.docs.filter(doc => doc.data().readBy.includes(currentUser.id)).length;
-                    const unreadCount = totalMessages - readMessages;
+                onSnapshot(query(messagesRef), (messagesSnapshot) => {
+                    const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
                     setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadCount }));
                 });
                 resolve();
@@ -162,6 +171,36 @@ export default function ChatSystemPage() {
 
     return () => unsubscribe();
   }, [selectedChat]);
+  
+  useEffect(() => {
+    if (isCameraDialogOpen) {
+        const getCameraPermission = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                setHasCameraPermission(true);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                }
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                setHasCameraPermission(false);
+                toast({
+                    variant: 'destructive',
+                    title: 'Camera Access Denied',
+                    description: 'Please enable camera permissions in your browser settings to use this feature.',
+                });
+            }
+        };
+        getCameraPermission();
+    } else {
+        // Cleanup: stop camera stream when dialog closes
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
+    }
+  }, [isCameraDialogOpen, toast]);
 
 
   const handleSelectUser = async (user: User) => {
@@ -193,8 +232,6 @@ export default function ChatSystemPage() {
             }
         };
         const newChatRef = await addDoc(collection(db, 'chats'), newChatData);
-        // We can't immediately get the server timestamp, so we'll use a local new Date() for immediate display.
-        // The onSnapshot listener will soon update it with the real server time.
         const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }}
         handleSelectChat(newChat as Chat);
     }
@@ -462,7 +499,7 @@ export default function ChatSystemPage() {
                                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
                                         <ImageIcon className="mr-2 h-4 w-4" /> Photos & Videos
                                     </DropdownMenuItem>
-                                     <DropdownMenuItem>
+                                     <DropdownMenuItem onSelect={() => setIsCameraDialogOpen(true)}>
                                         <Camera className="mr-2 h-4 w-4" /> Camera
                                     </DropdownMenuItem>
                                     <DropdownMenuItem>
@@ -529,7 +566,31 @@ export default function ChatSystemPage() {
         onOpenChange={setIsNewChatOpen} 
         onSelectUser={handleSelectUser}
       />
+      <Dialog open={isCameraDialogOpen} onOpenChange={setIsCameraDialogOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Camera</DialogTitle>
+                <DialogDescription>Position yourself and capture a photo.</DialogDescription>
+            </DialogHeader>
+            <div className="relative">
+                <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted />
+                {hasCameraPermission === false && (
+                    <Alert variant="destructive" className="mt-4">
+                        <AlertTitle>Camera Access Required</AlertTitle>
+                        <AlertDescription>
+                            Please allow camera access in your browser settings to use this feature.
+                        </AlertDescription>
+                    </Alert>
+                )}
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCameraDialogOpen(false)}>Cancel</Button>
+                <Button disabled={!hasCameraPermission}>Capture</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
+    
