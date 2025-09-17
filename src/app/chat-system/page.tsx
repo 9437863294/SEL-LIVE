@@ -71,7 +71,6 @@ import {
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { CreateEventDialog } from '@/components/CreateEventDialog';
 import { GroupChatDetailsDialog } from '@/components/GroupChatDetailsDialog';
-import { ChatToast } from '@/components/ChatToast';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -459,12 +458,12 @@ export default function ChatSystemPage() {
                 <p className="text-sm">{message.content}</p>
             ) : message.type === 'image' ? (
                 <div className="space-y-2">
-                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} className="max-w-xs rounded-lg" />}
+                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} className="w-full h-auto rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             ) : message.type === 'video' ? (
                  <div className="space-y-2">
-                    {message.mediaUrl && <video src={message.mediaUrl} controls className="max-w-xs rounded-lg" />}
+                    {message.mediaUrl && <video src={message.mediaUrl} controls className="w-full h-auto rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             ) : message.type === 'audio' ? (
@@ -790,3 +789,5 @@ const ChatPanel = () => (
     </>
   );
 }
+
+    
