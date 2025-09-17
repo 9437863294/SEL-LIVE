@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import type { BankAccount, BankExpense, InterestRateLogEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc, subDays } from 'date-fns';
+import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc, subDays, parse } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -108,6 +108,78 @@ export default function InterestRatePage() {
     }
   }, [authLoading, canView]);
   
+  const calculatedProjectedInterest = useMemo(() => {
+    const monthData: Record<string, number> = {};
+    if (isLoading || accounts.length === 0 || allTransactions.length === 0) return monthData;
+    
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const selectedMonthStart = startOfMonth(new Date(year, month - 1));
+    const selectedMonthEnd = endOfMonth(new Date(year, month - 1));
+
+    accounts.forEach(account => {
+        if (account.accountType !== 'Cash Credit' || !account.openingDate) {
+            monthData[account.id] = 0;
+            return;
+        }
+        
+        const openingDate = new Date(account.openingDate);
+        if(selectedMonthEnd < openingDate) {
+            monthData[account.id] = 0;
+            return;
+        }
+
+        let runningBalance = account.openingUtilization || 0;
+        
+        const getRateForDate = (date: Date): number => {
+            const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.fromDate), new Date(b.fromDate)));
+            const rateEntry = sortedLog.find(entry => {
+                const from = startOfDay(new Date(entry.fromDate));
+                const to = entry.toDate ? endOfDay(new Date(entry.toDate)) : new Date(8640000000000000); // Far future date if no toDate
+                return date >= from && date <= to;
+            });
+            return rateEntry ? rateEntry.rate : 0;
+        }
+        
+        const preInterval = { start: openingDate, end: subMonths(selectedMonthStart, 1) };
+        if (preInterval.end >= preInterval.start) {
+            const preDays = eachDayOfInterval(preInterval);
+            preDays.forEach(day => {
+                const dayString = format(day, 'yyyy-MM-dd');
+                const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
+                const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+                const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
+                runningBalance += receipts - expenses + contra;
+            });
+        }
+        
+        let monthInterest = 0;
+        const daysInSelectedMonth = eachDayOfInterval({ start: selectedMonthStart, end: selectedMonthEnd });
+
+        daysInSelectedMonth.forEach(day => {
+            if(day < openingDate) return; 
+            
+            const dayString = format(day, 'yyyy-MM-dd');
+            const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
+            
+            const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+            const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
+            const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
+
+            const closingBalance = runningBalance + receipts - expenses + contra;
+            
+            const rate = getRateForDate(day);
+            const dailyInterest = (closingBalance * (rate / 100)) / 365;
+            
+            monthInterest += dailyInterest;
+            runningBalance = closingBalance;
+        });
+
+        monthData[account.id] = monthInterest;
+    });
+    return monthData;
+  }, [accounts, allTransactions, selectedMonth, isLoading]);
+
   useEffect(() => {
     if (isLoading || isLogLoading || !canView) return;
 
