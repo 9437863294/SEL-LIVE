@@ -24,6 +24,7 @@ import {
   BarChart3,
   Calendar,
   SmilePlus,
+  RotateCcw,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -44,7 +45,7 @@ import { NewChatDialog } from '@/components/NewChatDialog';
 import type { User, Chat, Message } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db, storage } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -66,6 +67,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import Image from 'next/image';
 
 
 export default function ChatSystemPage() {
@@ -86,6 +88,8 @@ export default function ChatSystemPage() {
   const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -173,35 +177,36 @@ export default function ChatSystemPage() {
     return () => unsubscribe();
   }, [selectedChat]);
   
+  const getCameraPermission = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setHasCameraPermission(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasCameraPermission(false);
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Denied',
+        description: 'Please enable camera permissions in your browser settings to use this feature.',
+      });
+    }
+  }, [toast]);
+  
   useEffect(() => {
-    if (isCameraDialogOpen) {
-        const getCameraPermission = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                setHasCameraPermission(true);
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                }
-            } catch (error) {
-                console.error('Error accessing camera:', error);
-                setHasCameraPermission(false);
-                toast({
-                    variant: 'destructive',
-                    title: 'Camera Access Denied',
-                    description: 'Please enable camera permissions in your browser settings to use this feature.',
-                });
-            }
-        };
+    if (isCameraDialogOpen && !isPreviewing) {
         getCameraPermission();
     } else {
-        // Cleanup: stop camera stream when dialog closes
+        // Cleanup: stop camera stream when dialog closes or goes to preview
         if (videoRef.current && videoRef.current.srcObject) {
             const stream = videoRef.current.srcObject as MediaStream;
             stream.getTracks().forEach(track => track.stop());
             videoRef.current.srcObject = null;
         }
     }
-  }, [isCameraDialogOpen, toast]);
+  }, [isCameraDialogOpen, isPreviewing, getCameraPermission]);
 
 
   const handleSelectUser = async (user: User) => {
@@ -311,20 +316,46 @@ export default function ChatSystemPage() {
     setSelectedChat(chat);
     if (!currentUser || (unreadCounts[chat.id] || 0) === 0) return;
 
-    const messagesRef = collection(db, 'chats', chat.id, 'messages');
+    const unreadMessages = messages.filter(msg => msg.chatId === chat.id && !msg.readBy.includes(currentUser.id));
     
-    const unreadDocs = messages
-        .filter(doc => !doc.readBy.includes(currentUser.id))
-        .map(msg => doc(db, 'chats', chat.id, 'messages', msg.id));
+    if (unreadMessages.length === 0) return;
     
-    if (unreadDocs.length === 0) return;
-
     const batch = writeBatch(db);
-    unreadDocs.forEach(messageDocRef => {
-        batch.update(messageDocRef, { readBy: arrayUnion(currentUser.id) });
+    unreadMessages.forEach(msg => {
+        const msgRef = doc(db, 'chats', chat.id, 'messages', msg.id);
+        batch.update(msgRef, {
+            readBy: arrayUnion(currentUser.id)
+        });
     });
 
     await batch.commit();
+  };
+  
+  const handleCapture = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setCapturedImage(dataUrl);
+        setIsPreviewing(true);
+      }
+    }
+  };
+
+  const handleSendPhoto = async () => {
+    if (!capturedImage) return;
+
+    const blob = await (await fetch(capturedImage)).blob();
+    const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    
+    setAttachment(file);
+    setIsCameraDialogOpen(false);
+    setIsPreviewing(false);
+    setCapturedImage(null);
   };
   
   const getOtherMember = (chat: Chat) => {
@@ -568,11 +599,18 @@ export default function ChatSystemPage() {
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Camera</DialogTitle>
-                <DialogDescription>Position yourself and capture a photo.</DialogDescription>
+                <DialogDescription>
+                    {isPreviewing ? 'Review your photo before sending.' : 'Position yourself and capture a photo.'}
+                </DialogDescription>
             </DialogHeader>
             <div className="relative">
-                <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted />
-                {hasCameraPermission === false && (
+                {isPreviewing && capturedImage ? (
+                    <Image src={capturedImage} alt="Captured preview" width={640} height={480} className="w-full aspect-video rounded-md" />
+                ) : (
+                    <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted />
+                )}
+                
+                {hasCameraPermission === false && !isPreviewing && (
                     <Alert variant="destructive" className="mt-4">
                         <AlertTitle>Camera Access Required</AlertTitle>
                         <AlertDescription>
@@ -582,11 +620,28 @@ export default function ChatSystemPage() {
                 )}
             </div>
             <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCameraDialogOpen(false)}>Cancel</Button>
-                <Button disabled={!hasCameraPermission}>Capture</Button>
+                {isPreviewing ? (
+                    <>
+                        <Button variant="outline" onClick={() => setIsPreviewing(false)}>
+                            <RotateCcw className="mr-2 h-4 w-4" /> Retake
+                        </Button>
+                        <Button onClick={handleSendPhoto}>
+                            <Send className="mr-2 h-4 w-4" /> Send Photo
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <Button variant="outline" onClick={() => setIsCameraDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCapture} disabled={!hasCameraPermission}>
+                            <Camera className="mr-2 h-4 w-4" /> Capture
+                        </Button>
+                    </>
+                )}
             </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
 }
+
+    
