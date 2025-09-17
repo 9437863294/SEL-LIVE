@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -101,7 +101,8 @@ export default function ProjectDashboardPage() {
     const fetchProjects = async () => {
         setIsLoading(true);
         try {
-            const querySnapshot = await getDocs(collection(db, 'projects'));
+            const q = query(collection(db, 'projects'), where('billingRequired', '==', true));
+            const querySnapshot = await getDocs(q);
             const projectsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
             setProjects(projectsData);
         } catch (error) {
