@@ -33,9 +33,9 @@ const reportItemsBase = [
     icon: Banknote, 
     title: 'Bank Position Report', 
     description: 'View a summary of balances across all banks.',
-    href: '#',
+    href: '/bank-balance/reports/bank-position',
     permission: 'View Bank Position',
-    disabled: true,
+    disabled: false,
   },
 ];
 
