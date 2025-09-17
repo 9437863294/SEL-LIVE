@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,6 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { DateRange } from 'react-day-picker';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 type RateLogEntry = { date: string; rate: number };
 
@@ -44,6 +45,8 @@ interface MonthlySummary {
 
 export default function InterestRatePage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+  
   // Common state
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +63,9 @@ export default function InterestRatePage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [bankFilter, setBankFilter] = useState('all');
 
+  const canView = can('View', 'Bank Balance.Interest Rate');
+  const canAdd = can('Add', 'Bank Balance.Interest Rate');
+  const canDelete = can('Delete', 'Bank Balance.Interest Rate');
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -93,11 +99,17 @@ export default function InterestRatePage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (authLoading) return;
+    if (canView) {
+        fetchData();
+    } else {
+        setIsLoading(false);
+        setIsLogLoading(false);
+    }
+  }, [authLoading, canView]);
   
   useEffect(() => {
-    if (isLoading || isLogLoading) return;
+    if (isLoading || isLogLoading || !canView) return;
 
     const calculateLogs = () => {
         const logs: DailyInterestLog[] = [];
@@ -179,7 +191,7 @@ export default function InterestRatePage() {
     };
 
     calculateLogs();
-  }, [accounts, allTransactions, isLoading, isLogLoading]);
+  }, [accounts, allTransactions, isLoading, isLogLoading, canView]);
 
   const filteredLogs = useMemo(() => {
     return dailyLogs.filter(log => {
@@ -266,6 +278,34 @@ export default function InterestRatePage() {
       setBankFilter('all');
   }
 
+  if (authLoading || (isLoading && canView)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
+            <Skeleton className="h-10 w-80" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Interest Rate Management</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                 <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -289,9 +329,7 @@ export default function InterestRatePage() {
             </TabsList>
             <TabsContent value="manage-rates">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {isLoading ? (
-                    Array.from({length: 2}).map((_, i) => <Skeleton key={i} className="h-96" />)
-                ) : accounts.length > 0 ? (
+                {accounts.length > 0 ? (
                     accounts.map(acc => (
                         <Card key={acc.id}>
                             <CardHeader>
@@ -315,7 +353,7 @@ export default function InterestRatePage() {
                                                     <TableCell>{format(new Date(rate.date), 'dd MMM, yyyy')}</TableCell>
                                                     <TableCell>{rate.rate.toFixed(2)}%</TableCell>
                                                     <TableCell className="text-right">
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)}>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)} disabled={!canDelete}>
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
                                                     </TableCell>
@@ -336,6 +374,7 @@ export default function InterestRatePage() {
                                             type="date"
                                             value={newRateEntries[acc.id]?.date || ''}
                                             onChange={e => handleNewRateChange(acc.id, 'date', e.target.value)}
+                                            disabled={!canAdd}
                                         />
                                     </div>
                                     <div className="flex-1 space-y-1">
@@ -346,9 +385,10 @@ export default function InterestRatePage() {
                                             placeholder="e.g., 10.5"
                                             value={newRateEntries[acc.id]?.rate || ''}
                                             onChange={e => handleNewRateChange(acc.id, 'rate', e.target.value)}
+                                            disabled={!canAdd}
                                         />
                                     </div>
-                                    <Button onClick={() => handleAddRate(acc.id)} disabled={isSaving[acc.id]}>
+                                    <Button onClick={() => handleAddRate(acc.id)} disabled={isSaving[acc.id] || !canAdd}>
                                         {isSaving[acc.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Plus className="mr-2 h-4 w-4"/>}
                                         Add
                                     </Button>
@@ -472,5 +512,3 @@ export default function InterestRatePage() {
     </div>
   );
 }
-
-    
