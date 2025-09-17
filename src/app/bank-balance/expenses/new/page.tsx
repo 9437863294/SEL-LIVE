@@ -38,7 +38,6 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -246,7 +245,7 @@ export default function NewPaymentPage() {
           <Link href="/bank-balance/expenses">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
-          <h1 className="text-2xl font-bold">New Payment Entry</h1>
+          <h1 className="text-xl font-bold">New Payment Entry</h1>
         </div>
         <Link href="/bank-balance/expenses">
             <Button variant="outline">
@@ -432,3 +431,5 @@ export default function NewPaymentPage() {
   );
 }
 
+
+    
