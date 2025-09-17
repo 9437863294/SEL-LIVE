@@ -364,3 +364,21 @@ export type BankTransaction = {
   isContra: boolean;
   runningBalance: number;
 };
+
+export type BankExpense = {
+    id: string;
+    date: any; // Firestore Timestamp
+    accountId: string;
+    description: string;
+    amount: number;
+    type: 'Debit';
+    isContra: boolean;
+    paymentRequestRefNo?: string;
+    utrNumber?: string;
+    paymentMethod?: string;
+    paymentRefNo?: string;
+    approvalCopyUrl?: string;
+    bankTransferCopyUrl?: string;
+    createdAt: any; // Firestore Timestamp
+};
+
