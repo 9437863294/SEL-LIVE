@@ -251,7 +251,7 @@ export type Chat = {
     };
     groupName?: string;
     groupPhotoURL?: string;
-    groupAdmin?: string;
+    groupAdmins?: string[];
 }
 
 export type Message = {

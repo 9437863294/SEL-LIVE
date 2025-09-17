@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -93,7 +94,7 @@ export function NewChatDialog({ isOpen, onOpenChange, onSelectUser }: NewChatDia
             groupName,
             members: memberIds,
             memberDetails,
-            groupAdmin: currentUser.id,
+            groupAdmins: [currentUser.id],
             lastMessage: {
                 text: `${currentUser.name} created the group "${groupName}"`,
                 senderId: 'system',
