@@ -13,7 +13,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import type { Project } from '@/lib/types';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -175,7 +175,6 @@ export default function BillingReconPage() {
           {projectItems.map((item) => (
             <BillingReconCard key={item.text} item={item} />
           ))}
-          <BillingReconCard item={settingsItem} />
       </div>
     </div>
   );
