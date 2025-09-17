@@ -179,7 +179,7 @@ export default function BankBalanceDashboard() {
             </div>
             <Dialog open={isDailyEntryOpen} onOpenChange={setIsDailyEntryOpen}>
                 <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
+                    <DialogHeader className="text-center">
                         <DialogTitle>Daily Entry</DialogTitle>
                         <DialogDescription>Select an entry type to proceed.</DialogDescription>
                     </DialogHeader>
