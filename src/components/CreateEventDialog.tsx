@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,16 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
   const [location, setLocation] = useState('');
   const [isWhatsappCall, setIsWhatsappCall] = useState(false);
 
+  useEffect(() => {
+    if (isWhatsappCall) {
+      setEventName('WhatsApp Call');
+    } else {
+      if (eventName === 'WhatsApp Call') {
+        setEventName('');
+      }
+    }
+  }, [isWhatsappCall, eventName]);
+
   const handleSend = () => {
     if (!eventName || !startDate) {
       // Add validation feedback if needed
@@ -59,6 +69,7 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
     setEventName('');
     setDescription('');
     setStartDate(new Date());
+    setIsWhatsappCall(false);
   };
 
   return (
@@ -76,6 +87,7 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
                     placeholder="Event name"
                     value={eventName}
                     onChange={(e) => setEventName(e.target.value)}
+                    readOnly={isWhatsappCall}
                     className="pr-10 border-0 border-b-2 border-green-500 rounded-none focus-visible:ring-0 focus-visible:border-primary"
                 />
                 <Smile className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground"/>
