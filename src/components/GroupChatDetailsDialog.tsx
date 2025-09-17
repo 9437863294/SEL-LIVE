@@ -234,7 +234,10 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
   };
 
   const handleSaveChanges = async () => {
-    if (!chat) return;
+    if (!chat || !editedName.trim()) {
+        toast({ title: 'Error', description: 'Group name cannot be empty.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
   
     const updateData: {
@@ -440,3 +443,5 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     </>
   );
 }
+
+    
