@@ -51,7 +51,7 @@ export default function BankBalanceDashboard() {
     };
 
     const totalDrawingPower = accounts
-        .filter(acc => acc.accountType === 'CC')
+        .filter(acc => acc.accountType === 'Cash Credit')
         .reduce((sum, acc) => sum + (acc.drawingPower || 0), 0);
 
     const totalClosingUtilization = accounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
@@ -119,7 +119,7 @@ export default function BankBalanceDashboard() {
 
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {accounts.map(account => {
-                        const isCC = account.accountType === 'CC';
+                        const isCC = account.accountType === 'Cash Credit';
                         const utilization = account.drawingPower ? account.currentBalance : 0;
                         return (
                             <Card key={account.id} className={
@@ -128,7 +128,7 @@ export default function BankBalanceDashboard() {
                             }>
                                 <CardHeader>
                                     <div className="flex justify-between items-start">
-                                        <CardTitle>{account.accountName}</CardTitle>
+                                        <CardTitle>{account.shortName}</CardTitle>
                                         <Banknote className="h-6 w-6 text-muted-foreground" />
                                     </div>
                                     <CardDescription>
