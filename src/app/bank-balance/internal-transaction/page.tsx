@@ -83,30 +83,35 @@ export default function InternalTransactionPage() {
         const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense))
             .sort((a,b) => b.date.toDate().getTime() - a.date.toDate().getTime());
         
-        const groupedTransactions: Record<string, Partial<UnifiedTransaction>> = {};
+        const groupedTransactions: Record<string, Partial<UnifiedTransaction> & { id?: string }> = {};
 
         contraEntries.forEach(entry => {
-            const entryDate = format(entry.date.toDate(), 'yyyy-MM-dd');
-            // Group by a key that combines date, amount, and involved accounts to handle multiple transfers on the same day
-            const accountsKey = [entry.accountId, entry.type].sort().join('-');
-            const key = `${entryDate}-${entry.amount}-${accountsKey}`;
+            const contraId = entry.contraId;
+            if (!contraId) return;
 
-            if (!groupedTransactions[key]) {
-                groupedTransactions[key] = { amount: entry.amount, date: entryDate };
+            if (!groupedTransactions[contraId]) {
+                groupedTransactions[contraId] = {
+                    id: entry.id,
+                    amount: entry.amount,
+                    date: format(entry.date.toDate(), 'yyyy-MM-dd')
+                };
             }
 
             if (entry.type === 'Debit') {
-                groupedTransactions[key].fromAccountId = entry.accountId;
+                groupedTransactions[contraId].fromAccountId = entry.accountId;
             } else if (entry.type === 'Credit') {
-                groupedTransactions[key].toAccountId = entry.accountId;
+                groupedTransactions[contraId].toAccountId = entry.accountId;
             }
-             groupedTransactions[key].id = entry.id; // Use one of the doc ids as a key
         });
 
         const unifiedLog: UnifiedTransaction[] = Object.values(groupedTransactions)
-            .filter(t => t.fromAccountId && t.toAccountId) // Ensure it's a complete pair
+            .filter(t => t.fromAccountId && t.toAccountId && t.id)
             .map(t => ({
-                ...t,
+                id: t.id!,
+                date: t.date!,
+                fromAccountId: t.fromAccountId!,
+                toAccountId: t.toAccountId!,
+                amount: t.amount!,
                 fromBankName: accounts.find(acc => acc.id === t.fromAccountId)?.shortName || 'N/A',
                 toBankName: accounts.find(acc => acc.id === t.toAccountId)?.shortName || 'N/A',
             } as UnifiedTransaction));
@@ -170,6 +175,8 @@ export default function InternalTransactionPage() {
                 const fromAccountData = fromAccountDoc.data();
                 const toAccountData = toAccountDoc.data();
 
+                const contraId = doc(collection(db, 'contraIds')).id; // Unique ID for the pair
+
                 const debitData: Omit<BankExpense, 'id'> = {
                     date: Timestamp.fromDate(date),
                     accountId: item.fromAccountId,
@@ -177,6 +184,7 @@ export default function InternalTransactionPage() {
                     amount: item.amount,
                     type: 'Debit',
                     isContra: true,
+                    contraId: contraId,
                     createdAt: Timestamp.now(),
                 };
                 const debitRef = doc(collection(db, 'bankExpenses'));
@@ -189,6 +197,7 @@ export default function InternalTransactionPage() {
                     amount: item.amount,
                     type: 'Credit',
                     isContra: true,
+                    contraId: contraId,
                     createdAt: Timestamp.now(),
                 };
                 const creditRef = doc(collection(db, 'bankExpenses'));
