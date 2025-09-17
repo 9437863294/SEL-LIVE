@@ -41,9 +41,21 @@ import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 
 const initialExpenseItem = {
@@ -206,6 +218,35 @@ export default function ExpensesEntryPage() {
     }
     setIsSaving(false);
   }
+  
+  const handleDeleteExpense = async (expenseToDelete: BankExpense) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        const expenseRef = doc(db, 'bankExpenses', expenseToDelete.id);
+        const bankAccountRef = doc(db, 'bankAccounts', expenseToDelete.accountId);
+        
+        const bankAccountDoc = await transaction.get(bankAccountRef);
+        if (!bankAccountDoc.exists()) {
+          throw new Error("Associated bank account not found.");
+        }
+
+        // Add the expense amount back to the balance
+        const newBalance = bankAccountDoc.data().currentBalance + expenseToDelete.amount;
+        transaction.update(bankAccountRef, { currentBalance: newBalance });
+
+        // Delete the expense document
+        transaction.delete(expenseRef);
+      });
+      
+      toast({ title: 'Success', description: 'Expense deleted and balance updated.' });
+      fetchBankAccountsAndExpenses(); // Refresh data
+
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      toast({ title: 'Delete Failed', description: 'An error occurred while deleting the expense.', variant: 'destructive' });
+    }
+  };
+
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -415,7 +456,25 @@ export default function ExpensesEntryPage() {
                                             <TableCell>{entry.utrNumber}</TableCell>
                                             <TableCell>{formatCurrency(entry.amount)}</TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button variant="destructive" size="sm">
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                This action cannot be undone. This will permanently delete this expense and update the account balance.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction onClick={() => handleDeleteExpense(entry)}>Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
                                             </TableCell>
                                         </TableRow>
                                     );
