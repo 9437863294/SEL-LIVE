@@ -42,7 +42,101 @@ export default function ModuleDashboard() {
       if (!chatModuleExists) {
         addModule({
           title: 'Chat System',
-          content: "A real-time messaging system with features like user-to-user chat, group chats, read receipts, and file sharing, built on Firebase.",
+          content: `Real-time Messaging (send & receive instantly)
+
+One-to-One Chats
+
+Group Chats with Admin Controls
+
+Message Management
+
+Delete own messages
+
+Block users
+
+
+Read Receipts (who read a message)
+
+File & Document Sharing (images, docs, media)
+
+User Presence
+
+Online/Offline indicator
+
+Last seen timestamp
+
+Typing indicator
+
+
+
+
+---
+
+🔧 Enhanced Chat Experience
+
+Pinned Messages (highlight important chats/messages)
+
+Starred/Favorite Messages
+
+Reply & Forward messages
+
+Message Reactions/Emojis
+
+Message Search (keyword-based search inside chat)
+
+
+
+---
+
+🔔 Notifications
+
+Push Notifications for new messages
+
+Mute Chat/Group option
+
+
+
+---
+
+👥 User & Group Management
+
+Profile Verification (optional "verified" badge)
+
+Group Roles (Admin, Moderator, Member)
+
+Broadcast Messaging (one-way announcements)
+
+
+
+---
+
+📂 Files & Media
+
+Media Gallery (all shared files/images per chat)
+
+Auto File Compression (optimize uploads)
+
+
+
+---
+
+🔒 Security & Privacy
+
+End-to-End Encryption (optional advanced)
+
+Message Expiry (disappearing messages)
+
+Two-Factor Authentication (2FA)
+
+
+
+---
+
+📊 Analytics & Insights
+
+Chat Statistics (messages count, active users, busiest groups)
+
+User Activity Dashboard for Admins`,
           tags: ['chat', 'firebase', 'real-time'],
           icon: 'MessageSquare',
         });
