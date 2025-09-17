@@ -65,10 +65,10 @@ export default function ProjectBillingSettingsPage() {
         <h1 className="text-xl font-bold">Project Billing Settings</h1>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Link href="/billing-recon/settings/y">
+        <Link href="/billing-recon/settings/billing-status">
             <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
                 <CardHeader>
-                    <CardTitle>Y</CardTitle>
+                    <CardTitle>Billing Status</CardTitle>
                 </CardHeader>
             </Card>
         </Link>
