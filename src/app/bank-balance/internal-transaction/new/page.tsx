@@ -150,11 +150,7 @@ export default function NewInternalTransactionPage() {
       </div>
 
       <Card>
-        <CardHeader>
-            <CardTitle>Contra Voucher</CardTitle>
-            <CardDescription>Record fund transfers between bank accounts.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 pt-6">
             <div className="w-full max-w-xs">
             <Label className="mb-2 block">Transaction Date</Label>
             <Popover>
