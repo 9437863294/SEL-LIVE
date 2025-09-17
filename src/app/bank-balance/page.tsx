@@ -89,7 +89,7 @@ export default function BankBalanceDashboard() {
                             <Plus className="mr-2 h-4 w-4"/>
                             Daily Entry
                         </Button>
-                        <Link href="/settings">
+                        <Link href="/bank-balance/settings">
                             <Button variant="ghost" size="icon">
                                 <Settings className="h-5 w-5"/>
                             </Button>
