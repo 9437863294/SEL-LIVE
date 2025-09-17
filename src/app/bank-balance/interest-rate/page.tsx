@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils';
 import type { DateRange } from 'react-day-picker';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 type RateLogEntry = { date: string; rate: number };
 
@@ -54,7 +55,8 @@ export default function InterestRatePage() {
   // Manage Rates Tab State
   const [newRateEntries, setNewRateEntries] = useState<Record<string, { date: string; rate: string }>>({});
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
-  
+  const [openAddForm, setOpenAddForm] = useState<string | null>(null);
+
   // Daily Log Tab State
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [dailyLogs, setDailyLogs] = useState<DailyInterestLog[]>([]);
@@ -238,6 +240,7 @@ export default function InterestRatePage() {
         // Refresh local state without refetching everything
         setAccounts(prev => prev.map(acc => acc.id === accountId ? {...acc, interestRateLog: updatedRateLog } : acc));
         setNewRateEntries(prev => ({ ...prev, [accountId]: { date: '', rate: '' } }));
+        setOpenAddForm(null); // Close form on success
 
     } catch (error) {
         console.error("Error saving new rate entry:", error);
@@ -331,70 +334,82 @@ export default function InterestRatePage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {accounts.length > 0 ? (
                     accounts.map(acc => (
-                        <Card key={acc.id}>
-                            <CardHeader>
-                                <CardTitle>{acc.bankName} ({acc.shortName})</CardTitle>
-                                <CardDescription>{acc.accountNumber}</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <h4 className="font-semibold mb-2">Interest Rate History</h4>
-                                <div className="border rounded-md max-h-60 overflow-y-auto mb-4">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Effective Date</TableHead>
-                                                <TableHead>Rate (%)</TableHead>
-                                                <TableHead className="text-right">Action</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {acc.interestRateLog.length > 0 ? acc.interestRateLog.map((rate, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell>{format(new Date(rate.date), 'dd MMM, yyyy')}</TableCell>
-                                                    <TableCell>{rate.rate.toFixed(2)}%</TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)} disabled={!canDelete}>
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            )) : (
-                                                <TableRow><TableCell colSpan={3} className="text-center h-24">No interest rate history.</TableCell></TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </div>
+                        <Collapsible asChild key={acc.id} open={openAddForm === acc.id} onOpenChange={(isOpen) => setOpenAddForm(isOpen ? acc.id : null)}>
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <CardTitle>{acc.bankName} ({acc.shortName})</CardTitle>
+                                            <CardDescription>{acc.accountNumber}</CardDescription>
+                                        </div>
+                                        <CollapsibleTrigger asChild>
+                                            <Button variant="outline" disabled={!canAdd}>
+                                                <Plus className="mr-2 h-4 w-4"/> Add New Rate
+                                            </Button>
+                                        </CollapsibleTrigger>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <CollapsibleContent className="mb-4">
+                                        <div className="flex items-end gap-2 p-4 border rounded-lg">
+                                            <div className="flex-1 space-y-1">
+                                                <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
+                                                <Input 
+                                                    id={`date-${acc.id}`}
+                                                    type="date"
+                                                    value={newRateEntries[acc.id]?.date || ''}
+                                                    onChange={e => handleNewRateChange(acc.id, 'date', e.target.value)}
+                                                    disabled={!canAdd}
+                                                />
+                                            </div>
+                                            <div className="flex-1 space-y-1">
+                                                <label htmlFor={`rate-${acc.id}`} className="text-xs text-muted-foreground">Rate (%)</label>
+                                                <Input
+                                                    id={`rate-${acc.id}`}
+                                                    type="number"
+                                                    placeholder="e.g., 10.5"
+                                                    value={newRateEntries[acc.id]?.rate || ''}
+                                                    onChange={e => handleNewRateChange(acc.id, 'rate', e.target.value)}
+                                                    disabled={!canAdd}
+                                                />
+                                            </div>
+                                            <Button onClick={() => handleAddRate(acc.id)} disabled={isSaving[acc.id] || !canAdd}>
+                                                {isSaving[acc.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Plus className="mr-2 h-4 w-4"/>}
+                                                Add
+                                            </Button>
+                                        </div>
+                                    </CollapsibleContent>
                                 
-                                <h4 className="font-semibold mb-2 mt-6">Add New Rate Entry</h4>
-                                <div className="flex items-end gap-2">
-                                    <div className="flex-1 space-y-1">
-                                        <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
-                                        <Input 
-                                            id={`date-${acc.id}`}
-                                            type="date"
-                                            value={newRateEntries[acc.id]?.date || ''}
-                                            onChange={e => handleNewRateChange(acc.id, 'date', e.target.value)}
-                                            disabled={!canAdd}
-                                        />
+                                    <h4 className="font-semibold mb-2 mt-6">Interest Rate History</h4>
+                                    <div className="border rounded-md max-h-60 overflow-y-auto mb-4">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Effective Date</TableHead>
+                                                    <TableHead>Rate (%)</TableHead>
+                                                    <TableHead className="text-right">Action</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {acc.interestRateLog.length > 0 ? acc.interestRateLog.map((rate, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell>{format(new Date(rate.date), 'dd MMM, yyyy')}</TableCell>
+                                                        <TableCell>{rate.rate.toFixed(2)}%</TableCell>
+                                                        <TableCell className="text-right">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRate(acc.id, rate)} disabled={!canDelete}>
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )) : (
+                                                    <TableRow><TableCell colSpan={3} className="text-center h-24">No interest rate history.</TableCell></TableRow>
+                                                )}
+                                            </TableBody>
+                                        </Table>
                                     </div>
-                                    <div className="flex-1 space-y-1">
-                                        <label htmlFor={`rate-${acc.id}`} className="text-xs text-muted-foreground">Rate (%)</label>
-                                        <Input
-                                            id={`rate-${acc.id}`}
-                                            type="number"
-                                            placeholder="e.g., 10.5"
-                                            value={newRateEntries[acc.id]?.rate || ''}
-                                            onChange={e => handleNewRateChange(acc.id, 'rate', e.target.value)}
-                                            disabled={!canAdd}
-                                        />
-                                    </div>
-                                    <Button onClick={() => handleAddRate(acc.id)} disabled={isSaving[acc.id] || !canAdd}>
-                                        {isSaving[acc.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Plus className="mr-2 h-4 w-4"/>}
-                                        Add
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </Card>
+                                </CardContent>
+                            </Card>
+                        </Collapsible>
                     ))
                 ) : (
                     <Card className="col-span-full">
@@ -512,3 +527,5 @@ export default function InterestRatePage() {
     </div>
   );
 }
+
+    
