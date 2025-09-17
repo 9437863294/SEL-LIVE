@@ -14,6 +14,7 @@ import {
   Home,
   MoreHorizontal,
   Search,
+  ChevronUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -348,18 +349,29 @@ export default function ExpensesEntryPage() {
                     onOpenChange={(isOpen) => setOpenCollapsibleId(isOpen ? expense.id : null)}
                     className="border p-4 rounded-lg"
                   >
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center cursor-pointer">
                       <CollapsibleTrigger asChild>
-                        <h4 className="text-lg font-semibold cursor-pointer flex-grow">
-                          Payment #{index + 1}
-                        </h4>
+                        <div className="flex flex-col flex-grow">
+                          <div className="flex justify-between items-center w-full">
+                             <h4 className="text-lg font-semibold">Payment #{index + 1}</h4>
+                             <div className="flex items-center gap-4">
+                               <span className="font-semibold text-lg">{formatCurrency(expense.amount)}</span>
+                                <ChevronUp className={cn("h-5 w-5 transition-transform", openCollapsibleId === expense.id && "rotate-180")} />
+                             </div>
+                          </div>
+                           {openCollapsibleId !== expense.id && (
+                            <div className="mt-2 text-sm text-muted-foreground grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                                <span><span className="font-medium">P.R. Ref:</span> {expense.paymentRequestRefNo || 'N/A'}</span>
+                                <span><span className="font-medium">UTR No:</span> {expense.utrNumber || 'N/A'}</span>
+                                <span><span className="font-medium">Method:</span> {expense.paymentMethod || 'N/A'}</span>
+                                <span><span className="font-medium">Pmt. Ref:</span> {expense.paymentRefNo || 'N/A'}</span>
+                            </div>
+                           )}
+                        </div>
                       </CollapsibleTrigger>
-                      <div className="flex items-center gap-4">
-                         <span className="font-semibold text-lg">{formatCurrency(expense.amount)}</span>
-                         <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => removeExpense(expense.id)}>
-                            <Trash2 className="h-4 w-4" />
-                         </Button>
-                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 flex-shrink-0" onClick={(e) => { e.stopPropagation(); removeExpense(expense.id); }}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     </div>
                     <CollapsibleContent className="mt-4 space-y-4">
                        <div className="space-y-2">
