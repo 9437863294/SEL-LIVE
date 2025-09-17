@@ -162,14 +162,13 @@ export default function CashflowStatementPage() {
                     <TableHead className="text-right font-bold text-xs p-2">INFLOW (RECEIPTS)</TableHead>
                     <TableHead className="text-right font-bold text-xs p-2">OUTFLOW (PAYMENTS)</TableHead>
                     <TableHead className="text-right font-bold text-xs p-2">NET CASHFLOW</TableHead>
-                    <TableHead className="text-right font-bold text-xs p-2">CLOSING BALANCE</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({length: 5}).map((_, i) => (
                         <TableRow key={i}>
-                            <TableCell colSpan={5} className="p-2"><Skeleton className="h-5" /></TableCell>
+                            <TableCell colSpan={4} className="p-2"><Skeleton className="h-5" /></TableCell>
                         </TableRow>
                     ))
                   ) : data.length > 0 ? (
@@ -179,12 +178,11 @@ export default function CashflowStatementPage() {
                           <TableCell className="text-right text-green-600 p-2">{formatCurrency(row.inflow)}</TableCell>
                           <TableCell className="text-right text-red-600 p-2">{formatCurrency(row.outflow)}</TableCell>
                           <TableCell className="text-right font-medium p-2">{formatCurrency(row.net)}</TableCell>
-                          <TableCell className="text-right font-bold p-2">{formatCurrency(row.closingBalance)}</TableCell>
                         </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                        <TableCell colSpan={5} className="text-center h-24">No transaction data found.</TableCell>
+                        <TableCell colSpan={4} className="text-center h-24">No transaction data found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
