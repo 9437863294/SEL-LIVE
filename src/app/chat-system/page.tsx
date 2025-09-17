@@ -71,6 +71,7 @@ import {
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { CreateEventDialog } from '@/components/CreateEventDialog';
 import { GroupChatDetailsDialog } from '@/components/GroupChatDetailsDialog';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -97,9 +98,8 @@ export default function ChatSystemPage() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
 
-  const [isMobileView, setIsMobileView] = useState(false);
+  const isMobileView = useIsMobile();
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('list');
-  const containerRef = useRef<HTMLDivElement>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -107,16 +107,6 @@ export default function ChatSystemPage() {
   const activeToasts = useRef<Map<string, string>>(new Map());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  useEffect(() => {
-    const checkSize = () => {
-      if (containerRef.current) {
-        setIsMobileView(containerRef.current.offsetWidth < 768);
-      }
-    };
-    checkSize();
-    window.addEventListener('resize', checkSize);
-    return () => window.removeEventListener('resize', checkSize);
-  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -704,12 +694,12 @@ const ChatPanel = () => (
 
   return (
     <>
-      <div ref={containerRef} className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
+      <div className="h-[calc(100vh-6rem)] w-full flex flex-col bg-background text-foreground rounded-lg border">
         {isMobileView ? (
           mobilePanel === 'list' ? <ChatListPanel /> : <ChatPanel />
         ) : (
           <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={25} minSize={15} maxSize={30}>
+            <ResizablePanel defaultSize={25} minSize={20} maxSize={30}>
               <ChatListPanel />
             </ResizablePanel>
             <ResizableHandle withHandle />
@@ -789,5 +779,3 @@ const ChatPanel = () => (
     </>
   );
 }
-
-    
