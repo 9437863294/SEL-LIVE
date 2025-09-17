@@ -405,14 +405,12 @@ export default function ChatSystemPage() {
   
    const handleAttachPhoto = async () => {
     if (!capturedImage) return;
-    setIsSending(true);
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
     setAttachment(file);
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
-    setIsSending(false);
   };
   
   const getOtherMember = (chat: Chat) => {
@@ -465,6 +463,11 @@ export default function ChatSystemPage() {
                     {message.eventDetails.description && <p className="text-xs">{message.eventDetails.description}</p>}
                     <p className="text-xs"><strong>Starts:</strong> {format(new Date(message.eventDetails.startDate), 'PPp')}</p>
                     {message.eventDetails.location && <p className="text-xs"><strong>Location:</strong> {message.eventDetails.location}</p>}
+                    {message.eventDetails.isWhatsappCall && (
+                        <Button asChild variant="link" className="p-0 h-auto text-xs">
+                           <a href="https://call.whatsapp.com/video/Lq2iC2f5b6g7H8i9J0k1L2" target="_blank" rel="noopener noreferrer">Join WhatsApp Call</a>
+                        </Button>
+                    )}
                 </div>
              )
         case 'text':

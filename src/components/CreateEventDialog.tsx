@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
-import { Send, Calendar as CalendarIcon, Clock, MapPin, Smile, Plus, X } from 'lucide-react';
+import { Send, Calendar as CalendarIcon, Clock, MapPin, Smile, Plus, X, Video } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { EventDetails } from '@/lib/types';
@@ -52,6 +52,7 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
       description,
       startDate: finalStartDate.toISOString(),
       location,
+      isWhatsappCall,
     });
     onOpenChange(false);
     // Reset form
@@ -130,7 +131,10 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
             </div>
 
             <div className="flex items-center justify-between">
-                <Label>WhatsApp call link</Label>
+                <div className="flex items-center gap-2">
+                    <Video className="h-5 w-5 text-muted-foreground"/>
+                    <Label>WhatsApp call link</Label>
+                </div>
                 <Switch checked={isWhatsappCall} onCheckedChange={setIsWhatsappCall} />
             </div>
 

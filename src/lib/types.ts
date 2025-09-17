@@ -236,6 +236,7 @@ export type EventDetails = {
     description?: string;
     startDate: string;
     location?: string;
+    isWhatsappCall?: boolean;
 }
 
 export type Chat = {
