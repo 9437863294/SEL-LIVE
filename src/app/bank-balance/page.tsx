@@ -206,7 +206,7 @@ export default function BankBalanceDashboard() {
                         <DialogDescription>Select an entry type to proceed.</DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-3 gap-4 pt-4">
-                        <Link href="/bank-balance/expenses" onClick={() => setIsDailyEntryOpen(false)}>
+                        <Link href="/bank-balance/expenses/new" onClick={() => setIsDailyEntryOpen(false)}>
                             <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-red-50 hover:bg-red-100 border-red-200">
                                 <ArrowDown className="h-8 w-8 text-red-600 mb-2" />
                                 <p className="font-semibold text-red-800 text-center">Payment</p>
