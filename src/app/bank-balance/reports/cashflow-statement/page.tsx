@@ -149,11 +149,7 @@ export default function CashflowStatementPage() {
         <h1 className="text-2xl font-bold">Cashflow Statement</h1>
       </div>
       <Card>
-        <CardHeader>
-            <CardTitle>Cashflow Summary</CardTitle>
-            <CardDescription>Monthly breakdown of cash inflow and outflow.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="overflow-x-auto border rounded-lg">
               <Table>
                 <TableHeader>
