@@ -341,3 +341,26 @@ export type DailyRequisitionEntry = {
   attachments?: Attachment[];
   receivedAt?: any;
 };
+
+
+export type BankAccount = {
+  id: string;
+  accountName: string;
+  accountNumber: string;
+  bankName: string;
+  accountType: 'Current' | 'CC';
+  drawingPower?: number;
+  currentBalance: number;
+  status: 'Active' | 'Inactive';
+};
+
+export type BankTransaction = {
+  id: string;
+  accountId: string;
+  transactionDate: any; // Firestore Timestamp
+  description: string;
+  type: 'Debit' | 'Credit';
+  amount: number;
+  isContra: boolean;
+  runningBalance: number;
+};
