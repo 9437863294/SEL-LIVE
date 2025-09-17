@@ -12,17 +12,16 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import type { BankAccount } from '@/lib/types';
+import type { BankAccount, DpLogEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
-type DpLogEntry = { date: string; amount: number };
 
 export default function DpManagementPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [newDpEntries, setNewDpEntries] = useState<Record<string, { date: string; amount: string }>>({});
+  const [newDpEntries, setNewDpEntries] = useState<Record<string, { fromDate: string; amount: string }>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
   const [openAddForm, setOpenAddForm] = useState<string | null>(null);
@@ -41,7 +40,7 @@ export default function DpManagementPage() {
         .map(acc => ({
           ...acc,
           drawingPower: Array.isArray(acc.drawingPower) 
-            ? acc.drawingPower.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) 
+            ? acc.drawingPower.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime()) 
             : [],
         }));
       setAccounts(ccAccounts);
@@ -52,11 +51,11 @@ export default function DpManagementPage() {
     setIsLoading(false);
   };
   
-  const handleNewDpChange = (accountId: string, field: 'date' | 'amount', value: string) => {
+  const handleNewDpChange = (accountId: string, field: 'fromDate' | 'amount', value: string) => {
     setNewDpEntries(prev => ({
         ...prev,
         [accountId]: {
-            ...(prev[accountId] || { date: '', amount: '' }),
+            ...(prev[accountId] || { fromDate: '', amount: '' }),
             [field]: value
         }
     }));
@@ -64,27 +63,42 @@ export default function DpManagementPage() {
 
   const handleAddDp = async (accountId: string) => {
     const newEntry = newDpEntries[accountId];
-    if (!newEntry || !newEntry.date || !newEntry.amount) {
+    if (!newEntry || !newEntry.fromDate || !newEntry.amount) {
         toast({ title: 'Validation Error', description: 'Please provide both a date and an amount.', variant: 'destructive' });
         return;
     }
 
-    const account = accounts.find(acc => acc.id === accountId);
+    let account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
     
     setIsSaving(prev => ({...prev, [accountId]: true}));
-    try {
-        const updatedDpLog: DpLogEntry[] = [
-            ...(account.drawingPower || []),
-            { date: newEntry.date, amount: parseFloat(newEntry.amount) }
-        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    const updatedDpLog: DpLogEntry[] = [...(account.drawingPower || [])];
+    
+    // Find the latest entry to update its toDate
+    const latestEntry = updatedDpLog.find(entry => entry.toDate === null);
+    if (latestEntry) {
+        latestEntry.toDate = format(subDays(new Date(newEntry.fromDate), 1), 'yyyy-MM-dd');
+    }
+    
+    // Add the new entry
+    updatedDpLog.push({
+        id: crypto.randomUUID(),
+        fromDate: newEntry.fromDate,
+        toDate: null,
+        amount: parseFloat(newEntry.amount)
+    });
+    
+    // Sort again
+    updatedDpLog.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
 
+    try {
         await updateDoc(doc(db, 'bankAccounts', accountId), { drawingPower: updatedDpLog });
         toast({ title: 'Success', description: 'Drawing Power log updated successfully.' });
         
         // Refresh local state
         setAccounts(prev => prev.map(acc => acc.id === accountId ? {...acc, drawingPower: updatedDpLog } : acc));
-        setNewDpEntries(prev => ({ ...prev, [accountId]: { date: '', amount: '' } }));
+        setNewDpEntries(prev => ({ ...prev, [accountId]: { fromDate: '', amount: '' } }));
         setOpenAddForm(null); // Close the form on success
 
     } catch (error) {
@@ -96,15 +110,22 @@ export default function DpManagementPage() {
   };
   
   const handleDeleteDp = async (accountId: string, entryToDelete: DpLogEntry) => {
-    const account = accounts.find(acc => acc.id === accountId);
+    let account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
 
     setIsSaving(prev => ({...prev, [accountId]: true}));
-    try {
-        const updatedDpLog = (account.drawingPower || []).filter(entry => 
-            entry.date !== entryToDelete.date || entry.amount !== entryToDelete.amount
-        );
+    
+    let updatedDpLog = (account.drawingPower || []).filter(entry => entry.id !== entryToDelete.id);
+    
+    // Find the entry that now becomes the latest and clear its toDate
+    if(entryToDelete.toDate === null) { // We are deleting the latest entry
+      updatedDpLog.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
+      if(updatedDpLog.length > 0) {
+        updatedDpLog[0].toDate = null;
+      }
+    }
 
+    try {
         await updateDoc(doc(db, 'bankAccounts', accountId), { drawingPower: updatedDpLog });
         toast({ title: 'Success', description: 'DP entry deleted.' });
         
@@ -156,12 +177,12 @@ export default function DpManagementPage() {
                              <CollapsibleContent className="mb-4">
                                  <div className="flex items-end gap-2 p-4 border rounded-lg">
                                      <div className="flex-1 space-y-1">
-                                        <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective Date</label>
+                                        <label htmlFor={`date-${acc.id}`} className="text-xs text-muted-foreground">Effective From</label>
                                         <Input 
                                             id={`date-${acc.id}`}
                                             type="date"
-                                            value={newDpEntries[acc.id]?.date || ''}
-                                            onChange={e => handleNewDpChange(acc.id, 'date', e.target.value)}
+                                            value={newDpEntries[acc.id]?.fromDate || ''}
+                                            onChange={e => handleNewDpChange(acc.id, 'fromDate', e.target.value)}
                                         />
                                      </div>
                                       <div className="flex-1 space-y-1">
@@ -185,24 +206,26 @@ export default function DpManagementPage() {
                                  <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Effective Date</TableHead>
+                                            <TableHead>Effective From</TableHead>
+                                            <TableHead>Effective To</TableHead>
                                             <TableHead>Amount</TableHead>
                                             <TableHead className="text-right">Action</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {acc.drawingPower.length > 0 ? acc.drawingPower.map((dp, index) => (
-                                            <TableRow key={index}>
-                                                <TableCell>{format(new Date(dp.date), 'dd MMM, yyyy')}</TableCell>
+                                        {acc.drawingPower.length > 0 ? acc.drawingPower.map((dp) => (
+                                            <TableRow key={dp.id}>
+                                                <TableCell>{format(new Date(dp.fromDate), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{dp.toDate ? format(new Date(dp.toDate), 'dd MMM, yyyy') : 'Current'}</TableCell>
                                                 <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(dp.amount)}</TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)}>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)} disabled={acc.drawingPower.length <= 1}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
                                         )) : (
-                                            <TableRow><TableCell colSpan={3} className="text-center h-24">No DP history.</TableCell></TableRow>
+                                            <TableRow><TableCell colSpan={4} className="text-center h-24">No DP history.</TableCell></TableRow>
                                         )}
                                     </TableBody>
                                 </Table>
@@ -222,3 +245,4 @@ export default function DpManagementPage() {
     </div>
   );
 }
+
