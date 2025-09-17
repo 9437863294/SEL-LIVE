@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Calendar as CalendarIcon, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar as CalendarIcon, Edit, ShieldAlert, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,9 +18,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 export default function DailyLogPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [dailyLogs, setDailyLogs] = useState<BankDailyLog[]>([]);
@@ -32,9 +35,16 @@ export default function DailyLogPage() {
   });
   const [bankFilter, setBankFilter] = useState('all');
 
+  const canView = can('View', 'Bank Balance.Daily Log');
+
   useEffect(() => {
+    if (authLoading) return;
+    if (!canView) {
+        setIsLoading(false);
+        return;
+    }
     fetchData();
-  }, []);
+  }, [canView, authLoading]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -55,7 +65,7 @@ export default function DailyLogPage() {
   };
   
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !canView) return;
     
     const calculateLogs = () => {
         const logs: BankDailyLog[] = [];
@@ -106,7 +116,7 @@ export default function DailyLogPage() {
     };
 
     calculateLogs();
-  }, [bankAccounts, allTransactions, isLoading]);
+  }, [bankAccounts, allTransactions, isLoading, canView]);
   
   const filteredLogs = useMemo(() => {
       return dailyLogs.filter(log => {
@@ -127,6 +137,35 @@ export default function DailyLogPage() {
   const clearFilters = () => {
       setDateRange(undefined);
       setBankFilter('all');
+  }
+
+  if (authLoading || (isLoading && canView)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    )
+  }
+
+  if (!canView) {
+      return (
+         <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">Daily Utilization Log</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                 <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
   }
 
   return (
