@@ -38,7 +38,6 @@ interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
   originalDate: string;
 }
 
-
 const initialFormState = {
   receptionNo: '',
   depNo: '',
@@ -53,16 +52,17 @@ const initialFormState = {
 
 type SortKey = keyof DailyRequisitionEntry | '';
 
-const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: EnrichedDailyRequisitionEntry[], projects: Project[], expenses: ExpenseRequest[], user: User | null }>(({ entries, projects, expenses, user }, ref) => {
+const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: EnrichedDailyRequisitionEntry[], projects: Project[], expenses: ExpenseRequest[], user: User | null }>((props, ref) => {
+    const { entries, projects, expenses, user } = props;
     if (!entries || entries.length === 0) return null;
     
     return (
         <div ref={ref}>
-            {entries.map((entry) => {
+            {entries.map((entry, index) => {
                 const project = projects.find(p => p.id === entry.projectId);
                 const expenseRequest = expenses.find(e => e.requestNo === entry.depNo);
                 return (
-                    <div key={entry.id} className="p-6 border rounded-lg break-after-page" style={{ pageBreakAfter: 'always' }}>
+                    <div key={entry.id} className="p-6 border rounded-lg break-after-page" style={{ pageBreakAfter: index < entries.length - 1 ? 'always' : 'auto' }}>
                         <div className="text-center mb-4">
                             <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                             <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
