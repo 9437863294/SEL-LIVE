@@ -96,11 +96,13 @@ export default function ChatSystemPage() {
 
                 // Set up listeners for unread messages count
                 const messagesRef = collection(db, 'chats', chat.id, 'messages');
-                const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
-                const unsubUnread = onSnapshot(unreadQuery, (unreadSnapshot) => {
-                    setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadSnapshot.size }));
+                const unreadQuery = query(messagesRef, where('readBy', 'array-contains', currentUser.id));
+                 onSnapshot(query(messagesRef), (messagesSnapshot) => {
+                    const totalMessages = messagesSnapshot.size;
+                    const readMessages = messagesSnapshot.docs.filter(doc => doc.data().readBy.includes(currentUser.id)).length;
+                    const unreadCount = totalMessages - readMessages;
+                    setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadCount }));
                 });
-                unreadListeners.push(unsubUnread);
                 resolve();
             });
         });
@@ -210,13 +212,16 @@ export default function ChatSystemPage() {
     if (!currentUser || (unreadCounts[chat.id] || 0) === 0) return;
 
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const q = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
-    const unreadSnapshot = await getDocs(q);
-    
-    if (unreadSnapshot.empty) return;
+    const allMessagesSnapshot = await getDocs(messagesRef);
+
+    const unreadDocs = allMessagesSnapshot.docs.filter(
+        doc => !doc.data().readBy.includes(currentUser.id)
+    );
+
+    if (unreadDocs.length === 0) return;
 
     const batch = writeBatch(db);
-    unreadSnapshot.docs.forEach(messageDoc => {
+    unreadDocs.forEach(messageDoc => {
         const messageRef = doc(db, 'chats', chat.id, 'messages', messageDoc.id);
         const currentReadBy = messageDoc.data().readBy || [];
         batch.update(messageRef, { readBy: [...currentReadBy, currentUser.id] });
@@ -384,4 +389,3 @@ export default function ChatSystemPage() {
     </>
   );
 }
-
