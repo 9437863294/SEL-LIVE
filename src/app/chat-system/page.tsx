@@ -129,84 +129,47 @@ export default function ChatSystemPage() {
     }
   }, [toast]);
 
- useEffect(() => {
+  useEffect(() => {
     if (!currentUser) {
-      setIsLoadingChats(false);
-      return;
-    };
+        setIsLoadingChats(false);
+        return;
+    }
     setIsLoadingChats(true);
     
     const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id));
     
-    const unsubscribeChats = onSnapshot(q, (querySnapshot) => {
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const userChats: Chat[] = [];
-        const listeners: (() => void)[] = [];
+        const unreadPromises: Promise<void>[] = [];
 
-        querySnapshot.forEach((chatDoc) => {
-            const chatData = { id: chatDoc.id, ...chatDoc.data() } as Chat;
-            
-            const messagesRef = collection(db, 'chats', chatData.id, 'messages');
-            const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'), limit(1));
-
-            const unsubMessages = onSnapshot(messagesQuery, (messagesSnapshot) => {
-                if (!messagesSnapshot.empty) {
-                    const lastMessage = { id: messagesSnapshot.docs[0].id, ...messagesSnapshot.docs[0].data() } as Message;
-                    // Update chat with last message
-                    setChats(prevChats => {
-                        const chatIndex = prevChats.findIndex(c => c.id === chatData.id);
-                        if (chatIndex > -1) {
-                            const updatedChats = [...prevChats];
-                            updatedChats[chatIndex] = { ...updatedChats[chatIndex], lastMessage: lastMessage as any };
-                            return updatedChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
-                        }
-                        return prevChats;
-                    });
-                    
-                    const isNew = !messagesSnapshot.docs[0].metadata.hasPendingWrites;
-                    const isUnread = !lastMessage.readBy.includes(currentUser.id);
-
-                    if (isNew && isUnread && chatData.id !== selectedChat?.id && lastMessage.senderId !== currentUser.id) {
-                        const toastId = activeToasts.current.get(chatData.id);
-                        if(toastId) dismiss(toastId);
-
-                        const newToast = toast({
-                            duration: Infinity,
-                            component: (
-                                <ChatToast
-                                    chat={chatData}
-                                    latestMessage={lastMessage}
-                                    currentUser={currentUser}
-                                    onSend={async (message, file) => {
-                                      await handleSendMessage(undefined, file, undefined, chatData.id, message);
-                                    }}
-                                    onClose={() => dismiss(newToast.id)}
-                                />
-                            )
-                        });
-                        activeToasts.current.set(chatData.id, newToast.id);
-                    }
-                }
-            });
-
-            listeners.push(unsubMessages);
+        querySnapshot.forEach((doc) => {
+            const chatData = { id: doc.id, ...doc.data() } as Chat;
             userChats.push(chatData);
+
+            // Fetch unread count for each chat
+            const unreadQuery = query(
+                collection(db, 'chats', doc.id, 'messages'),
+                where('readBy', 'not-in', [[currentUser.id]])
+            );
+            const promise = getDocs(unreadQuery).then(unreadSnap => {
+                const unreadCount = unreadSnap.docs.filter(d => d.data().senderId !== currentUser.id).length;
+                setUnreadCounts(prev => ({...prev, [doc.id]: unreadCount}));
+            });
+            unreadPromises.push(promise);
         });
 
-        userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
-
-        setChats(userChats);
+        Promise.all(unreadPromises).then(() => {
+            userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
+            setChats(userChats);
+            setIsLoadingChats(false);
+        });
+    }, (error) => {
+        console.error("Error listening to chats:", error);
         setIsLoadingChats(false);
-        
-        return () => {
-          listeners.forEach(unsub => unsub());
-        };
     });
 
-    return () => {
-      unsubscribeChats();
-      activeToasts.current.forEach(toastId => dismiss(toastId));
-    };
-  }, [currentUser, toast, selectedChat, dismiss]);
+    return () => unsubscribe();
+  }, [currentUser]);
   
    useEffect(() => {
     const cleanupStream = () => {
@@ -415,6 +378,7 @@ export default function ChatSystemPage() {
         });
       });
       await batch.commit();
+      setUnreadCounts(prev => ({...prev, [chat.id]: 0}));
     }
   };
   
