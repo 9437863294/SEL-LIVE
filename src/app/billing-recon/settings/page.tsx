@@ -1,61 +1,65 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import {
+  Settings,
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import type { Project } from '@/lib/types';
-import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
+import { ArrowLeft } from 'lucide-react';
+
+
+interface BillingStatusCardProps {
+  item: {
+    icon: LucideIcon;
+    text: string;
+    href: string;
+    description: string;
+  };
+}
+
+function BillingStatusCard({ item }: BillingStatusCardProps) {
+    const cardContent = (
+         <Card
+            className={cn(
+                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
+                'cursor-pointer'
+            )}
+            >
+            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
+                <div className="bg-primary/10 p-3 rounded-lg">
+                <item.icon className="w-6 h-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardDescription className="text-xs">{item.description}</CardDescription>
+                </div>
+            </CardHeader>
+        </Card>
+    )
+    
+    return (
+       <Link href={item.href} className="no-underline h-full">
+            {cardContent}
+        </Link>
+    )
+}
+
 
 export default function ProjectBillingSettingsPage() {
-  const { toast } = useToast();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    setIsLoading(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'projects'));
-      const projectsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-      setProjects(projectsData);
-    } catch (error) {
-      console.error("Error fetching projects: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch projects.', variant: 'destructive' });
-    }
-    setIsLoading(false);
-  };
-
-  const handleBillingStatusChange = async (project: Project, billingRequired: boolean) => {
-    setSavingId(project.id);
-    try {
-        const projectRef = doc(db, 'projects', project.id);
-        await updateDoc(projectRef, { billingRequired });
-        setProjects(prev => 
-            prev.map(p => p.id === project.id ? { ...p, billingRequired } : p)
-        );
-        toast({ title: 'Success', description: `${project.projectName} billing status updated.` });
-    } catch (error) {
-        console.error("Error updating project billing status:", error);
-        toast({ title: 'Error', description: 'Failed to update billing status.', variant: 'destructive' });
-    } finally {
-        setSavingId(null);
-    }
+  
+  const billingStatusItem = {
+    icon: Settings,
+    text: 'Billing Status',
+    href: '/billing-recon/settings/billing-status',
+    description: 'Enable or disable billing requirements for each project.',
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
         <Link href="/billing-recon">
           <Button variant="ghost" size="icon">
@@ -64,14 +68,8 @@ export default function ProjectBillingSettingsPage() {
         </Link>
         <h1 className="text-xl font-bold">Project Billing Settings</h1>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Link href="/billing-recon/settings/billing-status">
-            <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
-                <CardHeader>
-                    <CardTitle>Billing Status</CardTitle>
-                </CardHeader>
-            </Card>
-        </Link>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <BillingStatusCard item={billingStatusItem} />
       </div>
     </div>
   );
