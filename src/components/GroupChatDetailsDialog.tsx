@@ -44,8 +44,8 @@ function AddMembersDialog({ isOpen, onOpenChange, currentMembers, onAddMembers }
     const [searchTerm, setSearchTerm] = useState('');
 
     const usersToAdd = useMemo(() => {
-        if (!allUsers) return []; 
-        return allUsers.filter(user => 
+        if (!allUsers) return [];
+        return allUsers.filter(user =>
             !currentMembers.includes(user.id) &&
             (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase()))
         );
@@ -233,26 +233,42 @@ export function GroupChatDetailsDialog({ isOpen, onOpenChange, chat }: GroupChat
     }
   };
 
-  const handleSaveChanges = async () => {
+ const handleSaveChanges = async () => {
+    if (!chat) return;
     setIsSaving(true);
-    let photoURL = chat.groupPhotoURL;
+    
     try {
+      let photoURL = chat.groupPhotoURL;
+
+      // Only upload a new photo if one has been selected
       if (newGroupPhoto) {
-        const photoRef = ref(storage, `group-avatars/${chat.id}/${newGroupPhoto.name}`);
-        await uploadBytes(photoRef, newGroupPhoto);
-        photoURL = await getDownloadURL(photoRef);
+        try {
+          const photoRef = ref(storage, `group-avatars/${chat.id}/${Date.now()}-${newGroupPhoto.name}`);
+          const uploadResult = await uploadBytes(photoRef, newGroupPhoto);
+          photoURL = await getDownloadURL(uploadResult.ref);
+        } catch (uploadError) {
+          console.error("Photo upload failed:", uploadError);
+          toast({ title: 'Error', description: 'Failed to upload new group photo. Please try again.', variant: 'destructive' });
+          setIsSaving(false);
+          return;
+        }
       }
       
-      await updateDoc(doc(db, 'chats', chat.id), {
+      const updateData = {
         groupName: editedName,
         groupDescription: editedDescription,
         groupPhotoURL: photoURL,
-      });
+      };
+
+      await updateDoc(doc(db, 'chats', chat.id), updateData);
 
       toast({ title: 'Success', description: 'Group details updated.' });
       setIsEditing(false);
+      setNewGroupPhoto(null);
+      setPhotoPreview(null);
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to save changes.', variant: 'destructive' });
+      console.error("Failed to save changes:", error);
+      toast({ title: 'Error', description: 'Failed to save changes. Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
