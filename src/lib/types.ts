@@ -386,4 +386,16 @@ export type BankExpense = {
     createdAt: any; // Firestore Timestamp
 };
 
+export type BankDailyLog = {
+    id: string; // e.g., '2025-09-17-accountId'
+    date: string;
+    accountId: string;
+    accountName: string;
+    openingBalance: number;
+    totalExpenses: number;
+    totalReceipts: number;
+    totalContra: number;
+    closingBalance: number;
+};
+
 

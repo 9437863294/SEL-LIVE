@@ -10,6 +10,7 @@ import {
   Percent,
   CalendarDays,
   CreditCard,
+  List,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -62,9 +63,9 @@ export default function BankBalanceSettingsPage() {
   const settingsItems = [
     { icon: Landmark, text: 'Bank Configuration', href: '/bank-balance/accounts', description: 'Manage bank details, accounts, and other configurations.' },
     { icon: TrendingUp, text: 'DP Management', href: '/bank-balance/dp-management', description: 'Manage Drawing Power for different banks and accounts.' },
+    { icon: List, text: 'Manage Utilization', href: '/bank-balance/daily-log', description: 'View daily transaction logs and manage utilization.' },
     { icon: Percent, text: 'Interest Rate Management', href: '#', description: 'Set daily interest rates for each bank account.', disabled: true },
     { icon: CalendarDays, text: 'Monthly Interest', href: '#', description: 'Enter projected and actual monthly interest amounts.', disabled: true },
-    { icon: CreditCard, text: 'Opening Utilization', href: '/bank-balance/opening-utilization', description: 'Enter and track opening utilization for active banks.' },
   ];
 
   return (
@@ -85,3 +86,4 @@ export default function BankBalanceSettingsPage() {
     </div>
   );
 }
+
