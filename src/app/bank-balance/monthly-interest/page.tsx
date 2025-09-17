@@ -11,16 +11,9 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
-import type { BankAccount, BankExpense } from '@/lib/types';
+import type { BankAccount, BankExpense, MonthlyInterestData } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, startOfMonth, endOfMonth, subMonths, eachDayOfInterval, compareDesc } from 'date-fns';
-
-type MonthlyInterestData = {
-  [accountId: string]: {
-    projected: number;
-    actual: number;
-  };
-};
 
 export default function MonthlyInterestPage() {
   const { toast } = useToast();
@@ -34,14 +27,13 @@ export default function MonthlyInterestPage() {
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
 
   const fetchBaseData = useCallback(async () => {
-    setIsLoading(true);
     try {
       const [accountsSnap, expensesSnap] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses'))
       ]);
       const fetchedAccounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
-       setAccounts(fetchedAccounts.sort((a,b) => a.shortName.localeCompare(b.shortName)));
+      setAccounts(fetchedAccounts.sort((a,b) => a.shortName.localeCompare(b.shortName)));
       setAllTransactions(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
     } catch (error) {
       console.error("Error fetching base data:", error);
@@ -51,6 +43,8 @@ export default function MonthlyInterestPage() {
   
   const calculatedProjectedInterest = useMemo(() => {
     const monthData: Record<string, number> = {};
+    if (ccAccounts.length === 0 || allTransactions.length === 0) return monthData;
+
     const [year, month] = selectedMonth.split('-').map(Number);
     const selectedMonthStart = startOfMonth(new Date(year, month - 1));
     const selectedMonthEnd = endOfMonth(new Date(year, month - 1));
@@ -59,7 +53,10 @@ export default function MonthlyInterestPage() {
         if (!account.openingDate) return;
         
         const openingDate = new Date(account.openingDate);
-        if(selectedMonthEnd < openingDate) return; // Skip if month is before account opening
+        if(selectedMonthEnd < openingDate) {
+            monthData[account.id] = 0;
+            return;
+        }
 
         let runningBalance = account.openingUtilization || 0;
         
@@ -69,7 +66,6 @@ export default function MonthlyInterestPage() {
             return rateEntry ? rateEntry.rate : 0;
         }
         
-        // Calculate balance up to the start of the selected month
         const preInterval = { start: openingDate, end: subMonths(selectedMonthStart, 1) };
         if (preInterval.end >= preInterval.start) {
             const preDays = eachDayOfInterval(preInterval);
@@ -87,7 +83,7 @@ export default function MonthlyInterestPage() {
         const daysInSelectedMonth = eachDayOfInterval({ start: selectedMonthStart, end: selectedMonthEnd });
 
         daysInSelectedMonth.forEach(day => {
-            if(day < openingDate) return; // Don't calculate before opening date
+            if(day < openingDate) return; 
             
             const dayString = format(day, 'yyyy-MM-dd');
             const transactionsToday = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayString);
@@ -116,17 +112,18 @@ export default function MonthlyInterestPage() {
   }, [fetchBaseData]);
   
   useEffect(() => {
-    if (ccAccounts.length === 0 && !isLoading) return;
+    if (ccAccounts.length === 0 && accounts.length > 0) { // All accounts loaded, but no CC accounts
+      setIsLoading(false);
+      return;
+    }
+    if (ccAccounts.length === 0) return; // Wait for accounts to be loaded
     
-    const fetchInterestData = async () => {
-        setIsLoading(true);
+    setIsLoading(true);
+    const fetchAndSetInterestData = async () => {
         const docRef = doc(db, 'monthlyInterest', selectedMonth);
         const docSnap = await getDoc(docRef);
         
-        let existingData: MonthlyInterestData = {};
-        if (docSnap.exists()) {
-            existingData = docSnap.data() as MonthlyInterestData;
-        }
+        const existingData = docSnap.exists() ? (docSnap.data() as MonthlyInterestData) : {};
 
         const newInterestData = ccAccounts.reduce((acc, account) => {
             acc[account.id] = {
@@ -140,9 +137,9 @@ export default function MonthlyInterestPage() {
         setIsLoading(false);
     };
 
-    fetchInterestData();
+    fetchAndSetInterestData();
 
-  }, [selectedMonth, ccAccounts, isLoading, calculatedProjectedInterest]);
+  }, [selectedMonth, ccAccounts, calculatedProjectedInterest, accounts]);
   
   const handleInterestChange = (accountId: string, field: 'projected' | 'actual', value: string) => {
       const numValue = parseFloat(value);
@@ -230,16 +227,15 @@ export default function MonthlyInterestPage() {
                                 <div className="col-span-1">
                                     <Input 
                                         type="number" 
-                                        value={interestData[account.id]?.projected || 0}
-                                        onChange={(e) => handleInterestChange(account.id, 'projected', e.target.value)}
-                                        placeholder="0.00"
-                                        className="font-medium"
+                                        value={interestData[account.id]?.projected?.toFixed(2) || '0.00'}
+                                        readOnly
+                                        className="font-medium bg-muted"
                                     />
                                 </div>
                                  <div className="col-span-1">
                                     <Input 
                                         type="number" 
-                                        value={interestData[account.id]?.actual || 0}
+                                        value={interestData[account.id]?.actual || ''}
                                         onChange={(e) => handleInterestChange(account.id, 'actual', e.target.value)}
                                         placeholder="0.00"
                                     />
@@ -253,10 +249,10 @@ export default function MonthlyInterestPage() {
                         <div className="grid grid-cols-3 gap-4 font-bold text-lg border-t pt-4 px-4">
                             <span className="col-span-1">Total</span>
                             <span className="col-span-1">
-                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + d.projected, 0))}
+                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + (d.projected || 0), 0))}
                             </span>
                              <span className="col-span-1">
-                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + d.actual, 0))}
+                                {formatCurrency(Object.values(interestData).reduce((sum, d) => sum + (d.actual || 0), 0))}
                             </span>
                         </div>
                     )}

@@ -400,5 +400,10 @@ export type BankDailyLog = {
     closingBalance: number;
 };
 
-
+export type MonthlyInterestData = {
+  [accountId: string]: {
+    projected: number;
+    actual: number;
+  };
+};
 
