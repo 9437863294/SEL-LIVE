@@ -102,6 +102,7 @@ export default function ChatSystemPage() {
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         const userChats: Chat[] = [];
         const unreadListeners: (() => void)[] = [];
+        const userListeners: (() => void)[] = [];
 
         querySnapshot.forEach((doc) => {
             userChats.push({ id: doc.id, ...doc.data() } as Chat);
@@ -129,14 +130,17 @@ export default function ChatSystemPage() {
                                 }));
                             }
                         });
+                        userListeners.push(unsubUser);
                     }
                 }
 
                 const messagesRef = collection(db, 'chats', chat.id, 'messages');
-                onSnapshot(query(messagesRef), (messagesSnapshot) => {
+                const unreadQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
+                const unsubUnread = onSnapshot(unreadQuery, (messagesSnapshot) => {
                     const unreadCount = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id)).length;
                     setUnreadCounts(prev => ({ ...prev, [chat.id]: unreadCount }));
                 });
+                unreadListeners.push(unsubUnread);
                 resolve();
             });
         });
@@ -149,11 +153,36 @@ export default function ChatSystemPage() {
         return () => {
           unsubscribe();
           unreadListeners.forEach(unsub => unsub());
+          userListeners.forEach(unsub => unsub());
         };
     });
 
     return () => unsubscribe();
   }, [currentUser]);
+  
+   useEffect(() => {
+    let stream: MediaStream | null = null;
+    
+    const cleanupStream = () => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const currentStream = videoRef.current.srcObject as MediaStream;
+            currentStream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
+    }
+
+    if (isCameraDialogOpen) {
+        if (!isPreviewing) {
+            getCameraPermission();
+        }
+    } else {
+        cleanupStream();
+    }
+    
+    return () => {
+       cleanupStream();
+    };
+  }, [isCameraDialogOpen, isPreviewing, getCameraPermission]);
   
    useEffect(() => {
     if (!selectedChat) {
@@ -202,30 +231,6 @@ export default function ChatSystemPage() {
       });
     }
   }, [toast]);
-  
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    
-    const cleanupStream = () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            const currentStream = videoRef.current.srcObject as MediaStream;
-            currentStream.getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-        }
-    }
-
-    if (isCameraDialogOpen) {
-        if (!isPreviewing) {
-            getCameraPermission();
-        }
-    } else {
-        cleanupStream();
-    }
-    
-    return () => {
-       cleanupStream();
-    };
-  }, [isCameraDialogOpen, isPreviewing, getCameraPermission]);
 
 
   const handleSelectUser = async (user: User) => {
@@ -264,14 +269,15 @@ export default function ChatSystemPage() {
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setAttachment(e.target.files[0]);
+      handleSendMessage(undefined, e.target.files[0]);
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, file?: File) => {
     e?.preventDefault();
     
-    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
+    const attachmentToSend = file || attachment;
+    if ((!newMessage.trim() && !attachmentToSend) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -284,21 +290,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (attachment) {
-            const isImage = attachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
+        if (attachmentToSend) {
+            const isImage = attachmentToSend.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachmentToSend.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, attachment);
+            await uploadBytes(storageRef, attachmentToSend);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: attachment.name,
+                fileName: attachmentToSend.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = newMessage.trim() || attachment.name;
+            lastMessageText = newMessage.trim() || attachmentToSend.name;
         } else {
             messageData = {
                 ...messageData,
@@ -338,14 +344,15 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
-    const unreadSnapshot = await getDocs(q);
+    const unreadMessagesQuery = query(messagesRef, where('readBy', 'not-in', [[currentUser.id]]));
+    const unreadSnapshot = await getDocs(unreadMessagesQuery);
     
-    if (unreadSnapshot.empty) return;
+    const docsToUpdate = unreadSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    if (docsToUpdate.length === 0) return;
     
     const batch = writeBatch(db);
-    unreadSnapshot.docs.forEach(doc => {
-        batch.update(doc.ref, {
+    docsToUpdate.forEach(docToUpdate => {
+        batch.update(docToUpdate.ref, {
             readBy: arrayUnion(currentUser.id)
         });
     });
@@ -365,6 +372,23 @@ export default function ChatSystemPage() {
         setCapturedImage(dataUrl);
         setIsPreviewing(true);
       }
+    }
+  };
+  
+  const handleSendPhoto = async () => {
+    if (!capturedImage) return;
+    setIsSwitching(true);
+    try {
+        const blob = await (await fetch(capturedImage)).blob();
+        const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        await handleSendMessage(undefined, file);
+    } catch(e) {
+        toast({ title: 'Error', description: 'Failed to send photo.', variant: 'destructive'});
+    } finally {
+        setIsSwitching(false);
+        setIsCameraDialogOpen(false);
+        setIsPreviewing(false);
+        setCapturedImage(null);
     }
   };
 
@@ -387,6 +411,8 @@ export default function ChatSystemPage() {
     if (!name) return '??';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
+  
+  const [isSwitching, setIsSwitching] = useState(false);
 
   const chatPartner = selectedChat ? getOtherMember(selectedChat) : null;
   
@@ -401,12 +427,10 @@ export default function ChatSystemPage() {
             );
         case 'document':
             return (
-                <div className="flex items-center gap-2">
+                <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-blue-400">
                     <FileText className="h-5 w-5" />
-                    <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-400">
-                        {message.fileName}
-                    </a>
-                </div>
+                    <span className="underline">{message.fileName}</span>
+                </a>
             );
         case 'text':
         default:
@@ -651,8 +675,9 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleAttachPhoto} disabled={isSending}>
-                            Attach Photo
+                        <Button onClick={handleSendPhoto} disabled={isSwitching}>
+                             {isSwitching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Send Photo
                         </Button>
                     </>
                 ) : (
