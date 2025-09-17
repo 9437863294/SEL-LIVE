@@ -250,11 +250,7 @@ export default function NewPaymentPage() {
       </div>
 
         <Card>
-            <CardHeader>
-              <CardTitle>Record Payments</CardTitle>
-              <CardDescription>Enter individual payments for a specific date and bank.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 pt-6">
                <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
                   <div className="flex flex-wrap items-end gap-4">
                       <div className="space-y-2">
@@ -356,7 +352,7 @@ export default function NewPaymentPage() {
                           </div>
                        </div>
                        
-                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                           <div className="space-y-2">
                             <Label>Payment Method {paymentSettings?.mandatoryFields.paymentMethod && <span className="text-destructive">*</span>}</Label>
                              <Select value={expense.paymentMethod} onValueChange={(val) => handleExpenseChange(expense.id, 'paymentMethod', val)}>
@@ -373,7 +369,7 @@ export default function NewPaymentPage() {
                             <Input placeholder="Enter Payment Ref" value={expense.paymentRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRefNo', e.target.value)} />
                           </div>
                        </div>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div className="space-y-2">
                              <Label>Approval Copy {paymentSettings?.mandatoryFields.approvalCopy && <span className="text-destructive">*</span>}</Label>
                               <div className="flex items-center gap-2">
@@ -404,7 +400,7 @@ export default function NewPaymentPage() {
                            </div>
                        </div>
                        <div className="space-y-2">
-                        <Label>Description</Label>
+                        <Label>Description <span className="text-destructive">*</span></Label>
                         <Textarea 
                           placeholder="e.g. Office supplies" 
                           value={expense.description} 
