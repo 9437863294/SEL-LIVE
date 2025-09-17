@@ -42,7 +42,6 @@ import type { DateRange } from 'react-day-picker';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, orderBy, deleteDoc, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -274,7 +273,7 @@ export default function ExpensesEntryPage() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-4">
                       <div className="space-y-2">
-                          <Label>Date</Label>
+                          <Label className="mb-1 block">Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                           <PopoverTrigger asChild>
                               <Button
@@ -302,7 +301,7 @@ export default function ExpensesEntryPage() {
                           </Popover>
                       </div>
                       <div className="space-y-2">
-                          <Label>Select Bank</Label>
+                          <Label className="mb-1 block">Select Bank</Label>
                           <Select value={selectedBank} onValueChange={setSelectedBank}>
                               <SelectTrigger className="w-[280px]">
                                   <SelectValue placeholder="Select a bank account" />
@@ -486,5 +485,3 @@ export default function ExpensesEntryPage() {
     </div>
   );
 }
-
-    
