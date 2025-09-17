@@ -375,7 +375,7 @@ export type BankExpense = {
     accountId: string;
     description: string;
     amount: number;
-    type: 'Debit';
+    type: 'Debit' | 'Credit';
     isContra: boolean;
     paymentRequestRefNo?: string;
     utrNumber?: string;

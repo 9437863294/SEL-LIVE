@@ -194,10 +194,12 @@ export default function BankBalanceDashboard() {
                             <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
                             <p className="font-semibold text-green-800">Receipts</p>
                         </Card>
-                        <Card className="flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
-                            <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
-                            <p className="font-semibold text-blue-800">Internal Transaction</p>
-                        </Card>
+                        <Link href="/bank-balance/internal-transaction" onClick={() => setIsDailyEntryOpen(false)}>
+                            <Card className="flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
+                                <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
+                                <p className="font-semibold text-blue-800">Internal Transaction</p>
+                            </Card>
+                        </Link>
                     </div>
                 </DialogContent>
             </Dialog>
