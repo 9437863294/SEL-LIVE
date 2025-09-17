@@ -273,7 +273,7 @@ export default function AllExpensesPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
             <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Consolidated Expenses</h1>
+            <h1 className="text-xl font-bold">Consolidated Expenses</h1>
         </div>
         <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
@@ -293,7 +293,7 @@ export default function AllExpensesPage() {
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
                 </Link>
-                <h1 className="text-2xl font-bold">
+                <h1 className="text-xl font-bold">
                     Consolidated Expenses
                 </h1>
             </div>
@@ -434,4 +434,3 @@ export default function AllExpensesPage() {
     </>
   );
 }
-

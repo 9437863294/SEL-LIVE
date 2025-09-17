@@ -135,7 +135,7 @@ export default function ImportBoqPage() {
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Import BOQ from Excel</h1>
+            <h1 className="text-xl font-bold">Import BOQ from Excel</h1>
         </div>
         {jsonData.length > 0 && (
              <Button onClick={handleImport} disabled={isImporting}>

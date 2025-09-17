@@ -341,7 +341,7 @@ export default function ViewBoqPage() {
                       <ArrowLeft className="h-6 w-6" />
                   </Button>
               </Link>
-              <h1 className="text-2xl font-bold">View BOQ</h1>
+              <h1 className="text-xl font-bold">View BOQ</h1>
           </div>
           <div className="flex items-center gap-2">
               {selectedItemIds.length > 0 && (

@@ -91,7 +91,7 @@ export default function DepartmentSerialNoPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Department-wise Serial Number</h1>
+        <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
       </div>
 
       <div className="space-y-6">
@@ -131,6 +131,7 @@ export default function DepartmentSerialNoPage() {
                       <Label htmlFor={`suffix-${dept.id}`} className="text-sm font-normal text-muted-foreground">Suffix</Label>
                       <Input 
                           id={`suffix-${dept.id}`}
+                          placeholder="e.g. /A"
                           value={configs[dept.id]?.suffix || ''}
                           onChange={(e) => handleConfigChange(dept.id, 'suffix', e.target.value)}
                       />

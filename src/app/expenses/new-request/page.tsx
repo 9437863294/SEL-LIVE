@@ -225,7 +225,7 @@ function NewExpenseRequestForm() {
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
             </Link>
-            <h1 className="text-2xl font-bold">New Expense Request</h1>
+            <h1 className="text-xl font-bold">New Expense Request</h1>
         </div>
         <Button onClick={form.handleSubmit(handleSave)} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

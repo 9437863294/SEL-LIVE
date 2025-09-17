@@ -245,7 +245,7 @@ export default function WorkflowConfigurationPage() {
                 <div className="mb-6 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <Link href="/site-fund-requisition/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                        <h1 className="text-2xl font-bold">Configure Workflow</h1>
+                        <h1 className="text-xl font-bold">Configure Workflow</h1>
                     </div>
                 </div>
                 <Card>
@@ -270,7 +270,7 @@ export default function WorkflowConfigurationPage() {
                             <ArrowLeft className="h-6 w-6" />
                         </Button>
                     </Link>
-                    <h1 className="text-2xl font-bold">Configure Workflow</h1>
+                    <h1 className="text-xl font-bold">Configure Workflow</h1>
                 </div>
                 <Button onClick={handleSave} disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}

@@ -95,7 +95,7 @@ export default function ReportsPage() {
             <div className="w-full max-w-lg pr-4">
                 <div className="mb-6 flex items-center gap-4">
                     <Link href="/site-fund-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">Reports</h1>
+                    <h1 className="text-xl font-bold">Reports</h1>
                 </div>
                 <Card>
                     <CardHeader>
@@ -118,7 +118,7 @@ export default function ReportsPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Reports</h1>
+        <h1 className="text-xl font-bold">Reports</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {reportItems.map((item) => (

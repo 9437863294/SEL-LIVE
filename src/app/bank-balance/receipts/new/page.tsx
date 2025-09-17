@@ -131,7 +131,7 @@ export default function NewReceiptPage() {
           <Link href="/bank-balance/receipts">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
-          <h1 className="text-2xl font-bold">New Receipt Entry</h1>
+          <h1 className="text-xl font-bold">New Receipt Entry</h1>
         </div>
         <Link href="/bank-balance/receipts">
             <Button variant="outline">
