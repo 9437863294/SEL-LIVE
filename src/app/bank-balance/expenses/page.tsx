@@ -245,47 +245,47 @@ export default function ExpensesEntryPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="space-y-1">
-                    <Label>Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-[240px] justify-start text-left font-normal",
-                            !date && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {date ? format(date, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-                      </PopoverContent>
-                    </Popover>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex flex-col">
+                        <Label className="mb-2">Date</Label>
+                        <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                            variant={"outline"}
+                            className={cn(
+                                "w-[240px] justify-start text-left font-normal",
+                                !date && "text-muted-foreground"
+                            )}
+                            >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date ? format(date, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                        </PopoverContent>
+                        </Popover>
+                    </div>
+                    <div className="flex flex-col">
+                        <Label className="mb-2">Select Bank</Label>
+                        <Select value={selectedBank} onValueChange={setSelectedBank}>
+                            <SelectTrigger className="w-[280px]">
+                                <SelectValue placeholder="Select a bank account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {bankAccounts.map(acc => (
+                                    <SelectItem key={acc.id} value={acc.id}>{acc.accountName} - {acc.bankName}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label>Select Bank</Label>
-                    <Select value={selectedBank} onValueChange={setSelectedBank}>
-                        <SelectTrigger className="w-[280px]">
-                            <SelectValue placeholder="Select a bank account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {bankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.accountName} - {acc.bankName}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-muted-foreground">Total</p>
+                    <p className="text-2xl font-bold">
+                        {formatCurrency(totalAmount)}
+                    </p>
                   </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-muted-foreground">Total</p>
-                  <p className="text-2xl font-bold">
-                    {formatCurrency(totalAmount)}
-                  </p>
-                </div>
               </div>
 
               <div className="space-y-4">
