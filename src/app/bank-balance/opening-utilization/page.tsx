@@ -14,10 +14,15 @@ import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
+type UtilizationData = {
+    amount: number;
+    date: string;
+}
+
 export default function OpeningUtilizationPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [utilizations, setUtilizations] = useState<Record<string, number>>({});
+  const [utilizations, setUtilizations] = useState<Record<string, UtilizationData>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -34,9 +39,12 @@ export default function OpeningUtilizationPage() {
       setAccounts(ccAccounts);
       
       const initialUtils = ccAccounts.reduce((acc, account) => {
-        acc[account.id] = account.openingUtilization || 0;
+        acc[account.id] = {
+            amount: account.openingUtilization || 0,
+            date: account.openingDate || ''
+        };
         return acc;
-      }, {} as Record<string, number>);
+      }, {} as Record<string, UtilizationData>);
       setUtilizations(initialUtils);
 
     } catch (error) {
@@ -46,10 +54,13 @@ export default function OpeningUtilizationPage() {
     setIsLoading(false);
   };
   
-  const handleUtilizationChange = (accountId: string, value: string) => {
+  const handleUtilizationChange = (accountId: string, field: 'amount' | 'date', value: string) => {
     setUtilizations(prev => ({
         ...prev,
-        [accountId]: parseFloat(value) || 0
+        [accountId]: {
+            ...(prev[accountId] || { amount: 0, date: '' }),
+            [field]: field === 'amount' ? parseFloat(value) || 0 : value,
+        }
     }));
   };
 
@@ -59,7 +70,11 @@ export default function OpeningUtilizationPage() {
         const batch = writeBatch(db);
         accounts.forEach(acc => {
             const accRef = doc(db, 'bankAccounts', acc.id);
-            batch.update(accRef, { openingUtilization: utilizations[acc.id] || 0 });
+            const utilData = utilizations[acc.id] || { amount: 0, date: '' };
+            batch.update(accRef, { 
+                openingUtilization: utilData.amount,
+                openingDate: utilData.date,
+             });
         });
         await batch.commit();
         toast({ title: 'Success', description: 'All opening utilizations have been saved.' });
@@ -94,7 +109,7 @@ export default function OpeningUtilizationPage() {
         <Card>
           <CardHeader>
             <CardTitle>Cash Credit Accounts</CardTitle>
-            <CardDescription>Enter the opening utilization values for each account.</CardDescription>
+            <CardDescription>Enter the opening utilization values and dates for each account.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -102,6 +117,7 @@ export default function OpeningUtilizationPage() {
                 <TableRow>
                   <TableHead>Bank Name</TableHead>
                   <TableHead>Account No.</TableHead>
+                  <TableHead className="w-[200px]">Opening Date</TableHead>
                   <TableHead className="w-[250px]">Opening Utilization</TableHead>
                 </TableRow>
               </TableHeader>
@@ -109,6 +125,7 @@ export default function OpeningUtilizationPage() {
                 {isLoading ? (
                   Array.from({length: 3}).map((_, i) => (
                       <TableRow key={i}>
+                          <TableCell><Skeleton className="h-8" /></TableCell>
                           <TableCell><Skeleton className="h-8" /></TableCell>
                           <TableCell><Skeleton className="h-8" /></TableCell>
                           <TableCell><Skeleton className="h-8" /></TableCell>
@@ -121,16 +138,23 @@ export default function OpeningUtilizationPage() {
                     <TableCell>{acc.accountNumber}</TableCell>
                     <TableCell>
                       <Input
+                        type="date"
+                        value={utilizations[acc.id]?.date || ''}
+                        onChange={(e) => handleUtilizationChange(acc.id, 'date', e.target.value)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
                         type="number"
-                        value={utilizations[acc.id] || ''}
-                        onChange={(e) => handleUtilizationChange(acc.id, e.target.value)}
+                        value={utilizations[acc.id]?.amount || ''}
+                        onChange={(e) => handleUtilizationChange(acc.id, 'amount', e.target.value)}
                         placeholder="Enter amount"
                       />
                     </TableCell>
                   </TableRow>
                 ))) : (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24">No Cash Credit accounts found.</TableCell>
+                    <TableCell colSpan={4} className="text-center h-24">No Cash Credit accounts found.</TableCell>
                   </TableRow>
                 )
               }

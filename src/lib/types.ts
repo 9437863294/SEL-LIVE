@@ -348,7 +348,6 @@ export type BankAccount = {
   bankName: string;
   shortName: string;
   accountNumber: string;
-  accountName: string;
   accountType: 'Current Account' | 'Cash Credit';
   status: 'Active' | 'Inactive';
   branch: string;
@@ -356,6 +355,7 @@ export type BankAccount = {
   currentBalance: number;
   drawingPower: { date: string; amount: number }[];
   openingUtilization: number;
+  openingDate: string;
 };
 
 export type BankTransaction = {
@@ -385,4 +385,5 @@ export type BankExpense = {
     bankTransferCopyUrl?: string;
     createdAt: any; // Firestore Timestamp
 };
+
 
