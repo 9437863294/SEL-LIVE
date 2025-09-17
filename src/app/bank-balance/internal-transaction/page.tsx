@@ -28,10 +28,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, compareDesc } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, where, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, query, where } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -74,13 +74,16 @@ export default function InternalTransactionPage() {
     try {
         const [accountsSnap, expensesSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true), orderBy('date', 'desc')))
+            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true)))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
         
         const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        
+        // Sort entries by date client-side
+        contraEntries.sort((a,b) => compareDesc(a.date.toDate(), b.date.toDate()));
         
         const groupedTransactions: Record<string, Partial<UnifiedTransaction> & { ids?: string[] }> = {};
 
