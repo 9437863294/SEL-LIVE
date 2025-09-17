@@ -249,11 +249,10 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent, file?: File) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const finalAttachment = file || attachment;
 
-    if ((!newMessage.trim() && !finalAttachment) || !currentUser || !selectedChat) return;
+    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -266,21 +265,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (finalAttachment) {
-            const isImage = finalAttachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${finalAttachment.name}`;
+        if (attachment) {
+            const isImage = attachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, finalAttachment);
+            await uploadBytes(storageRef, attachment);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: finalAttachment.name,
+                fileName: attachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = finalAttachment.name;
+            lastMessageText = attachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -304,9 +303,9 @@ export default function ChatSystemPage() {
 
         setNewMessage('');
         setAttachment(null);
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (imageInputRef.current) imageInputRef.current.value = '';
+
     } catch (error) {
         console.error("Error sending message:", error);
     } finally {
@@ -319,14 +318,13 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const messagesSnapshot = await getDocs(messagesRef);
-
-    const unreadMessages = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
+    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
+    const unreadSnapshot = await getDocs(q);
     
-    if (unreadMessages.length === 0) return;
+    if (unreadSnapshot.empty) return;
     
     const batch = writeBatch(db);
-    unreadMessages.forEach(doc => {
+    unreadSnapshot.docs.forEach(doc => {
         batch.update(doc.ref, {
             readBy: arrayUnion(currentUser.id)
         });
@@ -350,13 +348,13 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendPhoto = async () => {
+  const handleAttachPhoto = async () => {
     if (!capturedImage) return;
 
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
     
-    await handleSendMessage(undefined, file);
+    setAttachment(file);
     
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
@@ -579,7 +577,7 @@ export default function ChatSystemPage() {
                          {attachment && (
                             <div className="text-sm mt-2 p-2 bg-muted rounded-md flex items-center justify-between">
                                 <span className="truncate">Attaching: {attachment.name}</span>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; if (imageInputRef.current) imageInputRef.current.value = ''; }}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
                             </div>
@@ -630,8 +628,8 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleSendPhoto}>
-                            <Send className="mr-2 h-4 w-4" /> Send Photo
+                        <Button onClick={handleAttachPhoto}>
+                            <Paperclip className="mr-2 h-4 w-4" /> Attach Photo
                         </Button>
                     </>
                 ) : (
