@@ -278,8 +278,8 @@ export default function ExpensesEntryPage() {
             <CardContent className="space-y-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-4">
-                      <div className="space-y-1">
-                          <Label className="mb-2">Date</Label>
+                      <div className="space-y-2">
+                          <Label>Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                           <PopoverTrigger asChild>
                               <Button
@@ -306,8 +306,8 @@ export default function ExpensesEntryPage() {
                           </PopoverContent>
                           </Popover>
                       </div>
-                      <div className="space-y-1">
-                          <Label className="mb-2">Select Bank</Label>
+                      <div className="space-y-2">
+                          <Label>Select Bank</Label>
                           <Select value={selectedBank} onValueChange={setSelectedBank}>
                               <SelectTrigger className="w-[280px]">
                                   <SelectValue placeholder="Select a bank account" />

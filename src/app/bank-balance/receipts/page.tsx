@@ -231,15 +231,15 @@ export default function ReceiptsEntryPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
-                    <div className="space-y-1">
-                        <Label className="mb-2">Date</Label>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="space-y-2">
+                        <Label>Date</Label>
                         <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                         <PopoverTrigger asChild>
                             <Button
                             variant={"outline"}
                             className={cn(
-                                "w-full sm:w-[240px] justify-start text-left font-normal",
+                                "w-[240px] justify-start text-left font-normal",
                                 !date && "text-muted-foreground"
                             )}
                             >
@@ -260,10 +260,10 @@ export default function ReceiptsEntryPage() {
                         </PopoverContent>
                         </Popover>
                     </div>
-                    <div className="space-y-1">
-                        <Label className="mb-2">Select Bank</Label>
+                    <div className="space-y-2">
+                        <Label>Select Bank</Label>
                         <Select value={selectedBank} onValueChange={setSelectedBank}>
-                            <SelectTrigger className="w-full sm:w-[280px]">
+                            <SelectTrigger className="w-[280px]">
                                 <SelectValue placeholder="Select a bank account" />
                             </SelectTrigger>
                             <SelectContent>
