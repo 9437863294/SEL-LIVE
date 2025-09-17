@@ -215,7 +215,7 @@ export default function DpManagementPage() {
                                     <TableBody>
                                         {acc.drawingPower.length > 0 ? acc.drawingPower.map((dp) => (
                                             <TableRow key={dp.id}>
-                                                <TableCell>{format(new Date(dp.fromDate), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{dp.fromDate ? format(new Date(dp.fromDate), 'dd MMM, yyyy') : 'N/A'}</TableCell>
                                                 <TableCell>{dp.toDate ? format(new Date(dp.toDate), 'dd MMM, yyyy') : 'Current'}</TableCell>
                                                 <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(dp.amount)}</TableCell>
                                                 <TableCell className="text-right">
@@ -245,4 +245,3 @@ export default function DpManagementPage() {
     </div>
   );
 }
-
