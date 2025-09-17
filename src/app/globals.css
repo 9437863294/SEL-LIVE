@@ -106,12 +106,12 @@
     print-color-adjust: exact;
   }
 
-  body * {
-    visibility: hidden;
-  }
-
   .printable-area, .printable-area * {
     visibility: visible;
+  }
+  
+  .printable-area .break-after-page {
+    page-break-after: always;
   }
 
   .printable-area {
@@ -124,5 +124,11 @@
     
   .no-print, .no-print * {
       display: none !important;
+      visibility: hidden !important;
+  }
+
+  body > *:not(.printable-area) {
+    display: none !important;
+    visibility: hidden !important;
   }
 }
