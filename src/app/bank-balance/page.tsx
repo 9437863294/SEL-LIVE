@@ -3,17 +3,16 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Banknote, DollarSign, Plus, Settings, ArrowUpRight, ArrowDownLeft, Scale } from 'lucide-react';
+import { Home, Banknote, Plus, Settings, DollarSign, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-
+import { format } from 'date-fns';
 
 export default function BankBalanceDashboard() {
     const { toast } = useToast();
@@ -44,15 +43,24 @@ export default function BankBalanceDashboard() {
         
         fetchAccounts();
     }, [canView, toast]);
-
+    
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
     };
+
+    const totalDrawingPower = accounts
+        .filter(acc => acc.accountType === 'CC')
+        .reduce((sum, acc) => sum + (acc.drawingPower || 0), 0);
+
+    const totalClosingUtilization = accounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
+
+    const availableFund = totalDrawingPower - totalClosingUtilization;
 
     if (authLoading || (isLoading && canView)) {
         return (
             <div className="w-full px-4 sm:px-6 lg:px-8">
                 <Skeleton className="h-10 w-80 mb-6" />
+                <Skeleton className="h-48 mb-6" />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <Skeleton className="h-48" />
                     <Skeleton className="h-48" />
@@ -74,43 +82,62 @@ export default function BankBalanceDashboard() {
                     <h1 className="text-2xl font-bold">Bank Balance Dashboard</h1>
                 </div>
                  <div className="flex items-center gap-2">
-                    <Link href="/bank-balance/accounts">
-                        <Button>
-                            <Scale className="mr-2 h-4 w-4"/>
-                            Manage Accounts
+                    <Button>
+                        <Plus className="mr-2 h-4 w-4"/>
+                        Daily Entry
+                    </Button>
+                    <Link href="/settings">
+                        <Button variant="ghost" size="icon">
+                            <Settings className="h-5 w-5"/>
                         </Button>
                     </Link>
-                    <Button variant="outline">
-                        <DollarSign className="mr-2 h-4 w-4"/>
-                        New Transaction
-                    </Button>
                 </div>
             </div>
             
+            <Card className="mb-6 bg-blue-50 border-blue-200">
+                <CardHeader>
+                    <div className="flex justify-between items-start">
+                        <CardTitle className="flex items-center gap-2 text-blue-800"><Banknote />Available Fund</CardTitle>
+                    </div>
+                     <CardDescription>
+                        Available fund as of {format(new Date(), 'MMMM do, yyyy')}. (Today's DP - Today's Closing Utilization)
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex justify-between items-end">
+                        <div>
+                            <p className="text-4xl font-bold text-blue-900">{formatCurrency(availableFund)}</p>
+                            <p className="text-sm text-muted-foreground">Total DP: {formatCurrency(totalDrawingPower)}</p>
+                        </div>
+                         <p className="text-sm text-muted-foreground">Total Closing Utilization: {formatCurrency(totalClosingUtilization)}</p>
+                    </div>
+                </CardContent>
+            </Card>
+
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {accounts.map(account => {
-                    const utilization = account.accountType === 'CC' && account.drawingPower 
-                        ? (account.currentBalance / account.drawingPower) * 100 
-                        : 0;
+                    const isCC = account.accountType === 'CC';
+                    const utilization = account.drawingPower ? account.currentBalance : 0;
                     return (
-                        <Card key={account.id}>
+                        <Card key={account.id} className={
+                          account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
+                          account.bankName.includes('State Bank') ? 'bg-blue-50 border-blue-200' : ''
+                        }>
                             <CardHeader>
                                 <div className="flex justify-between items-start">
                                     <CardTitle>{account.accountName}</CardTitle>
                                     <Banknote className="h-6 w-6 text-muted-foreground" />
                                 </div>
-                                <CardDescription>{account.bankName} - {account.accountNumber}</CardDescription>
+                                <CardDescription>
+                                    {isCC ? "Today's Available Balance" : "Today's Closing Balance"}
+                                </CardDescription>
                             </CardHeader>
                             <CardContent>
                                 <p className="text-3xl font-bold mb-2">{formatCurrency(account.currentBalance)}</p>
-                                {account.accountType === 'CC' && account.drawingPower && (
-                                    <div>
-                                        <div className="flex justify-between text-sm text-muted-foreground">
-                                            <span>Drawing Power</span>
-                                            <span>{formatCurrency(account.drawingPower)}</span>
-                                        </div>
-                                        <Progress value={utilization} className="mt-2" />
-                                        <p className="text-right text-sm text-muted-foreground mt-1">{utilization.toFixed(2)}% Utilized</p>
+                                {isCC && (
+                                    <div className="flex justify-between text-sm text-muted-foreground">
+                                        <span>DP: {formatCurrency(account.drawingPower || 0)}</span>
+                                        <span>Utilization: {formatCurrency(utilization)}</span>
                                     </div>
                                 )}
                             </CardContent>
