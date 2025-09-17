@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -43,7 +44,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NewChatDialog } from '@/components/NewChatDialog';
-import type { User, Chat, Message } from '@/lib/types';
+import type { User, Chat, Message, EventDetails } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc, writeBatch, arrayUnion } from 'firebase/firestore';
@@ -68,6 +69,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { CreateEventDialog } from '@/components/CreateEventDialog';
+
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -75,6 +78,7 @@ export default function ChatSystemPage() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -281,12 +285,12 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent, fileToSend?: File) => {
+  const handleSendMessage = async (e?: React.FormEvent, fileToSend?: File, eventDetails?: EventDetails) => {
     e?.preventDefault();
     
     const file = fileToSend || attachment;
 
-    if ((!newMessage.trim() && !file) || !currentUser || !selectedChat) return;
+    if ((!newMessage.trim() && !file && !eventDetails) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -322,6 +326,14 @@ export default function ChatSystemPage() {
                 content: newMessage.trim(), // Include text with attachment
             };
             lastMessageText = newMessage.trim() || file.name;
+        } else if (eventDetails) {
+            messageData = {
+                ...messageData,
+                type: 'event',
+                eventDetails: eventDetails,
+                content: `Event: ${eventDetails.eventName}`,
+            }
+            lastMessageText = `📅 Event: ${eventDetails.eventName}`;
         } else {
             messageData = {
                 ...messageData,
@@ -391,16 +403,16 @@ export default function ChatSystemPage() {
     }
   };
   
-   const handleSendPhoto = async () => {
+   const handleAttachPhoto = async () => {
     if (!capturedImage) return;
     setIsSending(true);
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    await handleSendMessage(undefined, file);
-    setIsSending(false);
+    setAttachment(file);
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
     setCapturedImage(null);
+    setIsSending(false);
   };
   
   const getOtherMember = (chat: Chat) => {
@@ -445,6 +457,16 @@ export default function ChatSystemPage() {
                     <span className="underline">{message.fileName}</span>
                 </a>
             );
+        case 'event':
+             if (!message.eventDetails) return <p>Event details are missing.</p>;
+             return (
+                <div className="space-y-2">
+                    <h4 className="font-bold">{message.eventDetails.eventName}</h4>
+                    {message.eventDetails.description && <p className="text-xs">{message.eventDetails.description}</p>}
+                    <p className="text-xs"><strong>Starts:</strong> {format(new Date(message.eventDetails.startDate), 'PPp')}</p>
+                    {message.eventDetails.location && <p className="text-xs"><strong>Location:</strong> {message.eventDetails.location}</p>}
+                </div>
+             )
         case 'text':
         default:
             return <p className="text-sm">{message.content}</p>;
@@ -597,7 +619,7 @@ export default function ChatSystemPage() {
                                      <DropdownMenuItem>
                                         <BarChart3 className="mr-2 h-4 w-4" /> Poll
                                     </DropdownMenuItem>
-                                     <DropdownMenuItem>
+                                     <DropdownMenuItem onSelect={() => setIsEventDialogOpen(true)}>
                                         <CalendarIconLucide className="mr-2 h-4 w-4" /> Event
                                     </DropdownMenuItem>
                                      <DropdownMenuItem>
@@ -678,9 +700,9 @@ export default function ChatSystemPage() {
                         <Button variant="outline" onClick={() => setIsPreviewing(false)}>
                             <RotateCcw className="mr-2 h-4 w-4" /> Retake
                         </Button>
-                        <Button onClick={handleSendPhoto} disabled={isSending}>
+                        <Button onClick={handleAttachPhoto} disabled={isSending}>
                              {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Send Photo
+                            Attach Photo
                         </Button>
                     </>
                 ) : (
@@ -694,8 +716,11 @@ export default function ChatSystemPage() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CreateEventDialog
+        isOpen={isEventDialogOpen}
+        onOpenChange={setIsEventDialogOpen}
+        onSendEvent={(eventDetails) => handleSendMessage(undefined, undefined, eventDetails)}
+      />
     </>
   );
 }
-
-    

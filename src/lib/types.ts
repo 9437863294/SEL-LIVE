@@ -231,6 +231,13 @@ export type User = {
     lastSeen?: any; // Firestore Timestamp
 };
 
+export type EventDetails = {
+    eventName: string;
+    description?: string;
+    startDate: string;
+    location?: string;
+}
+
 export type Chat = {
     id: string;
     type: 'one-to-one' | 'group';
@@ -250,9 +257,10 @@ export type Message = {
     senderId: string;
     content: string;
     timestamp: any; // Firestore Timestamp
-    type: 'text' | 'image' | 'document';
+    type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'event';
     mediaUrl?: string;
     fileName?: string;
+    eventDetails?: EventDetails;
     readBy: string[];
     isDeleted?: boolean;
 }
