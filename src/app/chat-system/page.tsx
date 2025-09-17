@@ -434,40 +434,35 @@ export default function ChatSystemPage() {
         ? selectedChat.memberDetails.map(m => m.name).join(', ')
         : '';
   
-  const renderMessageContent = (message: Message) => {
-    switch (message.type) {
-        case 'image':
-            return (
+  const renderMessageContent = (message: Message, senderName?: string) => {
+    const isGroup = selectedChat?.type === 'group' && senderName;
+
+    const content = (
+        <>
+            {message.type === 'text' ? (
+                <p className="text-sm">{message.content}</p>
+            ) : message.type === 'image' ? (
                 <div className="space-y-2">
                     {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} className="max-w-xs rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
-            );
-        case 'video':
-            return (
-                <div className="space-y-2">
+            ) : message.type === 'video' ? (
+                 <div className="space-y-2">
                     {message.mediaUrl && <video src={message.mediaUrl} controls className="max-w-xs rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
-            );
-        case 'audio':
-             return (
-                <div className="space-y-2">
+            ) : message.type === 'audio' ? (
+                 <div className="space-y-2">
                     {message.mediaUrl && <audio src={message.mediaUrl} controls className="w-full" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
-            );
-        case 'document':
-            return (
+            ) : message.type === 'document' ? (
                 <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-blue-400">
                     <FileIconLucide className="h-5 w-5" />
                     <span className="underline">{message.fileName}</span>
                 </a>
-            );
-        case 'event':
-             if (!message.eventDetails) return <p>Event details are missing.</p>;
-             return (
-                <div className="space-y-2">
+            ) : message.type === 'event' && message.eventDetails ? (
+                 <div className="space-y-2">
                     <h4 className="font-bold">{message.eventDetails.eventName}</h4>
                     {message.eventDetails.description && <p className="text-xs">{message.eventDetails.description}</p>}
                     <p className="text-xs"><strong>Starts:</strong> {format(new Date(message.eventDetails.startDate), 'PPp')}</p>
@@ -478,12 +473,20 @@ export default function ChatSystemPage() {
                         </Button>
                     )}
                 </div>
-             )
-        case 'text':
-        default:
-            return <p className="text-sm">{message.content}</p>;
+            ) : null}
+        </>
+    );
+
+    if (isGroup) {
+        return (
+            <div>
+                <span className="text-xs font-semibold text-primary mr-2">{senderName}</span>
+                {content}
+            </div>
+        );
     }
-  }
+    return content;
+}
 
   return (
     <>
@@ -597,10 +600,7 @@ export default function ChatSystemPage() {
                                 return (
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
                                         <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                                            {!isSender && selectedChat.type === 'group' && (
-                                                <p className="text-xs font-semibold text-primary mb-1">{senderDetails?.name || 'Unknown User'}</p>
-                                            )}
-                                            {renderMessageContent(message)}
+                                            {renderMessageContent(message, !isSender ? senderDetails?.name : undefined)}
                                             <div className="flex items-center justify-end gap-1 mt-1">
                                                 {message.timestamp?.toDate && (
                                                    <p className="text-xs opacity-70">{format(message.timestamp.toDate(), 'p')}</p>
