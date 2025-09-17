@@ -29,7 +29,7 @@ function AppBody({ children }: { children: React.ReactNode }) {
         <div className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
             <div className="relative flex h-screen flex-col overflow-hidden bg-background">
                 <Header />
-                <main className="flex-1 overflow-auto p-6 md:p-8 lg:p-10">{children}</main>
+                <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">{children}</main>
             </div>
             <Toaster />
         </div>
