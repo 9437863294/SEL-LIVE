@@ -227,13 +227,15 @@ export type User = {
     photoURL?: string;
     theme?: UserTheme;
     settings?: UserSettings;
+    isOnline?: boolean;
+    lastSeen?: any; // Firestore Timestamp
 };
 
 export type Chat = {
     id: string;
     type: 'one-to-one' | 'group';
     members: string[];
-    memberDetails: { id: string; name: string; photoURL: string; }[];
+    memberDetails: { id: string; name: string; photoURL: string; isOnline?: boolean; lastSeen?: any; }[];
     lastMessage: {
         text: string;
         senderId: string;

@@ -35,7 +35,7 @@ import type { User, Chat, Message } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 
@@ -60,8 +60,39 @@ export default function ChatSystemPage() {
         querySnapshot.forEach((doc) => {
             userChats.push({ id: doc.id, ...doc.data() } as Chat);
         });
-        setChats(userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0)));
-        setIsLoadingChats(false);
+        userChats.sort((a,b) => (b.lastMessage?.timestamp?.toMillis() || 0) - (a.lastMessage?.timestamp?.toMillis() || 0));
+
+        // Fetch user details for each chat in parallel
+        const fetchMemberDetails = async () => {
+            const chatsWithDetails = await Promise.all(userChats.map(async (chat) => {
+                 if (chat.type === 'one-to-one') {
+                    const otherMemberId = chat.members.find(id => id !== currentUser.id);
+                    if (otherMemberId) {
+                         const userDocRef = doc(db, 'users', otherMemberId);
+                         // We can set up a listener here if we want real-time presence in the chat list
+                         onSnapshot(userDocRef, (userDoc) => {
+                            if (userDoc.exists()) {
+                                const userData = userDoc.data() as User;
+                                setChats(prevChats => prevChats.map(c => {
+                                    if (c.id === chat.id) {
+                                        return {
+                                            ...c,
+                                            memberDetails: c.memberDetails.map(md => md.id === otherMemberId ? { ...md, isOnline: userData.isOnline, lastSeen: userData.lastSeen } : md)
+                                        };
+                                    }
+                                    return c;
+                                }));
+                            }
+                         });
+                    }
+                }
+                return chat;
+            }));
+            setChats(chatsWithDetails);
+            setIsLoadingChats(false);
+        };
+        
+        fetchMemberDetails();
     });
 
     return () => unsubscribe();
@@ -118,6 +149,8 @@ export default function ChatSystemPage() {
             }
         };
         const newChatRef = await addDoc(collection(db, 'chats'), newChatData);
+        // We can't immediately get the server timestamp, so we'll use a local new Date() for immediate display.
+        // The onSnapshot listener will soon update it with the real server time.
         const newChat = {id: newChatRef.id, ...newChatData, lastMessage: { ...newChatData.lastMessage, timestamp: new Date() }}
         setSelectedChat(newChat as Chat);
     }
@@ -131,7 +164,7 @@ export default function ChatSystemPage() {
         content: newMessage,
         senderId: currentUser.id,
         timestamp: serverTimestamp(),
-        type: 'text',
+        type: 'text' as const,
         readBy: [currentUser.id]
     };
 
@@ -140,6 +173,7 @@ export default function ChatSystemPage() {
 
     await addDoc(messagesRef, messageData);
     
+    // This update will be reflected automatically by the onSnapshot listener on the chats collection
     await updateDoc(chatRef, {
         lastMessage: {
             text: newMessage,
@@ -152,7 +186,7 @@ export default function ChatSystemPage() {
   };
   
   const getOtherMember = (chat: Chat) => {
-      if(!currentUser || !chat.memberDetails) return { name: 'Chat', photoURL: '' };
+      if(!currentUser || !chat.memberDetails) return null;
       return chat.memberDetails.find(m => m.id !== currentUser.id);
   }
 
@@ -215,7 +249,7 @@ export default function ChatSystemPage() {
                                     <p className="font-semibold truncate">{chatName}</p>
                                     <p className="text-xs text-muted-foreground truncate">{chat.lastMessage?.text}</p>
                                 </div>
-                                {chat.lastMessage?.timestamp && (
+                                {chat.lastMessage?.timestamp?.toDate && (
                                      <p className="text-xs text-muted-foreground self-start">{format(chat.lastMessage.timestamp.toDate(), 'p')}</p>
                                 )}
                             </div>
@@ -236,7 +270,13 @@ export default function ChatSystemPage() {
                         </Avatar>
                         <div>
                             <p className="font-semibold">{chatPartner?.name}</p>
-                            <p className="text-xs text-green-500">Online</p>
+                            {chatPartner?.isOnline ? (
+                                <p className="text-xs text-green-500">Online</p>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">
+                                    Last seen {chatPartner?.lastSeen ? formatDistanceToNowStrict(chatPartner.lastSeen.toDate(), { addSuffix: true }) : 'a while ago'}
+                                </p>
+                            )}
                         </div>
                    </div>
                     <ScrollArea className="flex-1 p-4">
@@ -249,7 +289,7 @@ export default function ChatSystemPage() {
                                     <div key={message.id} className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
                                         <div className={cn("rounded-lg px-4 py-2 max-w-sm", isSender ? "bg-primary text-primary-foreground" : "bg-muted")}>
                                             <p>{message.content}</p>
-                                            {message.timestamp && (
+                                            {message.timestamp?.toDate && (
                                                <p className="text-xs opacity-70 mt-1 text-right">{format(message.timestamp.toDate(), 'p')}</p>
                                             )}
                                         </div>

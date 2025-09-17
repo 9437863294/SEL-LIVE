@@ -148,6 +148,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (firebaseUser) {
             fetchUserData(firebaseUser);
         } else {
+            if(user) { // Only update if a user was previously logged in
+                const userDocRef = doc(db, 'users', user.id);
+                updateDoc(userDocRef, { isOnline: false, lastSeen: serverTimestamp() });
+            }
+            setUser(null);
+            setPermissions({});
             setLoading(false);
         }
     });
@@ -168,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('storage', handleStorageChange);
         handleBeforeUnload(); // Try to set offline on component unmount
     };
-  }, [fetchUserData, refreshUserData]);
+  }, [fetchUserData, refreshUserData, user]);
 
   useEffect(() => {
     if (loading) return;
