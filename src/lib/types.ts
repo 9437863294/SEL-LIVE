@@ -355,6 +355,7 @@ export type BankAccount = {
   ifsc: string;
   currentBalance: number;
   drawingPower: { date: string; amount: number }[];
+  openingUtilization: number;
 };
 
 export type BankTransaction = {
@@ -384,6 +385,4 @@ export type BankExpense = {
     bankTransferCopyUrl?: string;
     createdAt: any; // Firestore Timestamp
 };
-
-
 

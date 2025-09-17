@@ -64,7 +64,7 @@ export default function BankBalanceSettingsPage() {
     { icon: TrendingUp, text: 'DP Management', href: '/bank-balance/dp-management', description: 'Manage Drawing Power for different banks and accounts.' },
     { icon: Percent, text: 'Interest Rate Management', href: '#', description: 'Set daily interest rates for each bank account.', disabled: true },
     { icon: CalendarDays, text: 'Monthly Interest', href: '#', description: 'Enter projected and actual monthly interest amounts.', disabled: true },
-    { icon: CreditCard, text: 'Opening Utilization', href: '#', description: 'Enter and track opening utilization for active banks.', disabled: true },
+    { icon: CreditCard, text: 'Opening Utilization', href: '/bank-balance/opening-utilization', description: 'Enter and track opening utilization for active banks.' },
   ];
 
   return (

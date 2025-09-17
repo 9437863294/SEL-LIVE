@@ -52,7 +52,16 @@ export default function BankBalanceDashboard() {
     
     const { totalDrawingPower, totalCurrentBalance, utilization } = (() => {
         const ccAccounts = accounts.filter(acc => acc.accountType === 'Cash Credit');
-        const totalDP = ccAccounts.reduce((sum, acc) => sum + (acc.drawingPower || 0), 0);
+        
+        const totalDP = ccAccounts.reduce((sum, acc) => {
+            if (!acc.drawingPower || acc.drawingPower.length === 0) return sum;
+            // Get the most recent DP entry
+            const latestDp = acc.drawingPower.reduce((latest, entry) => {
+                return new Date(entry.date) > new Date(latest.date) ? entry : latest;
+            });
+            return sum + (latestDp.amount || 0);
+        }, 0);
+
         const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
         const util = totalDP > 0 ? (totalCCBalance / totalDP) * 100 : 0;
