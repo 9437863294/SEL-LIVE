@@ -74,19 +74,22 @@ export default function InternalTransactionPage() {
     try {
         const [accountsSnap, expensesSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
-            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true), orderBy('date', 'desc')))
+            getDocs(query(collection(db, 'bankExpenses'), where('isContra', '==', true)))
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
         setBankAccounts(accounts);
         
-        const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+        const contraEntries = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense))
+            .sort((a,b) => b.date.toDate().getTime() - a.date.toDate().getTime());
         
         const groupedTransactions: Record<string, Partial<UnifiedTransaction>> = {};
 
         contraEntries.forEach(entry => {
             const entryDate = format(entry.date.toDate(), 'yyyy-MM-dd');
-            const key = `${entryDate}-${entry.amount}`;
+            // Group by a key that combines date, amount, and involved accounts to handle multiple transfers on the same day
+            const accountsKey = [entry.accountId, entry.type].sort().join('-');
+            const key = `${entryDate}-${entry.amount}-${accountsKey}`;
 
             if (!groupedTransactions[key]) {
                 groupedTransactions[key] = { amount: entry.amount, date: entryDate };
