@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -39,6 +39,7 @@ export default function MonthlyInterestPage() {
   const [logData, setLogData] = useState<MonthlyLogEntry[]>([]);
   
   const [logFilters, setLogFilters] = useState({ year: 'all', month: 'all', bank: 'all' });
+  const [activeTab, setActiveTab] = useState('entry');
 
   const ccAccounts = useMemo(() => accounts.filter(acc => acc.accountType === 'Cash Credit'), [accounts]);
 
@@ -206,6 +207,11 @@ export default function MonthlyInterestPage() {
         setIsSaving(false);
     }
   };
+  
+  const handleEditFromLog = (logItem: MonthlyLogEntry) => {
+    setSelectedMonth(logItem.month);
+    setActiveTab('entry');
+  };
 
   const monthOptions = Array.from({ length: 24 }, (_, i) => {
     const date = subMonths(new Date(), i);
@@ -226,7 +232,7 @@ export default function MonthlyInterestPage() {
   
   const logMonthOptions = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => ({
-      value: String(i + 1),
+      value: String(i + 1).padStart(2, '0'),
       label: format(new Date(0, i), 'MMMM'),
     }));
   }, []);
@@ -234,7 +240,7 @@ export default function MonthlyInterestPage() {
   const filteredLogData = useMemo(() => {
     return logData.filter(log => {
         const yearMatch = logFilters.year === 'all' || log.month.startsWith(logFilters.year);
-        const monthMatch = logFilters.month === 'all' || parseInt(log.month.split('-')[1]) === parseInt(logFilters.month);
+        const monthMatch = logFilters.month === 'all' || log.month.split('-')[1] === logFilters.month;
         const bankMatch = logFilters.bank === 'all' || log.accountId === logFilters.bank;
         return yearMatch && monthMatch && bankMatch;
     });
@@ -255,7 +261,7 @@ export default function MonthlyInterestPage() {
         </div>
       </div>
       
-       <Tabs defaultValue="entry">
+       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4">
             <TabsTrigger value="entry">Entry</TabsTrigger>
             <TabsTrigger value="log">Log</TabsTrigger>
@@ -368,11 +374,12 @@ export default function MonthlyInterestPage() {
                                 <TableHead>Projected</TableHead>
                                 <TableHead>Actual</TableHead>
                                 <TableHead>Difference</TableHead>
+                                <TableHead className="text-right">Action</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLogLoading ? (
-                                Array.from({length: 5}).map((_, i) => <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-6" /></TableCell></TableRow>)
+                                Array.from({length: 5}).map((_, i) => <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-6" /></TableCell></TableRow>)
                             ) : filteredLogData.length > 0 ? (
                                 filteredLogData.map(log => (
                                     <TableRow key={`${log.month}-${log.accountId}`}>
@@ -380,13 +387,18 @@ export default function MonthlyInterestPage() {
                                         <TableCell>{log.accountName}</TableCell>
                                         <TableCell>{formatCurrency(log.projected)}</TableCell>
                                         <TableCell>{formatCurrency(log.actual)}</TableCell>
-                                        <TableCell className={log.difference < 0 ? 'text-red-600' : 'text-green-600'}>
+                                        <TableCell className={log.difference > 0 ? 'text-red-600' : 'text-green-600'}>
                                             {formatCurrency(log.difference)}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={() => handleEditFromLog(log)}>
+                                                <Edit className="mr-2 h-4 w-4" /> Edit
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow><TableCell colSpan={5} className="text-center h-24">No log data found for the selected filters.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={6} className="text-center h-24">No log data found for the selected filters.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
