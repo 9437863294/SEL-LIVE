@@ -352,7 +352,6 @@ export type BankAccount = {
   status: 'Active' | 'Inactive';
   branch: string;
   ifsc: string;
-  drawingPower?: number;
   currentBalance: number;
 };
 

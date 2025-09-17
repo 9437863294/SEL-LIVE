@@ -50,13 +50,7 @@ export default function BankBalanceDashboard() {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
     };
 
-    const totalDrawingPower = accounts
-        .filter(acc => acc.accountType === 'Cash Credit')
-        .reduce((sum, acc) => sum + (acc.drawingPower || 0), 0);
-
     const totalClosingUtilization = accounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
-
-    const availableFund = totalDrawingPower - totalClosingUtilization;
 
     if (authLoading || (isLoading && canView)) {
         return (
@@ -100,19 +94,17 @@ export default function BankBalanceDashboard() {
                 <Card className="mb-6 bg-blue-50 border-blue-200">
                     <CardHeader>
                         <div className="flex justify-between items-start">
-                            <CardTitle className="flex items-center gap-2 text-blue-800"><Banknote />Available Fund</CardTitle>
+                            <CardTitle className="flex items-center gap-2 text-blue-800"><Banknote />Total Balance</CardTitle>
                         </div>
                          <CardDescription>
-                            Available fund as of {format(new Date(), 'MMMM do, yyyy')}. (Today's DP - Today's Closing Utilization)
+                            Total balance as of {format(new Date(), 'MMMM do, yyyy')}.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-4xl font-bold text-blue-900">{formatCurrency(availableFund)}</p>
-                                <p className="text-sm text-muted-foreground">Total DP: {formatCurrency(totalDrawingPower)}</p>
+                                <p className="text-4xl font-bold text-blue-900">{formatCurrency(totalClosingUtilization)}</p>
                             </div>
-                             <p className="text-sm text-muted-foreground">Total Closing Utilization: {formatCurrency(totalClosingUtilization)}</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -120,7 +112,6 @@ export default function BankBalanceDashboard() {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {accounts.map(account => {
                         const isCC = account.accountType === 'Cash Credit';
-                        const utilization = account.drawingPower ? account.currentBalance : 0;
                         return (
                             <Card key={account.id} className={
                               account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
@@ -137,12 +128,6 @@ export default function BankBalanceDashboard() {
                                 </CardHeader>
                                 <CardContent>
                                     <p className="text-3xl font-bold mb-2">{formatCurrency(account.currentBalance)}</p>
-                                    {isCC && (
-                                        <div className="flex justify-between text-sm text-muted-foreground">
-                                            <span>DP: {formatCurrency(account.drawingPower || 0)}</span>
-                                            <span>Utilization: {formatCurrency(utilization)}</span>
-                                        </div>
-                                    )}
                                 </CardContent>
                             </Card>
                         );

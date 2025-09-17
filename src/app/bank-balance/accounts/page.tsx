@@ -26,7 +26,6 @@ const initialFormState: Omit<BankAccount, 'id' | 'currentBalance'> = {
   status: 'Active',
   branch: '',
   ifsc: '',
-  drawingPower: 0,
 };
 
 export default function ManageBanksPage() {
@@ -68,7 +67,6 @@ export default function ManageBanksPage() {
           status: account.status || 'Active',
           branch: account.branch || '',
           ifsc: account.ifsc || '',
-          drawingPower: account.drawingPower || 0,
           currentBalance: account.currentBalance || 0,
         };
         setFormData(accountData);
@@ -215,12 +213,6 @@ export default function ManageBanksPage() {
                     </SelectContent>
                 </Select>
               </div>
-               {formData.accountType === 'Cash Credit' && (
-                 <div className="space-y-2">
-                    <Label htmlFor="drawingPower">Drawing Power</Label>
-                    <Input id="drawingPower" type="number" value={formData.drawingPower} onChange={(e) => handleFormChange('drawingPower', e.target.valueAsNumber || 0)} />
-                 </div>
-               )}
               <div className="space-y-2">
                 <Label htmlFor="branch">Branch</Label>
                 <Input id="branch" value={formData.branch} onChange={(e) => handleFormChange('branch', e.target.value)} />
