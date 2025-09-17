@@ -249,9 +249,11 @@ export default function ChatSystemPage() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, file?: File) => {
     e?.preventDefault();
-    if ((!newMessage.trim() && !attachment) || !currentUser || !selectedChat) return;
+    const finalAttachment = file || attachment;
+
+    if ((!newMessage.trim() && !finalAttachment) || !currentUser || !selectedChat) return;
 
     setIsSending(true);
     
@@ -264,21 +266,21 @@ export default function ChatSystemPage() {
     let lastMessageText = newMessage.trim();
 
     try {
-        if (attachment) {
-            const isImage = attachment.type.startsWith('image/');
-            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${attachment.name}`;
+        if (finalAttachment) {
+            const isImage = finalAttachment.type.startsWith('image/');
+            const storagePath = `chat-attachments/${selectedChat.id}/${Date.now()}-${finalAttachment.name}`;
             const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, attachment);
+            await uploadBytes(storageRef, finalAttachment);
             const downloadURL = await getDownloadURL(storageRef);
 
             messageData = {
                 ...messageData,
                 type: isImage ? 'image' : 'document',
                 mediaUrl: downloadURL,
-                fileName: attachment.name,
+                fileName: finalAttachment.name,
                 content: newMessage.trim(), // Include text with attachment
             };
-            lastMessageText = attachment.name;
+            lastMessageText = finalAttachment.name;
         } else {
             messageData = {
                 ...messageData,
@@ -317,7 +319,7 @@ export default function ChatSystemPage() {
     if (!currentUser) return;
     
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
-    const q = query(messagesRef);
+    const q = query(messagesRef, where('readBy', 'not-in', [currentUser.id]));
     const messagesSnapshot = await getDocs(q);
 
     const unreadMessages = messagesSnapshot.docs.filter(doc => !doc.data().readBy.includes(currentUser.id));
@@ -355,8 +357,7 @@ export default function ChatSystemPage() {
     const blob = await (await fetch(capturedImage)).blob();
     const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
     
-    setAttachment(file);
-    await handleSendMessage(); // Directly send the message
+    await handleSendMessage(undefined, file);
     
     setIsCameraDialogOpen(false);
     setIsPreviewing(false);
@@ -380,7 +381,7 @@ export default function ChatSystemPage() {
         case 'image':
             return (
                 <div className="space-y-2">
-                    {message.mediaUrl && <img src={message.mediaUrl} alt={message.fileName} className="max-w-xs rounded-lg" />}
+                    {message.mediaUrl && <Image src={message.mediaUrl} alt={message.fileName || 'Uploaded image'} width={200} height={200} className="max-w-xs rounded-lg" />}
                     {message.content && <p className="text-sm">{message.content}</p>}
                 </div>
             );
@@ -648,5 +649,3 @@ export default function ChatSystemPage() {
     </>
   );
 }
-
-    
