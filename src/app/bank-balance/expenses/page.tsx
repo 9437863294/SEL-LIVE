@@ -276,8 +276,8 @@ export default function ExpensesEntryPage() {
               <CardDescription>Enter individual payments for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
-                  <div className="flex flex-wrap items-end gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                       <div className="space-y-2">
                           <Label>Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
