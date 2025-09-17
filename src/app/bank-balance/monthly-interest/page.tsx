@@ -120,8 +120,8 @@ export default function MonthlyInterestPage() {
         let runningBalance = account.openingUtilization || 0;
         
         const getRateForDate = (date: Date): number => {
-            const sortedLog = (account.interestRateLog || []).sort((a,b) => compareDesc(new Date(a.date), new Date(b.date)));
-            const rateEntry = sortedLog.find(entry => new Date(entry.date) <= date);
+            const sortedLog = (account.interestRateLog || []).sort((a, b) => compareDesc(new Date(a.fromDate), new Date(b.fromDate)));
+            const rateEntry = sortedLog.find(entry => new Date(entry.fromDate) <= date);
             return rateEntry ? rateEntry.rate : 0;
         }
         
