@@ -244,8 +244,8 @@ export default function ExpensesEntryPage() {
               <CardDescription>Enter individual expenses for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-4">
                   <div className="space-y-1">
                     <Label>Date</Label>
                     <Popover>
@@ -280,7 +280,7 @@ export default function ExpensesEntryPage() {
                     </Select>
                   </div>
                 </div>
-                <div className="text-right w-full sm:w-auto">
+                <div className="text-right flex-shrink-0">
                   <p className="text-muted-foreground">Total</p>
                   <p className="text-2xl font-bold">
                     {formatCurrency(totalAmount)}
