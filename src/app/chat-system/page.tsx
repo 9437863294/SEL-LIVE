@@ -101,6 +101,15 @@ export default function ChatSystemPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const activeToasts = useRef<Map<string, string>>(new Map());
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const getCameraPermission = useCallback(async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -578,7 +587,8 @@ export default function ChatSystemPage() {
                         {isLoadingMessages ? (
                             <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-12" />
                         ) : (
-                            messages.map(message => {
+                           <>
+                            {messages.map(message => {
                                 const isSender = message.senderId === currentUser?.id;
                                 if (!message.timestamp) return null; // Don't render message if timestamp is not yet available
                                 
@@ -602,7 +612,9 @@ export default function ChatSystemPage() {
                                         </div>
                                     </div>
                                 )
-                            })
+                            })}
+                            <div ref={messagesEndRef} />
+                           </>
                         )}
                     </ScrollArea>
                     <div className="p-4 border-t">
