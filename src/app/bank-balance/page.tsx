@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Banknote, Plus, Settings, DollarSign, Scale, ArrowDown, ArrowUp, ArrowRightLeft, BarChart3 } from 'lucide-react';
+import { Home, Banknote, Plus, Settings, DollarSign, Scale, ArrowDown, ArrowUp, ArrowRightLeft, BarChart3, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +25,7 @@ export default function BankBalanceDashboard() {
     const canView = can('View Module', 'Bank Balance');
 
     useEffect(() => {
+        if (authLoading) return;
         if (!canView) {
             setIsLoading(false);
             return;
@@ -44,7 +45,7 @@ export default function BankBalanceDashboard() {
         };
         
         fetchAccounts();
-    }, [canView, toast]);
+    }, [canView, toast, authLoading]);
     
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
@@ -87,7 +88,21 @@ export default function BankBalanceDashboard() {
     }
     
     if (!canView) {
-        return <div className="p-4">Access Denied</div>;
+        return (
+            <div className="w-full px-4 sm:px-6 lg:px-8">
+                 <div className="mb-6 flex items-center gap-2">
+                    <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">Bank Balance Dashboard</h1>
+                </div>
+                <Card>
+                    <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this module.</CardDescription></CardHeader>
+                    <CardContent className="flex justify-center items-center p-8 flex-col gap-4">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                        <p>Contact your administrator for access.</p>
+                    </CardContent>
+                </Card>
+            </div>
+        );
     }
 
     return (
@@ -100,7 +115,7 @@ export default function BankBalanceDashboard() {
                     </div>
                      <div className="flex items-center gap-2">
                         <Link href="/bank-balance/reports">
-                           <Button variant="outline">
+                           <Button variant="outline" disabled={!can('View', 'Bank Balance.Reports')}>
                                 <BarChart3 className="mr-2 h-4 w-4"/>
                                 Reports
                             </Button>

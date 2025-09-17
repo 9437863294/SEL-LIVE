@@ -120,7 +120,17 @@ export const permissionModules = {
     'View Module': [],
   },
   'Bank Balance': {
-      'View Module': [],
+    'View Module': [],
+    'Accounts': ['View', 'Add', 'Edit', 'Delete'],
+    'DP Management': ['View', 'Add', 'Delete'],
+    'Opening Utilization': ['View', 'Edit'],
+    'Daily Log': ['View'],
+    'Interest Rate': ['View', 'Add', 'Delete'],
+    'Monthly Interest': ['View', 'Edit'],
+    'Expenses': ['View', 'Add', 'Delete'],
+    'Receipts': ['View', 'Add', 'Delete'],
+    'Internal Transaction': ['View', 'Add'],
+    'Reports': ['View'],
   },
 };
 
