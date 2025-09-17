@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,19 +16,31 @@ import type { BankAccount, DpLogEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, subDays } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 export default function DpManagementPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [newDpEntries, setNewDpEntries] = useState<Record<string, { fromDate: string; amount: string }>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
   const [openAddForm, setOpenAddForm] = useState<string | null>(null);
+  
+  const canView = can('View', 'Bank Balance.DP Management');
+  const canAdd = can('Add', 'Bank Balance.DP Management');
+  const canDelete = can('Delete', 'Bank Balance.DP Management');
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!canView) {
+        setIsLoading(false);
+        return;
+    }
     fetchAccounts();
-  }, []);
+  }, [authLoading, canView]);
 
   const fetchAccounts = async () => {
     setIsLoading(true);
@@ -138,6 +150,38 @@ export default function DpManagementPage() {
     }
   }
 
+  if (authLoading || (isLoading && canView)) {
+      return (
+          <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
+              <Skeleton className="h-10 w-64" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Skeleton className="h-96" />
+                <Skeleton className="h-96" />
+              </div>
+          </div>
+      )
+  }
+  
+  if (!canView) {
+      return (
+         <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center gap-2">
+                <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <h1 className="text-2xl font-bold">DP Management</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                 <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      );
+  }
+
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -167,7 +211,7 @@ export default function DpManagementPage() {
                                     <CardDescription>{acc.accountNumber}</CardDescription>
                                 </div>
                                 <CollapsibleTrigger asChild>
-                                    <Button variant="outline">
+                                    <Button variant="outline" disabled={!canAdd}>
                                         <Plus className="mr-2 h-4 w-4"/> Add New DP Entry
                                     </Button>
                                 </CollapsibleTrigger>
@@ -219,7 +263,7 @@ export default function DpManagementPage() {
                                                 <TableCell>{dp.toDate ? format(new Date(dp.toDate), 'dd MMM, yyyy') : 'Current'}</TableCell>
                                                 <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(dp.amount)}</TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)} disabled={acc.drawingPower.length <= 1}>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDp(acc.id, dp)} disabled={!canDelete || acc.drawingPower.length <= 1}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </TableCell>
