@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Banknote, Plus, Settings, DollarSign, Scale, ArrowDown, ArrowUp, ArrowRightLeft } from 'lucide-react';
+import { Home, Banknote, Plus, Settings, DollarSign, Scale, ArrowDown, ArrowUp, ArrowRightLeft, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -99,6 +99,12 @@ export default function BankBalanceDashboard() {
                         <h1 className="text-2xl font-bold">Bank Balance Dashboard</h1>
                     </div>
                      <div className="flex items-center gap-2">
+                        <Link href="/bank-balance/reports">
+                           <Button variant="outline">
+                                <BarChart3 className="mr-2 h-4 w-4"/>
+                                Reports
+                            </Button>
+                        </Link>
                         <Button onClick={() => setIsDailyEntryOpen(true)}>
                             <Plus className="mr-2 h-4 w-4"/>
                             Daily Entry
