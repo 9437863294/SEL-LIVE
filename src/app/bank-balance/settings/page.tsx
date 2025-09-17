@@ -67,7 +67,7 @@ export default function BankBalanceSettingsPage() {
     { icon: Target, text: 'Opening Utilization', href: '/bank-balance/opening-utilization', description: 'Set opening utilization for Cash Credit accounts.' },
     { icon: List, text: 'Daily Utilization Log', href: '/bank-balance/daily-log', description: 'View daily transaction logs and manage utilization.' },
     { icon: Percent, text: 'Interest Rate', href: '/bank-balance/interest-rate', description: 'Set and track interest rates for each bank account.', disabled: false },
-    { icon: CalendarDays, text: 'Monthly Interest', href: '#', description: 'Enter projected and actual monthly interest amounts.', disabled: true },
+    { icon: CalendarDays, text: 'Monthly Interest', href: '/bank-balance/monthly-interest', description: 'Enter projected and actual monthly interest amounts.', disabled: false },
   ];
 
   return (
