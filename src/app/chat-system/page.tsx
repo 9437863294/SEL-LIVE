@@ -18,6 +18,13 @@ import {
   Check,
   CheckCheck,
   Paperclip,
+  Image as ImageIcon,
+  Camera,
+  Headphones,
+  Contact,
+  BarChart3,
+  Calendar,
+  SmilePlus,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -43,6 +50,12 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 
 export default function ChatSystemPage() {
@@ -60,6 +73,7 @@ export default function ChatSystemPage() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
 
   useEffect(() => {
@@ -435,12 +449,49 @@ export default function ChatSystemPage() {
                     </ScrollArea>
                     <div className="p-4 border-t">
                         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                            <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()}>
-                                <Paperclip className="h-5 w-5" />
-                            </Button>
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button type="button" variant="ghost" size="icon">
+                                        <Paperclip className="h-5 w-5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                                        <FileText className="mr-2 h-4 w-4" /> Document
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                                        <ImageIcon className="mr-2 h-4 w-4" /> Photos & Videos
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem>
+                                        <Camera className="mr-2 h-4 w-4" /> Camera
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem>
+                                        <Headphones className="mr-2 h-4 w-4" /> Audio
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem>
+                                        <Contact className="mr-2 h-4 w-4" /> Contact
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem>
+                                        <BarChart3 className="mr-2 h-4 w-4" /> Poll
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem>
+                                        <Calendar className="mr-2 h-4 w-4" /> Event
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem>
+                                        <SmilePlus className="mr-2 h-4 w-4" /> New Sticker
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                             <Input
                                 ref={fileInputRef}
                                 type="file"
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
+                             <Input
+                                ref={imageInputRef}
+                                type="file"
+                                accept="image/*,video/*"
                                 className="hidden"
                                 onChange={handleFileChange}
                             />
