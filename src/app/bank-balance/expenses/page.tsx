@@ -81,7 +81,7 @@ export default function ExpensesEntryPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
-  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0]?.id);
+  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(expenses[0]?.id ?? null);
 
   // Log Tab State
   const [logEntries, setLogEntries] = useState<BankExpense[]>([]);
@@ -148,6 +148,16 @@ export default function ExpensesEntryPage() {
 
   const removeExpense = (id: number) => {
     setExpenses(prev => prev.filter(exp => exp.id !== id));
+     // If the removed item was the open one, open the first one if it exists
+    if (openCollapsibleId === id) {
+        const remainingExpenses = expenses.filter(exp => exp.id !== id);
+        if (remainingExpenses.length > 0) {
+            setOpenCollapsibleId(remainingExpenses[0].id);
+        } else {
+            // If no expenses are left, we add a new one to not have an empty state
+            addExpense();
+        }
+    }
   };
   
   const handleFileChange = (id: number, field: 'approvalCopy' | 'bankTransferCopy', file: File | null) => {
@@ -209,10 +219,12 @@ export default function ExpensesEntryPage() {
         });
         
         toast({ title: 'Success', description: `${expenses.length} expense(s) saved successfully.`});
-        setExpenses([initialExpenseItem]);
+        const newId = Date.now();
+        const newInitialExpense = { ...initialExpenseItem, id: newId };
+        setExpenses([newInitialExpense]);
         setDate(new Date());
         setSelectedBank('');
-        setOpenCollapsibleId(initialExpenseItem.id);
+        setOpenCollapsibleId(newId);
         fetchBankAccountsAndExpenses(); // Refresh log data
 
     } catch (error) {
@@ -275,8 +287,8 @@ export default function ExpensesEntryPage() {
               <CardDescription>Enter individual payments for a specific date and bank.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-4">
+               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+                  <div className="flex flex-wrap items-end gap-4">
                       <div className="space-y-2">
                           <Label>Date</Label>
                           <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
@@ -343,19 +355,40 @@ export default function ExpensesEntryPage() {
                       </CollapsibleTrigger>
                       <div className="flex items-center gap-4">
                          <span className="font-semibold text-lg">{formatCurrency(expense.amount)}</span>
-                         <Button variant="destructive" size="icon" onClick={() => removeExpense(expense.id)}>
-                            <Trash2 className="h-4 w-4" />
-                         </Button>
                       </div>
                     </div>
                     <CollapsibleContent className="mt-4 space-y-4">
-                        <Textarea placeholder="e.g. Office supplies" value={expense.description} onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} />
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                             <Input placeholder="Payment Request Ref No." value={expense.paymentRequestRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRequestRefNo', e.target.value)} />
-                             <Input placeholder="UTR Number" value={expense.utrNumber} onChange={(e) => handleExpenseChange(expense.id, 'utrNumber', e.target.value)} />
-                             <Input type="number" placeholder="Amount" value={expense.amount || ''} onChange={(e) => handleExpenseChange(expense.id, 'amount', e.target.valueAsNumber || 0)} />
-                        </div>
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="relative space-y-2">
+                        <Label>Description</Label>
+                        <Textarea 
+                          placeholder="e.g. Office supplies" 
+                          value={expense.description} 
+                          onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
+                          className="pr-12"
+                        />
+                        <Button variant="destructive" size="icon" className="absolute top-7 right-2 h-8 w-8" onClick={() => removeExpense(expense.id)}>
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label>Payment Request Ref No.</Label>
+                            <Input placeholder="Enter Ref No." value={expense.paymentRequestRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRequestRefNo', e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>UTR Number</Label>
+                            <Input placeholder="Enter UTR No." value={expense.utrNumber} onChange={(e) => handleExpenseChange(expense.id, 'utrNumber', e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Amount</Label>
+                            <Input type="number" placeholder="0.00" value={expense.amount || ''} onChange={(e) => handleExpenseChange(expense.id, 'amount', e.target.valueAsNumber || 0)} />
+                          </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label>Payment Method</Label>
                              <Select value={expense.paymentMethod} onValueChange={(val) => handleExpenseChange(expense.id, 'paymentMethod', val)}>
                                 <SelectTrigger><SelectValue placeholder="Select method"/></SelectTrigger>
                                 <SelectContent>
@@ -365,22 +398,41 @@ export default function ExpensesEntryPage() {
                                     <SelectItem value="Cash">Cash</SelectItem>
                                 </SelectContent>
                              </Select>
-                             <Input placeholder="Payment Ref No." value={expense.paymentRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRefNo', e.target.value)} />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <Label>Approval Copy</Label>
-                                <div className="flex items-center gap-2">
-                                  <Input type="file" className="flex-1" onChange={(e) => handleFileChange(expense.id, 'approvalCopy', e.target.files ? e.target.files[0] : null)} />
-                                </div>
-                            </div>
-                             <div className="space-y-1">
-                                <Label>Bank Transfer Copy</Label>
-                                <div className="flex items-center gap-2">
-                                  <Input type="file" className="flex-1" onChange={(e) => handleFileChange(expense.id, 'bankTransferCopy', e.target.files ? e.target.files[0] : null)} />
-                                </div>
-                            </div>
-                        </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Payment Ref No.</Label>
+                            <Input placeholder="Enter Payment Ref" value={expense.paymentRefNo} onChange={(e) => handleExpenseChange(expense.id, 'paymentRefNo', e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                             <Label>Approval Copy</Label>
+                              <div className="flex items-center gap-2">
+                                <Input type="file" id={`approval-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'approvalCopy', e.target.files ? e.target.files[0] : null)} />
+                                <Label htmlFor={`approval-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                                    {expense.approvalCopy ? expense.approvalCopy.name : 'No file selected'}
+                                </Label>
+                                <Button asChild variant="outline">
+                                    <Label htmlFor={`approval-copy-${expense.id}`} className="cursor-pointer">
+                                        <Upload className="mr-2 h-4 w-4"/> Upload
+                                    </Label>
+                                </Button>
+                              </div>
+                          </div>
+                       </div>
+
+                       <div className="space-y-2">
+                          <Label>Bank Transfer Copy</Label>
+                           <div className="flex items-center gap-2">
+                            <Input type="file" id={`transfer-copy-${expense.id}`} className="hidden" onChange={(e) => handleFileChange(expense.id, 'bankTransferCopy', e.target.files ? e.target.files[0] : null)} />
+                            <Label htmlFor={`transfer-copy-${expense.id}`} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                                {expense.bankTransferCopy ? expense.bankTransferCopy.name : 'No file selected'}
+                            </Label>
+                            <Button asChild variant="outline">
+                                <Label htmlFor={`transfer-copy-${expense.id}`} className="cursor-pointer">
+                                    <Upload className="mr-2 h-4 w-4"/> Upload
+                                </Label>
+                            </Button>
+                           </div>
+                       </div>
                     </CollapsibleContent>
                   </Collapsible>
                 ))}
