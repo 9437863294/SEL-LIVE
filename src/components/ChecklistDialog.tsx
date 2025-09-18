@@ -118,7 +118,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl no-print">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Check List for Payment</DialogTitle>
           <DialogDescription>
@@ -130,7 +130,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
              <PrintableContent entry={entry} expenseRequest={expenseRequest} project={project} />
         </div>
 
-        <DialogFooter className="no-print">
+        <DialogFooter>
             <Link href={`/daily-requisition/entry-sheet/${entry.id}/print`} target="_blank">
                 <Button variant="outline">
                     <Printer className="mr-2 h-4 w-4" />

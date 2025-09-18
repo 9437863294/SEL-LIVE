@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export default function PrintChecklistPage() {
     const { id } = useParams() as { id: string };
@@ -81,7 +81,7 @@ export default function PrintChecklistPage() {
     return (
         <div className="bg-gray-100 min-h-screen p-4 sm:p-8">
             <div className="max-w-4xl mx-auto">
-                <div className="mb-4 flex justify-end gap-2 no-print">
+                <div className="mb-4 flex justify-end gap-2">
                     <Button onClick={handlePrint} variant="default">
                         <Printer className="mr-2 h-4 w-4" />
                         Print
