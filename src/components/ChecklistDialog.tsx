@@ -27,10 +27,14 @@ interface ChecklistDialogProps {
   project?: Project | null;
 }
 
-export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>((props, ref) => {
+const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>((props, ref) => {
     const { entry, expenseRequest, project } = props;
     const { user } = useAuth();
     if (!entry) return null;
+
+    const entryDate = entry.date && (entry.date as any).toDate 
+        ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
+        : entry.date;
 
     return (
         <div ref={ref} className="p-6 bg-white text-black">
@@ -47,7 +51,7 @@ export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistD
                 </div>
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                    <span>{typeof entry.date === 'string' ? entry.date : format(entry.date.toDate(), 'MMMM do, yyyy')}</span>
+                    <span>{entryDate}</span>
                 </div>
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>

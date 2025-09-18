@@ -674,9 +674,6 @@ export default function EntrySheetPage() {
                     <Button variant="outline" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
                         <Printer className="mr-2 h-4 w-4" /> Print Checklists
                     </Button>
-                    <Button variant="outline">
-                        <Upload className="mr-2 h-4 w-4" /> Import from Excel
-                    </Button>
                     <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
                         <Plus className="mr-2 h-4 w-4" /> Add New Entry
                     </Button>
@@ -894,7 +891,7 @@ export default function EntrySheetPage() {
                 </DialogClose>
                 <Button onClick={handleAddEntry} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Entry
+                  Add Entry & View Checklist
                 </Button>
               </DialogFooter>
             </>
@@ -979,7 +976,7 @@ export default function EntrySheetPage() {
         />
       )}
       
-      <div className="printable-area hidden">
+      <div className="hidden">
         <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
       </div>
     </>
