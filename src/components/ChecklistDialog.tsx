@@ -1,7 +1,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
-import Link from 'next/link';
+import { useReactToPrint } from 'react-to-print';
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -113,7 +113,12 @@ export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistD
 PrintableContent.displayName = 'PrintableContent';
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
+  const componentRef = useRef<HTMLDivElement>(null);
   
+  const handlePrint = useReactToPrint({
+    content: () => componentRef.current,
+  });
+
   if (!entry) return null;
 
   return (
@@ -122,21 +127,19 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         <DialogHeader>
           <DialogTitle>Check List for Payment</DialogTitle>
           <DialogDescription>
-            This checklist has been generated for Reception No. {entry.receptionNo}.
+            This is a preview of the checklist for Reception No. {entry.receptionNo}.
           </DialogDescription>
         </DialogHeader>
         
         <div className="max-h-[70vh] overflow-y-auto p-1" >
-             <PrintableContent entry={entry} expenseRequest={expenseRequest} project={project} />
+             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
         </div>
 
         <DialogFooter>
-            <Link href={`/daily-requisition/entry-sheet/${entry.id}/print`} target="_blank">
-                <Button variant="outline">
-                    <Printer className="mr-2 h-4 w-4" />
-                    Open Printable Page
-                </Button>
-            </Link>
+            <Button variant="outline" onClick={handlePrint}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print Checklist
+            </Button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
