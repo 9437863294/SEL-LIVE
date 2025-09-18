@@ -1,29 +1,41 @@
-
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
-import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import React, { useRef } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from './ui/separator';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { format } from 'date-fns';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Printer } from 'lucide-react';
+import { useAuth } from './auth/AuthProvider';
+import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
 
-const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
+interface ChecklistDialogProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  entry: DailyRequisitionEntry | null;
+  expenseRequest?: ExpenseRequest | null;
+  project?: Project | null;
+}
+
+const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
 
-    const entryDate = entry.date && (entry.date as any).seconds
-        ? format(new Date((entry.date as any).seconds * 1000), 'MMMM do, yyyy')
+    const entryDate = entry.date && (entry.date as any).toDate 
+        ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-8 bg-white text-black max-w-4xl mx-auto">
+        <div ref={ref} className="p-6 bg-white text-black">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -49,7 +61,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                 </div>
             </div>
 
-            <Separator className="my-4 bg-gray-400" />
+            <Separator className="my-4 bg-gray-300" />
 
             <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
                 <div className="flex">
@@ -102,67 +114,39 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
+export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
+  const componentRef = useRef<HTMLDivElement>(null);
 
-export default function PrintChecklistPage() {
-    const { id } = useParams() as { id: string };
-    const [entry, setEntry] = useState<DailyRequisitionEntry | null>(null);
-    const [project, setProject] = useState<Project | null>(null);
-    const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const componentRef = useRef<HTMLDivElement>(null);
+  const handlePrint = useReactToPrint({
+      content: () => componentRef.current,
+  });
 
-    const handlePrint = useReactToPrint({
-        content: () => componentRef.current,
-    });
-    
-    useEffect(() => {
-        if (!id) return;
+  if (!entry) return null;
 
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                const entryDoc = await getDoc(doc(db, 'dailyRequisitions', id));
-                if (!entryDoc.exists()) throw new Error("Requisition not found");
-                const entryData = { id: entryDoc.id, ...entryDoc.data() } as DailyRequisitionEntry;
-                setEntry(entryData);
-
-                if (entryData.projectId) {
-                    const projectDoc = await getDoc(doc(db, 'projects', entryData.projectId));
-                    if (projectDoc.exists()) setProject(projectDoc.data() as Project);
-                }
-
-                if (entryData.depNo) {
-                    const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entryData.depNo));
-                    const expenseSnap = await getDocs(expenseQuery);
-                    if (!expenseSnap.empty) {
-                        setExpenseRequest(expenseSnap.docs[0].data() as ExpenseRequest);
-                    }
-                }
-            } catch (error) {
-                console.error("Error fetching print data:", error);
-            }
-            setIsLoading(false);
-        };
-        fetchData();
-    }, [id]);
-
-    if (isLoading) {
-        return <div className="p-8"><Skeleton className="h-[800px] w-full" /></div>;
-    }
-
-    if (!entry) {
-        return <div className="p-8 text-center">Entry not found.</div>;
-    }
-
-    return (
-        <div>
-            <div className="p-4 text-center no-print">
-                <Button onClick={handlePrint} variant="outline">
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print / Download PDF
-                </Button>
-            </div>
-            <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Check List for Payment</DialogTitle>
+          <DialogDescription>
+            This is a preview of the checklist for Reception No. {entry.receptionNo}.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="max-h-[70vh] overflow-y-auto p-1" >
+             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
         </div>
-    );
+
+        <DialogFooter>
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / Download PDF
+            </Button>
+            <DialogClose asChild>
+                <Button type="button">Close</Button>
+            </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

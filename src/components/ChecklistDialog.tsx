@@ -1,7 +1,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
-import Link from 'next/link';
+import { useReactToPrint } from 'react-to-print';
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -27,16 +27,16 @@ interface ChecklistDialogProps {
   project?: Project | null;
 }
 
-const PrintableContent = ({ entry, expenseRequest, project }: Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>) => {
+const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
 
     const entryDate = entry.date && (entry.date as any).toDate 
         ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
-        : entry.date;
+        : String(entry.date);
 
     return (
-        <div className="p-6 bg-white text-black">
+        <div ref={ref} className="p-6 bg-white text-black">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -112,9 +112,16 @@ const PrintableContent = ({ entry, expenseRequest, project }: Omit<ChecklistDial
             </div>
         </div>
     );
-};
+});
+PrintableContent.displayName = 'PrintableContent';
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
+  const componentRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+      content: () => componentRef.current,
+  });
+
   if (!entry) return null;
 
   return (
@@ -128,16 +135,14 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </DialogHeader>
         
         <div className="max-h-[70vh] overflow-y-auto p-1" >
-             <PrintableContent entry={entry} expenseRequest={expenseRequest} project={project} />
+             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
         </div>
 
         <DialogFooter>
-            <Link href={`/daily-requisition/entry-sheet/${entry.id}/print`} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline">
-                <Printer className="mr-2 h-4 w-4" />
-                Open Printable Page
-              </Button>
-            </Link>
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / Download PDF
+            </Button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
