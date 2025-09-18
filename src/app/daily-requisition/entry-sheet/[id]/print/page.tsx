@@ -123,7 +123,7 @@ export default function PrintChecklistPage() {
             try {
                 const entryDoc = await getDoc(doc(db, 'dailyRequisitions', id));
                 if (!entryDoc.exists()) throw new Error("Requisition not found");
-                const entryData = entryDoc.data() as DailyRequisitionEntry;
+                const entryData = { id: entryDoc.id, ...entryDoc.data() } as DailyRequisitionEntry;
                 setEntry(entryData);
 
                 if (entryData.projectId) {
@@ -157,7 +157,7 @@ export default function PrintChecklistPage() {
     return (
         <div>
             <div className="p-4 text-center no-print">
-                <Button onClick={handlePrint}>
+                <Button onClick={handlePrint} variant="outline">
                     <Printer className="mr-2 h-4 w-4" />
                     Print / Download PDF
                 </Button>
@@ -166,4 +166,3 @@ export default function PrintChecklistPage() {
         </div>
     );
 }
-
