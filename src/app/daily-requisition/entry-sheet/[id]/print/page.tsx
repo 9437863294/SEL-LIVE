@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { PrintableContent } from '@/components/ChecklistDialog';
 import { db } from '@/lib/firebase';
@@ -11,7 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { useRef } from 'react';
 import { format } from 'date-fns';
 
 export default function PrintChecklistPage() {
@@ -20,7 +19,7 @@ export default function PrintChecklistPage() {
     const [project, setProject] = useState<Project | null>(null);
     const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const componentRef = useRef(null);
+    const componentRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!id) return;
@@ -33,16 +32,14 @@ export default function PrintChecklistPage() {
                 if (entryDocSnap.exists()) {
                     const entryData = { id: entryDocSnap.id, ...entryDocSnap.data() };
                     
-                    // Convert Firestore Timestamps to formatted strings
                     const formattedEntry = {
                         ...entryData,
-                        date: entryData.date?.toDate ? format(entryData.date.toDate(), 'MMMM do, yyyy') : entryData.date,
-                        createdAt: entryData.createdAt?.toDate ? format(entryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : entryData.createdAt,
+                        date: entryData.date?.toDate ? format(entryData.date.toDate(), 'MMMM do, yyyy') : String(entryData.date),
+                        createdAt: entryData.createdAt?.toDate ? format(entryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : String(entryData.createdAt),
                     } as DailyRequisitionEntry;
                     
                     setEntry(formattedEntry);
 
-                    // Fetch related data
                     if (entryData.projectId) {
                         const projectDocRef = doc(db, 'projects', entryData.projectId);
                         const projectDocSnap = await getDoc(projectDocRef);
@@ -69,6 +66,7 @@ export default function PrintChecklistPage() {
     
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
+        documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
     });
 
 
@@ -81,20 +79,22 @@ export default function PrintChecklistPage() {
     }
 
     return (
-        <div className="bg-gray-100 min-h-screen p-8">
+        <div className="bg-gray-100 min-h-screen p-4 sm:p-8">
             <div className="max-w-4xl mx-auto">
-                <div className="mb-4 flex justify-end no-print">
-                    <Button onClick={handlePrint}>
+                <div className="mb-4 flex justify-end gap-2 no-print">
+                    <Button onClick={handlePrint} variant="default">
                         <Printer className="mr-2 h-4 w-4" />
                         Print
                     </Button>
                 </div>
-                <PrintableContent 
-                    ref={componentRef}
-                    entry={entry}
-                    project={project || undefined}
-                    expenseRequest={expenseRequest || undefined}
-                />
+                <div className="bg-white shadow-lg">
+                    <PrintableContent 
+                        ref={componentRef}
+                        entry={entry}
+                        project={project || undefined}
+                        expenseRequest={expenseRequest || undefined}
+                    />
+                </div>
             </div>
         </div>
     );

@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useRef } from 'react';
+import React from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,12 +13,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from './ui/separator';
-import type { DailyRequisitionEntry, ExpenseRequest, Project, User } from '@/lib/types';
+import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
 import Link from 'next/link';
-
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -48,7 +47,7 @@ export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistD
                 </div>
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                    <span>{entry.date}</span>
+                    <span>{typeof entry.date === 'string' ? entry.date : format(entry.date.toDate(), 'MMMM do, yyyy')}</span>
                 </div>
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
@@ -112,7 +111,6 @@ export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistD
     );
 });
 PrintableContent.displayName = 'PrintableContent';
-
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
   

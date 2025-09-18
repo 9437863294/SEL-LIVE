@@ -106,38 +106,12 @@
     print-color-adjust: exact;
   }
 
-  .printable-area, .printable-area * {
-    visibility: visible;
-  }
-  
-  .printable-area .break-after-page {
-    page-break-after: always;
-  }
-
-  .printable-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: auto;
-  }
-    
   .no-print, .no-print * {
       display: none !important;
       visibility: hidden !important;
   }
 
-  body > *:not(.printable-area) {
-    display: none !important;
-    visibility: hidden !important;
-  }
-  
-  /* When printing from dialog */
-  @page {
-    size: A4;
-    margin: 1rem;
-  }
-  
+  /* When printing from dialog - DEPRECATED */
   .dialog-printable-content, .dialog-printable-content * {
     visibility: visible;
   }
@@ -159,5 +133,4 @@
     display: none !important;
     visibility: hidden !important;
   }
-
 }
