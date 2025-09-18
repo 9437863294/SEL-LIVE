@@ -17,7 +17,8 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project, User } from '@/lib
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
-import { useReactToPrint } from 'react-to-print';
+import Link from 'next/link';
+
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -27,13 +28,13 @@ interface ChecklistDialogProps {
   project?: Project | null;
 }
 
-const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>((props, ref) => {
+export const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>((props, ref) => {
     const { entry, expenseRequest, project } = props;
     const { user } = useAuth();
     if (!entry) return null;
 
     return (
-        <div ref={ref} className="p-6">
+        <div ref={ref} className="p-6 bg-white text-black">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -59,12 +60,12 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
                 </div>
             </div>
 
-            <Separator className="my-4" />
+            <Separator className="my-4 bg-gray-300" />
 
             <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">Name of the party:</span>
-                    <span className="font-semibold text-primary">{entry.partyName}</span>
+                    <span className="font-semibold">{entry.partyName}</span>
                 </div>
                  <div className="flex gap-x-4">
                     <div className="flex"><span className="font-medium w-24 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span></div>
@@ -89,12 +90,12 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
             </div>
             
             <div className="mt-16 grid grid-cols-2 gap-x-24 gap-y-12 text-sm">
-                <div className="border-t pt-1">Prepared by</div>
-                <div className="border-t pt-1">Authorised by</div>
-                <div className="border-t pt-1">Checked by</div>
-                <div className="border-t pt-1">Approved by</div>
-                <div className="border-t pt-1">Verified by</div>
-                <div className="border-t pt-1">A/c Dept</div>
+                <div className="border-t border-black pt-1">Prepared by</div>
+                <div className="border-t border-black pt-1">Authorised by</div>
+                <div className="border-t border-black pt-1">Checked by</div>
+                <div className="border-t border-black pt-1">Approved by</div>
+                <div className="border-t border-black pt-1">Verified by</div>
+                <div className="border-t border-black pt-1">A/c Dept</div>
             </div>
 
             <div className="mt-16 flex justify-between text-sm">
@@ -114,12 +115,6 @@ PrintableContent.displayName = 'PrintableContent';
 
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
-  const componentRef = useRef<HTMLDivElement>(null);
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current,
-    pageStyle: `@page { size: A4; margin: 1rem; }`,
-    bodyClass: "print-container",
-  });
   
   if (!entry) return null;
 
@@ -134,16 +129,16 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </DialogHeader>
         
         <div className="max-h-[70vh] overflow-y-auto p-1" >
-           <div className="dialog-printable-content">
-             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
-           </div>
+             <PrintableContent entry={entry} expenseRequest={expenseRequest} project={project} />
         </div>
 
         <DialogFooter className="no-print">
-            <Button variant="outline" onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" />
-                Print Checklist
-            </Button>
+            <Link href={`/daily-requisition/entry-sheet/${entry.id}/print`} target="_blank">
+                <Button variant="outline">
+                    <Printer className="mr-2 h-4 w-4" />
+                    Open Printable Page
+                </Button>
+            </Link>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
