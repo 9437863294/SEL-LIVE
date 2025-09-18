@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { useRef } from 'react';
+import { format } from 'date-fns';
 
 export default function PrintChecklistPage() {
     const { id } = useParams() as { id: string };
@@ -30,8 +31,16 @@ export default function PrintChecklistPage() {
                 const entryDocSnap = await getDoc(entryDocRef);
 
                 if (entryDocSnap.exists()) {
-                    const entryData = { id: entryDocSnap.id, ...entryDocSnap.data() } as DailyRequisitionEntry;
-                    setEntry(entryData);
+                    const entryData = { id: entryDocSnap.id, ...entryDocSnap.data() };
+                    
+                    // Convert Firestore Timestamps to formatted strings
+                    const formattedEntry = {
+                        ...entryData,
+                        date: entryData.date?.toDate ? format(entryData.date.toDate(), 'MMMM do, yyyy') : entryData.date,
+                        createdAt: entryData.createdAt?.toDate ? format(entryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : entryData.createdAt,
+                    } as DailyRequisitionEntry;
+                    
+                    setEntry(formattedEntry);
 
                     // Fetch related data
                     if (entryData.projectId) {
@@ -90,4 +99,3 @@ export default function PrintChecklistPage() {
         </div>
     );
 }
-
