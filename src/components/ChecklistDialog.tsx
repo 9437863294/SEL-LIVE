@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Separator } from './ui/separator';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
-import { Printer } from 'lucide-react';
+import { Printer, Download } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
@@ -121,6 +121,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
   
   const handlePrint = useReactToPrint({
     content: () => componentRef.current,
+    documentTitle: `Checklist-${entry?.receptionNo || 'document'}`,
   });
 
   if (!entry) return null;
@@ -142,7 +143,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         <DialogFooter>
             <Button variant="outline" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" />
-                Print Checklist
+                Print / Download PDF
             </Button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
