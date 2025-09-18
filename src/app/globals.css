@@ -131,4 +131,33 @@
     display: none !important;
     visibility: hidden !important;
   }
+  
+  /* When printing from dialog */
+  @page {
+    size: A4;
+    margin: 1rem;
+  }
+  
+  .dialog-printable-content, .dialog-printable-content * {
+    visibility: visible;
+  }
+
+  .print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto;
+    background: white;
+  }
+  
+  .print-container .dialog-printable-content {
+      display: block !important;
+  }
+  
+  body > *:not(.print-container) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
 }

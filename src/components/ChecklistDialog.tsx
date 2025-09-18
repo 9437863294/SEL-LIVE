@@ -117,13 +117,15 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
   const componentRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
     content: () => componentRef.current,
+    pageStyle: `@page { size: A4; margin: 1rem; }`,
+    bodyClass: "print-container",
   });
   
   if (!entry) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl no-print">
         <DialogHeader>
           <DialogTitle>Check List for Payment</DialogTitle>
           <DialogDescription>
@@ -132,7 +134,9 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </DialogHeader>
         
         <div className="max-h-[70vh] overflow-y-auto p-1" >
-           <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
+           <div className="dialog-printable-content">
+             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
+           </div>
         </div>
 
         <DialogFooter className="no-print">
