@@ -1,32 +1,21 @@
+
 'use client';
 
-import React, { useRef } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from '@/components/ui/dialog';
+import React, { useRef, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Separator } from './ui/separator';
+import { Separator } from '@/components/ui/separator';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
-import { useAuth } from './auth/AuthProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Loader2 } from 'lucide-react';
 
-interface ChecklistDialogProps {
-  isOpen: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  entry: DailyRequisitionEntry | null;
-  expenseRequest?: ExpenseRequest | null;
-  project?: Project | null;
-}
-
-const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogProps, 'isOpen' | 'onOpenChange'>>(({ entry, expenseRequest, project }, ref) => {
+const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
 
@@ -35,7 +24,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-6 bg-white text-black">
+        <div ref={ref} className="p-8 bg-white text-black font-sans">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -49,7 +38,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
                 </div>
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                    <span>{entryDate}</span>
+                    <span>{entry.date ? format(new Date(entry.date as string), 'MMMM do, yyyy') : 'N/A'}</span>
                 </div>
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
@@ -61,7 +50,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
                 </div>
             </div>
 
-            <Separator className="my-4 bg-gray-300" />
+            <Separator className="my-4 bg-gray-400" />
 
             <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
                 <div className="flex">
@@ -87,10 +76,10 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
 
             <div className="space-y-2 text-sm mb-8">
                 <p className="font-medium">Description:</p>
-                <p className="pl-4 min-h-[50px]">{entry.description}</p>
+                <p className="pl-4 min-h-[50px] border-l-2 border-gray-200">{entry.description}</p>
             </div>
             
-            <div className="mt-16 grid grid-cols-2 gap-x-24 gap-y-12 text-sm">
+            <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
                 <div className="border-t border-black pt-1">Prepared by</div>
                 <div className="border-t border-black pt-1">Authorised by</div>
                 <div className="border-t border-black pt-1">Checked by</div>
@@ -99,7 +88,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
                 <div className="border-t border-black pt-1">A/c Dept</div>
             </div>
 
-            <div className="mt-16 flex justify-between text-sm">
+            <div className="mt-24 flex justify-between text-xs text-gray-500">
                 <div>
                     <span className="font-medium">Printed By:</span>
                     <span> {user?.name || 'N/A'}</span>
@@ -114,39 +103,90 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
 });
 PrintableContent.displayName = 'PrintableContent';
 
-export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
-  const componentRef = useRef<HTMLDivElement>(null);
+export default function PrintChecklistPage() {
+    const { id } = useParams() as { id: string };
+    const router = useRouter();
+    const componentRef = useRef<HTMLDivElement>(null);
+    const [entry, setEntry] = useState<DailyRequisitionEntry | null>(null);
+    const [project, setProject] = useState<Project | null>(null);
+    const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-  const handlePrint = useReactToPrint({
-      content: () => componentRef.current,
-  });
+    const handlePrint = useReactToPrint({
+        content: () => componentRef.current,
+        documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
+    });
+    
+    useEffect(() => {
+        if (!id) return;
 
-  if (!entry) return null;
+        const fetchData = async () => {
+            setIsLoading(true);
+            try {
+                const entryDocRef = doc(db, 'dailyRequisitions', id);
+                const entryDocSnap = await getDoc(entryDocRef);
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Check List for Payment</DialogTitle>
-          <DialogDescription>
-            This is a preview of the checklist for Reception No. {entry.receptionNo}.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="max-h-[70vh] overflow-y-auto p-1" >
-             <PrintableContent ref={componentRef} entry={entry} expenseRequest={expenseRequest} project={project} />
+                if (!entryDocSnap.exists()) {
+                    // Handle not found
+                    router.push('/daily-requisition/entry-sheet');
+                    return;
+                }
+                
+                const entryData = entryDocSnap.data() as DailyRequisitionEntry;
+                setEntry(entryData);
+
+                if (entryData.projectId) {
+                    const projectDocRef = doc(db, 'projects', entryData.projectId);
+                    const projectDocSnap = await getDoc(projectDocRef);
+                    if (projectDocSnap.exists()) {
+                        setProject(projectDocSnap.data() as Project);
+                    }
+                }
+                
+                if(entryData.depNo) {
+                    const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entryData.depNo));
+                    const expenseSnap = await getDocs(expenseQuery);
+                    if (!expenseSnap.empty) {
+                        setExpenseRequest(expenseSnap.docs[0].data() as ExpenseRequest);
+                    }
+                }
+
+            } catch (error) {
+                console.error("Error fetching checklist data:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [id, router]);
+
+
+    if (isLoading) {
+        return (
+            <div className="p-8">
+                <div className="flex justify-end gap-2 mb-4">
+                    <Skeleton className="h-10 w-24" />
+                </div>
+                <div className="border rounded-lg p-8">
+                    <Skeleton className="h-96 w-full" />
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="p-4 md:p-8">
+            <div className="flex justify-end gap-2 mb-4 no-print">
+                <Button variant="outline" onClick={handlePrint}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                    Print / Download PDF
+                </Button>
+            </div>
+            <div className="bg-white border rounded-lg max-w-4xl mx-auto">
+                <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
+            </div>
         </div>
-
-        <DialogFooter>
-            <Button variant="outline" onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print / Download PDF
-            </Button>
-            <DialogClose asChild>
-                <Button type="button">Close</Button>
-            </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+    );
 }
+
