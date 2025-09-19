@@ -14,7 +14,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
 
 function AppBody({ children }: { children: React.ReactNode }) {
-    const { user, loading } = useAuth();
+    const { user, loading, sessionRemainingTime } = useAuth();
     const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
 
@@ -25,14 +25,26 @@ function AppBody({ children }: { children: React.ReactNode }) {
             </div>
         )
     }
+    
+    const formatTime = (totalSeconds: number) => {
+        if (totalSeconds < 0) return '00:00';
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
 
     return (
         <div className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
             <div className="relative flex h-screen flex-col overflow-hidden bg-background">
                 <Header />
                 <main className="flex-1 overflow-auto">{children}</main>
-                <footer className="text-center text-muted-foreground text-sm py-4">
-                    Copyright © 2025 SEL. All Rights Reserved.
+                <footer className="flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
+                    <span>Copyright © 2025 SEL. All Rights Reserved.</span>
+                    {sessionRemainingTime !== null && (
+                        <span className="font-medium">
+                            Session expires in: {formatTime(sessionRemainingTime)}
+                        </span>
+                    )}
                 </footer>
             </div>
             <Toaster />

@@ -2,12 +2,13 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 
 interface AuthContextType {
@@ -18,6 +19,7 @@ interface AuthContextType {
   isImpersonating: boolean;
   originalUser: User | null;
   refreshUserData: () => Promise<void>;
+  sessionRemainingTime: number | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -28,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   isImpersonating: false,
   originalUser: null,
   refreshUserData: async () => {},
+  sessionRemainingTime: null,
 });
 
 const publicRoutes = ['/login'];
@@ -39,8 +42,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
+  const [sessionRemainingTime, setSessionRemainingTime] = useState<number | null>(null);
+  const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
+
+  const handleSignOut = useCallback(async (isSessionExpired = false) => {
+    try {
+        await signOut(auth);
+        sessionStorage.clear();
+        if (isSessionExpired) {
+            toast({
+                title: 'Session Expired',
+                description: 'You have been logged out due to inactivity.',
+                variant: 'destructive',
+            });
+        }
+        router.push('/login');
+    } catch (error) {
+        console.error('Error signing out:', error);
+    }
+  }, [router, toast]);
+
 
   const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null) => {
     if (!firebaseUser) {
@@ -102,9 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         } else {
             console.error("User document not found for UID:", userToLoadId);
-            setUser(null);
-            setPermissions({});
-            await auth.signOut();
+            await handleSignOut();
         }
 
     } catch (error) {
@@ -114,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
         setLoading(false);
     }
-  }, []);
+  }, [handleSignOut]);
   
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -134,6 +155,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         setLoading(true);
         if (firebaseUser) {
+            if (!sessionStorage.getItem('loginTimestamp')) {
+              sessionStorage.setItem('loginTimestamp', Date.now().toString());
+            }
             currentUserId = firebaseUser.uid;
             await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
             await fetchUserData(firebaseUser);
@@ -145,6 +169,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setPermissions({});
             setLoading(false);
+            sessionStorage.removeItem('loginTimestamp');
+            setSessionRemainingTime(null);
         }
     });
 
@@ -157,6 +183,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [fetchUserData]);
 
+   useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (user) {
+      const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
+      const sessionDurationMinutes = user.settings?.sessionDuration || 60; // Default 60 minutes
+      const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+      const expiryTimestamp = loginTimestamp + sessionDurationMs;
+
+      interval = setInterval(() => {
+        const now = Date.now();
+        const remainingMs = expiryTimestamp - now;
+        
+        if (remainingMs <= 0) {
+          setSessionRemainingTime(0);
+          handleSignOut(true); // isSessionExpired = true
+          clearInterval(interval);
+        } else {
+          setSessionRemainingTime(Math.round(remainingMs / 1000));
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [user, handleSignOut]);
 
   useEffect(() => {
     if (loading) return;
@@ -180,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime }}>
         {isPublicRoute || !loading ? children : null}
     </AuthContext.Provider>
   );
