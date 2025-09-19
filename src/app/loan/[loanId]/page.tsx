@@ -600,6 +600,7 @@ export default function LoanDetailsPage() {
                                     variant="destructive" 
                                     onClick={() => handleMarkAsUnpaid(emi)} 
                                     disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id}
+                                    title={emi.expenseRequestNo ? "Cannot mark as unpaid because an expense request has been generated." : "Mark as unpaid"}
                                 >
                                   {isUpdatingEmi === emi.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <RotateCcw className="h-4 w-4" />}
                                 </Button>
@@ -694,7 +695,6 @@ export default function LoanDetailsPage() {
                   </TableBody>
                 </Table>
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => handleMarkAsUnpaid(selectedEmi)} disabled={!!selectedEmi.expenseRequestNo && expenseRequests.some(er => er.requestNo === selectedEmi.expenseRequestNo)}>Mark as Unpaid</Button>
                     <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense || !!selectedEmi.expenseRequestNo}>
                       {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
