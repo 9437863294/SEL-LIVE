@@ -21,11 +21,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 interface SessionExpiryDialogProps {
   isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
   onSessionExtend: () => void;
   onLogout: () => void;
 }
 
-export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: SessionExpiryDialogProps) {
+export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onLogout }: SessionExpiryDialogProps) {
   const { user, savedUsers } = useAuth();
   const { toast } = useToast();
   const [password, setPassword] = useState('');
@@ -43,13 +44,13 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
     let timer: NodeJS.Timeout;
     if (isOpen) {
       setCountdown(60); 
-      // Default to PIN if available, otherwise password
       setActiveTab(savedUser ? 'pin' : 'password');
       timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
             onLogout();
+            onOpenChange(false); // Close the dialog
             return 0;
           }
           return prev - 1;
@@ -57,7 +58,7 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isOpen, onLogout, savedUser]);
+  }, [isOpen, onLogout, savedUser, onOpenChange]);
 
   const handleExtendWithPassword = async () => {
     if (!user || !user.email || !password) {
@@ -121,8 +122,15 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
     }
   }
 
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      onLogout();
+    }
+    onOpenChange(open);
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onLogout()}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-xs" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Your session has expired</DialogTitle>
