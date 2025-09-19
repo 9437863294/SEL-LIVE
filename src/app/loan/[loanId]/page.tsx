@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
-import type { Loan, EMI } from '@/lib/types';
+import type { Loan, EMI, AccountHead, SubAccountHead } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, addMonths } from 'date-fns';
 import {
@@ -29,6 +29,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createExpenseRequest } from '@/ai';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -38,6 +40,9 @@ export default function LoanDetailsPage() {
   const [loan, setLoan] = useState<Loan | null>(null);
   const [emis, setEmis] = useState<EMI[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
+
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
@@ -77,6 +82,13 @@ export default function LoanDetailsPage() {
       const emisData = emiSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EMI));
       emisData.sort((a,b) => a.emiNo - b.emiNo);
       setEmis(emisData);
+
+      const headsSnap = await getDocs(collection(db, 'accountHeads'));
+      setAccountHeads(headsSnap.docs.map(d => ({id: d.id, ...d.data()} as AccountHead)));
+      
+      const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
+      setSubAccountHeads(subHeadsSnap.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
+
 
     } catch (error) {
       console.error("Error fetching loan data:", error);
@@ -341,6 +353,18 @@ export default function LoanDetailsPage() {
       return 'N/A';
   }
 
+  const handleSubHeadChange = (subHeadName: string) => {
+    if(!expenseToCreate) return;
+    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
+    const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
+
+    setExpenseToCreate({
+      ...expenseToCreate,
+      subHeadOfAccount: subHeadName,
+      headOfAccount: parentHead ? parentHead.name : '',
+    });
+  };
+
   if (isLoading) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -575,18 +599,45 @@ export default function LoanDetailsPage() {
           <DialogContent>
               <DialogHeader>
                   <DialogTitle>Confirm Expense Creation</DialogTitle>
-                  <DialogDescription>Review the details below before creating the expense request.</DialogDescription>
+                  <DialogDescription>Review and edit the details below before creating the expense request.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-3 py-4 text-sm">
-                  <div className="flex justify-between"><span>Department:</span><span className="font-medium">HR</span></div>
-                  <div className="flex justify-between"><span>Project:</span><span className="font-medium">HEAD OFFICE</span></div>
-                  <div className="flex justify-between"><span>Party Name:</span><span className="font-medium">{expenseToCreate.partyName}</span></div>
-                  <div className="flex justify-between"><span>Amount:</span><span className="font-medium">{formatCurrency(expenseToCreate.amount)}</span></div>
-                  <div className="flex justify-between"><span>Head of A/c:</span><span className="font-medium">{expenseToCreate.headOfAccount}</span></div>
-                  <div className="flex justify-between"><span>Sub-Head of A/c:</span><span className="font-medium">{expenseToCreate.subHeadOfAccount}</span></div>
+              <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Department</Label>
+                        <Input value="HR" disabled />
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Project</Label>
+                        <Input value="HEAD OFFICE" disabled />
+                    </div>
+                  </div>
+                   <div className="space-y-1">
+                      <Label>Party Name</Label>
+                      <Input value={expenseToCreate.partyName} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                      <Label>Amount</Label>
+                      <Input type="number" value={expenseToCreate.amount} onChange={(e) => setExpenseToCreate({...expenseToCreate, amount: parseFloat(e.target.value) || 0})} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Head of A/c</Label>
+                        <Select value={expenseToCreate.headOfAccount} disabled>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                        </Select>
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Sub-Head of A/c</Label>
+                         <Select value={expenseToCreate.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </div>
+                  </div>
                   <div className="space-y-1">
                       <Label>Description:</Label>
-                      <p className="p-2 bg-muted rounded-md">{expenseToCreate.description}</p>
+                      <Textarea value={expenseToCreate.description} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
                   </div>
               </div>
               <DialogFooter>
