@@ -80,7 +80,7 @@ export default function LoanDetailsPage() {
   }
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.round(amount));
   };
   
   const formatDate = (date: any) => {

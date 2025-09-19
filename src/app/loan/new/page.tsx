@@ -60,7 +60,7 @@ export default function NewLoanPage() {
     setCalculatedEmi(null);
   };
   
-  const round = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+  const round = (num: number) => Math.round(num);
 
   const generateSchedule = () => {
     const p = parseFloat(loan.loanAmount);
@@ -75,21 +75,21 @@ export default function NewLoanPage() {
       const schedule: ScheduleEntry[] = [];
       let balance = p;
       for (let i = 1; i <= n; i++) {
-        const interest = round(balance * r);
-        let principal = round(emiAmount - interest);
+        const interest = Math.round(balance * r);
+        let principal = Math.round(emiAmount - interest);
         
         // Adjust principal for the last EMI to ensure balance is zero
         if (i === n) {
             principal = balance;
             balance = 0;
         } else {
-            balance = round(balance - principal);
+            balance = Math.round(balance - principal);
         }
 
         schedule.push({
           emiNo: i,
           dueDate: Timestamp.fromDate(addMonths(new Date(loan.startDate), i)),
-          emiAmount: i === n ? round(principal + interest) : emiAmount,
+          emiAmount: i === n ? Math.round(principal + interest) : emiAmount,
           principal: principal,
           interest: interest,
           paidAmount: 0,
