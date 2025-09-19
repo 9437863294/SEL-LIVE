@@ -85,14 +85,14 @@ export default function LoginPage() {
     <div className="text-center">
         <h2 className="text-2xl font-semibold mb-2">Who's signing in?</h2>
         <p className="text-muted-foreground mb-8">Select a profile to continue.</p>
-        <div className="grid grid-cols-2 justify-center gap-6">
+        <div className="flex justify-center flex-wrap gap-6">
             {savedUsers.map(user => (
-                <div key={user.id} onClick={() => handleProfileClick(user)} className="flex flex-col items-center gap-2 cursor-pointer p-4 rounded-lg hover:bg-muted transition-colors">
+                <div key={user.id} onClick={() => handleProfileClick(user)} className="flex flex-col items-center gap-2 cursor-pointer p-4 rounded-lg hover:bg-muted transition-colors w-32">
                     <Avatar className="h-20 w-20">
                         <AvatarImage src={user.photoURL} alt={user.name}/>
                         <AvatarFallback className="text-2xl">{getInitials(user.name)}</AvatarFallback>
                     </Avatar>
-                    <p className="font-medium">{user.name}</p>
+                    <p className="font-medium text-center">{user.name}</p>
                 </div>
             ))}
         </div>
