@@ -273,33 +273,15 @@ export default function ManageRolePage() {
   };
 
   const calculateGrantedPermissions = (role: Role, moduleName: string): number => {
-      if (!role.permissions) return 0;
-      
-      const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
-      let grantedCount = 0;
-
-      if (Array.isArray(moduleDef)) {
-          grantedCount = role.permissions[moduleName]?.length || 0;
-      } else {
-          // Count 'View Module'
-          if (role.permissions[moduleName]?.includes('View Module')) {
-            grantedCount++;
-          }
-          // Count other sub-modules
-          Object.keys(moduleDef).forEach(subModuleKey => {
-              if (subModuleKey === 'View Module') return;
-              
-              if (subModuleKey === 'Departments') {
-                  departments.forEach(dept => {
-                      grantedCount += role.permissions?.[`Expenses.Departments.${dept.id}`]?.length || 0;
-                  });
-              } else {
-                  grantedCount += role.permissions?.[`${moduleName}.${subModuleKey}`]?.length || 0;
-              }
-          });
-      }
-      return grantedCount;
-  };
+    if (!role.permissions) return 0;
+    
+    return Object.keys(role.permissions).reduce((acc, key) => {
+        if (key === moduleName || key.startsWith(`${moduleName}.`)) {
+            return acc + role.permissions[key].length;
+        }
+        return acc;
+    }, 0);
+};
 
 
   const renderPermissionsForm = (
@@ -324,7 +306,7 @@ export default function ManageRolePage() {
              <Accordion type="single" collapsible className="w-full">
               {Object.entries(permissionModules).map(([moduleName, permissions]) => (
                 <AccordionItem value={moduleName} key={moduleName}>
-                  <AccordionTrigger className="font-medium text-base hover:no-underline">
+                  <AccordionTrigger className="font-medium text-sm hover:no-underline">
                     {moduleName}
                   </AccordionTrigger>
                   <AccordionContent className="pt-4 space-y-4">
@@ -337,7 +319,7 @@ export default function ManageRolePage() {
                                     checked={roleData.permissions?.[moduleName]?.includes(permission)}
                                     onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
                                 />
-                                <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight">
+                                <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight text-xs">
                                     {permission}
                                 </Label>
                                 </div>
@@ -352,7 +334,7 @@ export default function ManageRolePage() {
                                   checked={roleData.permissions?.[moduleName]?.includes('View Module')}
                                   onCheckedChange={(checked) => handleViewModuleChange(setData, moduleName, !!checked)}
                                 />
-                                <Label htmlFor={`${roleData.name}-${moduleName}-ViewModule`} className="font-semibold leading-tight text-primary">
+                                <Label htmlFor={`${roleData.name}-${moduleName}-ViewModule`} className="font-semibold leading-tight text-primary text-xs">
                                     View Module
                                 </Label>
                             </div>
@@ -360,7 +342,7 @@ export default function ManageRolePage() {
                            <Accordion type="single" collapsible className="w-full pl-4">
                               {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
                                   <AccordionItem value={subModuleName} key={subModuleName}>
-                                      <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
+                                      <AccordionTrigger className="text-xs font-semibold">{subModuleName}</AccordionTrigger>
                                       <AccordionContent className="pt-4">
                                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                               {subPermissions.map((permission) => (
@@ -370,7 +352,7 @@ export default function ManageRolePage() {
                                                       checked={roleData.permissions?.[`${moduleName}.${subModuleName}`]?.includes(permission)}
                                                       onCheckedChange={(checked) => handlePermissionChange(setData, `${moduleName}.${subModuleName}`, permission, !!checked)}
                                                   />
-                                                  <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight">
+                                                  <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight text-xs">
                                                       {permission}
                                                   </Label>
                                                   </div>
@@ -383,11 +365,11 @@ export default function ManageRolePage() {
                               {/* Dynamic Departments for Expenses Module */}
                               {moduleName === 'Expenses' && (
                                 <AccordionItem value="Departments">
-                                  <AccordionTrigger className="text-sm font-semibold">Departments</AccordionTrigger>
+                                  <AccordionTrigger className="text-xs font-semibold">Departments</AccordionTrigger>
                                   <AccordionContent className="pt-4 space-y-3">
                                       {departments.map(dept => (
                                         <div key={dept.id} className="p-3 border rounded-md">
-                                            <p className="font-medium mb-2">{dept.name}</p>
+                                            <p className="font-medium mb-2 text-xs">{dept.name}</p>
                                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                                 {(permissionModules.Expenses.Departments as string[]).map(perm => (
                                                     <div key={perm} className="flex items-center space-x-2">
@@ -396,7 +378,7 @@ export default function ManageRolePage() {
                                                           checked={roleData.permissions?.[`Expenses.Departments.${dept.id}`]?.includes(perm)}
                                                           onCheckedChange={(checked) => handlePermissionChange(setData, `Expenses.Departments.${dept.id}`, perm, !!checked)}
                                                         />
-                                                        <Label htmlFor={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`} className="font-normal leading-tight">
+                                                        <Label htmlFor={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`} className="font-normal leading-tight text-xs">
                                                             {perm}
                                                         </Label>
                                                     </div>
@@ -590,5 +572,6 @@ export default function ManageRolePage() {
     </div>
   );
 }
+
 
 
