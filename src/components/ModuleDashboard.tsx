@@ -41,31 +41,6 @@ export default function ModuleDashboard() {
   const { can } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isLoading) {
-      const chatModuleContent = `Chat system`;
-
-      const existingChatModule = modules.find(m => m.title === 'Chat System');
-
-      if (existingChatModule) {
-        if (existingChatModule.content !== chatModuleContent) {
-          updateModule(existingChatModule.id, {
-            ...existingChatModule,
-            content: chatModuleContent,
-          });
-        }
-      } else {
-        addModule({
-          title: 'Chat System',
-          content: chatModuleContent,
-          tags: ['chat', 'firebase', 'real-time'],
-          icon: 'MessageSquare',
-        });
-      }
-    }
-  }, [isLoading, modules, addModule, updateModule]);
-
-
   const allModules = useMemo(() => {
     if (isLoading) {
       return [];
