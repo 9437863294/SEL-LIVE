@@ -75,21 +75,25 @@ export default function NewLoanPage() {
       const schedule: ScheduleEntry[] = [];
       let balance = p;
       for (let i = 1; i <= n; i++) {
-        const interest = Math.round(balance * r);
-        let principal = Math.round(emiAmount - interest);
+        const interest = round(balance * r);
+        let principal = round(emiAmount - interest);
         
         // Adjust principal for the last EMI to ensure balance is zero
         if (i === n) {
             principal = balance;
-            balance = 0;
-        } else {
-            balance = Math.round(balance - principal);
         }
+        
+        if (principal > balance) {
+            principal = balance;
+        }
+        
+        balance = round(balance - principal);
+
 
         schedule.push({
           emiNo: i,
           dueDate: Timestamp.fromDate(addMonths(new Date(loan.startDate), i)),
-          emiAmount: i === n ? Math.round(principal + interest) : emiAmount,
+          emiAmount: i === n ? round(principal + interest) : emiAmount,
           principal: principal,
           interest: interest,
           paidAmount: 0,
@@ -123,6 +127,10 @@ export default function NewLoanPage() {
         item.principal = round(item.emiAmount - item.interest); // Recalculate principal if interest changes
     }
     
+    if (item.principal > openingBalance) {
+        item.principal = openingBalance;
+    }
+    
     item.closingPrincipal = round(openingBalance - item.principal);
     
     // Recalculate subsequent EMIs
@@ -131,6 +139,11 @@ export default function NewLoanPage() {
       const currentItem = newSchedule[i];
       currentItem.interest = round(prevClosingPrincipal * monthlyRate);
       currentItem.principal = round(currentItem.emiAmount - currentItem.interest);
+      
+      if(currentItem.principal > prevClosingPrincipal) {
+          currentItem.principal = prevClosingPrincipal;
+      }
+
       currentItem.closingPrincipal = round(prevClosingPrincipal - currentItem.principal);
     }
     
@@ -236,7 +249,7 @@ export default function NewLoanPage() {
           </div>
           <div className="pt-6 flex items-end gap-4">
              <Button onClick={generateSchedule} variant="outline">
-                <RefreshCw className="mr-2 h-4 w-4" /> Generate Repayment Schedule
+                <RefreshCw className="mr-2 h-4 w-4" /> Regenerate Schedule
              </Button>
             {calculatedEmi !== null && (
                 <div className="text-left">
@@ -273,7 +286,7 @@ export default function NewLoanPage() {
                                 <TableCell>
                                      <Input 
                                         type="number" 
-                                        value={emi.emiAmount.toFixed(2)}
+                                        value={emi.emiAmount.toFixed(0)}
                                         onChange={(e) => handleEmiScheduleChange(index, 'emiAmount', parseFloat(e.target.value) || 0)}
                                         className="w-32"
                                      />
@@ -281,7 +294,7 @@ export default function NewLoanPage() {
                                 <TableCell>
                                     <Input 
                                         type="number" 
-                                        value={emi.interest.toFixed(2)}
+                                        value={emi.interest.toFixed(0)}
                                         onChange={(e) => handleEmiScheduleChange(index, 'interest', parseFloat(e.target.value) || 0)}
                                         className="w-32"
                                      />
