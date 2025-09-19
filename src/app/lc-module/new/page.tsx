@@ -72,9 +72,12 @@ export default function NewLcPage() {
         uploadFile(lcCopyFile, 'lc-copy'),
       ]);
 
+      const selCalculation = Number(formState.selCalculation) || 0;
+      const bankCalculation = Number(formState.bankCalculation) || 0;
+
       const newLcData: Omit<LcEntry, 'id'> = {
         ...formState,
-        difference: formState.selCalculation - formState.bankCalculation,
+        difference: selCalculation - bankCalculation,
         status: 'Opened',
         createdAt: serverTimestamp(),
         poUrl,
