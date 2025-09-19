@@ -336,7 +336,7 @@ export default function EmiSummaryPage() {
             <Link href="/loan">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
-            <h1 className="text-2xl font-bold">EMI Monthly Summary</h1>
+            <h1 className="text-2xl font-bold">Monthly EMI</h1>
           </div>
         </div>
 
