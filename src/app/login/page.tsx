@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -154,7 +154,7 @@ export default function LoginPage() {
                 </div>
             ))}
         </div>
-        <Button variant="link" className="mt-8" onClick={() => { setActiveUser(null); setShowPasswordForm(true); }}>Sign in with password</Button>
+        <Button variant="link" className="mt-8" onClick={() => { setActiveUser(null); setShowPasswordForm(true); }}>Sign in with email and password</Button>
     </div>
   );
   
