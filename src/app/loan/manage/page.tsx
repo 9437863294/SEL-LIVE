@@ -101,11 +101,10 @@ export default function ManageLoanPage() {
                   <TableHead className="text-center">Date</TableHead>
                   <TableHead className="text-center">A/C No</TableHead>
                   <TableHead className="text-center">Lender</TableHead>
-                  <TableHead className="text-center">Loan Amount</TableHead>
-                  <TableHead className="text-center">Tenure</TableHead>
-                  <TableHead className="text-center">Interest %</TableHead>
+                  <TableHead className="text-center">Principal</TableHead>
                   <TableHead className="text-center">Interest Amount</TableHead>
                   <TableHead className="text-center">EMI</TableHead>
+                  <TableHead className="text-center">Tenure</TableHead>
                   <TableHead className="text-center">Start Date</TableHead>
                   <TableHead className="text-center">End Date</TableHead>
                   <TableHead className="text-center">Linked Bank</TableHead>
@@ -118,7 +117,7 @@ export default function ManageLoanPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={14}><Skeleton className="h-8" /></TableCell>
+                      <TableCell colSpan={13}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                   ))
                 ) : loansWithDetails.length > 0 ? (
@@ -128,10 +127,9 @@ export default function ManageLoanPage() {
                       <TableCell className="text-center">{loan.accountNo}</TableCell>
                       <TableCell className="text-left">{loan.lenderName}</TableCell>
                       <TableCell className="text-right">{formatCurrency(loan.loanAmount)}</TableCell>
-                      <TableCell className="text-center">{loan.tenure}</TableCell>
-                      <TableCell className="text-center">{loan.interestRate.toFixed(2)}%</TableCell>
                       <TableCell className="text-right">{formatCurrency(loan.totalInterest)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(loan.emiAmount)}</TableCell>
+                      <TableCell className="text-center">{loan.tenure}</TableCell>
                       <TableCell className="text-center">{formatDate(loan.startDate)}</TableCell>
                       <TableCell className="text-center">{formatDate(loan.endDate)}</TableCell>
                       <TableCell className="text-center">{loan.linkedBank}</TableCell>
@@ -146,7 +144,7 @@ export default function ManageLoanPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={14} className="text-center h-24">No loans found.</TableCell>
+                    <TableCell colSpan={13} className="text-center h-24">No loans found.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
