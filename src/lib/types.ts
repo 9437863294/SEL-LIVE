@@ -267,6 +267,15 @@ export type User = {
     lastSeen?: any; // Firestore Timestamp
 };
 
+export type SavedUser = {
+  id: string;
+  name: string;
+  email: string;
+  photoURL: string;
+  pin: string;
+  password?: string; // Encoded password - **NOT SECURE FOR PRODUCTION**
+};
+
 export type EventDetails = {
     eventName: string;
     description?: string;

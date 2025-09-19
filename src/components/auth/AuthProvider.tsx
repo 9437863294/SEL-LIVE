@@ -8,8 +8,9 @@ import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
-import type { User, Role } from '@/lib/types';
+import type { User, Role, SavedUser } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { PinSetupDialog } from './PinSetupDialog';
 
 
 interface AuthContextType {
@@ -21,6 +22,10 @@ interface AuthContextType {
   originalUser: User | null;
   refreshUserData: () => Promise<void>;
   sessionRemainingTime: number | null;
+  // PIN login related state
+  savedUsers: SavedUser[];
+  setShouldRemember: (shouldRemember: boolean) => void;
+  clearSavedUsers: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -32,6 +37,9 @@ const AuthContext = createContext<AuthContextType>({
   originalUser: null,
   refreshUserData: async () => {},
   sessionRemainingTime: null,
+  savedUsers: [],
+  setShouldRemember: () => {},
+  clearSavedUsers: () => {},
 });
 
 const publicRoutes = ['/login'];
@@ -48,10 +56,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // PIN login state
+  const [savedUsers, setSavedUsers] = useState<SavedUser[]>([]);
+  const [shouldRemember, setShouldRemember] = useState(false);
+  const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
+  const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
+
+
   const handleSignOut = useCallback(async (isSessionExpired = false) => {
     try {
         await signOut(auth);
-        sessionStorage.clear();
+        if (!isSessionExpired) { // Don't clear saved users on session expiry
+            sessionStorage.clear();
+        }
         if (isSessionExpired) {
             toast({
                 title: 'Session Expired',
@@ -64,7 +81,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Error signing out:', error);
     }
   }, [router, toast]);
+  
+  const loadSavedUsers = useCallback(() => {
+    try {
+      const storedUsers = localStorage.getItem('savedUsers');
+      if (storedUsers) {
+        setSavedUsers(JSON.parse(storedUsers));
+      }
+    } catch (error) {
+      console.error("Failed to load saved users from localStorage", error);
+    }
+  }, []);
 
+  const clearSavedUsers = useCallback(() => {
+    localStorage.removeItem('savedUsers');
+    setSavedUsers([]);
+  }, []);
 
   const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
     if (!firebaseUser) {
@@ -72,8 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPermissions({});
         setOriginalUser(null);
         setIsImpersonating(false);
-        sessionStorage.removeItem('impersonationUserId');
-        sessionStorage.removeItem('originalAdminUser');
         setLoading(false);
         return null;
     }
@@ -109,6 +139,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDocSnap.exists()) {
             const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
             setUser(userData);
+            
+            if (shouldRemember && !isImpersonationSession) {
+              const currentSavedUsers: SavedUser[] = JSON.parse(localStorage.getItem('savedUsers') || '[]');
+              const userIsSaved = currentSavedUsers.some(u => u.id === userData.id);
+              if (!userIsSaved) {
+                setUserForPinSetup(userData);
+                setIsPinSetupOpen(true);
+              }
+              setShouldRemember(false); // Reset after handling
+            }
+
 
             if (userData.role) {
                 const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
@@ -139,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
         setLoading(false);
     }
-  }, [handleSignOut]);
+  }, [handleSignOut, shouldRemember]);
   
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -148,6 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let currentUserId: string | null = null;
+    
+    loadSavedUsers(); // Load saved users on initial app load
     
     const handleBeforeUnload = () => {
         if (currentUserId) {
@@ -185,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('beforeunload', handleBeforeUnload);
         handleBeforeUnload();
     };
-  }, [fetchUserData]);
+  }, [fetchUserData, loadSavedUsers]);
 
    useEffect(() => {
     let interval: NodeJS.Timeout | undefined;
@@ -193,7 +236,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       const startSessionTimer = () => {
         const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || Date.now().toString(), 10);
-        // Use user's theme setting, with a fallback to 60 minutes
         const sessionDurationMinutes = user.theme?.sessionDuration || 60;
         const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
         const expiryTimestamp = loginTimestamp + sessionDurationMs;
@@ -204,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           if (remainingMs <= 0) {
             setSessionRemainingTime(0);
-            handleSignOut(true); // isSessionExpired = true
+            handleSignOut(true); 
             if (interval) clearInterval(interval);
           } else {
             setSessionRemainingTime(Math.round(remainingMs / 1000));
@@ -212,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         
         if (interval) clearInterval(interval);
-        checkSession(); // Initial check
+        checkSession(); 
         interval = setInterval(checkSession, 1000);
       };
       
@@ -248,8 +290,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, savedUsers, setShouldRemember, clearSavedUsers }}>
         {isPublicRoute || !loading ? children : null}
+        {userForPinSetup && (
+            <PinSetupDialog
+                user={userForPinSetup}
+                isOpen={isPinSetupOpen}
+                onOpenChange={setIsPinSetupOpen}
+                onPinSet={loadSavedUsers} // Refresh saved users after setting a PIN
+            />
+        )}
     </AuthContext.Provider>
   );
 }
