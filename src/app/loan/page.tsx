@@ -171,7 +171,7 @@ export default function LoanDashboardPage() {
 
       <Card>
         <CardHeader className="bg-yellow-100">
-          <CardTitle className="text-center">LIST OF LENDERS WITH DETAILS</CardTitle>
+          <CardTitle className="text-center text-base font-semibold">LIST OF LENDERS WITH DETAILS</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
