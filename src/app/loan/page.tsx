@@ -170,23 +170,23 @@ export default function LoanDashboardPage() {
       
 
       <Card>
-        <CardHeader className="bg-yellow-100 p-3">
+        <CardHeader className="bg-yellow-100 p-2">
           <CardTitle className="text-center text-sm font-semibold">LIST OF LENDERS WITH DETAILS</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Start Date</TableHead>
-                <TableHead>A/C No</TableHead>
-                <TableHead>Lender Name</TableHead>
-                <TableHead>Principal Amount</TableHead>
-                <TableHead>Interest Amount</TableHead>
-                <TableHead>EMI Amount</TableHead>
-                <TableHead>Total Months</TableHead>
-                <TableHead>Remaining Months</TableHead>
-                <TableHead>Due Day</TableHead>
-                <TableHead>Balance</TableHead>
+                <TableHead className="text-center">Start Date</TableHead>
+                <TableHead className="text-center">A/C No</TableHead>
+                <TableHead className="text-center">Lender Name</TableHead>
+                <TableHead className="text-center">Principal Amount</TableHead>
+                <TableHead className="text-center">Interest Amount</TableHead>
+                <TableHead className="text-center">EMI Amount</TableHead>
+                <TableHead className="text-center">Total Months</TableHead>
+                <TableHead className="text-center">Remaining Months</TableHead>
+                <TableHead className="text-center">Due Day</TableHead>
+                <TableHead className="text-center">Balance</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
