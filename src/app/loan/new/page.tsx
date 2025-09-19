@@ -42,6 +42,8 @@ export default function NewLoanPage() {
     setEmiSchedule([]); // Reset schedule if loan details change
     setCalculatedEmi(null);
   };
+  
+  const round = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
   const generateSchedule = () => {
     const p = parseFloat(loan.loanAmount);
@@ -49,20 +51,28 @@ export default function NewLoanPage() {
     const n = parseFloat(loan.tenure);
 
     if (p > 0 && r > 0 && n > 0 && loan.startDate) {
-      const emiAmount = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+      const rawEmi = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+      const emiAmount = round(rawEmi);
       setCalculatedEmi(emiAmount);
 
       const schedule: ScheduleEntry[] = [];
       let balance = p;
       for (let i = 1; i <= n; i++) {
-        const interest = balance * r;
-        const principal = emiAmount - interest;
-        balance -= principal;
+        const interest = round(balance * r);
+        let principal = round(emiAmount - interest);
+        
+        // Adjust principal for the last EMI to ensure balance is zero
+        if (i === n) {
+            principal = balance;
+            balance = 0;
+        } else {
+            balance = round(balance - principal);
+        }
 
         schedule.push({
           emiNo: i,
           dueDate: Timestamp.fromDate(addMonths(new Date(loan.startDate), i)),
-          emiAmount: emiAmount,
+          emiAmount: i === n ? round(principal + interest) : emiAmount,
           principal: principal,
           interest: interest,
           paidAmount: 0,
@@ -88,23 +98,23 @@ export default function NewLoanPage() {
       : newSchedule[index - 1].closingPrincipal;
       
     if (field === 'emiAmount') {
-        item.emiAmount = value;
-        item.interest = openingBalance * monthlyRate; // Recalculate interest if EMI changes
-        item.principal = item.emiAmount - item.interest;
+        item.emiAmount = round(value);
+        item.interest = round(openingBalance * monthlyRate); // Recalculate interest if EMI changes
+        item.principal = round(item.emiAmount - item.interest);
     } else if (field === 'interest') {
-        item.interest = value;
-        item.principal = item.emiAmount - item.interest; // Recalculate principal if interest changes
+        item.interest = round(value);
+        item.principal = round(item.emiAmount - item.interest); // Recalculate principal if interest changes
     }
     
-    item.closingPrincipal = openingBalance - item.principal;
+    item.closingPrincipal = round(openingBalance - item.principal);
     
     // Recalculate subsequent EMIs
     for (let i = index + 1; i < newSchedule.length; i++) {
       const prevClosingPrincipal = newSchedule[i - 1].closingPrincipal;
       const currentItem = newSchedule[i];
-      currentItem.interest = prevClosingPrincipal * monthlyRate;
-      currentItem.principal = currentItem.emiAmount - currentItem.interest;
-      currentItem.closingPrincipal = prevClosingPrincipal - currentItem.principal;
+      currentItem.interest = round(prevClosingPrincipal * monthlyRate);
+      currentItem.principal = round(currentItem.emiAmount - currentItem.interest);
+      currentItem.closingPrincipal = round(prevClosingPrincipal - currentItem.principal);
     }
     
     setEmiSchedule(newSchedule);
