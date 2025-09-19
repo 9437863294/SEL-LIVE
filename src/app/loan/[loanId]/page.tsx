@@ -202,7 +202,7 @@ export default function LoanDetailsPage() {
         });
 
         toast({ title: 'Success', description: 'EMI has been marked as unpaid.' });
-        setIsViewDetailsOpen(false);
+        if (isViewDetailsOpen) setIsViewDetailsOpen(false);
         fetchLoanData();
     } catch (error) {
         console.error("Error marking as unpaid:", error);
@@ -584,11 +584,10 @@ export default function LoanDetailsPage() {
                             <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
                           ) : (
                             <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => handleViewDetailsClick(emi)}>
-                                    <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}>
-                                    <Edit className="h-4 w-4" />
+                                <Button size="sm" variant="outline" onClick={() => handleViewDetailsClick(emi)}><Eye className="h-4 w-4" /></Button>
+                                <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}><Edit className="h-4 w-4" /></Button>
+                                <Button size="sm" variant="destructive" onClick={() => handleMarkAsUnpaid(emi)} disabled={!!emi.expenseRequestNo}>
+                                    <RotateCcw className="h-4 w-4" />
                                 </Button>
                             </div>
                           )
@@ -603,25 +602,25 @@ export default function LoanDetailsPage() {
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md text-left">
             <DialogHeader>
                 <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
                 <DialogDescription>
                     Review the details and confirm the amount paid.
                 </DialogDescription>
             </DialogHeader>
-             <div className="space-y-4 py-4 text-left">
+             <div className="space-y-4 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="dialog-emi">EMI Amount</Label>
-                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold text-left" />
+                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-principal">Principal</Label>
-                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} className="text-left" />
+                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-interest">Interest</Label>
-                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} className="text-left" />
+                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} />
                 </div>
                 <div className="space-y-2 pt-4">
                     <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
@@ -630,7 +629,7 @@ export default function LoanDetailsPage() {
                       type="text"
                       value={formatAsCurrency(dialogPaidAmount)}
                       onChange={(e) => setDialogPaidAmount(parseCurrency(e.target.value))}
-                      className="text-lg font-bold h-12 text-left"
+                      className="text-lg font-bold h-12"
                     />
                 </div>
             </div>
@@ -764,5 +763,3 @@ export default function LoanDetailsPage() {
     </>
   );
 }
-
-    
