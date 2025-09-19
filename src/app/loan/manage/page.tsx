@@ -109,7 +109,6 @@ export default function ManageLoanPage() {
                   <TableHead className="text-center">Start Date</TableHead>
                   <TableHead className="text-center">End Date</TableHead>
                   <TableHead className="text-center">Linked Bank</TableHead>
-                  <TableHead className="text-center">Type</TableHead>
                   <TableHead className="text-center">Total Amount to be Paid</TableHead>
                   <TableHead className="text-center">Total Paid</TableHead>
                   <TableHead className="text-center">Loan Status</TableHead>
@@ -119,7 +118,7 @@ export default function ManageLoanPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={15}><Skeleton className="h-8" /></TableCell>
+                      <TableCell colSpan={14}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                   ))
                 ) : loansWithDetails.length > 0 ? (
@@ -136,7 +135,6 @@ export default function ManageLoanPage() {
                       <TableCell className="text-center">{formatDate(loan.startDate)}</TableCell>
                       <TableCell className="text-center">{formatDate(loan.endDate)}</TableCell>
                       <TableCell className="text-center">{loan.linkedBank}</TableCell>
-                      <TableCell className="text-center">{loan.loanType}</TableCell>
                       <TableCell className="text-right">{formatCurrency(loan.totalAmountToBePaid)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(loan.totalPaid)}</TableCell>
                       <TableCell className="text-center">
@@ -148,7 +146,7 @@ export default function ManageLoanPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={15} className="text-center h-24">No loans found.</TableCell>
+                    <TableCell colSpan={14} className="text-center h-24">No loans found.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
