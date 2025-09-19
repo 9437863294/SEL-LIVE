@@ -135,8 +135,8 @@ export default function AddRolePage() {
             </div>
 
             <div className="space-y-4">
-                <div className="max-w-sm">
-                    <Label htmlFor="roleName" className="text-base">Role Name</Label>
+                <div className="flex items-center gap-4">
+                    <Label htmlFor="roleName" className="text-base min-w-[100px]">Role Name</Label>
                     <Input 
                     id="roleName" 
                     value={newRole.name} 
@@ -202,8 +202,7 @@ export default function AddRolePage() {
                                                                         <Checkbox
                                                                             id={`select-all-dept-${dept.id}`}
                                                                             checked={isAllInDeptSelected}
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                            onCheckedChange={(checked) => handleSelectAllForGroup(deptKey, deptPermissions, !!checked)}
+                                                                            onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(deptKey, deptPermissions, e.currentTarget.dataset.state === 'unchecked')}}
                                                                         />
                                                                         <Label htmlFor={`select-all-dept-${dept.id}`} className="text-xs font-medium">All</Label>
                                                                     </div>
@@ -238,8 +237,7 @@ export default function AddRolePage() {
                                                     <Checkbox
                                                         id={`select-all-group-${fullKey}`}
                                                         checked={isAllInGroupSelected}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onCheckedChange={(checked) => handleSelectAllForGroup(fullKey, permissions, !!checked)}
+                                                        onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions, e.currentTarget.dataset.state === 'unchecked')}}
                                                     />
                                                     <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
                                                 </div>

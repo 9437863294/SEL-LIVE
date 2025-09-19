@@ -137,7 +137,7 @@ export default function EditRolePage() {
     
     if (isLoading) {
         return (
-            <div className="w-full px-4 sm:px-6 lg:px-8 py-2">
+            <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
                 <div className="space-y-4">
                     <Skeleton className="h-12 w-1/2" />
@@ -152,7 +152,7 @@ export default function EditRolePage() {
     }
 
     return (
-        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/settings/role-management">
@@ -169,8 +169,8 @@ export default function EditRolePage() {
             </div>
             
             <div className="space-y-4">
-                <div className="max-w-sm">
-                    <Label htmlFor="roleName" className="text-base">Role Name</Label>
+                <div className="flex items-center gap-4">
+                    <Label htmlFor="roleName" className="text-base min-w-[100px]">Role Name</Label>
                     <Input 
                         id="roleName" 
                         value={editingRole.name} 
