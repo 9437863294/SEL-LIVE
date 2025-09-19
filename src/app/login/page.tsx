@@ -85,7 +85,7 @@ export default function LoginPage() {
     <div className="text-center">
         <h2 className="text-2xl font-semibold mb-2">Who's signing in?</h2>
         <p className="text-muted-foreground mb-8">Select a profile to continue.</p>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 justify-center gap-6">
             {savedUsers.map(user => (
                 <div key={user.id} onClick={() => handleProfileClick(user)} className="flex flex-col items-center gap-2 cursor-pointer p-4 rounded-lg hover:bg-muted transition-colors">
                     <Avatar className="h-20 w-20">
