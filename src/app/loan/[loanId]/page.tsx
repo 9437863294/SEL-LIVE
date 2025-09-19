@@ -83,6 +83,16 @@ export default function LoanDetailsPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
   
+  const formatDate = (date: any) => {
+      if (typeof date === 'string') {
+          return format(new Date(date), 'dd MMM, yyyy');
+      }
+      if (date && typeof date.toDate === 'function') {
+          return format(date.toDate(), 'dd MMM, yyyy');
+      }
+      return 'N/A';
+  }
+
   if (isLoading) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -126,8 +136,8 @@ export default function LoanDetailsPage() {
             <div><p className="text-sm text-muted-foreground">EMI</p><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
             <div><p className="text-sm text-muted-foreground">Total Paid</p><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
              <div><p className="text-sm text-muted-foreground">Outstanding</p><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Start Date</p><p className="font-semibold">{format(new Date(loan.startDate), 'dd MMM, yyyy')}</p></div>
-            <div><p className="text-sm text-muted-foreground">End Date</p><p className="font-semibold">{format(new Date(loan.endDate), 'dd MMM, yyyy')}</p></div>
+            <div><p className="text-sm text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(loan.startDate)}</p></div>
+            <div><p className="text-sm text-muted-foreground">End Date</p><p className="font-semibold">{formatDate(loan.endDate)}</p></div>
           </CardContent>
       </Card>
       
@@ -154,7 +164,7 @@ export default function LoanDetailsPage() {
               {emis.map(emi => (
                   <TableRow key={emi.id}>
                     <TableCell>{emi.emiNo}</TableCell>
-                    <TableCell>{format(new Date(emi.dueDate), 'dd MMM, yyyy')}</TableCell>
+                    <TableCell>{formatDate(emi.dueDate)}</TableCell>
                     <TableCell>{formatCurrency(emi.principal)}</TableCell>
                     <TableCell>{formatCurrency(emi.interest)}</TableCell>
                     <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>

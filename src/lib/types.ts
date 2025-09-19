@@ -500,7 +500,7 @@ export type EMI = {
   id: string;
   loanId: string;
   emiNo: number;
-  dueDate: string;
+  dueDate: any; // Firestore Timestamp
   emiAmount: number;
   principal: number;
   interest: number;
@@ -510,4 +510,3 @@ export type EMI = {
 };
 
     
-

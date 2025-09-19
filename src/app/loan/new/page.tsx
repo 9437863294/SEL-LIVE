@@ -91,7 +91,7 @@ export default function NewLoanPage() {
             const emiData: Omit<EMI, 'id'> = {
                 loanId: loanDocRef.id,
                 emiNo: i,
-                dueDate: format(addMonths(new Date(newLoanData.startDate), i), 'yyyy-MM-dd'),
+                dueDate: Timestamp.fromDate(addMonths(new Date(newLoanData.startDate), i)),
                 emiAmount: newLoanData.emiAmount,
                 principal: principal,
                 interest: interest,
