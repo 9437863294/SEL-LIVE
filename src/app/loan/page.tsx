@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -127,7 +128,7 @@ export default function LoanDashboardPage() {
         <CardTitle className="text-sm font-medium text-blue-900">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-3 text-center">
-        <p className="text-lg font-bold">{typeof value === 'number' ? `₹${formatCurrency(value)}` : value}</p>
+        <p className="text-lg font-bold">{typeof value === 'number' ? formatCurrency(value) : value}</p>
       </CardContent>
     </Card>
   );
