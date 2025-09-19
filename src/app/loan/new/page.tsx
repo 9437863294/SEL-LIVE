@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, writeBatch, doc, Timestamp } from 'firebase/firestore';
 import type { Loan, EMI } from '@/lib/types';
 import { addMonths, format } from 'date-fns';
 
@@ -70,7 +70,7 @@ export default function NewLoanPage() {
       endDate: format(addMonths(new Date(startDate), parseInt(tenure, 10)), 'yyyy-MM-dd'),
       totalPaid: 0,
       status: 'Active',
-      createdAt: new Date(),
+      createdAt: Timestamp.now(),
     };
     
     try {
