@@ -61,6 +61,7 @@ export default function LoanDetailsPage() {
   const [regeneratedEmis, setRegeneratedEmis] = useState<EMI[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
+  const [isUpdatingEmi, setIsUpdatingEmi] = useState<string | null>(null);
 
 
   const fetchLoanData = async () => {
@@ -177,16 +178,22 @@ export default function LoanDetailsPage() {
 
   const handleMarkAsUnpaid = async (emi: EMI) => {
     if (!loan) return;
+    setIsUpdatingEmi(emi.id);
     try {
         const emiDocRef = doc(db, 'loans', loan.id, 'emis', emi.id);
         const loanDocRef = doc(db, 'loans', loan.id);
 
         await runTransaction(db, async (transaction) => {
             const loanDoc = await transaction.get(loanDocRef);
-            if (!loanDoc.exists()) {
-                throw "Loan document does not exist!";
+            const emiDoc = await transaction.get(emiDocRef);
+
+            if (!loanDoc.exists() || !emiDoc.exists()) {
+                throw "Loan or EMI document does not exist!";
             }
             const currentLoanData = loanDoc.data() as Loan;
+            const currentEmiData = emiDoc.data() as EMI;
+            
+            const amountToReverse = currentEmiData.paidAmount || 0;
 
             transaction.update(emiDocRef, {
                 status: 'Pending',
@@ -197,7 +204,7 @@ export default function LoanDetailsPage() {
             });
 
             transaction.update(loanDocRef, {
-                totalPaid: currentLoanData.totalPaid - emi.paidAmount,
+                totalPaid: currentLoanData.totalPaid - amountToReverse,
             });
         });
 
@@ -207,6 +214,8 @@ export default function LoanDetailsPage() {
     } catch (error) {
         console.error("Error marking as unpaid:", error);
         toast({ title: 'Error', description: 'Could not update EMI status.', variant: 'destructive' });
+    } finally {
+        setIsUpdatingEmi(null);
     }
   };
 
@@ -586,8 +595,13 @@ export default function LoanDetailsPage() {
                             <div className="flex gap-2">
                                 <Button size="sm" variant="outline" onClick={() => handleViewDetailsClick(emi)}><Eye className="h-4 w-4" /></Button>
                                 <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}><Edit className="h-4 w-4" /></Button>
-                                <Button size="sm" variant="destructive" onClick={() => handleMarkAsUnpaid(emi)} disabled={!!emi.expenseRequestNo}>
-                                    <RotateCcw className="h-4 w-4" />
+                                <Button 
+                                    size="sm" 
+                                    variant="destructive" 
+                                    onClick={() => handleMarkAsUnpaid(emi)} 
+                                    disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id}
+                                >
+                                  {isUpdatingEmi === emi.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <RotateCcw className="h-4 w-4" />}
                                 </Button>
                             </div>
                           )
@@ -612,15 +626,15 @@ export default function LoanDetailsPage() {
              <div className="space-y-4 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="dialog-emi">EMI Amount</Label>
-                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
+                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold text-left" />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-principal">Principal</Label>
-                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} />
+                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} className="text-left" />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-interest">Interest</Label>
-                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} />
+                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} className="text-left" />
                 </div>
                 <div className="space-y-2 pt-4">
                     <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
@@ -629,7 +643,7 @@ export default function LoanDetailsPage() {
                       type="text"
                       value={formatAsCurrency(dialogPaidAmount)}
                       onChange={(e) => setDialogPaidAmount(parseCurrency(e.target.value))}
-                      className="text-lg font-bold h-12"
+                      className="text-lg font-bold h-12 text-left"
                     />
                 </div>
             </div>
