@@ -10,13 +10,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import type { Loan } from '@/lib/types';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { format } from 'date-fns';
+
+interface LoanWithNextEmi extends Loan {
+  nextEmiDate?: string;
+}
 
 export default function LoanDashboardPage() {
   const { toast } = useToast();
-  const [loans, setLoans] = useState<Loan[]>([]);
+  const [loans, setLoans] = useState<LoanWithNextEmi[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -25,7 +30,25 @@ export default function LoanDashboardPage() {
       try {
         const querySnapshot = await getDocs(collection(db, 'loans'));
         const loansData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Loan));
-        setLoans(loansData);
+        
+        const loansWithEmi: LoanWithNextEmi[] = await Promise.all(
+          loansData.map(async (loan) => {
+            const emiQuery = query(
+              collection(db, 'loans', loan.id, 'emis'), 
+              where('status', '==', 'Pending'),
+              orderBy('dueDate', 'asc'),
+              limit(1)
+            );
+            const emiSnapshot = await getDocs(emiQuery);
+            const nextEmi = emiSnapshot.docs[0]?.data() as EMI | undefined;
+            return {
+              ...loan,
+              nextEmiDate: nextEmi ? format(nextEmi.dueDate.toDate(), 'dd MMM, yyyy') : 'N/A',
+            };
+          })
+        );
+        
+        setLoans(loansWithEmi);
       } catch (error) {
         console.error("Error fetching loans:", error);
         toast({ title: "Error", description: "Failed to fetch loans.", variant: "destructive" });
@@ -66,6 +89,7 @@ export default function LoanDashboardPage() {
                 <TableHead>Lender</TableHead>
                 <TableHead>Loan Amount</TableHead>
                 <TableHead>EMI</TableHead>
+                <TableHead>Next EMI Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -74,7 +98,7 @@ export default function LoanDashboardPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={6}><Skeleton className="h-8" /></TableCell>
+                    <TableCell colSpan={7}><Skeleton className="h-8" /></TableCell>
                   </TableRow>
                 ))
               ) : loans.length > 0 ? (
@@ -84,6 +108,7 @@ export default function LoanDashboardPage() {
                     <TableCell>{loan.lenderName}</TableCell>
                     <TableCell>{formatCurrency(loan.loanAmount)}</TableCell>
                     <TableCell>{formatCurrency(loan.emiAmount)}</TableCell>
+                    <TableCell>{loan.nextEmiDate}</TableCell>
                     <TableCell><Badge>{loan.status}</Badge></TableCell>
                     <TableCell>
                       <Link href={`/loan/${loan.id}`}>
@@ -94,7 +119,7 @@ export default function LoanDashboardPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">No loans found.</TableCell>
+                  <TableCell colSpan={7} className="text-center h-24">No loans found.</TableCell>
                 </TableRow>
               )}
             </TableBody>
