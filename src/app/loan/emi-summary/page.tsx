@@ -122,7 +122,8 @@ export default function EmiSummaryPage() {
   
   const summary = useMemo(() => {
       const thisMonthDue = filteredEmis.reduce((sum, emi) => sum + emi.emiAmount, 0);
-      return { thisMonthDue };
+      const totalPaid = filteredEmis.filter(emi => emi.status === 'Paid').reduce((sum, emi) => sum + emi.paidAmount, 0);
+      return { thisMonthDue, totalPaid };
   }, [filteredEmis]);
   
   const handleMarkAsPaidClick = (emi: EnrichedEmi) => {
@@ -347,6 +348,10 @@ export default function EmiSummaryPage() {
           <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">This Month Due</CardTitle></CardHeader>
               <CardContent><p className="text-xl font-bold">{formatCurrency(summary.thisMonthDue)}</p></CardContent>
+          </Card>
+           <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Total Paid</CardTitle></CardHeader>
+              <CardContent><p className="text-xl font-bold">{formatCurrency(summary.totalPaid)}</p></CardContent>
           </Card>
         </div>
 
