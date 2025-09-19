@@ -248,7 +248,7 @@ export default function NewLoanPage() {
             <div className="space-y-2"><Label htmlFor="loanType">Loan Type</Label><Select name="loanType" value={loan.loanType} onValueChange={(v: 'Loan' | 'Investment') => setLoan(prev => ({...prev, loanType: v}))}><SelectTrigger id="loanType"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Loan">Loan</SelectItem><SelectItem value="Investment">Investment</SelectItem></SelectContent></Select></div>
           </div>
           <div className="pt-6 flex items-end gap-4">
-             <Button onClick={generateSchedule} variant="outline">
+             <Button onClick={generateSchedule}>
                 <RefreshCw className="mr-2 h-4 w-4" /> Regenerate Schedule
              </Button>
             {calculatedEmi !== null && (
