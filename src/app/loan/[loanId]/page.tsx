@@ -227,11 +227,11 @@ export default function LoanDetailsPage() {
 
         const schedule: EMI[] = [];
         let balance = p;
-        for (let i = 1; i <= n; i++) {
+        for (let i = 0; i < n; i++) {
             const interest = round(balance * r);
             let principal = round(emiAmount - interest);
 
-            if (i === n) {
+            if (i === n - 1) {
                 principal = balance;
             } else if (principal > balance) {
                 principal = balance;
@@ -240,11 +240,11 @@ export default function LoanDetailsPage() {
             balance = round(balance - principal);
 
             schedule.push({
-                id: `temp-${i}`, // Temporary ID
+                id: `temp-${i + 1}`, // Temporary ID
                 loanId: loanId,
-                emiNo: i,
+                emiNo: i + 1,
                 dueDate: Timestamp.fromDate(addMonths(new Date(editedLoan.startDate), i)),
-                emiAmount: i === n ? round(principal + interest) : emiAmount,
+                emiAmount: i === n - 1 ? round(principal + interest) : emiAmount,
                 principal: principal,
                 interest: interest,
                 paidAmount: 0,
@@ -732,7 +732,7 @@ export default function LoanDetailsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Head of A/c</Label>
-                         <Select value={expenseToCreate.headOfAccount} disabled>
+                         <Select value={expenseToCreate.headOfAccount} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value })} disabled>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                              <SelectContent>
                                 {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
@@ -766,3 +766,6 @@ export default function LoanDetailsPage() {
   );
 }
 
+
+
+    
