@@ -83,7 +83,16 @@ export default function LoginPage() {
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   
   const renderProfileSelection = () => (
-    <div className="text-center">
+    <div className="text-center w-full">
+        <div className="relative h-40 w-full max-w-[70%] mx-auto">
+            <Image
+                src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
+                alt="Company Logo"
+                fill
+                style={{ objectFit: 'contain' }}
+                priority
+            />
+        </div>
         <h2 className="text-2xl font-semibold mb-2">Who's signing in?</h2>
         <p className="text-muted-foreground mb-8">Select a profile to continue.</p>
         <div className="flex justify-center flex-wrap gap-6">
