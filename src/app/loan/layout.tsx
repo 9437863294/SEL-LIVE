@@ -20,7 +20,7 @@ export default function LoanLayout({
   const navItems = [
     { href: '/loan', icon: LayoutDashboard, label: 'Dashboard', permission: can('View', 'Loan.Dashboard') },
     { href: '/loan/manage', icon: Briefcase, label: 'Manage Loans', permission: can('View', 'Loan.Dashboard') },
-    { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Summary', permission: can('View', 'Loan.Dashboard') },
+    { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Details', permission: can('View', 'Loan.Dashboard') },
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);
