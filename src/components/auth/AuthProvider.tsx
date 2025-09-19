@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
@@ -187,29 +188,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUserData]);
 
    useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | undefined;
 
     if (user) {
-      const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || Date.now().toString(), 10);
-      const sessionDurationMinutes = user.theme?.sessionDuration || 60; // Default 60 minutes
-      const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
-      const expiryTimestamp = loginTimestamp + sessionDurationMs;
+      const startSessionTimer = () => {
+        const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || Date.now().toString(), 10);
+        // Use user's theme setting, with a fallback to 60 minutes
+        const sessionDurationMinutes = user.theme?.sessionDuration || 60;
+        const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+        const expiryTimestamp = loginTimestamp + sessionDurationMs;
 
-      const checkSession = () => {
-        const now = Date.now();
-        const remainingMs = expiryTimestamp - now;
+        const checkSession = () => {
+          const now = Date.now();
+          const remainingMs = expiryTimestamp - now;
+          
+          if (remainingMs <= 0) {
+            setSessionRemainingTime(0);
+            handleSignOut(true); // isSessionExpired = true
+            if (interval) clearInterval(interval);
+          } else {
+            setSessionRemainingTime(Math.round(remainingMs / 1000));
+          }
+        };
         
-        if (remainingMs <= 0) {
-          setSessionRemainingTime(0);
-          handleSignOut(true); // isSessionExpired = true
-          clearInterval(interval);
-        } else {
-          setSessionRemainingTime(Math.round(remainingMs / 1000));
-        }
+        if (interval) clearInterval(interval);
+        checkSession(); // Initial check
+        interval = setInterval(checkSession, 1000);
       };
       
-      checkSession(); // Initial check
-      interval = setInterval(checkSession, 1000);
+      startSessionTimer();
     }
 
     return () => {

@@ -28,11 +28,14 @@ function AppBody({ children }: { children: React.ReactNode }) {
     
     const formatTime = (totalSeconds: number | null): string => {
         if (totalSeconds === null || totalSeconds < 0) return '';
+        
         if (totalSeconds > 60) {
-            return `${Math.ceil(totalSeconds / 60)} minutes`;
+          return `${Math.ceil(totalSeconds / 60)} minutes`;
         }
+      
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
+      
         return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     };
 
