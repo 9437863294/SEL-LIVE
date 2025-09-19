@@ -240,6 +240,19 @@ function NewExpenseRequestForm() {
   };
 
   const selectedDepartmentName = departments.find(d => d.id === form.getValues('departmentId'))?.name || '';
+  
+  const formatAsCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+  
+  const parseCurrency = (value: string): number => {
+    return Number(value.replace(/[^0-9.-]+/g, ''));
+  };
 
   return (
     <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
@@ -303,7 +316,12 @@ function NewExpenseRequestForm() {
                         <FormItem className="space-y-2">
                           <FormLabel>Amount</FormLabel>
                           <FormControl>
-                            <Input type="number" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} />
+                            <Input
+                              type="text"
+                              placeholder="Enter Amount"
+                              value={field.value ? formatAsCurrency(field.value) : ''}
+                              onChange={(e) => field.onChange(parseCurrency(e.target.value) || 0)}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
