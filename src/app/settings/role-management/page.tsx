@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
@@ -147,8 +145,10 @@ export default function ManageRolePage() {
     setState: React.Dispatch<React.SetStateAction<any>>,
     groupKey: string,
     allPermissionsInGroup: string[],
-    isChecked: boolean
+    isChecked: boolean,
+    e?: React.MouseEvent<HTMLButtonElement>
   ) => {
+    e?.stopPropagation();
     setState((prevState: any) => {
       const newPermissions = { ...prevState.permissions };
       newPermissions[groupKey] = isChecked ? allPermissionsInGroup : [];
@@ -159,8 +159,10 @@ export default function ManageRolePage() {
   const handleSelectAllForModule = (
     setState: React.Dispatch<React.SetStateAction<any>>,
     moduleName: string,
-    isChecked: boolean
+    isChecked: boolean,
+    e?: React.MouseEvent<HTMLButtonElement>
   ) => {
+      e?.stopPropagation();
       const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
       let keysToUpdate: string[] = [];
 
@@ -282,25 +284,36 @@ const renderPermissionsForm = (
     setData: React.Dispatch<React.SetStateAction<any>>
   ) => {
 
-    const getTotalPermissionsForModule = (moduleName: string, moduleConfig: any): number => {
+    const getTotalPermissionsForModule = (moduleName: string): number => {
+      const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+      if (!moduleConfig) return 0;
+      
       if (Array.isArray(moduleConfig)) {
         return moduleConfig.length;
       }
       
-      let total = Object.values(moduleConfig).reduce((sum: number, perms: any) => sum + perms.length, 0);
-
-      if (moduleName === 'Expenses' && moduleConfig.Departments) {
-          total += (departments.length * moduleConfig.Departments.length);
+      let total = 0;
+      for (const key in moduleConfig) {
+        if(key === 'Departments') {
+          total += (moduleConfig[key] as string[]).length * departments.length;
+        } else {
+          total += (moduleConfig[key] as string[]).length;
+        }
       }
-      
       return total;
     }
     
-    const calculateGrantedPermissions = (rolePermissions: Record<string, string[]>, moduleName: string): number => {
-        if (!rolePermissions) return 0;
-        return Object.keys(rolePermissions)
-            .filter(key => key === moduleName || key.startsWith(`${moduleName}.`))
-            .reduce((count, key) => count + (rolePermissions[key]?.length || 0), 0);
+    const getGrantedPermissionsForModule = (permissions: Record<string, string[]>, moduleName: string): number => {
+      if (!permissions) return 0;
+      let count = 0;
+      for (const key in permissions) {
+        if (key === moduleName || key.startsWith(`${moduleName}.`)) {
+          if (Array.isArray(permissions[key])) {
+            count += permissions[key].length;
+          }
+        }
+      }
+      return count;
     };
     
     return (
@@ -318,17 +331,17 @@ const renderPermissionsForm = (
         <Label>Permissions</Label>
         <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
         <ScrollArea className="mt-2 h-[60vh]">
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="multiple" className="w-full">
             {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
-              const totalPerms = getTotalPermissionsForModule(moduleName, moduleValue);
-              const grantedPerms = calculateGrantedPermissions(roleData.permissions, moduleName);
+              const totalPerms = getTotalPermissionsForModule(moduleName);
+              const grantedPerms = getGrantedPermissionsForModule(roleData.permissions, moduleName);
               const isAllSelectedForModule = totalPerms > 0 && grantedPerms === totalPerms;
 
               return (
                   <AccordionItem value={moduleName} key={moduleName} className="border-b-0">
                       <Card className="mb-2">
-                           <AccordionTrigger className="p-4 hover:no-underline flex-row items-center justify-between">
-                              <CardTitleShad className="text-base">{moduleName} Permission</CardTitleShad>
+                           <AccordionTrigger className="p-4 hover:no-underline flex-row items-center justify-between text-base font-semibold">
+                              <span>{moduleName}</span>
                               <div className="flex items-center space-x-2 mr-4">
                                   <Checkbox
                                       id={`select-all-module-${moduleName}`}
@@ -371,7 +384,6 @@ const renderPermissionsForm = (
                                                               id={`select-all-group-${fullKey}`}
                                                               checked={isAllInGroupSelected}
                                                               onCheckedChange={(checked) => handleSelectAllForGroup(setData, fullKey, permissions, !!checked)}
-                                                              onClick={(e) => e.stopPropagation()}
                                                           />
                                                           <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
                                                         </div>
@@ -458,7 +470,7 @@ const renderPermissionsForm = (
                 </CardContent>
             </Card>
         </div>
-    )
+    );
   }
   
   if (!canView) {
@@ -477,9 +489,9 @@ const renderPermissionsForm = (
                     <CardTitleShad>Access Denied</CardTitleShad>
                     <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
                 </CardHeader>
-                <CardContent className="flex justify-center p-8">
+                <CardContentShad className="flex justify-center p-8">
                     <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
+                </CardContentShad>
             </Card>
         </div>
     );
@@ -529,7 +541,7 @@ const renderPermissionsForm = (
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[200px]">Role Name</TableHead>
-                <TableHead>Total Permissions</TableHead>
+                <TableHead>Permissions Summary</TableHead>
                 <TableHead className="text-right w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -550,7 +562,19 @@ const renderPermissionsForm = (
                   <TableRow key={role.id}>
                     <TableCell className="font-medium">{role.name}</TableCell>
                     <TableCell>
-                      {Object.values(role.permissions || {}).flat().length} permissions
+                      <div className="flex flex-wrap gap-1">
+                        {Object.keys(permissionModules).map(moduleName => {
+                            const totalPerms = getTotalPermissionsForModule(moduleName);
+                            if (totalPerms === 0) return null;
+                            const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
+                            const percentage = Math.round((grantedPerms / totalPerms) * 100);
+                            return (
+                                <Badge key={moduleName} variant="secondary" className="cursor-default">
+                                    {moduleName}: {percentage}%
+                                </Badge>
+                            )
+                        })}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(role)} disabled={!canEdit}>Edit</Button>
@@ -594,5 +618,3 @@ const renderPermissionsForm = (
     </div>
   );
 }
-
-
