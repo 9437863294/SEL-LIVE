@@ -130,12 +130,12 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
             For your security, please re-authenticate to continue. You will be logged out in {countdown} seconds.
           </DialogDescription>
         </DialogHeader>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col items-center">
+            <TabsList>
                 <TabsTrigger value="password">Password</TabsTrigger>
                 <TabsTrigger value="pin" disabled={!savedUser}>PIN</TabsTrigger>
             </TabsList>
-            <TabsContent value="password">
+            <TabsContent value="password" className="w-full">
                 <div className="space-y-2 py-4">
                     <Label htmlFor="session-password">Password</Label>
                     <Input
@@ -148,7 +148,7 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
                     />
                 </div>
             </TabsContent>
-             <TabsContent value="pin">
+             <TabsContent value="pin" className="w-full">
                 <div className="space-y-2 py-4">
                     <Label htmlFor="session-pin">PIN</Label>
                     <Input
