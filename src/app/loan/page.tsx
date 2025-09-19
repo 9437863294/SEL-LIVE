@@ -141,6 +141,12 @@ export default function LoanDashboardPage() {
           </Link>
           <h1 className="text-2xl font-bold">Loan Dashboard</h1>
         </div>
+        <Link href="/loan/new">
+            <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Add New Loan
+            </Button>
+        </Link>
       </div>
 
       <Card className="mb-6">

@@ -19,7 +19,6 @@ export default function LoanLayout({
 
   const navItems = [
     { href: '/loan', icon: LayoutDashboard, label: 'Dashboard', permission: can('View', 'Loan.Dashboard') },
-    { href: '/loan/new', icon: Plus, label: 'Add New Loan', permission: can('Create', 'Loan.Add Loan') },
     { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Summary', permission: can('View', 'Loan.Dashboard') },
   ];
 
