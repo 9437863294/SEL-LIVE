@@ -100,7 +100,7 @@ export default function ManageLoanPage() {
                 <TableRow>
                   <TableHead className="text-center">Date</TableHead>
                   <TableHead className="text-center">A/C No</TableHead>
-                  <TableHead className="text-center">Lender</TableHead>
+                  <TableHead className="text-left">Lender</TableHead>
                   <TableHead className="text-center">Principal</TableHead>
                   <TableHead className="text-center">Interest</TableHead>
                   <TableHead className="text-center">EMI</TableHead>
@@ -110,7 +110,7 @@ export default function ManageLoanPage() {
                   <TableHead className="text-center">Linked Bank</TableHead>
                   <TableHead className="text-center">Total Payable</TableHead>
                   <TableHead className="text-center">Paid</TableHead>
-                  <TableHead className="text-center">Loan Status</TableHead>
+                  <TableHead className="text-center">status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
