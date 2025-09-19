@@ -16,7 +16,7 @@ import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { LcEntry, Project } from '@/lib/types';
 
-const initialFormState = {
+const initialFormState: Omit<LcEntry, 'id' | 'createdAt' | 'status' | 'difference' | 'poUrl' | 'applicationUrl' | 'lcCopyUrl' > = {
   vendor: '',
   projectId: '',
   bank: '',
@@ -48,7 +48,8 @@ export default function NewLcPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormState(prev => ({ ...prev, [name]: name.endsWith('Amount') || name.endsWith('Calculation') || name.endsWith('Margin') ? parseFloat(value) || 0 : value }));
+    const isNumeric = ['lcAmount', 'selCalculation', 'bankCalculation', 'fdMargin'].includes(name);
+    setFormState(prev => ({ ...prev, [name]: isNumeric ? parseFloat(value) || 0 : value }));
   };
 
   const handleSave = async () => {
