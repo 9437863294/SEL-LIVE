@@ -195,7 +195,7 @@ export default function LoanDashboardPage() {
                 ))
               ) : loansWithDetails.length > 0 ? (
                 loansWithDetails.map(loan => (
-                  <TableRow key={loan.id}>
+                  <TableRow key={loan.id} className="cursor-pointer" onClick={() => window.location.href=`/loan/${loan.id}`}>
                     <TableCell className="text-center">{format(new Date(loan.startDate), 'dd/MM/yyyy')}</TableCell>
                     <TableCell className="text-center">{loan.accountNo}</TableCell>
                     <TableCell className="text-center">{loan.lenderName}</TableCell>
