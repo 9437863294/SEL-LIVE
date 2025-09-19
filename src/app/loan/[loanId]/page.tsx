@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -166,6 +166,36 @@ export default function LoanDetailsPage() {
         setIsConfirmingPayment(false);
     }
   }
+
+  const handleMarkAsUnpaid = async (emi: EMI) => {
+    if (!loan) return;
+    try {
+        const emiDocRef = doc(db, 'loans', loanId, emi.id);
+        const loanDocRef = doc(db, 'loans', loanId);
+
+        const batch = writeBatch(db);
+
+        batch.update(emiDocRef, {
+            status: 'Pending',
+            paidAmount: 0,
+            paidAt: null,
+            paidById: null,
+        });
+
+        batch.update(loanDocRef, {
+            totalPaid: loan.totalPaid - emi.paidAmount,
+        });
+
+        await batch.commit();
+        toast({ title: 'Success', description: 'EMI has been marked as unpaid.' });
+        setIsViewDetailsOpen(false);
+        fetchLoanData();
+    } catch (error) {
+        console.error("Error marking as unpaid:", error);
+        toast({ title: 'Error', description: 'Could not update EMI status.', variant: 'destructive' });
+    }
+  };
+
 
   const round = (num: number) => Math.round(num);
 
@@ -560,18 +590,18 @@ export default function LoanDetailsPage() {
                     Review the details and confirm the amount paid.
                 </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4 text-left">
+             <div className="space-y-4 py-4 text-left">
                 <div className="space-y-2">
                     <Label htmlFor="dialog-emi">EMI Amount</Label>
-                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
+                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold text-left" />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-principal">Principal</Label>
-                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} />
+                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} className="text-left" />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="dialog-interest">Interest</Label>
-                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} />
+                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} className="text-left" />
                 </div>
                 <div className="space-y-2 pt-4">
                     <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
@@ -580,7 +610,7 @@ export default function LoanDetailsPage() {
                       type="text"
                       value={formatAsCurrency(dialogPaidAmount)}
                       onChange={(e) => setDialogPaidAmount(parseCurrency(e.target.value))}
-                      className="text-lg font-bold h-12"
+                      className="text-lg font-bold h-12 text-left"
                     />
                 </div>
             </div>
@@ -625,6 +655,7 @@ export default function LoanDetailsPage() {
                   </TableBody>
                 </Table>
                 <DialogFooter>
+                    <Button variant="outline" onClick={() => handleMarkAsUnpaid(selectedEmi)}>Mark as Unpaid</Button>
                     <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense}>
                       {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
