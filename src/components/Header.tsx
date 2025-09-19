@@ -163,12 +163,12 @@ export default function Header() {
               </Link>
               <div className="border-l pl-4">
                  <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
-                 <p className="text-sm text-muted-foreground hidden md:block">Welcome back, {user?.name}!</p>
               </div>
           </div>
 
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-4">
+             <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
               
               <DropdownMenu>
