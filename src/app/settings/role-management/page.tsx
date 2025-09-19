@@ -262,16 +262,15 @@ export default function ManageRolePage() {
         return module.length;
     }
     let count = 0;
-    Object.values(module).forEach(sub => {
-        if (Array.isArray(sub)) {
-            count += sub.length;
+    Object.entries(module).forEach(([key, value]) => {
+        if(key === 'Departments') {
+             count += value.length * departments.length;
+        } else if (key === 'View Module') {
+            count += 1;
+        } else {
+             count += value.length;
         }
     });
-    // Special handling for dynamic departments
-    if (moduleName === 'Expenses') {
-        const deptPermissions = permissionModules.Expenses.Departments as string[];
-        count += deptPermissions.length * departments.length;
-    }
     return count;
   };
 
@@ -511,7 +510,7 @@ export default function ManageRolePage() {
                   <TableRow key={role.id}>
                     <TableCell className="font-medium">{role.name}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1">
                         {Object.keys(permissionModules).map(moduleName => {
                            const total = calculateTotalPermissions(moduleName);
                            const granted = calculateGrantedPermissions(role, moduleName);
