@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
@@ -279,43 +280,47 @@ export default function ManageRolePage() {
     }
   };
 
+  const getTotalPermissionsForModule = (moduleName: string): number => {
+    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+    if (!moduleConfig) return 0;
+    
+    if (Array.isArray(moduleConfig)) {
+      return moduleConfig.length;
+    }
+    
+    let total = 0;
+    for (const key in moduleConfig) {
+      const perms = moduleConfig[key as keyof typeof moduleConfig];
+      if (Array.isArray(perms)) {
+        if(key === 'Departments') {
+          total += perms.length * departments.length;
+        } else {
+          total += perms.length;
+        }
+      }
+    }
+    return total;
+  };
+
+  const getGrantedPermissionsForModule = (permissions: Record<string, string[]>, moduleName: string): number => {
+    if (!permissions) return 0;
+    let count = 0;
+
+    const moduleKeys = Object.keys(permissions).filter(key => key === moduleName || key.startsWith(`${moduleName}.`));
+    
+    moduleKeys.forEach(key => {
+        if (Array.isArray(permissions[key])) {
+            count += permissions[key].length;
+        }
+    });
+
+    return count;
+  };
+
 const renderPermissionsForm = (
     roleData: { name: string; permissions: Record<string, string[]> },
     setData: React.Dispatch<React.SetStateAction<any>>
   ) => {
-
-    const getTotalPermissionsForModule = (moduleName: string): number => {
-      const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
-      if (!moduleConfig) return 0;
-      
-      if (Array.isArray(moduleConfig)) {
-        return moduleConfig.length;
-      }
-      
-      let total = 0;
-      for (const key in moduleConfig) {
-        if(key === 'Departments') {
-          total += (moduleConfig[key] as string[]).length * departments.length;
-        } else {
-          total += (moduleConfig[key] as string[]).length;
-        }
-      }
-      return total;
-    }
-    
-    const getGrantedPermissionsForModule = (permissions: Record<string, string[]>, moduleName: string): number => {
-      if (!permissions) return 0;
-      let count = 0;
-      for (const key in permissions) {
-        if (key === moduleName || key.startsWith(`${moduleName}.`)) {
-          if (Array.isArray(permissions[key])) {
-            count += permissions[key].length;
-          }
-        }
-      }
-      return count;
-    };
-    
     return (
     <div className="space-y-4">
       <div className="max-w-sm">
@@ -331,18 +336,18 @@ const renderPermissionsForm = (
         <Label>Permissions</Label>
         <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
         <ScrollArea className="mt-2 h-[60vh]">
-          <Accordion type="multiple" className="w-full">
+          <div className="space-y-2">
             {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
               const totalPerms = getTotalPermissionsForModule(moduleName);
               const grantedPerms = getGrantedPermissionsForModule(roleData.permissions, moduleName);
               const isAllSelectedForModule = totalPerms > 0 && grantedPerms === totalPerms;
 
               return (
-                  <AccordionItem value={moduleName} key={moduleName} className="border-b-0">
-                      <Card className="mb-2">
-                           <AccordionTrigger className="p-4 hover:no-underline flex-row items-center justify-between text-base font-semibold">
-                              <span>{moduleName}</span>
-                              <div className="flex items-center space-x-2 mr-4">
+                  <Card key={moduleName}>
+                      <CardHeader className="p-4">
+                          <div className="flex justify-between items-center">
+                              <CardTitleShad className="text-base">{moduleName}</CardTitleShad>
+                               <div className="flex items-center space-x-2">
                                   <Checkbox
                                       id={`select-all-module-${moduleName}`}
                                       checked={isAllSelectedForModule}
@@ -351,105 +356,118 @@ const renderPermissionsForm = (
                                   />
                                   <Label htmlFor={`select-all-module-${moduleName}`} className="text-sm font-medium">Select All</Label>
                               </div>
-                          </AccordionTrigger>
-                          <AccordionContent>
-                              <div className="p-4 pt-0 space-y-4">
-                                  {Array.isArray(moduleValue) ? (
-                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                          {moduleValue.map(permission => (
-                                              <div key={permission} className="flex items-center space-x-2">
-                                                  <Checkbox
-                                                      id={`${roleData.name}-${moduleName}-${permission}`}
-                                                      checked={(roleData.permissions?.[moduleName] || []).includes(permission)}
-                                                      onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
-                                                  />
-                                                  <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="text-sm font-normal leading-tight">{permission}</Label>
-                                              </div>
-                                          ))}
+                          </div>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0">
+                          {Array.isArray(moduleValue) ? (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  {moduleValue.map(permission => (
+                                      <div key={permission} className="flex items-center space-x-2">
+                                          <Checkbox
+                                              id={`${roleData.name}-${moduleName}-${permission}`}
+                                              checked={(roleData.permissions?.[moduleName] || []).includes(permission)}
+                                              onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
+                                          />
+                                          <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="text-sm font-normal leading-tight">{permission}</Label>
                                       </div>
-                                  ) : (
-                                      <div className="space-y-4">
-                                          {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
-                                              if (subModuleKey === 'Departments') return null;
-                                              const fullKey = subModuleKey === 'View Module' ? moduleName : `${moduleName}.${subModuleKey}`;
-                                              const grantedInGroup = roleData.permissions?.[fullKey] || [];
-                                              const isAllInGroupSelected = permissions.length > 0 && grantedInGroup.length === permissions.length;
-
-                                              return (
-                                                  <div key={fullKey} className="p-3 border rounded-md">
-                                                      <div className="flex justify-between items-center mb-3">
-                                                        <h4 className="font-semibold text-sm">{subModuleKey}</h4>
-                                                        <div className="flex items-center space-x-2">
-                                                          <Checkbox
-                                                              id={`select-all-group-${fullKey}`}
-                                                              checked={isAllInGroupSelected}
-                                                              onCheckedChange={(checked) => handleSelectAllForGroup(setData, fullKey, permissions, !!checked)}
-                                                          />
-                                                          <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
-                                                        </div>
-                                                      </div>
-                                                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                          {permissions.map(permission => (
-                                                              <div key={permission} className="flex items-center space-x-2">
-                                                                  <Checkbox
-                                                                      id={`${roleData.name}-${fullKey}-${permission}`}
-                                                                      checked={grantedInGroup.includes(permission)}
-                                                                      onCheckedChange={(checked) => handlePermissionChange(setData, fullKey, permission, !!checked)}
-                                                                  />
-                                                                  <Label htmlFor={`${roleData.name}-${fullKey}-${permission}`} className="text-xs font-normal leading-tight">{permission}</Label>
-                                                              </div>
-                                                          ))}
-                                                      </div>
-                                                  </div>
-                                              )
-                                          })}
-                                           {moduleName === 'Expenses' && (
-                                                <div className="p-3 border rounded-md">
-                                                    <h4 className="font-semibold text-sm mb-3">Department-specific Permissions</h4>
-                                                    {departments.map(dept => {
-                                                        const deptKey = `Expenses.Departments.${dept.id}`;
-                                                        const deptPermissions = (moduleValue as any).Departments || [];
-                                                        const grantedInDept = roleData.permissions?.[deptKey] || [];
-                                                        const isAllInDeptSelected = deptPermissions.length > 0 && grantedInDept.length === deptPermissions.length;
-                                                        return (
-                                                            <div key={dept.id} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
-                                                                <div className="flex justify-between items-center mb-2">
-                                                                    <p className="text-sm font-medium">{dept.name}</p>
-                                                                    <div className="flex items-center space-x-2">
-                                                                        <Checkbox
-                                                                            id={`select-all-dept-${dept.id}`}
-                                                                            checked={isAllInDeptSelected}
-                                                                            onCheckedChange={(checked) => handleSelectAllForGroup(setData, deptKey, deptPermissions, !!checked)}
-                                                                        />
-                                                                        <Label htmlFor={`select-all-dept-${dept.id}`} className="text-xs font-medium">All</Label>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="grid grid-cols-3 gap-2">
-                                                                    {deptPermissions.map((permission: string) => (
-                                                                        <div key={permission} className="flex items-center space-x-2">
-                                                                            <Checkbox
-                                                                                id={`${roleData.name}-${deptKey}-${permission}`}
-                                                                                checked={grantedInDept.includes(permission)}
-                                                                                onCheckedChange={(checked) => handlePermissionChange(setData, deptKey, permission, !!checked)}
-                                                                            />
-                                                                            <Label htmlFor={`${roleData.name}-${deptKey}-${permission}`} className="text-xs font-normal">{permission}</Label>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    })}
-                                                </div>
-                                           )}
-                                      </div>
-                                  )}
+                                  ))}
                               </div>
-                          </AccordionContent>
-                      </Card>
-                  </AccordionItem>
+                          ) : (
+                              <Accordion type="multiple" className="w-full space-y-2">
+                                  {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
+                                      const fullKey = subModuleKey === 'View Module' ? moduleName : `${moduleName}.${subModuleKey}`;
+                                      
+                                      if (subModuleKey === 'View Module') {
+                                        return (
+                                          <div key={fullKey} className="flex items-center space-x-2 p-2 border-b">
+                                            <Checkbox
+                                                id={`${roleData.name}-${fullKey}-view`}
+                                                checked={(roleData.permissions?.[fullKey] || []).includes('View')}
+                                                onCheckedChange={(checked) => handlePermissionChange(setData, fullKey, 'View', !!checked)}
+                                            />
+                                            <Label htmlFor={`${roleData.name}-${fullKey}-view`} className="text-sm font-semibold">{subModuleKey}</Label>
+                                          </div>
+                                        )
+                                      }
+
+                                      if (subModuleKey === 'Departments') return null;
+
+                                      const grantedInGroup = roleData.permissions?.[fullKey] || [];
+                                      const isAllInGroupSelected = permissions.length > 0 && grantedInGroup.length === permissions.length;
+
+                                      return (
+                                        <div key={fullKey} className="p-3 border rounded-md">
+                                            <div className="flex justify-between items-center mb-3">
+                                              <h4 className="font-semibold text-sm">{subModuleKey}</h4>
+                                              <div className="flex items-center space-x-2">
+                                                <Checkbox
+                                                    id={`select-all-group-${fullKey}`}
+                                                    checked={isAllInGroupSelected}
+                                                    onCheckedChange={(checked) => handleSelectAllForGroup(setData, fullKey, permissions, !!checked, undefined)}
+                                                />
+                                                <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
+                                              </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                {permissions.map(permission => (
+                                                    <div key={permission} className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                            id={`${roleData.name}-${fullKey}-${permission}`}
+                                                            checked={grantedInGroup.includes(permission)}
+                                                            onCheckedChange={(checked) => handlePermissionChange(setData, fullKey, permission, !!checked)}
+                                                        />
+                                                        <Label htmlFor={`${roleData.name}-${fullKey}-${permission}`} className="text-xs font-normal leading-tight">{permission}</Label>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                      )
+                                  })}
+                                   {moduleName === 'Expenses' && (
+                                        <div className="p-3 border rounded-md">
+                                            <h4 className="font-semibold text-sm mb-3">Department-specific Permissions</h4>
+                                            {departments.map(dept => {
+                                                const deptKey = `Expenses.Departments.${dept.id}`;
+                                                const deptPermissions = (moduleValue as any).Departments || [];
+                                                const grantedInDept = roleData.permissions?.[deptKey] || [];
+                                                const isAllInDeptSelected = deptPermissions.length > 0 && grantedInDept.length === deptPermissions.length;
+                                                return (
+                                                    <div key={dept.id} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
+                                                        <div className="flex justify-between items-center mb-2">
+                                                            <p className="text-sm font-medium">{dept.name}</p>
+                                                            <div className="flex items-center space-x-2">
+                                                                <Checkbox
+                                                                    id={`select-all-dept-${dept.id}`}
+                                                                    checked={isAllInDeptSelected}
+                                                                    onCheckedChange={(checked) => handleSelectAllForGroup(setData, deptKey, deptPermissions, !!checked)}
+                                                                />
+                                                                <Label htmlFor={`select-all-dept-${dept.id}`} className="text-xs font-medium">All</Label>
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {deptPermissions.map((permission: string) => (
+                                                                <div key={permission} className="flex items-center space-x-2">
+                                                                    <Checkbox
+                                                                        id={`${roleData.name}-${deptKey}-${permission}`}
+                                                                        checked={grantedInDept.includes(permission)}
+                                                                        onCheckedChange={(checked) => handlePermissionChange(setData, deptKey, permission, !!checked)}
+                                                                    />
+                                                                    <Label htmlFor={`${roleData.name}-${deptKey}-${permission}`} className="text-xs font-normal">{permission}</Label>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                   )}
+                              </Accordion>
+                          )}
+                      </CardContent>
+                  </Card>
               )
             })}
-          </Accordion>
+          </div>
         </ScrollArea>
       </div>
     </div>
@@ -567,9 +585,10 @@ const renderPermissionsForm = (
                             const totalPerms = getTotalPermissionsForModule(moduleName);
                             if (totalPerms === 0) return null;
                             const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
+                            if (grantedPerms === 0) return null;
                             const percentage = Math.round((grantedPerms / totalPerms) * 100);
                             return (
-                                <Badge key={moduleName} variant="secondary" className="cursor-default">
+                                <Badge key={moduleName} variant={percentage === 100 ? 'default' : 'secondary'} className="cursor-default">
                                     {moduleName}: {percentage}%
                                 </Badge>
                             )
@@ -618,3 +637,4 @@ const renderPermissionsForm = (
     </div>
   );
 }
+
