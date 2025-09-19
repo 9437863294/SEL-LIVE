@@ -233,6 +233,7 @@ export type Employee = {
 export type UserTheme = {
   color: string;
   font: string;
+  sessionDuration?: number;
 };
 
 export type ColumnPreference = {
@@ -249,7 +250,6 @@ export type PivotConfig = {
 export type UserSettings = {
   columnPreferences?: Record<string, ColumnPreference>;
   pivotPreferences?: Record<string, PivotConfig>;
-  sessionDuration?: number;
 };
 
 

@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (user) {
       const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
-      const sessionDurationMinutes = user.settings?.sessionDuration || 60; // Default 60 minutes
+      const sessionDurationMinutes = user.theme?.sessionDuration || 60; // Default 60 minutes
       const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
       const expiryTimestamp = loginTimestamp + sessionDurationMs;
 

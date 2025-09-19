@@ -10,15 +10,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import type { UserSettings } from '@/lib/types';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function LoginExpiryPage() {
     const { toast } = useToast();
-    const { user, loading: authLoading } = useAuth();
+    const { user, loading: authLoading, refreshUserData } = useAuth();
     const { can, isLoading: authzLoading } = useAuthorization();
     const [sessionDuration, setSessionDuration] = useState(60); // Default to 60 minutes
     const [isLoading, setIsLoading] = useState(true);
@@ -28,24 +27,11 @@ export default function LoginExpiryPage() {
     const canEditPage = can('Edit', 'Settings.Login Expiry');
 
     useEffect(() => {
-        if (!user || !canViewPage) {
-            setIsLoading(false);
-            return;
+        if (user) {
+            setSessionDuration(user.theme?.sessionDuration || 60);
         }
-        
-        const fetchSettings = async () => {
-            const settingsRef = doc(db, 'userSettings', user.id);
-            const settingsSnap = await getDoc(settingsRef);
-            if (settingsSnap.exists()) {
-                const settings = settingsSnap.data() as UserSettings;
-                if (settings.sessionDuration) {
-                    setSessionDuration(settings.sessionDuration);
-                }
-            }
-            setIsLoading(false);
-        };
-        fetchSettings();
-    }, [user, canViewPage]);
+        setIsLoading(false);
+    }, [user]);
 
     const handleSave = async () => {
         if (!user || !canEditPage) {
@@ -54,9 +40,12 @@ export default function LoginExpiryPage() {
         }
         setIsSaving(true);
         try {
-            const settingsRef = doc(db, 'userSettings', user.id);
-            await setDoc(settingsRef, { sessionDuration }, { merge: true });
-            toast({ title: "Success", description: "Login expiry setting saved." });
+            const userRef = doc(db, 'users', user.id);
+            await updateDoc(userRef, { 
+                'theme.sessionDuration': sessionDuration 
+            });
+            await refreshUserData();
+            toast({ title: "Success", description: "Login expiry setting saved. The new duration will apply on your next login." });
         } catch (error) {
             toast({ title: "Error", description: "Failed to save setting.", variant: "destructive" });
         }
@@ -107,7 +96,7 @@ export default function LoginExpiryPage() {
                 <CardHeader>
                     <CardTitle>Session Duration</CardTitle>
                     <CardDescription>
-                        Set how long your session should last before you are automatically logged out.
+                        Set how long your session should last before you are automatically logged out. This setting will take effect on your next login.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
