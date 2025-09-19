@@ -256,34 +256,29 @@ export default function ManageRolePage() {
     }
   };
   
-  const calculateTotalPermissions = (moduleName: string) => {
+ const calculateTotalPermissions = (moduleName: string) => {
     const module = permissionModules[moduleName as keyof typeof permissionModules];
     if (Array.isArray(module)) {
         return module.length;
     }
     let count = 0;
     Object.entries(module).forEach(([key, value]) => {
-        if(key === 'Departments') {
-             count += value.length * departments.length;
-        } else if (key === 'View Module') {
-            count += 1;
+        if(key === 'View Module') {
+          count +=1;
+        } else if (key === 'Departments') {
+           count += value.length * departments.length;
         } else {
-             count += value.length;
+           count += value.length;
         }
     });
     return count;
   };
 
   const calculateGrantedPermissions = (role: Role, moduleName: string) => {
-    let count = 0;
-    if (role.permissions) {
-        Object.keys(role.permissions).forEach(key => {
-            if (key === moduleName || key.startsWith(`${moduleName}.`)) {
-                count += role.permissions[key].length;
-            }
-        });
-    }
-    return count;
+    if (!role.permissions) return 0;
+    return Object.keys(role.permissions)
+      .filter(key => key === moduleName || key.startsWith(`${moduleName}.`))
+      .reduce((acc, key) => acc + role.permissions[key].length, 0);
   };
 
 
