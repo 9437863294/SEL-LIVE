@@ -15,6 +15,17 @@ import { doc, getDoc, collection, getDocs, updateDoc, writeBatch } from 'firebas
 import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -23,61 +34,80 @@ export default function LoanDetailsPage() {
   const [emis, setEmis] = useState<EMI[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchLoanData = async () => {
-      if (!loanId) return;
-      setIsLoading(true);
-      try {
-        const loanDocRef = doc(db, 'loans', loanId);
-        const loanDocSnap = await getDoc(loanDocRef);
+  const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [selectedEmi, setSelectedEmi] = useState<EMI | null>(null);
+  const [paidAmount, setPaidAmount] = useState<number>(0);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
-        if (loanDocSnap.exists()) {
-          setLoan({ id: loanDocSnap.id, ...loanDocSnap.data() } as Loan);
-        } else {
-          toast({ title: "Error", description: "Loan not found.", variant: "destructive" });
-        }
 
-        const emiCollectionRef = collection(db, 'loans', loanId, 'emis');
-        const emiSnapshot = await getDocs(emiCollectionRef);
-        const emisData = emiSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EMI));
-        emisData.sort((a,b) => a.emiNo - b.emiNo);
-        setEmis(emisData);
+  const fetchLoanData = async () => {
+    if (!loanId) return;
+    setIsLoading(true);
+    try {
+      const loanDocRef = doc(db, 'loans', loanId);
+      const loanDocSnap = await getDoc(loanDocRef);
 
-      } catch (error) {
-        console.error("Error fetching loan data:", error);
-        toast({ title: "Error", description: "Failed to fetch loan details.", variant: "destructive" });
+      if (loanDocSnap.exists()) {
+        setLoan({ id: loanDocSnap.id, ...loanDocSnap.data() } as Loan);
+      } else {
+        toast({ title: "Error", description: "Loan not found.", variant: "destructive" });
       }
-      setIsLoading(false);
-    };
 
+      const emiCollectionRef = collection(db, 'loans', loanId, 'emis');
+      const emiSnapshot = await getDocs(emiCollectionRef);
+      const emisData = emiSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EMI));
+      emisData.sort((a,b) => a.emiNo - b.emiNo);
+      setEmis(emisData);
+
+    } catch (error) {
+      console.error("Error fetching loan data:", error);
+      toast({ title: "Error", description: "Failed to fetch loan details.", variant: "destructive" });
+    }
+    setIsLoading(false);
+  };
+  
+  useEffect(() => {
     fetchLoanData();
   }, [loanId, toast]);
   
-  const handleMarkAsPaid = async (emi: EMI) => {
-    if(!loan) return;
+  const handleMarkAsPaidClick = (emi: EMI) => {
+    setSelectedEmi(emi);
+    setPaidAmount(emi.emiAmount);
+    setIsPayDialogOpen(true);
+  };
 
+  const handleConfirmPayment = async () => {
+    if(!loan || !selectedEmi) return;
+    
+    setIsConfirmingPayment(true);
     try {
-        const emiDocRef = doc(db, 'loans', loanId, 'emis', emi.id);
+        const emiDocRef = doc(db, 'loans', loanId, 'emis', selectedEmi.id);
         const loanDocRef = doc(db, 'loans', loanId);
 
         const batch = writeBatch(db);
         
-        batch.update(emiDocRef, { status: 'Paid', paidAmount: emi.emiAmount });
-        batch.update(loanDocRef, { totalPaid: loan.totalPaid + emi.emiAmount });
+        batch.update(emiDocRef, { status: 'Paid', paidAmount: paidAmount });
+        batch.update(loanDocRef, { totalPaid: loan.totalPaid + paidAmount });
 
         await batch.commit();
 
-        toast({ title: "Success", description: `EMI #${emi.emiNo} marked as paid.`});
+        toast({ title: "Success", description: `EMI #${selectedEmi.emiNo} marked as paid.`});
         
-        // Refresh local state
-        setEmis(prev => prev.map(e => e.id === emi.id ? {...e, status: 'Paid', paidAmount: emi.emiAmount} : e));
-        setLoan(prev => prev ? {...prev, totalPaid: prev.totalPaid + emi.emiAmount} : null);
+        // Refresh local state to avoid re-fetching
+        setEmis(prev => prev.map(e => e.id === selectedEmi.id ? {...e, status: 'Paid', paidAmount: paidAmount} : e));
+        setLoan(prev => prev ? {...prev, totalPaid: prev.totalPaid + paidAmount} : null);
+
+        setIsPayDialogOpen(false);
+        setSelectedEmi(null);
 
     } catch (error) {
-        console.error("Error marking EMI as paid:", error);
+        console.error("Error confirming payment:", error);
         toast({ title: "Error", description: "Failed to update EMI status.", variant: "destructive" });
+    } finally {
+        setIsConfirmingPayment(false);
     }
   }
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.round(amount));
@@ -115,76 +145,120 @@ export default function LoanDetailsPage() {
   const remainingMonths = loan.tenure - paidEmisCount;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/loan">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold">Loan Details</h1>
-            <p className="text-muted-foreground">{loan.lenderName} - {loan.accountNo}</p>
+    <>
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/loan">
+              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold">Loan Details</h1>
+              <p className="text-muted-foreground">{loan.lenderName} - {loan.accountNo}</p>
+            </div>
           </div>
         </div>
+
+        <Card className="mb-6">
+            <CardHeader>
+               <CardTitle>Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div><p className="text-sm text-muted-foreground">Loan Amount</p><p className="font-semibold">{formatCurrency(loan.loanAmount)}</p></div>
+              <div><p className="text-sm text-muted-foreground">Interest Rate</p><p className="font-semibold">{loan.interestRate}%</p></div>
+              <div><p className="text-sm text-muted-foreground">Tenure</p><p className="font-semibold">{loan.tenure} months</p></div>
+              <div><p className="text-sm text-muted-foreground">Remaining Months</p><p className="font-semibold">{remainingMonths} months</p></div>
+              <div><p className="text-sm text-muted-foreground">EMI</p><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
+              <div><p className="text-sm text-muted-foreground">Total Paid</p><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
+               <div><p className="text-sm text-muted-foreground">Outstanding</p><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
+              <div><p className="text-sm text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(loan.startDate)}</p></div>
+              <div><p className="text-sm text-muted-foreground">End Date</p><p className="font-semibold">{formatDate(loan.endDate)}</p></div>
+            </CardContent>
+        </Card>
+        
+         <Card>
+          <CardHeader>
+            <CardTitle>EMI Schedule</CardTitle>
+            <CardDescription>Detailed schedule of Equated Monthly Installments.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>EMI No.</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Principal</TableHead>
+                  <TableHead>Interest</TableHead>
+                  <TableHead>EMI Amount</TableHead>
+                  <TableHead>Closing Principal</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {emis.map(emi => (
+                    <TableRow key={emi.id}>
+                      <TableCell>{emi.emiNo}</TableCell>
+                      <TableCell>{formatDate(emi.dueDate)}</TableCell>
+                      <TableCell>{formatCurrency(emi.principal)}</TableCell>
+                      <TableCell>{formatCurrency(emi.interest)}</TableCell>
+                      <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
+                      <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
+                      <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge></TableCell>
+                      <TableCell>
+                        {emi.status === 'Pending' && (
+                          <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="mb-6">
-          <CardHeader>
-             <CardTitle>Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div><p className="text-sm text-muted-foreground">Loan Amount</p><p className="font-semibold">{formatCurrency(loan.loanAmount)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Interest Rate</p><p className="font-semibold">{loan.interestRate}%</p></div>
-            <div><p className="text-sm text-muted-foreground">Tenure</p><p className="font-semibold">{loan.tenure} months</p></div>
-            <div><p className="text-sm text-muted-foreground">Remaining Months</p><p className="font-semibold">{remainingMonths} months</p></div>
-            <div><p className="text-sm text-muted-foreground">EMI</p><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Total Paid</p><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
-             <div><p className="text-sm text-muted-foreground">Outstanding</p><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(loan.startDate)}</p></div>
-            <div><p className="text-sm text-muted-foreground">End Date</p><p className="font-semibold">{formatDate(loan.endDate)}</p></div>
-          </CardContent>
-      </Card>
-      
-       <Card>
-        <CardHeader>
-          <CardTitle>EMI Schedule</CardTitle>
-          <CardDescription>Detailed schedule of Equated Monthly Installments.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>EMI No.</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Principal</TableHead>
-                <TableHead>Interest</TableHead>
-                <TableHead>EMI Amount</TableHead>
-                <TableHead>Closing Principal</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {emis.map(emi => (
-                  <TableRow key={emi.id}>
-                    <TableCell>{emi.emiNo}</TableCell>
-                    <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                    <TableCell>{formatCurrency(emi.principal)}</TableCell>
-                    <TableCell>{formatCurrency(emi.interest)}</TableCell>
-                    <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
-                    <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
-                    <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge></TableCell>
-                    <TableCell>
-                      {emi.status === 'Pending' && (
-                        <Button size="sm" onClick={() => handleMarkAsPaid(emi)}>Mark as Paid</Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+      <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                  <DialogTitle>Confirm Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
+                  <DialogDescription>
+                      Review the details and confirm the amount paid.
+                  </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                  <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">EMI Amount</span>
+                      <span className="font-medium">{formatCurrency(selectedEmi?.emiAmount || 0)}</span>
+                  </div>
+                   <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">Principal</span>
+                      <span className="font-medium">{formatCurrency(selectedEmi?.principal || 0)}</span>
+                  </div>
+                   <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">Interest</span>
+                      <span className="font-medium">{formatCurrency(selectedEmi?.interest || 0)}</span>
+                  </div>
+                  <div className="space-y-2 pt-4">
+                      <Label htmlFor="paidAmount">Paid Amount</Label>
+                      <Input
+                        id="paidAmount"
+                        type="number"
+                        value={paidAmount}
+                        onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
+                        className="text-lg font-bold h-12"
+                      />
+                  </div>
+              </div>
+              <DialogFooter>
+                  <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                  <Button onClick={handleConfirmPayment} disabled={isConfirmingPayment}>
+                    {isConfirmingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Confirm Payment
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+    </>
   );
 }
