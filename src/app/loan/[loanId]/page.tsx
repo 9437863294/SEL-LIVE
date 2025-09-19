@@ -36,7 +36,9 @@ export default function LoanDetailsPage() {
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [selectedEmi, setSelectedEmi] = useState<EMI | null>(null);
-  const [paidAmount, setPaidAmount] = useState<number>(0);
+  const [dialogPaidAmount, setDialogPaidAmount] = useState(0);
+  const [dialogPrincipal, setDialogPrincipal] = useState(0);
+  const [dialogInterest, setDialogInterest] = useState(0);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
@@ -79,7 +81,9 @@ export default function LoanDetailsPage() {
   
   const handleMarkAsPaidClick = (emi: EMI) => {
     setSelectedEmi(emi);
-    setPaidAmount(emi.emiAmount);
+    setDialogPaidAmount(emi.emiAmount);
+    setDialogPrincipal(emi.principal);
+    setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
   };
 
@@ -93,16 +97,20 @@ export default function LoanDetailsPage() {
 
         const batch = writeBatch(db);
         
-        batch.update(emiDocRef, { status: 'Paid', paidAmount: paidAmount });
-        batch.update(loanDocRef, { totalPaid: loan.totalPaid + paidAmount });
+        batch.update(emiDocRef, { 
+            status: 'Paid', 
+            paidAmount: dialogPaidAmount,
+            principal: dialogPrincipal,
+            interest: dialogInterest,
+            emiAmount: dialogPrincipal + dialogInterest,
+        });
+        batch.update(loanDocRef, { totalPaid: loan.totalPaid + dialogPaidAmount });
 
         await batch.commit();
 
         toast({ title: "Success", description: `EMI #${selectedEmi.emiNo} marked as paid.`});
         
-        // Refresh local state to avoid re-fetching
-        setEmis(prev => prev.map(e => e.id === selectedEmi.id ? {...e, status: 'Paid', paidAmount: paidAmount} : e));
-        setLoan(prev => prev ? {...prev, totalPaid: prev.totalPaid + paidAmount} : null);
+        fetchLoanData(); // Refetch all data to ensure consistency
 
         setIsPayDialogOpen(false);
         setSelectedEmi(null);
@@ -274,7 +282,7 @@ export default function LoanDetailsPage() {
             <CardHeader>
                <CardTitle>Summary</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <CardContent className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
               <div className="space-y-1"><Label>Loan Amount</Label>{isEditing ? <Input type="number" value={editedLoan.loanAmount} onChange={e => setEditedLoan({...editedLoan, loanAmount: Number(e.target.value)})} /> : <p className="font-semibold">{formatCurrency(loan.loanAmount)}</p>}</div>
               <div className="space-y-1"><Label>Interest Rate</Label>{isEditing ? <Input type="number" value={editedLoan.interestRate} onChange={e => setEditedLoan({...editedLoan, interestRate: Number(e.target.value)})} /> : <p className="font-semibold">{loan.interestRate}%</p>}</div>
               <div className="space-y-1"><Label>Tenure (months)</Label>{isEditing ? <Input type="number" value={editedLoan.tenure} onChange={e => setEditedLoan({...editedLoan, tenure: Number(e.target.value)})} /> : <p className="font-semibold">{loan.tenure} months</p>}</div>
@@ -345,25 +353,25 @@ export default function LoanDetailsPage() {
                   </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                  <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">EMI Amount</span>
-                      <span className="font-medium">{formatCurrency(selectedEmi?.emiAmount || 0)}</span>
+                  <div className="space-y-2">
+                      <Label htmlFor="dialog-emi">EMI Amount</Label>
+                      <Input id="dialog-emi" type="number" value={dialogPrincipal + dialogInterest} readOnly className="font-semibold" />
                   </div>
-                   <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">Principal</span>
-                      <span className="font-medium">{formatCurrency(selectedEmi?.principal || 0)}</span>
+                   <div className="space-y-2">
+                      <Label htmlFor="dialog-principal">Principal</Label>
+                      <Input id="dialog-principal" type="number" value={dialogPrincipal} onChange={(e) => setDialogPrincipal(Number(e.target.value) || 0)} />
                   </div>
-                   <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">Interest</span>
-                      <span className="font-medium">{formatCurrency(selectedEmi?.interest || 0)}</span>
+                   <div className="space-y-2">
+                      <Label htmlFor="dialog-interest">Interest</Label>
+                      <Input id="dialog-interest" type="number" value={dialogInterest} onChange={(e) => setDialogInterest(Number(e.target.value) || 0)} />
                   </div>
                   <div className="space-y-2 pt-4">
-                      <Label htmlFor="paidAmount">Paid Amount</Label>
+                      <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
                       <Input
                         id="paidAmount"
                         type="number"
-                        value={paidAmount}
-                        onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
+                        value={dialogPaidAmount}
+                        onChange={(e) => setDialogPaidAmount(parseFloat(e.target.value) || 0)}
                         className="text-lg font-bold h-12"
                       />
                   </div>
