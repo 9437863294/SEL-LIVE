@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -125,7 +126,7 @@ export default function DepartmentSerialNoPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-4">
             <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Department-wise Serial Number</h1>
+            <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
         </div>
         <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
@@ -143,7 +144,7 @@ export default function DepartmentSerialNoPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Department-wise Serial Number</h1>
+        <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
       </div>
 
       <div className="space-y-6">

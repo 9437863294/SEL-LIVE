@@ -52,7 +52,7 @@ function ExpenseSettingCard({ item }: ExpenseSettingCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">

@@ -634,7 +634,7 @@ export default function EntrySheetPage() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
                 <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">Entry Sheet</h1>
+                <h1 className="text-xl font-bold">Entry Sheet</h1>
             </div>
             <Card>
                 <CardHeader>
@@ -659,7 +659,7 @@ export default function EntrySheetPage() {
                 <ArrowLeft className="h-6 w-6" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Entry Sheet</h1>
+            <h1 className="text-xl font-bold">Entry Sheet</h1>
           </div>
           <div className="flex items-center gap-2">
             {isSelectionMode ? (

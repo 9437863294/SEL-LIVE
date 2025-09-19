@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -101,7 +102,7 @@ export default function ProfilePage() {
                   <ArrowLeft className="h-6 w-6" />
                 </Button>
               </Link>
-              <h1 className="text-2xl font-bold">Your Profile</h1>
+              <h1 className="text-xl font-bold">Your Profile</h1>
             </div>
              <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

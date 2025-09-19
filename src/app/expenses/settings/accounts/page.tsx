@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -215,7 +216,7 @@ export default function ManageAccountsPage() {
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-2xl font-bold">Manage Accounts</h1>
+                <h1 className="text-xl font-bold">Manage Accounts</h1>
               </div>
             </div>
             <Card>
@@ -234,7 +235,7 @@ export default function ManageAccountsPage() {
             <Link href="/expenses/settings">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
-            <h1 className="text-2xl font-bold">Manage Accounts</h1>
+            <h1 className="text-xl font-bold">Manage Accounts</h1>
           </div>
           <Button onClick={() => openDialog('addHead')}>
             <Plus className="mr-2 h-4 w-4" /> Add Head of A/c

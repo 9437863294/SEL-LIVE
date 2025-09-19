@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -94,7 +95,7 @@ export default function AppearancePage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Appearance</h1>
+        <h1 className="text-xl font-bold">Appearance</h1>
       </div>
 
       <Card>

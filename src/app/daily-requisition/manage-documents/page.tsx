@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -228,7 +229,7 @@ export default function ManageDocumentsPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
           <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-2xl font-bold">Manage Documents</h1>
+          <h1 className="text-xl font-bold">Manage Documents</h1>
         </div>
         <Card>
           <CardHeader>
@@ -249,7 +250,7 @@ export default function ManageDocumentsPage() {
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Manage Documents</h1>
+            <h1 className="text-xl font-bold">Manage Documents</h1>
           </div>
         </div>
         

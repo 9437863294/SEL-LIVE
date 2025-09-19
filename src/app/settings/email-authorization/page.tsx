@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -100,7 +101,7 @@ export default function EmailAuthorizationPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Email Authorization</h1>
+        <h1 className="text-xl font-bold">Email Authorization</h1>
       </div>
 
       <Card className="mb-6">

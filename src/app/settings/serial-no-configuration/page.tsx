@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -128,7 +129,7 @@ export default function SerialNoConfigurationPage() {
                       <ArrowLeft className="h-6 w-6" />
                     </Button>
                   </Link>
-                  <h1 className="text-2xl font-bold">Serial No. Configuration</h1>
+                  <h1 className="text-xl font-bold">Serial No. Configuration</h1>
                 </div>
                 <Card>
                     <CardHeader>
@@ -152,7 +153,7 @@ export default function SerialNoConfigurationPage() {
                         <ArrowLeft className="h-6 w-6" />
                     </Button>
                 </Link>
-                <h1 className="text-2xl font-bold">Serial No. Configuration</h1>
+                <h1 className="text-xl font-bold">Serial No. Configuration</h1>
             </div>
 
             <Card>
