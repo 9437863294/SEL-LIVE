@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
@@ -274,7 +275,7 @@ export default function ManageRolePage() {
         <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
         <Card className="mt-2">
           <CardContent className="p-4 max-h-[50vh] overflow-y-auto">
-             <Accordion type="multiple">
+             <Accordion type="single" collapsible className="w-full">
               {Object.entries(permissionModules).map(([moduleName, permissions]) => (
                 <AccordionItem value={moduleName} key={moduleName}>
                   <AccordionTrigger className="font-medium text-base hover:no-underline">
@@ -310,7 +311,7 @@ export default function ManageRolePage() {
                                 </Label>
                             </div>
                           )}
-                           <Accordion type="multiple" className="w-full">
+                           <Accordion type="single" collapsible className="w-full">
                               {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
                                   <AccordionItem value={subModuleName} key={subModuleName}>
                                       <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
