@@ -686,7 +686,7 @@ export default function LoanDetailsPage() {
                     <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense || !!selectedEmi.expenseRequestNo}>
                       {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
-                      Create Expense Record
+                      Create Expense
                     </Button>
                     <DialogClose asChild>
                         <Button>Close</Button>
@@ -733,7 +733,7 @@ export default function LoanDetailsPage() {
                     <div className="space-y-1">
                         <Label>Head of A/c</Label>
                          <Select value={expenseToCreate.headOfAccount} disabled>
-                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
                              <SelectContent>
                                 {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
                             </SelectContent>
@@ -765,3 +765,4 @@ export default function LoanDetailsPage() {
     </>
   );
 }
+
