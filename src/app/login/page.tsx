@@ -11,12 +11,12 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { Loader2, User } from 'lucide-react';
+import { Loader2, User as UserIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PinSetupDialog } from '@/components/auth/PinSetupDialog';
-import type { SavedUser } from '@/lib/types';
+import type { SavedUser, User } from '@/lib/types';
 
 
 export default function LoginPage() {
@@ -33,6 +33,8 @@ export default function LoginPage() {
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
+  const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
+
 
   useEffect(() => {
     // If there are no saved users, default to the password form.
@@ -57,12 +59,12 @@ export default function LoginPage() {
     }
     setShouldRemember(rememberMe); // Tell AuthProvider to handle saving if login is successful
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // The onAuthStateChanged listener in AuthProvider will handle the user state and navigation.
       toast({
         title: 'Success',
         description: 'Signed in successfully.',
       });
-      router.push('/');
     } catch (error: any) {
       console.error('Error signing in:', error);
       setShouldRemember(false); // Reset on failure
@@ -111,7 +113,7 @@ export default function LoginPage() {
     }
 
     try {
-      await signInWithEmailAndPassword(auth, activeUser.email, atob(activeUser.password));
+      await signInWithEmailAndPassword(auth, activeUser.email, atob(activeUser.password || ''));
       toast({
         title: 'Success',
         description: `Welcome back, ${activeUser.name}!`,
@@ -209,7 +211,7 @@ export default function LoginPage() {
             </Button>
             {savedUsers.length > 0 && (
                  <Button variant="link" className="w-full" onClick={() => { setShowPasswordForm(false); setActiveUser(null); }}>
-                    <User className="mr-2 h-4 w-4" /> Sign in with a saved profile
+                    <UserIcon className="mr-2 h-4 w-4" /> Sign in with a saved profile
                  </Button>
             )}
         </form>
@@ -291,9 +293,9 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-    {user && (
+    {userForPinSetup && (
         <PinSetupDialog
-            user={user}
+            user={userForPinSetup}
             isOpen={isPinSetupOpen}
             onOpenChange={setIsPinSetupOpen}
             onPinSet={() => {}}

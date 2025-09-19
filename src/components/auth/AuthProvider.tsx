@@ -26,6 +26,7 @@ interface AuthContextType {
   savedUsers: SavedUser[];
   setShouldRemember: (shouldRemember: boolean) => void;
   clearSavedUsers: () => void;
+  loadSavedUsers: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthContextType>({
   savedUsers: [],
   setShouldRemember: () => {},
   clearSavedUsers: () => {},
+  loadSavedUsers: () => {},
 });
 
 const publicRoutes = ['/login'];
@@ -290,7 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, savedUsers, setShouldRemember, clearSavedUsers }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
         {isPublicRoute || !loading ? children : null}
         {userForPinSetup && (
             <PinSetupDialog
