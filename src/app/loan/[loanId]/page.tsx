@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -332,7 +331,7 @@ export default function LoanDetailsPage() {
             projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
             amount: emi.paidAmount,
             partyName: loan.lenderName,
-            description: `Being EMI paid to ${loan.lenderName} for A/c no ${loan.accountNo} for ${emiMonth} (EMI No. ${emi.emiNo})`,
+            description: `Being EMI paid to ${loan.lenderName} for A/c no ${loan.accountNo} for ${emiMonth} EMI No. ${emi.emiNo}`,
             headOfAccount: defaultHead,
             subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
             remarks: `Auto-generated from Loan EMI payment`,
@@ -675,8 +674,11 @@ export default function LoanDetailsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Head of A/c</Label>
-                        <Select value={expenseToCreate.headOfAccount} disabled>
+                         <Select value={expenseToCreate.headOfAccount} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value})}>
                             <SelectTrigger><SelectValue/></SelectTrigger>
+                             <SelectContent>
+                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
+                            </SelectContent>
                         </Select>
                     </div>
                     <div className="space-y-1">
