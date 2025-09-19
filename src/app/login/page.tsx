@@ -60,7 +60,7 @@ export default function LoginPage() {
            <div className="absolute -top-16 -left-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
            <div className="absolute -bottom-16 -right-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
           <Image 
-            src="https://picsum.photos/800/1200"
+            src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Frm378-062.jpg?alt=media&token=91cf2e4f-e362-4a09-a283-a6ae2d64b55f"
             alt="Hot air balloon"
             width={800}
             height={1200}
@@ -86,7 +86,7 @@ export default function LoginPage() {
                     <Input
                         id="email"
                         type="email"
-                        placeholder="m@example.com"
+                        placeholder="abc@example.com"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}

@@ -1,0 +1,122 @@
+
+'use client';
+
+import Link from 'next/link';
+import { ArrowLeft, CalendarCheck, ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
+
+interface ReportCardProps {
+  item: {
+    icon: LucideIcon;
+    title: string;
+    description: string;
+    href: string;
+    disabled?: boolean;
+  };
+}
+
+const reportItemsBase = [
+  { 
+    icon: CalendarCheck, 
+    title: 'Month-wise EMI Status', 
+    description: 'Track paid and unpaid EMIs for each month.', 
+    href: '/loan/reports/month-wise-status',
+    permission: 'View Month-wise Status',
+    disabled: false,
+  },
+];
+
+function ReportCard({ item }: ReportCardProps) {
+    const cardContent = (
+         <Card
+            className={cn(
+                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
+                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+            )}
+            >
+            <CardHeader className="items-center text-center">
+                <div className="bg-primary/10 p-4 rounded-full mb-4">
+                  <item.icon className="w-8 h-8 text-primary" />
+                </div>
+                <CardTitle className="text-lg font-semibold">{item.title}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+                <CardDescription>{item.description}</CardDescription>
+            </CardContent>
+        </Card>
+    )
+
+    if (item.href === '#' || item.disabled) {
+        return <div className="h-full">{cardContent}</div>;
+    }
+    
+    return (
+       <Link href={item.href} className="no-underline h-full">
+            {cardContent}
+        </Link>
+    )
+}
+
+export default function LoanReportsPage() {
+    const { can, isLoading } = useAuthorization();
+    const canViewPage = can('View', 'Loan.Reports'); 
+
+    const reportItems = reportItemsBase.map(item => ({
+        ...item,
+        disabled: !can('View', 'Loan.Reports'), // Simplified permission for now
+    }));
+    
+    if (isLoading) {
+        return (
+             <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
+                <Skeleton className="h-10 w-48 mb-6" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <Skeleton className="h-56" />
+                </div>
+            </div>
+        )
+    }
+
+    if (!canViewPage) {
+        return (
+            <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
+                <div className="mb-6 flex items-center gap-4">
+                    <Link href="/loan"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-xl font-bold">Loan Reports</h1>
+                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Access Denied</CardTitle>
+                        <CardDescription>You do not have permission to view reports.</CardDescription>
+                    </CardHeader>
+                     <CardContent className="flex justify-center p-8">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
+  return (
+    <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
+      <div className="mb-6 flex items-center gap-4">
+        <Link href="/loan">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-6 w-6" />
+          </Button>
+        </Link>
+        <h1 className="text-xl font-bold">Loan Reports</h1>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {reportItems.map((item) => (
+          <ReportCard key={item.title} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}

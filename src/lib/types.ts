@@ -110,6 +110,7 @@ export const permissionModules = {
     'Dashboard': ['View'],
     'Add Loan': ['Create'],
     'Loan Details': ['View', 'Update EMI'],
+    'Reports': ['View'],
   },
   'Settings': {
     'View Module': [],
