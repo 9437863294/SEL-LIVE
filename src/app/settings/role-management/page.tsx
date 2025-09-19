@@ -1,14 +1,16 @@
 
-
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ChevronDown, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronDown, ShieldAlert, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
+  CardDescription as CardDescriptionShad,
+  CardHeader,
+  CardTitle as CardTitleShad,
 } from '@/components/ui/card';
 import {
   Table,
@@ -36,11 +38,7 @@ import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch, que
 import { type Role, permissionModules, type Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad, CardContent as CardContentShad } from '@/components/ui/card';
 
 
 const initialNewRoleState = {
@@ -142,26 +140,20 @@ export default function ManageRolePage() {
     });
   };
   
-  const handleViewModuleChange = (
+  const handleSelectAll = (
     setState: React.Dispatch<React.SetStateAction<any>>,
     moduleName: string,
+    allPermissionsForModule: string[],
     isChecked: boolean
   ) => {
-     setState((prevState: any) => {
+    setState((prevState: any) => {
       const newPermissions = { ...prevState.permissions };
-      if(isChecked) {
-        newPermissions[moduleName] = ['View Module'];
-      } else {
-        // When unchecking "View Module", clear all permissions for that module and its submodules.
-        Object.keys(newPermissions).forEach(key => {
-            if (key === moduleName || key.startsWith(`${moduleName}.`)) {
-                newPermissions[key] = [];
-            }
-        });
-      }
+      const key = moduleName.includes('.') ? moduleName : `${moduleName}.View`;
+      newPermissions[moduleName] = isChecked ? allPermissionsForModule : [];
       return { ...prevState, permissions: newPermissions };
     });
-  }
+  };
+  
 
   const handleAddRole = async () => {
     if (!newRole.name.trim()) {
@@ -255,33 +247,6 @@ export default function ManageRolePage() {
       });
     }
   };
-  
-  const calculateTotalPermissions = (moduleName: string): number => {
-      const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
-      if (Array.isArray(moduleDef)) {
-          return moduleDef.length;
-      }
-      return Object.entries(moduleDef).reduce((acc, [key, value]) => {
-          if (key === 'View Module') {
-              return acc + 1;
-          }
-          if (key === 'Departments') {
-              return acc + (value.length * departments.length);
-          }
-          return acc + value.length;
-      }, 0);
-  };
-
-  const calculateGrantedPermissions = (role: Role, moduleName: string): number => {
-    if (!role.permissions) return 0;
-    
-    return Object.keys(role.permissions).reduce((acc, key) => {
-        if (key === moduleName || key.startsWith(`${moduleName}.`)) {
-            return acc + role.permissions[key].length;
-        }
-        return acc;
-    }, 0);
-};
 
 
   const renderPermissionsForm = (
@@ -289,7 +254,7 @@ export default function ManageRolePage() {
     setData: React.Dispatch<React.SetStateAction<any>>
   ) => (
     <div className="space-y-4">
-      <div>
+      <div className="max-w-sm">
         <Label htmlFor="roleName">Role Name</Label>
         <Input 
           id="roleName" 
@@ -300,104 +265,57 @@ export default function ManageRolePage() {
       </div>
       <div>
         <Label>Permissions</Label>
-        <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
-        <Card className="mt-2">
-          <CardContent className="p-4 max-h-[50vh] overflow-y-auto">
-             <Accordion type="single" collapsible className="w-full">
-              {Object.entries(permissionModules).map(([moduleName, permissions]) => (
-                <AccordionItem value={moduleName} key={moduleName}>
-                  <AccordionTrigger className="font-medium text-sm hover:no-underline">
-                    {moduleName}
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    {Array.isArray(permissions) ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            {permissions.map((permission) => (
-                                <div key={permission} className="flex items-center space-x-2">
-                                <Checkbox
-                                    id={`${roleData.name}-${moduleName}-${permission}`}
-                                    checked={roleData.permissions?.[moduleName]?.includes(permission)}
-                                    onCheckedChange={(checked) => handlePermissionChange(setData, moduleName, permission, !!checked)}
-                                />
-                                <Label htmlFor={`${roleData.name}-${moduleName}-${permission}`} className="font-normal leading-tight text-xs">
-                                    {permission}
-                                </Label>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <>
-                          {Object.keys(permissions).includes('View Module') && (
-                            <div className="flex items-center space-x-2 p-2 bg-muted/50 rounded-md">
-                               <Checkbox
-                                  id={`${roleData.name}-${moduleName}-ViewModule`}
-                                  checked={roleData.permissions?.[moduleName]?.includes('View Module')}
-                                  onCheckedChange={(checked) => handleViewModuleChange(setData, moduleName, !!checked)}
-                                />
-                                <Label htmlFor={`${roleData.name}-${moduleName}-ViewModule`} className="font-semibold leading-tight text-primary text-xs">
-                                    View Module
-                                </Label>
-                            </div>
-                          )}
-                           <Accordion type="single" collapsible className="w-full pl-4">
-                              {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
-                                  <AccordionItem value={subModuleName} key={subModuleName}>
-                                      <AccordionTrigger className="text-xs font-semibold">{subModuleName}</AccordionTrigger>
-                                      <AccordionContent className="pt-4">
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                              {subPermissions.map((permission) => (
-                                                  <div key={permission} className="flex items-center space-x-2">
-                                                  <Checkbox
-                                                      id={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`}
-                                                      checked={roleData.permissions?.[`${moduleName}.${subModuleName}`]?.includes(permission)}
-                                                      onCheckedChange={(checked) => handlePermissionChange(setData, `${moduleName}.${subModuleName}`, permission, !!checked)}
-                                                  />
-                                                  <Label htmlFor={`${roleData.name}-${moduleName}-${subModuleName}-${permission}`} className="font-normal leading-tight text-xs">
-                                                      {permission}
-                                                  </Label>
-                                                  </div>
-                                              ))}
-                                          </div>
-                                      </AccordionContent>
-                                  </AccordionItem>
-                              ))}
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
+                // This logic handles both flat arrays and nested objects of permissions
+                const permissionGroups = Array.isArray(moduleValue) 
+                    ? { [moduleName]: moduleValue }
+                    : Object.entries(moduleValue).reduce((acc, [subKey, subValue]) => {
+                        const fullKey = subKey === 'View Module' ? moduleName : `${moduleName}.${subKey}`;
+                        acc[fullKey] = subValue;
+                        return acc;
+                      }, {} as Record<string, string[]>);
+                
+                return Object.entries(permissionGroups).map(([groupKey, permissions]) => {
+                    const allPermissionsInGroup = permissions;
+                    const grantedPermissions = roleData.permissions?.[groupKey] || [];
+                    const isAllSelected = allPermissionsInGroup.length > 0 && grantedPermissions.length === allPermissionsInGroup.length;
+                    
+                    // A more descriptive title for the card
+                    const cardTitle = groupKey.includes('.') ? groupKey.split('.').join(' > ') : groupKey;
 
-                              {/* Dynamic Departments for Expenses Module */}
-                              {moduleName === 'Expenses' && (
-                                <AccordionItem value="Departments">
-                                  <AccordionTrigger className="text-xs font-semibold">Departments</AccordionTrigger>
-                                  <AccordionContent className="pt-4 space-y-3">
-                                      {departments.map(dept => (
-                                        <div key={dept.id} className="p-3 border rounded-md">
-                                            <p className="font-medium mb-2 text-xs">{dept.name}</p>
-                                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                                {(permissionModules.Expenses.Departments as string[]).map(perm => (
-                                                    <div key={perm} className="flex items-center space-x-2">
-                                                        <Checkbox
-                                                          id={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`}
-                                                          checked={roleData.permissions?.[`Expenses.Departments.${dept.id}`]?.includes(perm)}
-                                                          onCheckedChange={(checked) => handlePermissionChange(setData, `Expenses.Departments.${dept.id}`, perm, !!checked)}
-                                                        />
-                                                        <Label htmlFor={`${roleData.name}-Expenses-Departments-${dept.id}-${perm}`} className="font-normal leading-tight text-xs">
-                                                            {perm}
-                                                        </Label>
-                                                    </div>
-                                                ))}
-                                             </div>
-                                        </div>
-                                      ))}
-                                  </AccordionContent>
-                                </AccordionItem>
-                              )}
-                          </Accordion>
-                        </>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </CardContent>
-        </Card>
+                    return (
+                        <Card key={groupKey}>
+                            <CardHeader className="p-4 flex-row items-center justify-between">
+                                <CardTitleShad className="text-base">{cardTitle} <span className="text-sm font-normal text-muted-foreground">Permission</span></CardTitleShad>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id={`select-all-${groupKey}`}
+                                        checked={isAllSelected}
+                                        onCheckedChange={(checked) => handleSelectAll(setData, groupKey, allPermissionsInGroup, !!checked)}
+                                    />
+                                    <Label htmlFor={`select-all-${groupKey}`} className="text-sm font-medium">Select All</Label>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="p-4 grid grid-cols-2 gap-4">
+                                {permissions.map(permission => (
+                                    <div key={permission} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={`${roleData.name}-${groupKey}-${permission}`}
+                                            checked={grantedPermissions.includes(permission)}
+                                            onCheckedChange={(checked) => handlePermissionChange(setData, groupKey, permission, !!checked)}
+                                        />
+                                        <Label htmlFor={`${roleData.name}-${groupKey}-${permission}`} className="text-sm font-normal leading-tight">
+                                            {permission}
+                                        </Label>
+                                    </div>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    );
+                });
+            })}
+        </div>
       </div>
     </div>
   );
@@ -434,9 +352,9 @@ export default function ManageRolePage() {
                     <CardTitleShad>Access Denied</CardTitleShad>
                     <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
                 </CardHeader>
-                <CardContentShad className="flex justify-center p-8">
+                <CardContent className="flex justify-center p-8">
                     <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContentShad>
+                </CardContent>
             </Card>
         </div>
     );
@@ -486,7 +404,7 @@ export default function ManageRolePage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[200px]">Role Name</TableHead>
-                <TableHead>Permissions Summary</TableHead>
+                <TableHead>Total Permissions</TableHead>
                 <TableHead className="text-right w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -508,26 +426,7 @@ export default function ManageRolePage() {
                     <TableCell className="font-medium">{role.name}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {Object.keys(permissionModules).map(moduleName => {
-                           const total = calculateTotalPermissions(moduleName);
-                           const granted = calculateGrantedPermissions(role, moduleName);
-                           if (total === 0) return null;
-                           const percentage = Math.round((granted / total) * 100);
-                           return (
-                             <TooltipProvider key={moduleName}>
-                               <Tooltip>
-                                 <TooltipTrigger asChild>
-                                   <Badge variant={granted > 0 ? "default" : "secondary"} className="cursor-default">
-                                     {moduleName}: {percentage}%
-                                   </Badge>
-                                 </TooltipTrigger>
-                                 <TooltipContent>
-                                   {granted} of {total} permissions granted
-                                 </TooltipContent>
-                               </Tooltip>
-                             </TooltipProvider>
-                           );
-                        })}
+                        {Object.keys(role.permissions || {}).length} permissions
                       </div>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
@@ -572,6 +471,3 @@ export default function ManageRolePage() {
     </div>
   );
 }
-
-
-
