@@ -15,7 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 
 function AppBody({ children }: { children: React.ReactNode }) {
-    const { user, loading, sessionRemainingTime, isSessionExpired, extendSession, handleSignOut } = useAuth();
+    const { user, loading, sessionRemainingTime, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
 
@@ -54,6 +54,7 @@ function AppBody({ children }: { children: React.ReactNode }) {
             <Toaster />
             <SessionExpiryDialog
                 isOpen={isSessionExpired}
+                onOpenChange={setIsSessionExpired}
                 onSessionExtend={extendSession}
                 onLogout={() => handleSignOut(true)}
             />

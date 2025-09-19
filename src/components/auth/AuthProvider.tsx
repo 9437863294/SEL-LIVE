@@ -23,6 +23,7 @@ interface AuthContextType {
   refreshUserData: () => Promise<void>;
   sessionRemainingTime: number | null;
   isSessionExpired: boolean;
+  setIsSessionExpired: (isExpired: boolean) => void;
   extendSession: () => void;
   handleSignOut: (isSessionExpired?: boolean) => Promise<void>;
   // PIN login related state
@@ -42,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   refreshUserData: async () => {},
   sessionRemainingTime: null,
   isSessionExpired: false,
+  setIsSessionExpired: () => {},
   extendSession: () => {},
   handleSignOut: async () => {},
   savedUsers: [],
@@ -304,7 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, isSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
         {isPublicRoute || !loading ? children : null}
         {userForPinSetup && (
             <PinSetupDialog
