@@ -106,6 +106,9 @@ export const permissionModules = {
   },
   'Loan': {
     'View Module': [],
+    'Dashboard': ['View'],
+    'Add Loan': ['Create'],
+    'Loan Details': ['View', 'Update EMI'],
   },
   'Settings': {
     'View Module': [],
@@ -476,5 +479,35 @@ export type MonthlyInterestData = {
   };
 };
 
+export type Loan = {
+  id: string;
+  accountNo: string;
+  lenderName: string;
+  loanAmount: number;
+  tenure: number; // in months
+  interestRate: number; // annual percentage
+  emiAmount: number;
+  startDate: string;
+  endDate: string;
+  linkedBank: string;
+  loanType: 'Loan' | 'Investment';
+  totalPaid: number;
+  status: 'Active' | 'Closed' | 'Default';
+  createdAt: any;
+};
+
+export type EMI = {
+  id: string;
+  loanId: string;
+  emiNo: number;
+  dueDate: string;
+  emiAmount: number;
+  principal: number;
+  interest: number;
+  paidAmount: number;
+  closingPrincipal: number;
+  status: 'Paid' | 'Pending' | 'Overdue';
+};
 
     
+
