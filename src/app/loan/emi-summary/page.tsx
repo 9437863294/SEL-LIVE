@@ -381,6 +381,8 @@ export default function EmiSummaryPage() {
                   <TableHead>Lender Name</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>EMI Amount</TableHead>
+                  <TableHead>Principal</TableHead>
+                  <TableHead>Interest</TableHead>
                   <TableHead>Paid Amount</TableHead>
                   <TableHead>EMI No</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -390,7 +392,7 @@ export default function EmiSummaryPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8}><Skeleton className="h-8" /></TableCell>
+                      <TableCell colSpan={10}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredEmis.length > 0 ? (
@@ -401,6 +403,8 @@ export default function EmiSummaryPage() {
                       <TableCell>{emi.loan.lenderName}</TableCell>
                       <TableCell>{formatDate(emi.dueDate)}</TableCell>
                       <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
+                      <TableCell>{formatCurrency(emi.principal)}</TableCell>
+                      <TableCell>{formatCurrency(emi.interest)}</TableCell>
                       <TableCell>{formatCurrency(emi.paidAmount)}</TableCell>
                       <TableCell>{emi.emiNo}</TableCell>
                       <TableCell className="text-right">
@@ -432,7 +436,7 @@ export default function EmiSummaryPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={10} className="text-center h-24">
                       No EMIs due for {selectedMonth}, {selectedYear}.
                     </TableCell>
                   </TableRow>
@@ -442,6 +446,8 @@ export default function EmiSummaryPage() {
                   <TableRow className="font-bold">
                       <TableCell colSpan={4} className="text-right">Total</TableCell>
                       <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.emiAmount, 0))}</TableCell>
+                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.principal, 0))}</TableCell>
+                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.interest, 0))}</TableCell>
                       <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.paidAmount, 0))}</TableCell>
                       <TableCell colSpan={2}></TableCell>
                   </TableRow>
