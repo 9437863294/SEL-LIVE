@@ -442,16 +442,6 @@ export default function EmiSummaryPage() {
                   </TableRow>
                 )}
               </TableBody>
-              <TableFooter>
-                  <TableRow className="font-bold">
-                      <TableCell colSpan={4} className="text-right">Total</TableCell>
-                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.emiAmount, 0))}</TableCell>
-                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.principal, 0))}</TableCell>
-                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.interest, 0))}</TableCell>
-                      <TableCell>{formatCurrency(filteredEmis.reduce((s, e) => s + e.paidAmount, 0))}</TableCell>
-                      <TableCell colSpan={2}></TableCell>
-                  </TableRow>
-              </TableFooter>
             </Table>
           </CardContent>
         </Card>
