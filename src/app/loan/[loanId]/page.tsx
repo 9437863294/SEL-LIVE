@@ -4,17 +4,17 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
 import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { format, addMonths } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,11 @@ export default function LoanDetailsPage() {
   const [selectedEmi, setSelectedEmi] = useState<EMI | null>(null);
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedLoan, setEditedLoan] = useState<Loan | null>(null);
+  const [regeneratedEmis, setRegeneratedEmis] = useState<EMI[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
 
   const fetchLoanData = async () => {
@@ -48,7 +53,9 @@ export default function LoanDetailsPage() {
       const loanDocSnap = await getDoc(loanDocRef);
 
       if (loanDocSnap.exists()) {
-        setLoan({ id: loanDocSnap.id, ...loanDocSnap.data() } as Loan);
+        const loanData = { id: loanDocSnap.id, ...loanDocSnap.data() } as Loan
+        setLoan(loanData);
+        setEditedLoan(loanData);
       } else {
         toast({ title: "Error", description: "Loan not found.", variant: "destructive" });
       }
@@ -108,6 +115,92 @@ export default function LoanDetailsPage() {
     }
   }
 
+  const handleRegenerateSchedule = () => {
+    if (!editedLoan) return;
+
+    const p = Number(editedLoan.loanAmount);
+    const r = Number(editedLoan.interestRate) / 12 / 100;
+    const n = Number(editedLoan.tenure);
+
+    if (p > 0 && r > 0 && n > 0 && editedLoan.startDate) {
+        const rawEmi = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+        const emiAmount = Math.round(rawEmi);
+
+        const schedule: EMI[] = [];
+        let balance = p;
+        for (let i = 1; i <= n; i++) {
+            const interest = Math.round(balance * r);
+            let principal = Math.round(emiAmount - interest);
+
+            if (i === n) {
+                principal = balance;
+                balance = 0;
+            } else {
+                balance = Math.round(balance - principal);
+            }
+            schedule.push({
+                id: `temp-${i}`, // Temporary ID
+                loanId: loanId,
+                emiNo: i,
+                dueDate: Timestamp.fromDate(addMonths(new Date(editedLoan.startDate), i)),
+                emiAmount: i === n ? Math.round(principal + interest) : emiAmount,
+                principal: principal,
+                interest: interest,
+                paidAmount: 0,
+                closingPrincipal: balance,
+                status: 'Pending',
+            });
+        }
+        setRegeneratedEmis(schedule);
+    } else {
+        toast({ title: "Missing Details", description: "Loan Amount, Tenure, Rate, and Start Date are required.", variant: "destructive" });
+    }
+  };
+  
+  const handleSaveChanges = async () => {
+    if (!editedLoan || !loan) return;
+    setIsSaving(true);
+    try {
+        const batch = writeBatch(db);
+        const loanRef = doc(db, 'loans', loan.id);
+        
+        // Update loan document
+        batch.update(loanRef, {
+            loanAmount: Number(editedLoan.loanAmount),
+            interestRate: Number(editedLoan.interestRate),
+            tenure: Number(editedLoan.tenure),
+            emiAmount: regeneratedEmis[0]?.emiAmount || editedLoan.emiAmount,
+            startDate: editedLoan.startDate,
+            endDate: format(addMonths(new Date(editedLoan.startDate), Number(editedLoan.tenure)), 'yyyy-MM-dd'),
+            totalPaid: 0, // Reset paid amount as schedule is new
+        });
+        
+        // Delete old EMIs
+        emis.forEach(emi => {
+            batch.delete(doc(db, 'loans', loan.id, 'emis', emi.id));
+        });
+
+        // Add new EMIs
+        regeneratedEmis.forEach(emi => {
+            const { id, loanId, ...emiData } = emi;
+            const newEmiRef = doc(collection(db, 'loans', loan.id, 'emis'));
+            batch.set(newEmiRef, emiData);
+        });
+
+        await batch.commit();
+        toast({ title: 'Success', description: 'Loan details and EMI schedule updated.' });
+        setIsEditing(false);
+        setRegeneratedEmis([]);
+        fetchLoanData(); // Refresh all data
+
+    } catch (e) {
+        console.error("Error saving changes:", e);
+        toast({ title: "Save Failed", description: "Could not save loan changes.", variant: "destructive" });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.round(amount));
@@ -133,7 +226,7 @@ export default function LoanDetailsPage() {
     );
   }
   
-  if(!loan) {
+  if(!loan || !editedLoan) {
       return (
            <div className="w-full px-4 sm:px-6 lg:px-8">
                 <h1 className="text-2xl font-bold">Loan Not Found</h1>
@@ -143,6 +236,7 @@ export default function LoanDetailsPage() {
 
   const paidEmisCount = emis.filter(e => e.status === 'Paid').length;
   const remainingMonths = loan.tenure - paidEmisCount;
+  const scheduleToDisplay = isEditing && regeneratedEmis.length > 0 ? regeneratedEmis : emis;
 
   return (
     <>
@@ -157,23 +251,47 @@ export default function LoanDetailsPage() {
               <p className="text-muted-foreground">{loan.lenderName} - {loan.accountNo}</p>
             </div>
           </div>
+           <div className="flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <Button variant="outline" onClick={() => setIsEditing(false)}>
+                  <X className="mr-2 h-4 w-4" /> Cancel
+                </Button>
+                <Button onClick={handleSaveChanges} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save Changes
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => setIsEditing(true)}>
+                <Edit className="mr-2 h-4 w-4" /> Edit Loan
+              </Button>
+            )}
+          </div>
         </div>
 
         <Card className="mb-6">
             <CardHeader>
                <CardTitle>Summary</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div><p className="text-sm text-muted-foreground">Loan Amount</p><p className="font-semibold">{formatCurrency(loan.loanAmount)}</p></div>
-              <div><p className="text-sm text-muted-foreground">Interest Rate</p><p className="font-semibold">{loan.interestRate}%</p></div>
-              <div><p className="text-sm text-muted-foreground">Tenure</p><p className="font-semibold">{loan.tenure} months</p></div>
-              <div><p className="text-sm text-muted-foreground">Remaining Months</p><p className="font-semibold">{remainingMonths} months</p></div>
-              <div><p className="text-sm text-muted-foreground">EMI</p><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
-              <div><p className="text-sm text-muted-foreground">Total Paid</p><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
-               <div><p className="text-sm text-muted-foreground">Outstanding</p><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
-              <div><p className="text-sm text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(loan.startDate)}</p></div>
-              <div><p className="text-sm text-muted-foreground">End Date</p><p className="font-semibold">{formatDate(loan.endDate)}</p></div>
+            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="space-y-1"><Label>Loan Amount</Label>{isEditing ? <Input type="number" value={editedLoan.loanAmount} onChange={e => setEditedLoan({...editedLoan, loanAmount: Number(e.target.value)})} /> : <p className="font-semibold">{formatCurrency(loan.loanAmount)}</p>}</div>
+              <div className="space-y-1"><Label>Interest Rate</Label>{isEditing ? <Input type="number" value={editedLoan.interestRate} onChange={e => setEditedLoan({...editedLoan, interestRate: Number(e.target.value)})} /> : <p className="font-semibold">{loan.interestRate}%</p>}</div>
+              <div className="space-y-1"><Label>Tenure (months)</Label>{isEditing ? <Input type="number" value={editedLoan.tenure} onChange={e => setEditedLoan({...editedLoan, tenure: Number(e.target.value)})} /> : <p className="font-semibold">{loan.tenure} months</p>}</div>
+              <div className="space-y-1"><Label>Start Date</Label>{isEditing ? <Input type="date" value={editedLoan.startDate} onChange={e => setEditedLoan({...editedLoan, startDate: e.target.value})} /> : <p className="font-semibold">{formatDate(loan.startDate)}</p>}</div>
+              <div className="space-y-1"><Label>EMI</Label><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
+              <div className="space-y-1"><Label>Remaining Months</Label><p className="font-semibold">{remainingMonths} months</p></div>
+              <div className="space-y-1"><Label>Total Paid</Label><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
+              <div className="space-y-1"><Label>Outstanding</Label><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
             </CardContent>
+            {isEditing && (
+              <CardContent>
+                <Button onClick={handleRegenerateSchedule}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Regenerate Schedule
+                </Button>
+              </CardContent>
+            )}
         </Card>
         
          <Card>
@@ -196,8 +314,8 @@ export default function LoanDetailsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {emis.map(emi => (
-                    <TableRow key={emi.id}>
+                {scheduleToDisplay.map(emi => (
+                    <TableRow key={emi.emiNo}>
                       <TableCell>{emi.emiNo}</TableCell>
                       <TableCell>{formatDate(emi.dueDate)}</TableCell>
                       <TableCell>{formatCurrency(emi.principal)}</TableCell>
@@ -206,7 +324,7 @@ export default function LoanDetailsPage() {
                       <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
                       <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge></TableCell>
                       <TableCell>
-                        {emi.status === 'Pending' && (
+                        {emi.status === 'Pending' && !isEditing && (
                           <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
                         )}
                       </TableCell>
