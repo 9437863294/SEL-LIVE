@@ -55,7 +55,7 @@ export default function LoanDetailsPage() {
       const loanDocSnap = await getDoc(loanDocRef);
 
       if (loanDocSnap.exists()) {
-        const loanData = { id: loanDocSnap.id, ...loanDocSnap.data() } as Loan
+        const loanData = { id: loanDocSnap.id, ...doc.data() } as Loan
         setLoan(loanData);
         setEditedLoan(loanData);
       } else {
@@ -89,7 +89,7 @@ export default function LoanDetailsPage() {
   
   const handleEditEmiClick = (emi: EMI) => {
     setSelectedEmi(emi);
-    setDialogPaidAmount(emi.emiAmount);
+    setDialogPaidAmount(emi.paidAmount);
     setDialogPrincipal(emi.principal);
     setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
@@ -113,8 +113,6 @@ export default function LoanDetailsPage() {
             emiAmount: dialogPrincipal + dialogInterest,
         });
         
-        // This part needs adjustment if we are editing a paid EMI.
-        // For now, let's assume we are only paying a pending one or editing a paid one.
         const originalEmi = emis.find(e => e.id === selectedEmi.id);
         const paidAmountDifference = dialogPaidAmount - (originalEmi?.paidAmount || 0);
 
@@ -137,6 +135,8 @@ export default function LoanDetailsPage() {
     }
   }
 
+  const round = (num: number) => Math.round(num);
+
   const handleRegenerateSchedule = () => {
     if (!editedLoan) return;
 
@@ -146,26 +146,28 @@ export default function LoanDetailsPage() {
 
     if (p > 0 && r > 0 && n > 0 && editedLoan.startDate) {
         const rawEmi = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-        const emiAmount = Math.round(rawEmi);
+        const emiAmount = round(rawEmi);
 
         const schedule: EMI[] = [];
         let balance = p;
         for (let i = 1; i <= n; i++) {
-            const interest = Math.round(balance * r);
-            let principal = Math.round(emiAmount - interest);
+            const interest = round(balance * r);
+            let principal = round(emiAmount - interest);
 
             if (i === n) {
                 principal = balance;
-                balance = 0;
-            } else {
-                balance = Math.round(balance - principal);
+            } else if (principal > balance) {
+                principal = balance;
             }
+            
+            balance = round(balance - principal);
+
             schedule.push({
                 id: `temp-${i}`, // Temporary ID
                 loanId: loanId,
                 emiNo: i,
                 dueDate: Timestamp.fromDate(addMonths(new Date(editedLoan.startDate), i)),
-                emiAmount: i === n ? Math.round(principal + interest) : emiAmount,
+                emiAmount: i === n ? round(principal + interest) : emiAmount,
                 principal: principal,
                 interest: interest,
                 paidAmount: 0,
@@ -179,6 +181,49 @@ export default function LoanDetailsPage() {
     }
   };
   
+  const handleEmiScheduleChange = (index: number, field: 'principal' | 'interest', value: number) => {
+    if (!isEditing) return;
+
+    const scheduleSource = regeneratedEmis.length > 0 ? regeneratedEmis : emis;
+    const setScheduleSource = regeneratedEmis.length > 0 ? setRegeneratedEmis : setEmis;
+
+    const newSchedule = [...scheduleSource];
+    const item = newSchedule[index];
+
+    if (field === 'principal') {
+        item.principal = round(value);
+    } else if (field === 'interest') {
+        item.interest = round(value);
+    }
+
+    item.emiAmount = round(item.principal + item.interest);
+    
+    let currentBalance = index > 0 ? newSchedule[index - 1].closingPrincipal : (editedLoan?.loanAmount || 0);
+
+    if (item.principal > currentBalance) {
+        item.principal = round(currentBalance);
+    }
+
+    item.closingPrincipal = round(currentBalance - item.principal);
+
+    for (let i = index + 1; i < newSchedule.length; i++) {
+        const prevClosingPrincipal = newSchedule[i - 1].closingPrincipal;
+        const currentItem = newSchedule[i];
+
+        // Assuming interest for subsequent months is not automatically recalculated
+        // but principal and closing balance are.
+        currentItem.principal = round(currentItem.emiAmount - currentItem.interest);
+
+        if (currentItem.principal > prevClosingPrincipal) {
+            currentItem.principal = prevClosingPrincipal;
+        }
+
+        currentItem.closingPrincipal = round(prevClosingPrincipal - currentItem.principal);
+    }
+
+    setScheduleSource(newSchedule as any);
+  };
+  
   const handleSaveChanges = async () => {
     if (!editedLoan || !loan) return;
     setIsSaving(true);
@@ -186,24 +231,22 @@ export default function LoanDetailsPage() {
         const batch = writeBatch(db);
         const loanRef = doc(db, 'loans', loan.id);
         
-        // Update loan document
+        const scheduleToSave = regeneratedEmis.length > 0 ? regeneratedEmis : emis;
+
         batch.update(loanRef, {
             loanAmount: Number(editedLoan.loanAmount),
             interestRate: Number(editedLoan.interestRate),
             tenure: Number(editedLoan.tenure),
-            emiAmount: regeneratedEmis[0]?.emiAmount || editedLoan.emiAmount,
+            emiAmount: scheduleToSave[0]?.emiAmount || editedLoan.emiAmount,
             startDate: editedLoan.startDate,
             endDate: format(addMonths(new Date(editedLoan.startDate), Number(editedLoan.tenure)), 'yyyy-MM-dd'),
-            totalPaid: 0, // Reset paid amount as schedule is new
+            totalPaid: 0, 
         });
         
-        // Delete old EMIs
-        emis.forEach(emi => {
-            batch.delete(doc(db, 'loans', loan.id, 'emis', emi.id));
-        });
+        const oldEmisSnapshot = await getDocs(collection(db, 'loans', loan.id, 'emis'));
+        oldEmisSnapshot.forEach(doc => batch.delete(doc.ref));
 
-        // Add new EMIs
-        regeneratedEmis.forEach(emi => {
+        scheduleToSave.forEach(emi => {
             const { id, loanId, ...emiData } = emi;
             const newEmiRef = doc(collection(db, 'loans', loan.id, 'emis'));
             batch.set(newEmiRef, emiData);
@@ -213,7 +256,7 @@ export default function LoanDetailsPage() {
         toast({ title: 'Success', description: 'Loan details and EMI schedule updated.' });
         setIsEditing(false);
         setRegeneratedEmis([]);
-        fetchLoanData(); // Refresh all data
+        fetchLoanData(); 
 
     } catch (e) {
         console.error("Error saving changes:", e);
@@ -225,7 +268,7 @@ export default function LoanDetailsPage() {
 
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.round(amount));
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(round(amount));
   };
   
   const formatDate = (date: any) => {
@@ -276,7 +319,7 @@ export default function LoanDetailsPage() {
            <div className="flex items-center gap-2">
             {isEditing ? (
               <>
-                <Button variant="outline" onClick={() => setIsEditing(false)}>
+                <Button variant="outline" onClick={() => { setIsEditing(false); setRegeneratedEmis([]); fetchLoanData(); }}>
                   <X className="mr-2 h-4 w-4" /> Cancel
                 </Button>
                 <Button onClick={handleSaveChanges} disabled={isSaving}>
@@ -336,21 +379,35 @@ export default function LoanDetailsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {scheduleToDisplay.map(emi => (
-                    <TableRow key={emi.emiNo}>
+                {scheduleToDisplay.map((emi, index) => (
+                    <TableRow key={emi.id}>
                       <TableCell>{emi.emiNo}</TableCell>
                       <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                      <TableCell>{formatCurrency(emi.principal)}</TableCell>
-                      <TableCell>{formatCurrency(emi.interest)}</TableCell>
+                      <TableCell>
+                        {isEditing ? (
+                          <Input type="number" value={round(emi.principal)} onChange={e => handleEmiScheduleChange(index, 'principal', Number(e.target.value))} className="w-32" />
+                        ) : (
+                          formatCurrency(emi.principal)
+                        )}
+                      </TableCell>
+                      <TableCell>
+                         {isEditing ? (
+                          <Input type="number" value={round(emi.interest)} onChange={e => handleEmiScheduleChange(index, 'interest', Number(e.target.value))} className="w-28" />
+                        ) : (
+                          formatCurrency(emi.interest)
+                        )}
+                      </TableCell>
                       <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
                       <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
                       <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge></TableCell>
                       <TableCell>
-                        {emi.status === 'Pending' && !isEditing ? (
-                          <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
-                        ) : emi.status === 'Paid' && !isEditing ? (
+                        {!isEditing && (
+                          emi.status === 'Pending' ? (
+                            <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
+                          ) : (
                             <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}>Edit</Button>
-                        ) : null}
+                          )
+                        )}
                       </TableCell>
                     </TableRow>
                 ))}
