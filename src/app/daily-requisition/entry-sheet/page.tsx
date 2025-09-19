@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -567,7 +568,7 @@ export default function EntrySheetPage() {
         </div>
         <div className="col-span-1 md:col-span-3 space-y-2">
             <Label htmlFor="description">Description</Label>
-            <Textarea id="description" placeholder="Enter description..." value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
+            <Textarea id="description" placeholder="Short description" value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} />
         </div>
         <div className="space-y-2">
             <Label htmlFor="department">Department</Label>
