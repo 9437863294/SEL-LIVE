@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { useState }from 'react';
 import { EditModuleDialog } from './EditModuleDialog';
 import Link from 'next/link';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -40,6 +41,10 @@ const LucideIcon = ({ name, ...props }: { name: string } & React.ComponentProps<
 export default function ModuleCard({ module, isDragging, ...props }: ModuleCardProps) {
   const { deleteModule } = useModules();
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const { can } = useAuthorization();
+
+  const canEdit = can('Edit', 'Module Hub');
+  const canDelete = can('Delete', 'Module Hub');
 
   const slugify = (text: string) => {
     return text.toString().toLowerCase()
@@ -79,31 +84,35 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         </div>
       </CardHeader>
       <CardContent className="mt-auto flex justify-end gap-1 p-2 border-t">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
-            <Edit className="h-4 w-4" />
-            <span className="sr-only">Edit</span>
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
-                <Trash2 className="h-4 w-4" />
-                <span className="sr-only">Delete</span>
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the
-                "{module.title}" module.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => deleteModule(module.id)}>Continue</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {canEdit && (
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
+              <Edit className="h-4 w-4" />
+              <span className="sr-only">Edit</span>
+          </Button>
+        )}
+        {canDelete && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete</span>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the
+                  "{module.title}" module.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => deleteModule(module.id)}>Continue</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </CardContent>
     </>
   );
