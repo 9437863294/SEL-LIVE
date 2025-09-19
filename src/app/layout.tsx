@@ -12,9 +12,10 @@ import React from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
+import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 
 function AppBody({ children }: { children: React.ReactNode }) {
-    const { user, loading, sessionRemainingTime } = useAuth();
+    const { user, loading, sessionRemainingTime, isSessionExpired, extendSession, handleSignOut } = useAuth();
     const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
 
@@ -43,7 +44,7 @@ function AppBody({ children }: { children: React.ReactNode }) {
                 <main className="flex-1 overflow-auto">{children}</main>
                 <footer className="flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
                     <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-                    {sessionRemainingTime !== null && (
+                    {sessionRemainingTime !== null && sessionRemainingTime > 0 && (
                         <span className="font-medium">
                             Session expires in: {formatTime(sessionRemainingTime)}
                         </span>
@@ -51,6 +52,11 @@ function AppBody({ children }: { children: React.ReactNode }) {
                 </footer>
             </div>
             <Toaster />
+            <SessionExpiryDialog
+                isOpen={isSessionExpired}
+                onSessionExtend={extendSession}
+                onLogout={() => handleSignOut(true)}
+            />
         </div>
     )
 }
@@ -78,7 +84,7 @@ export default function RootLayout({
         <meta name="description" content="Create and organize your modules." />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
       </head>
       <body>
         <AuthProvider>

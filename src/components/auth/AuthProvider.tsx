@@ -22,6 +22,9 @@ interface AuthContextType {
   originalUser: User | null;
   refreshUserData: () => Promise<void>;
   sessionRemainingTime: number | null;
+  isSessionExpired: boolean;
+  extendSession: () => void;
+  handleSignOut: (isSessionExpired?: boolean) => Promise<void>;
   // PIN login related state
   savedUsers: SavedUser[];
   setShouldRemember: (shouldRemember: boolean) => void;
@@ -38,6 +41,9 @@ const AuthContext = createContext<AuthContextType>({
   originalUser: null,
   refreshUserData: async () => {},
   sessionRemainingTime: null,
+  isSessionExpired: false,
+  extendSession: () => {},
+  handleSignOut: async () => {},
   savedUsers: [],
   setShouldRemember: () => {},
   clearSavedUsers: () => {},
@@ -54,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [sessionRemainingTime, setSessionRemainingTime] = useState<number | null>(null);
+  const [isSessionExpired, setIsSessionExpired] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
@@ -65,13 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
 
-  const handleSignOut = useCallback(async (isSessionExpired = false) => {
+  const handleSignOut = useCallback(async (isExpired = false) => {
     try {
         await signOut(auth);
-        if (!isSessionExpired) { // Don't clear saved users on session expiry
+        if (!isExpired) {
             sessionStorage.clear();
         }
-        if (isSessionExpired) {
+        if (isExpired) {
             toast({
                 title: 'Session Expired',
                 description: 'You have been logged out due to inactivity.',
@@ -84,6 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [router, toast]);
   
+  const extendSession = useCallback(() => {
+    sessionStorage.setItem('loginTimestamp', Date.now().toString());
+    setIsSessionExpired(false);
+  }, []);
+
   const loadSavedUsers = useCallback(() => {
     try {
       const storedUsers = localStorage.getItem('savedUsers');
@@ -248,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           if (remainingMs <= 0) {
             setSessionRemainingTime(0);
-            handleSignOut(true); 
+            setIsSessionExpired(true);
             if (interval) clearInterval(interval);
           } else {
             setSessionRemainingTime(Math.round(remainingMs / 1000));
@@ -292,7 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, isSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
         {isPublicRoute || !loading ? children : null}
         {userForPinSetup && (
             <PinSetupDialog
