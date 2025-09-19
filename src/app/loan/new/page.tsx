@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, writeBatch, doc, Timestamp } from 'firebase/firestore';
-import type { Loan, EMI } from '@/lib/types';
+import { collection, getDocs, addDoc, writeBatch, doc, Timestamp } from 'firebase/firestore';
+import type { Loan, EMI, BankAccount } from '@/lib/types';
 import { addMonths, format } from 'date-fns';
 
 const initialLoanState = {
@@ -32,9 +32,26 @@ type ScheduleEntry = Omit<EMI, 'id' | 'loanId'>;
 export default function NewLoanPage() {
   const { toast } = useToast();
   const [loan, setLoan] = useState(initialLoanState);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [calculatedEmi, setCalculatedEmi] = useState<number | null>(null);
   const [emiSchedule, setEmiSchedule] = useState<ScheduleEntry[]>([]);
+  
+  useEffect(() => {
+    const fetchBankAccounts = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'bankAccounts'));
+        const accountsData = querySnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as BankAccount))
+          .filter(acc => acc.status === 'Active');
+        setBankAccounts(accountsData);
+      } catch (error) {
+        console.error("Error fetching bank accounts:", error);
+        toast({ title: "Error", description: "Failed to load active bank accounts.", variant: "destructive" });
+      }
+    };
+    fetchBankAccounts();
+  }, [toast]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -202,7 +219,19 @@ export default function NewLoanPage() {
             <div className="space-y-2"><Label htmlFor="tenure">Tenure (months)</Label><Input id="tenure" name="tenure" type="number" value={loan.tenure} onChange={handleInputChange} /></div>
             <div className="space-y-2"><Label htmlFor="interestRate">Interest Rate (%)</Label><Input id="interestRate" name="interestRate" type="number" value={loan.interestRate} onChange={handleInputChange} /></div>
             <div className="space-y-2"><Label htmlFor="startDate">Start Date</Label><Input id="startDate" name="startDate" type="date" value={loan.startDate} onChange={handleInputChange} /></div>
-            <div className="space-y-2"><Label htmlFor="linkedBank">Linked Bank</Label><Input id="linkedBank" name="linkedBank" value={loan.linkedBank} onChange={handleInputChange} /></div>
+            <div className="space-y-2">
+                <Label htmlFor="linkedBank">Linked Bank</Label>
+                <Select name="linkedBank" value={loan.linkedBank} onValueChange={(v) => setLoan(prev => ({...prev, linkedBank: v}))}>
+                  <SelectTrigger id="linkedBank">
+                    <SelectValue placeholder="Select a bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bankAccounts.map(acc => (
+                      <SelectItem key={acc.id} value={acc.shortName}>{acc.shortName} - {acc.bankName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+            </div>
             <div className="space-y-2"><Label htmlFor="loanType">Loan Type</Label><Select name="loanType" value={loan.loanType} onValueChange={(v: 'Loan' | 'Investment') => setLoan(prev => ({...prev, loanType: v}))}><SelectTrigger id="loanType"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Loan">Loan</SelectItem><SelectItem value="Investment">Investment</SelectItem></SelectContent></Select></div>
           </div>
           <div className="pt-6 flex items-end gap-4">
