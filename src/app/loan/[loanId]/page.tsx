@@ -179,8 +179,8 @@ export default function LoanDetailsPage() {
   const handleMarkAsUnpaid = async (emi: EMI) => {
     if (!loan) return;
     try {
-        const emiDocRef = doc(db, 'loans', loanId, 'emis', emi.id);
-        const loanDocRef = doc(db, 'loans', loanId);
+        const emiDocRef = doc(db, 'loans', loan.id, 'emis', emi.id);
+        const loanDocRef = doc(db, 'loans', loan.id);
 
         await runTransaction(db, async (transaction) => {
             const loanDoc = await transaction.get(loanDocRef);
