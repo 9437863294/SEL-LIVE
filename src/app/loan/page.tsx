@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -41,7 +42,13 @@ export default function LoanDashboardPage() {
 
         const emisPromises = loansData.map(loan => getDocs(collection(db, 'loans', loan.id, 'emis')));
         const emisSnapshots = await Promise.all(emisPromises);
-        const allEmisData = emisSnapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data() as EMI));
+        const allEmisData = emisSnapshots.flatMap(snapshot => snapshot.docs.map(doc => {
+            const data = doc.data() as EMI;
+            return {
+                ...data,
+                loanId: snapshot.docs[0].ref.parent.parent?.id,
+            } as EMI
+        }));
         setAllEmis(allEmisData);
 
       } catch (error) {
@@ -94,6 +101,7 @@ export default function LoanDashboardPage() {
   const loansWithDetails = useMemo(() => {
     return loans.map(loan => {
       const loanEmis = allEmis.filter(emi => emi.loanId === loan.id);
+      loanEmis.sort((a,b) => a.emiNo - b.emiNo);
       const totalInterest = loanEmis.reduce((sum, emi) => sum + emi.interest, 0);
       const paidEmis = loanEmis.filter(emi => emi.status === 'Paid').length;
       const remainingMonths = loan.tenure - paidEmis;
@@ -120,7 +128,7 @@ export default function LoanDashboardPage() {
         <CardTitle className="text-sm font-medium text-blue-900">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-3 text-center">
-        <p className="text-lg font-bold">{typeof value === 'number' ? formatCurrency(value) : value}</p>
+        <p className="text-lg font-bold">{typeof value === 'number' ? `₹${formatCurrency(value)}` : value}</p>
       </CardContent>
     </Card>
   );
@@ -202,13 +210,13 @@ export default function LoanDashboardPage() {
                     <TableCell>{format(new Date(loan.startDate), 'dd/MM/yyyy')}</TableCell>
                     <TableCell>{loan.accountNo}</TableCell>
                     <TableCell>{loan.lenderName}</TableCell>
-                    <TableCell>{formatCurrency(loan.loanAmount)}</TableCell>
-                    <TableCell>{formatCurrency(loan.totalInterest)}</TableCell>
-                    <TableCell>{formatCurrency(loan.emiAmount)}</TableCell>
+                    <TableCell>{`₹${formatCurrency(loan.loanAmount)}`}</TableCell>
+                    <TableCell>{`₹${formatCurrency(loan.totalInterest)}`}</TableCell>
+                    <TableCell>{`₹${formatCurrency(loan.emiAmount)}`}</TableCell>
                     <TableCell>{loan.tenure}</TableCell>
                     <TableCell>{loan.remainingMonths}</TableCell>
                     <TableCell>{loan.dueDate}</TableCell>
-                    <TableCell>{formatCurrency(loan.balance)}</TableCell>
+                    <TableCell>{`₹${formatCurrency(loan.balance)}`}</TableCell>
                   </TableRow>
                 ))
               ) : (
