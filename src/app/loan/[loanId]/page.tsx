@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -13,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
-import type { Loan, EMI, AccountHead, SubAccountHead } from '@/lib/types';
+import type { Loan, EMI, AccountHead, SubAccountHead, Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, addMonths } from 'date-fns';
 import {
@@ -42,6 +41,7 @@ export default function LoanDetailsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
 
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -88,6 +88,9 @@ export default function LoanDetailsPage() {
       
       const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
       setSubAccountHeads(subHeadsSnap.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
+
+      const deptsSnap = await getDocs(collection(db, 'departments'));
+      setDepartments(deptsSnap.docs.map(d => ({id: d.id, ...d.data()} as Department)));
 
 
     } catch (error) {
@@ -298,8 +301,9 @@ export default function LoanDetailsPage() {
     const openCreateExpenseDialog = (emi: EMI) => {
         if (!loan) return;
         const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
+        const financeDept = departments.find(d => d.name.toLowerCase() === 'finance');
         const expensePayload = {
-            departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded HR department
+            departmentId: financeDept?.id || 'hr9qMqpf1GxP4FkTEygC', // Fallback to HR if Finance not found
             projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
             amount: emi.paidAmount,
             partyName: loan.lenderName,
@@ -605,7 +609,7 @@ export default function LoanDetailsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Department</Label>
-                        <Input value="HR" disabled />
+                        <Input value="Finance" disabled />
                     </div>
                     <div className="space-y-1">
                         <Label>Project</Label>
