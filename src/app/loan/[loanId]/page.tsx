@@ -55,7 +55,7 @@ export default function LoanDetailsPage() {
       const loanDocSnap = await getDoc(loanDocRef);
 
       if (loanDocSnap.exists()) {
-        const loanData = { id: loanDocSnap.id, ...doc.data() } as Loan
+        const loanData = { id: loanDocSnap.id, ...loanDocSnap.data() } as Loan
         setLoan(loanData);
         setEditedLoan(loanData);
       } else {
@@ -361,7 +361,7 @@ export default function LoanDetailsPage() {
         
          <Card>
           <CardHeader>
-            <CardTitle>EMI Schedule</CardTitle>
+            <CardTitle>Repayment Schedule</CardTitle>
             <CardDescription>Detailed schedule of Equated Monthly Installments.</CardDescription>
           </CardHeader>
           <CardContent>
