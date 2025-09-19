@@ -3,9 +3,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -32,6 +32,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
   const { toast } = useToast();
+  const router = useRouter();
   const { user, users } = useAuth();
   const [loan, setLoan] = useState<Loan | null>(null);
   const [emis, setEmis] = useState<EMI[]>([]);
@@ -277,6 +278,20 @@ export default function LoanDetailsPage() {
     }
   };
 
+    const handleCreateExpenseRecord = (emi: EMI) => {
+        if (!loan) return;
+        const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
+        const description = `Being EMI paid to ${loan.lenderName} for ${emiMonth} EMI No ${emi.emiNo}`;
+        const params = new URLSearchParams({
+            departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded as per request
+            amount: String(emi.paidAmount),
+            projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded project for "HEAD OFFICE"
+            partyName: loan.lenderName,
+            description,
+        });
+        router.push(`/expenses/new-request?${params.toString()}`);
+    };
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(round(amount));
@@ -508,6 +523,10 @@ export default function LoanDetailsPage() {
                   </TableBody>
                 </Table>
                 <DialogFooter>
+                    <Button variant="secondary" onClick={() => handleCreateExpenseRecord(selectedEmi)}>
+                      <FilePlus className="mr-2 h-4 w-4" />
+                      Create Expense Record
+                    </Button>
                     <DialogClose asChild>
                         <Button>Close</Button>
                     </DialogClose>
