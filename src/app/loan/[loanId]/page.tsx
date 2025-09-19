@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -11,8 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
-import type { Loan, EMI, AccountHead, SubAccountHead, Department, SerialNumberConfig } from '@/lib/types';
+import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp, query, where } from 'firebase/firestore';
+import type { Loan, EMI, AccountHead, SubAccountHead, Department, SerialNumberConfig, ExpenseRequest } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, addMonths } from 'date-fns';
 import {
@@ -42,6 +43,7 @@ export default function LoanDetailsPage() {
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
 
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -91,6 +93,9 @@ export default function LoanDetailsPage() {
 
       const deptsSnap = await getDocs(collection(db, 'departments'));
       setDepartments(deptsSnap.docs.map(d => ({id: d.id, ...d.data()} as Department)));
+      
+      const expenseReqsSnap = await getDocs(collection(db, 'expenseRequests'));
+      setExpenseRequests(expenseReqsSnap.docs.map(doc => doc.data() as ExpenseRequest));
 
 
     } catch (error) {
@@ -170,7 +175,7 @@ export default function LoanDetailsPage() {
   const handleMarkAsUnpaid = async (emi: EMI) => {
     if (!loan) return;
     try {
-        const emiDocRef = doc(db, 'loans', loanId, emi.id);
+        const emiDocRef = doc(db, 'loans', loanId, 'emis', emi.id);
         const loanDocRef = doc(db, 'loans', loanId);
 
         const batch = writeBatch(db);
@@ -180,6 +185,7 @@ export default function LoanDetailsPage() {
             paidAmount: 0,
             paidAt: null,
             paidById: null,
+            expenseRequestNo: null,
         });
 
         batch.update(loanDocRef, {
@@ -368,21 +374,26 @@ export default function LoanDetailsPage() {
             requestNo: previewRequestNo,
         };
         setExpenseToCreate(expensePayload);
+        setSelectedEmi(emi);
         setIsConfirmExpenseOpen(true);
     };
 
     const handleConfirmCreateExpense = async () => {
-        if (!expenseToCreate) return;
+        if (!expenseToCreate || !selectedEmi) return;
         setIsCreatingExpense(true);
         try {
             const { requestNo, ...dataToSave } = expenseToCreate;
 
             const result = await createExpenseRequest(dataToSave);
-            if (result.success) {
+            if (result.success && result.requestNo) {
+                const emiRef = doc(db, 'loans', loanId, 'emis', selectedEmi.id);
+                await updateDoc(emiRef, { expenseRequestNo: result.requestNo });
+
                 toast({
                     title: 'Expense Record Created',
                     description: `Request No: ${result.requestNo}`,
                 });
+                fetchLoanData();
             } else {
                 throw new Error(result.message);
             }
@@ -396,6 +407,7 @@ export default function LoanDetailsPage() {
             setIsCreatingExpense(false);
             setIsConfirmExpenseOpen(false);
             setExpenseToCreate(null);
+            setSelectedEmi(null);
         }
     };
 
@@ -652,11 +664,17 @@ export default function LoanDetailsPage() {
                       <TableCell className="font-medium">Interest</TableCell>
                       <TableCell>{formatCurrency(selectedEmi.interest)}</TableCell>
                     </TableRow>
+                    {selectedEmi.expenseRequestNo && (
+                      <TableRow>
+                        <TableCell className="font-medium">Expense Request</TableCell>
+                        <TableCell>{selectedEmi.expenseRequestNo}</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => handleMarkAsUnpaid(selectedEmi)}>Mark as Unpaid</Button>
-                    <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense}>
+                    <Button variant="outline" onClick={() => handleMarkAsUnpaid(selectedEmi)} disabled={!!selectedEmi.expenseRequestNo && expenseRequests.some(er => er.requestNo === selectedEmi.expenseRequestNo)}>Mark as Unpaid</Button>
+                    <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense || !!selectedEmi.expenseRequestNo}>
                       {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
                       Create Expense Record

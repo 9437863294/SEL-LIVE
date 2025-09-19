@@ -530,4 +530,5 @@ export type EMI = {
   status: 'Paid' | 'Pending' | 'Overdue';
   paidAt?: any; // Firestore Timestamp
   paidById?: string;
+  expenseRequestNo?: string;
 };
