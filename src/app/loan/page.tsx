@@ -148,7 +148,6 @@ export default function LoanDashboardPage() {
       </div>
 
       <Card className="mb-6">
-        <CardHeader className="bg-gray-100"><CardTitle className="text-center">SUMMARY</CardTitle></CardHeader>
         <CardContent className="p-4">
           {isLoading ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
