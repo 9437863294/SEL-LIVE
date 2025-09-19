@@ -282,31 +282,25 @@ const renderPermissionsForm = (
     setData: React.Dispatch<React.SetStateAction<any>>
   ) => {
 
-    const getTotalPermissionsForModule = (moduleName: string, moduleConfig: any) => {
-      let total = 0;
+    const getTotalPermissionsForModule = (moduleName: string, moduleConfig: any): number => {
       if (Array.isArray(moduleConfig)) {
-        total = moduleConfig.length;
-      } else {
-        total = Object.values(moduleConfig).flat().length;
-        if (moduleName === 'Expenses') {
-          total += (departments.length * (moduleConfig.Departments?.length || 0));
-        }
+        return moduleConfig.length;
       }
+      
+      let total = Object.values(moduleConfig).reduce((sum: number, perms: any) => sum + perms.length, 0);
+
+      if (moduleName === 'Expenses' && moduleConfig.Departments) {
+          total += (departments.length * moduleConfig.Departments.length);
+      }
+      
       return total;
     }
     
-    const getGrantedPermissionsForModule = (moduleName: string) => {
-        let count = 0;
-        if(roleData.permissions) {
-            Object.keys(roleData.permissions).forEach(key => {
-                if (key === moduleName || key.startsWith(`${moduleName}.`)) {
-                    if (roleData.permissions[key]) {
-                        count += roleData.permissions[key].length;
-                    }
-                }
-            });
-        }
-        return count;
+    const calculateGrantedPermissions = (rolePermissions: Record<string, string[]>, moduleName: string): number => {
+        if (!rolePermissions) return 0;
+        return Object.keys(rolePermissions)
+            .filter(key => key === moduleName || key.startsWith(`${moduleName}.`))
+            .reduce((count, key) => count + (rolePermissions[key]?.length || 0), 0);
     };
     
     return (
@@ -327,7 +321,7 @@ const renderPermissionsForm = (
           <Accordion type="single" collapsible className="w-full">
             {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
               const totalPerms = getTotalPermissionsForModule(moduleName, moduleValue);
-              const grantedPerms = getGrantedPermissionsForModule(moduleName);
+              const grantedPerms = calculateGrantedPermissions(roleData.permissions, moduleName);
               const isAllSelectedForModule = totalPerms > 0 && grantedPerms === totalPerms;
 
               return (
@@ -377,6 +371,7 @@ const renderPermissionsForm = (
                                                               id={`select-all-group-${fullKey}`}
                                                               checked={isAllInGroupSelected}
                                                               onCheckedChange={(checked) => handleSelectAllForGroup(setData, fullKey, permissions, !!checked)}
+                                                              onClick={(e) => e.stopPropagation()}
                                                           />
                                                           <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
                                                         </div>
@@ -599,4 +594,5 @@ const renderPermissionsForm = (
     </div>
   );
 }
+
 
