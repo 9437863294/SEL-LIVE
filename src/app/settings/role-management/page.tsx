@@ -255,6 +255,38 @@ export default function ManageRolePage() {
       });
     }
   };
+  
+  const calculateTotalPermissions = (moduleName: string) => {
+    const module = permissionModules[moduleName as keyof typeof permissionModules];
+    if (Array.isArray(module)) {
+        return module.length;
+    }
+    let count = 0;
+    Object.values(module).forEach(sub => {
+        if (Array.isArray(sub)) {
+            count += sub.length;
+        }
+    });
+    // Special handling for dynamic departments
+    if (moduleName === 'Expenses') {
+        const deptPermissions = permissionModules.Expenses.Departments as string[];
+        count += deptPermissions.length * departments.length;
+    }
+    return count;
+  };
+
+  const calculateGrantedPermissions = (role: Role, moduleName: string) => {
+    let count = 0;
+    if (role.permissions) {
+        Object.keys(role.permissions).forEach(key => {
+            if (key === moduleName || key.startsWith(`${moduleName}.`)) {
+                count += role.permissions[key].length;
+            }
+        });
+    }
+    return count;
+  };
+
 
   const renderPermissionsForm = (
     roleData: { name: string; permissions: Record<string, string[]> },
@@ -311,7 +343,7 @@ export default function ManageRolePage() {
                                 </Label>
                             </div>
                           )}
-                           <Accordion type="single" collapsible className="w-full">
+                           <Accordion type="single" collapsible className="w-full pl-4">
                               {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
                                   <AccordionItem value={subModuleName} key={subModuleName}>
                                       <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
@@ -458,7 +490,7 @@ export default function ManageRolePage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[200px]">Role Name</TableHead>
-                <TableHead>Permissions</TableHead>
+                <TableHead>Permissions Summary</TableHead>
                 <TableHead className="text-right w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -479,30 +511,28 @@ export default function ManageRolePage() {
                   <TableRow key={role.id}>
                     <TableCell className="font-medium">{role.name}</TableCell>
                     <TableCell>
-                      <TooltipProvider>
-                        <div className="flex flex-wrap gap-1">
-                          {role.permissions && Object.entries(role.permissions).map(([moduleKey, perms]) => {
-                            const displayName = moduleKey.includes('.') ? moduleKey.split('.').slice(1).join('.') : moduleKey;
-                            const mainModule = moduleKey.split('.')[0];
-                            if (perms.length > 0) {
-                                return (
-                                <Tooltip key={moduleKey}>
-                                    <TooltipTrigger asChild>
-                                    <Badge variant="secondary" className="cursor-default">{displayName} ({perms.length})</Badge>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                    <p className="font-medium">{mainModule} / {displayName}</p>
-                                    <ul className="list-disc pl-4 text-muted-foreground">
-                                        {perms.map(p => <li key={p}>{p}</li>)}
-                                    </ul>
-                                    </TooltipContent>
-                                </Tooltip>
-                                )
-                            }
-                            return null;
-                          })}
-                        </div>
-                      </TooltipProvider>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(permissionModules).map(moduleName => {
+                           const total = calculateTotalPermissions(moduleName);
+                           const granted = calculateGrantedPermissions(role, moduleName);
+                           if (total === 0) return null;
+                           const percentage = Math.round((granted / total) * 100);
+                           return (
+                             <TooltipProvider key={moduleName}>
+                               <Tooltip>
+                                 <TooltipTrigger asChild>
+                                   <Badge variant={granted > 0 ? "default" : "secondary"} className="cursor-default">
+                                     {moduleName}: {percentage}%
+                                   </Badge>
+                                 </TooltipTrigger>
+                                 <TooltipContent>
+                                   {granted} of {total} permissions granted
+                                 </TooltipContent>
+                               </Tooltip>
+                             </TooltipProvider>
+                           );
+                        })}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(role)} disabled={!canEdit}>Edit</Button>
