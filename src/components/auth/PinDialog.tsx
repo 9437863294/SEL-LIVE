@@ -98,7 +98,7 @@ export function PinDialog({ user, isOpen, onOpenChange }: PinDialogProps) {
               value={pin}
               onChange={handlePinChange}
               onKeyDown={(e) => e.key === 'Enter' && handlePinSubmit()}
-              placeholder="Enter your 4-digit PIN"
+              placeholder="Enter PIN"
               className="text-center text-2xl tracking-[1rem] h-14"
             />
              {error && <p className="text-destructive text-sm mt-2">{error}</p>}
