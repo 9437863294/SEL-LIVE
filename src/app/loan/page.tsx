@@ -217,18 +217,6 @@ export default function LoanDashboardPage() {
                 </TableRow>
               )}
             </TableBody>
-            {!isLoading && (
-              <TableFooter>
-                <TableRow className="font-bold bg-gray-100">
-                  <TableCell colSpan={3} className="text-right">Grand Total</TableCell>
-                  <TableCell>{formatCurrency(summary.totalLoans)}</TableCell>
-                  <TableCell>{formatCurrency(summary.totalInterest)}</TableCell>
-                  <TableCell>{formatCurrency(loans.reduce((acc, loan) => acc + loan.emiAmount, 0))}</TableCell>
-                  <TableCell colSpan={3}></TableCell>
-                  <TableCell>{formatCurrency(loansWithDetails.reduce((acc, loan) => acc + loan.balance, 0))}</TableCell>
-                </TableRow>
-              </TableFooter>
-            )}
           </Table>
         </CardContent>
       </Card>
