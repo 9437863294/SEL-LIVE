@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Camera, User as UserIcon, Lock } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Camera, User as UserIcon, Lock, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,16 +17,18 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
+import { PinSetupDialog } from '@/components/auth/PinSetupDialog';
 
 export default function ProfilePage() {
   const { toast } = useToast();
-  const { user, loading: authLoading, refreshUserData } = useAuth();
+  const { user, loading: authLoading, refreshUserData, loadSavedUsers } = useAuth();
   
   const [displayName, setDisplayName] = useState('');
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -158,16 +160,31 @@ export default function ProfilePage() {
                  </div>
              </div>
              <div className="space-y-2">
-                <Label>Password</Label>
-                 <Button variant="outline" className="w-full justify-start" onClick={() => setIsChangePasswordOpen(true)}>
-                    <Lock className="mr-2 h-4 w-4"/>
-                    Change Password
-                 </Button>
+                <Label>Security</Label>
+                 <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 justify-start" onClick={() => setIsChangePasswordOpen(true)}>
+                        <Lock className="mr-2 h-4 w-4"/>
+                        Change Password
+                    </Button>
+                    <Button variant="outline" className="flex-1 justify-start" onClick={() => setIsPinSetupOpen(true)}>
+                        <KeyRound className="mr-2 h-4 w-4"/>
+                        Setup PIN
+                    </Button>
+                 </div>
              </div>
           </CardContent>
         </Card>
       </div>
       <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
+      {user && (
+        <PinSetupDialog
+            user={user}
+            isOpen={isPinSetupOpen}
+            onOpenChange={setIsPinSetupOpen}
+            onPinSet={loadSavedUsers}
+        />
+      )}
     </>
   );
 }
+
