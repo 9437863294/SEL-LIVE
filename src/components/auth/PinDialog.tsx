@@ -83,15 +83,13 @@ export function PinDialog({ user, isOpen, onOpenChange }: PinDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs text-center">
-        <DialogHeader className="space-y-4">
-            <Avatar className="h-24 w-24 mx-auto">
+      <DialogContent className="sm:max-w-xs text-center p-8">
+        <div className="flex flex-col items-center gap-4">
+            <Avatar className="h-24 w-24">
                 <AvatarImage src={user.photoURL} alt={user.name} />
                 <AvatarFallback className="text-3xl">{getInitials(user.name)}</AvatarFallback>
             </Avatar>
-            <DialogTitle>{user.name}</DialogTitle>
-        </DialogHeader>
-        <div className="py-4">
+            <DialogTitle className="text-xl">{user.name}</DialogTitle>
             <Input
               type="password"
               maxLength={4}
@@ -102,11 +100,11 @@ export function PinDialog({ user, isOpen, onOpenChange }: PinDialogProps) {
               className="text-center text-2xl tracking-[1rem] h-14"
             />
              {error && <p className="text-destructive text-sm mt-2">{error}</p>}
+             <Button onClick={handlePinSubmit} disabled={isLoading || pin.length !== 4} className="w-full">
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Sign In
+            </Button>
         </div>
-         <Button onClick={handlePinSubmit} disabled={isLoading || pin.length !== 4}>
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Sign In
-        </Button>
       </DialogContent>
     </Dialog>
   );
