@@ -123,7 +123,7 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onLogout()}>
-      <DialogContent onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Your session has expired</DialogTitle>
           <DialogDescription>
