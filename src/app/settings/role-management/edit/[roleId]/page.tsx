@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -49,8 +49,8 @@ export default function EditRolePage() {
                         if (Array.isArray(sub)) {
                             completePermissions[moduleName] = roleData.permissions?.[moduleName] || [];
                         } else {
-                            if (sub['View Module']) {
-                                completePermissions[moduleName] = roleData.permissions?.[moduleName] || [];
+                             if (sub['View Module']) {
+                                completePermissions[moduleName] = (roleData.permissions?.[moduleName] || []).includes('View') ? ['View'] : [];
                             }
                             Object.keys(sub).forEach(subModule => {
                                 if (subModule === 'View Module') return;
@@ -137,7 +137,7 @@ export default function EditRolePage() {
     
     if (isLoading) {
         return (
-            <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
                 <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
                 <div className="space-y-4">
                     <Skeleton className="h-12 w-1/2" />
@@ -152,7 +152,7 @@ export default function EditRolePage() {
     }
 
     return (
-        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/settings/role-management">
@@ -272,8 +272,7 @@ export default function EditRolePage() {
                                                         <Checkbox
                                                             id={`select-all-group-edit-${fullKey}`}
                                                             checked={isAllInGroupSelected}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            onCheckedChange={(checked) => handleSelectAllForGroup(fullKey, permissions, !!checked)}
+                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions, !!e.currentTarget.dataset.state);}}
                                                         />
                                                         <Label htmlFor={`select-all-group-edit-${fullKey}`} className="text-xs font-medium">All</Label>
                                                     </div>
