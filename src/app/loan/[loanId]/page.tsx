@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp, query, where } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp, query, where, runTransaction } from 'firebase/firestore';
 import type { Loan, EMI, AccountHead, SubAccountHead, Department, SerialNumberConfig, ExpenseRequest } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, addMonths } from 'date-fns';
@@ -138,24 +138,28 @@ export default function LoanDetailsPage() {
         const emiDocRef = doc(db, 'loans', loanId, 'emis', selectedEmi.id);
         const loanDocRef = doc(db, 'loans', loanId);
 
-        const batch = writeBatch(db);
-        
-        batch.update(emiDocRef, { 
-            status: 'Paid',
-            paidAmount: dialogPaidAmount,
-            principal: dialogPrincipal,
-            interest: dialogInterest,
-            emiAmount: dialogPrincipal + dialogInterest,
-            paidAt: Timestamp.now(),
-            paidById: user.id,
+        await runTransaction(db, async (transaction) => {
+            const loanDoc = await transaction.get(loanDocRef);
+            if (!loanDoc.exists()) {
+                throw "Loan document does not exist!";
+            }
+            
+            const currentLoanData = loanDoc.data() as Loan;
+            const originalEmi = emis.find(e => e.id === selectedEmi.id);
+            const paidAmountDifference = dialogPaidAmount - (originalEmi?.paidAmount || 0);
+            
+            transaction.update(emiDocRef, { 
+                status: 'Paid',
+                paidAmount: dialogPaidAmount,
+                principal: dialogPrincipal,
+                interest: dialogInterest,
+                emiAmount: dialogPrincipal + dialogInterest,
+                paidAt: Timestamp.now(),
+                paidById: user.id,
+            });
+
+            transaction.update(loanDocRef, { totalPaid: currentLoanData.totalPaid + paidAmountDifference });
         });
-        
-        const originalEmi = emis.find(e => e.id === selectedEmi.id);
-        const paidAmountDifference = dialogPaidAmount - (originalEmi?.paidAmount || 0);
-
-        batch.update(loanDocRef, { totalPaid: loan.totalPaid + paidAmountDifference });
-
-        await batch.commit();
 
         toast({ title: "Success", description: `EMI #${selectedEmi.emiNo} has been updated.`});
         
@@ -178,21 +182,26 @@ export default function LoanDetailsPage() {
         const emiDocRef = doc(db, 'loans', loanId, 'emis', emi.id);
         const loanDocRef = doc(db, 'loans', loanId);
 
-        const batch = writeBatch(db);
+        await runTransaction(db, async (transaction) => {
+            const loanDoc = await transaction.get(loanDocRef);
+            if (!loanDoc.exists()) {
+                throw "Loan document does not exist!";
+            }
+            const currentLoanData = loanDoc.data() as Loan;
 
-        batch.update(emiDocRef, {
-            status: 'Pending',
-            paidAmount: 0,
-            paidAt: null,
-            paidById: null,
-            expenseRequestNo: null,
+            transaction.update(emiDocRef, {
+                status: 'Pending',
+                paidAmount: 0,
+                paidAt: null,
+                paidById: null,
+                expenseRequestNo: null,
+            });
+
+            transaction.update(loanDocRef, {
+                totalPaid: currentLoanData.totalPaid - emi.paidAmount,
+            });
         });
 
-        batch.update(loanDocRef, {
-            totalPaid: loan.totalPaid - emi.paidAmount,
-        });
-
-        await batch.commit();
         toast({ title: 'Success', description: 'EMI has been marked as unpaid.' });
         setIsViewDetailsOpen(false);
         fetchLoanData();
