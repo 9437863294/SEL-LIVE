@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router, toast]);
 
 
-  const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null) => {
+  const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
     if (!firebaseUser) {
         setUser(null);
         setPermissions({});
@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionStorage.removeItem('impersonationUserId');
         sessionStorage.removeItem('originalAdminUser');
         setLoading(false);
-        return;
+        return null;
     }
 
     try {
@@ -123,15 +123,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                  console.warn(`User has no role assigned.`);
                  setPermissions({});
             }
+            return userData;
         } else {
             console.error("User document not found for UID:", userToLoadId);
             await handleSignOut();
+            return null;
         }
 
     } catch (error) {
         console.error("Error fetching user data:", error);
         setUser(null);
         setPermissions({});
+        return null;
     } finally {
         setLoading(false);
     }
@@ -187,12 +190,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let interval: NodeJS.Timeout;
 
     if (user) {
-      const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
+      const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || Date.now().toString(), 10);
       const sessionDurationMinutes = user.theme?.sessionDuration || 60; // Default 60 minutes
       const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
       const expiryTimestamp = loginTimestamp + sessionDurationMs;
 
-      interval = setInterval(() => {
+      const checkSession = () => {
         const now = Date.now();
         const remainingMs = expiryTimestamp - now;
         
@@ -203,7 +206,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setSessionRemainingTime(Math.round(remainingMs / 1000));
         }
-      }, 1000);
+      };
+      
+      checkSession(); // Initial check
+      interval = setInterval(checkSession, 1000);
     }
 
     return () => {
