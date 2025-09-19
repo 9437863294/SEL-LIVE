@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, runTransaction, Timestamp, getDoc } from 'firebase/firestore';
-import type { Loan, EMI, AccountHead, SubAccountHead, Department, ExpenseRequest } from '@/lib/types';
+import type { Loan, EMI, AccountHead, SubAccountHead, Department, ExpenseRequest, User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear, getMonth, eachYearOfInterval, startOfYear, endOfYear } from 'date-fns';
 import {
@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createExpenseRequest } from '@/ai';
 import { Textarea } from '@/components/ui/textarea';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface EnrichedEmi extends EMI {
   loan: Loan;
@@ -35,7 +36,7 @@ interface EnrichedEmi extends EMI {
 
 export default function EmiSummaryPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const [allEmis, setAllEmis] = useState<EnrichedEmi[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -50,6 +51,7 @@ export default function EmiSummaryPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
   const [selectedEmi, setSelectedEmi] = useState<EnrichedEmi | null>(null);
   const [dialogPaidAmount, setDialogPaidAmount] = useState(0);
   const [dialogPrincipal, setDialogPrincipal] = useState(0);
@@ -59,6 +61,7 @@ export default function EmiSummaryPage() {
   const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
   const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
+  const [isUpdatingEmi, setIsUpdatingEmi] = useState<string | null>(null);
   
 
   const fetchAllData = async () => {
@@ -124,7 +127,7 @@ export default function EmiSummaryPage() {
   
   const handleMarkAsPaidClick = (emi: EnrichedEmi) => {
     setSelectedEmi(emi);
-    setDialogPaidAmount(emi.emiAmount);
+    setDialogPaidAmount(emi.paidAmount > 0 ? emi.paidAmount : emi.emiAmount);
     setDialogPrincipal(emi.principal);
     setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
@@ -172,6 +175,48 @@ export default function EmiSummaryPage() {
         setIsConfirmingPayment(false);
     }
   }
+
+  const handleMarkAsUnpaid = async (emi: EnrichedEmi) => {
+    setIsUpdatingEmi(emi.id);
+    try {
+        const emiDocRef = doc(db, 'loans', emi.loan.id, 'emis', emi.id);
+        const loanDocRef = doc(db, 'loans', emi.loan.id);
+
+        await runTransaction(db, async (transaction) => {
+            const loanDoc = await transaction.get(loanDocRef);
+            const emiDoc = await transaction.get(emiDocRef);
+
+            if (!loanDoc.exists() || !emiDoc.exists()) {
+                throw "Loan or EMI document does not exist!";
+            }
+            const currentLoanData = loanDoc.data() as Loan;
+            const currentEmiData = emiDoc.data() as EMI;
+            
+            const amountToReverse = currentEmiData.paidAmount || 0;
+
+            transaction.update(emiDocRef, {
+                status: 'Pending',
+                paidAmount: 0,
+                paidAt: null,
+                paidById: null,
+                expenseRequestNo: null,
+            });
+
+            transaction.update(loanDocRef, {
+                totalPaid: currentLoanData.totalPaid - amountToReverse,
+            });
+        });
+
+        toast({ title: 'Success', description: 'EMI has been marked as unpaid.' });
+        if (isViewDetailsOpen) setIsViewDetailsOpen(false);
+        fetchAllData();
+    } catch (error) {
+        console.error("Error marking as unpaid:", error);
+        toast({ title: 'Error', description: 'Could not update EMI status.', variant: 'destructive' });
+    } finally {
+        setIsUpdatingEmi(null);
+    }
+  };
 
   const openCreateExpenseDialog = async (emi: EnrichedEmi) => {
         const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
@@ -357,9 +402,25 @@ export default function EmiSummaryPage() {
                           {emi.status === 'Pending' ? (
                             <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
                           ) : (
-                            <Button size="sm" variant="secondary" onClick={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
-                                Create Expense
-                            </Button>
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onSelect={() => { setSelectedEmi(emi); setIsViewDetailsOpen(true); }}>
+                                        <Eye className="mr-2 h-4 w-4" /> View
+                                    </DropdownMenuItem>
+                                     <DropdownMenuItem onSelect={() => handleMarkAsPaidClick(emi)}>
+                                        <Edit className="mr-2 h-4 w-4" /> Edit Payment
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
+                                        <FilePlus className="mr-2 h-4 w-4" /> Create Expense
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={isUpdatingEmi === emi.id} className="text-destructive">
+                                        <RotateCcw className="mr-2 h-4 w-4" /> Mark as Unpaid
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                             </DropdownMenu>
                           )}
                       </TableCell>
                     </TableRow>
@@ -388,7 +449,7 @@ export default function EmiSummaryPage() {
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
-                <DialogTitle>Confirm Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
+                <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
                 <DialogDescription>
                     Review the details and confirm the amount paid.
                 </DialogDescription>
@@ -421,12 +482,55 @@ export default function EmiSummaryPage() {
                 <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
                 <Button onClick={handleConfirmPayment} disabled={isConfirmingPayment}>
                   {isConfirmingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Confirm Payment
+                  {selectedEmi?.status === 'Paid' ? 'Save Changes' : 'Confirm Payment'}
                 </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
       
+      {selectedEmi && isViewDetailsOpen && (
+        <Dialog open={isViewDetailsOpen} onOpenChange={setIsViewDetailsOpen}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Payment Details for EMI #{selectedEmi.emiNo}</DialogTitle>
+                </DialogHeader>
+                <Table>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-medium">Mark as Paid By</TableCell>
+                      <TableCell>{users.find(u => u.id === selectedEmi.paidById)?.name || 'N/A'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium">Paid On</TableCell>
+                      <TableCell>{selectedEmi.paidAt ? formatDate(selectedEmi.paidAt) : 'N/A'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium">Paid Amount</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.paidAmount)}</TableCell>
+                    </TableRow>
+                     <TableRow>
+                      <TableCell className="font-medium">Principal</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.principal)}</TableCell>
+                    </TableRow>
+                     <TableRow>
+                      <TableCell className="font-medium">Interest</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.interest)}</TableCell>
+                    </TableRow>
+                    {selectedEmi.expenseRequestNo && (
+                      <TableRow>
+                        <TableCell className="font-medium">Expense Request</TableCell>
+                        <TableCell>{selectedEmi.expenseRequestNo}</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                 <DialogFooter>
+                    <DialogClose asChild><Button>Close</Button></DialogClose>
+                 </DialogFooter>
+            </DialogContent>
+        </Dialog>
+      )}
+
       {expenseToCreate && (
         <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
           <DialogContent>
