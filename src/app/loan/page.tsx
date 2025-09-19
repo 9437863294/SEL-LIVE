@@ -176,7 +176,7 @@ export default function LoanDashboardPage() {
                 <TableHead className="text-center">Start Date</TableHead>
                 <TableHead className="text-center">A/C No</TableHead>
                 <TableHead className="text-center">Lender Name</TableHead>
-                <TableHead className="text-center">Principal Amount</TableHead>
+                <TableHead className="text-center">Principal</TableHead>
                 <TableHead className="text-center">Interest Amount</TableHead>
                 <TableHead className="text-center">EMI Amount</TableHead>
                 <TableHead className="text-center">Total Months</TableHead>
