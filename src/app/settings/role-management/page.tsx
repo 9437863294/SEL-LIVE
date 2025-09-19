@@ -256,61 +256,49 @@ export default function ManageRolePage() {
     }
   };
   
-  const calculateTotalPermissions = (moduleName: string) => {
-    const module = permissionModules[moduleName as keyof typeof permissionModules];
-    if (Array.isArray(module)) {
-        return module.length;
-    }
-    let count = 0;
-    Object.entries(module).forEach(([key, value]) => {
-        if(key === 'View Module') {
-          count +=1;
-        } else if (key === 'Departments') {
-           count += value.length * departments.length;
-        } else {
-           count += value.length;
-        }
-    });
-    return count;
+  const calculateTotalPermissions = (moduleName: string): number => {
+      const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
+      if (Array.isArray(moduleDef)) {
+          return moduleDef.length;
+      }
+      return Object.entries(moduleDef).reduce((acc, [key, value]) => {
+          if (key === 'View Module') {
+              return acc + 1;
+          }
+          if (key === 'Departments') {
+              return acc + (value.length * departments.length);
+          }
+          return acc + value.length;
+      }, 0);
   };
 
-  const calculateGrantedPermissions = (role: Role, moduleName: string) => {
-    if (!role.permissions) return 0;
+  const calculateGrantedPermissions = (role: Role, moduleName: string): number => {
+      if (!role.permissions) return 0;
+      
+      const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
+      let grantedCount = 0;
 
-    const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
-    let grantedCount = 0;
-
-    // Direct permissions for flat modules
-    if (Array.isArray(moduleDef)) {
-        grantedCount = role.permissions[moduleName]?.length || 0;
-    } else { // Nested modules
-        // Count 'View Module' permission
-        if (role.permissions[moduleName]?.includes('View Module')) {
+      if (Array.isArray(moduleDef)) {
+          grantedCount = role.permissions[moduleName]?.length || 0;
+      } else {
+          // Count 'View Module'
+          if (role.permissions[moduleName]?.includes('View Module')) {
             grantedCount++;
-        }
-        // Count permissions in sub-modules
-        Object.keys(moduleDef).forEach(subModuleKey => {
-            if (subModuleKey === 'View Module') return;
-
-            const fullSubModuleKey = `${moduleName}.${subModuleKey}`;
-            
-            if (subModuleKey === 'Departments') {
-                // Count permissions for each department
-                departments.forEach(dept => {
-                    const deptKey = `${fullSubModuleKey}.${dept.id}`;
-                    if(role.permissions[deptKey]) {
-                        grantedCount += role.permissions[deptKey].length;
-                    }
-                });
-            } else {
-                // Count for regular sub-modules
-                if (role.permissions[fullSubModuleKey]) {
-                    grantedCount += role.permissions[fullSubModuleKey].length;
-                }
-            }
-        });
-    }
-    return grantedCount;
+          }
+          // Count other sub-modules
+          Object.keys(moduleDef).forEach(subModuleKey => {
+              if (subModuleKey === 'View Module') return;
+              
+              if (subModuleKey === 'Departments') {
+                  departments.forEach(dept => {
+                      grantedCount += role.permissions?.[`Expenses.Departments.${dept.id}`]?.length || 0;
+                  });
+              } else {
+                  grantedCount += role.permissions?.[`${moduleName}.${subModuleKey}`]?.length || 0;
+              }
+          });
+      }
+      return grantedCount;
   };
 
 
@@ -602,4 +590,5 @@ export default function ManageRolePage() {
     </div>
   );
 }
+
 
