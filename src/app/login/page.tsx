@@ -49,6 +49,9 @@ export default function LoginPage() {
       return;
     }
     setIsLoading(true);
+    if (rememberMe) {
+        sessionStorage.setItem('tempPassword', password);
+    }
     setShouldRemember(rememberMe); // Tell AuthProvider to handle saving if login is successful
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -60,6 +63,7 @@ export default function LoginPage() {
     } catch (error: any) {
       console.error('Error signing in:', error);
       setShouldRemember(false); // Reset on failure
+      sessionStorage.removeItem('tempPassword');
       toast({
         title: 'Sign In Failed',
         description: error.message || 'An unexpected error occurred.',
