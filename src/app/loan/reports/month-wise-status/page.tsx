@@ -3,21 +3,37 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Clock } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, getYear, getMonth, eachYearOfInterval, isSameMonth, isSameYear } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
+import { getYear } from 'date-fns';
 
 interface EmiWithLoan extends EMI {
   loan: Loan;
+}
+
+interface MonthlySummary {
+  totalDue: number;
+  alreadyPaid: number;
+  toBePaid: number;
 }
 
 export default function MonthWiseStatusReportPage() {
@@ -25,11 +41,13 @@ export default function MonthWiseStatusReportPage() {
   const [allEmis, setAllEmis] = useState<EmiWithLoan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const currentMonth = new Date().toLocaleString('default', { month: 'long' });
-  const currentYear = getYear(new Date()).toString();
+  const getFinancialYear = (date: Date) => {
+    return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+  };
+  
+  const currentFinancialYear = getFinancialYear(new Date());
 
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedYear, setSelectedYear] = useState(currentFinancialYear.toString());
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -53,33 +71,69 @@ export default function MonthWiseStatusReportPage() {
     };
     fetchAllData();
   }, [toast]);
+  
+  const financialYearMonths = [
+    'April', 'May', 'June', 'July', 'August', 'September', 
+    'October', 'November', 'December', 'January', 'February', 'March'
+  ];
 
   const yearOptions = useMemo(() => {
-    if (allEmis.length === 0) return [currentYear];
-    const firstEmiDate = allEmis.reduce((earliest, emi) => (emi.dueDate.toDate() < earliest ? emi.dueDate.toDate() : earliest), new Date());
-    const lastEmiDate = allEmis.reduce((latest, emi) => (emi.dueDate.toDate() > latest ? emi.dueDate.toDate() : latest), new Date(1970, 0, 1));
-    return eachYearOfInterval({ start: firstEmiDate, end: lastEmiDate }).map(d => getYear(d).toString()).reverse();
-  }, [allEmis, currentYear]);
+    if (allEmis.length === 0) return [currentFinancialYear.toString()];
+    const firstYear = allEmis.reduce((earliest, emi) => {
+        const year = getFinancialYear(emi.dueDate.toDate());
+        return year < earliest ? year : earliest;
+    }, currentFinancialYear);
+    const lastYear = allEmis.reduce((latest, emi) => {
+        const year = getFinancialYear(emi.dueDate.toDate());
+        return year > latest ? year : latest;
+    }, currentFinancialYear);
+    
+    const years = [];
+    for (let y = lastYear; y >= firstYear; y--) {
+        years.push(y.toString());
+    }
+    return years;
+  }, [allEmis, currentFinancialYear]);
 
-  const monthOptions = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-  const filteredEmis = useMemo(() => {
-    const monthIndex = monthOptions.indexOf(selectedMonth);
-    return allEmis.filter(emi => {
-      const emiDate = emi.dueDate.toDate();
-      return getMonth(emiDate) === monthIndex && getYear(emiDate).toString() === selectedYear;
+  const yearlySummary = useMemo(() => {
+    const summary: Record<string, MonthlySummary> = {};
+
+    financialYearMonths.forEach(month => {
+        summary[month] = { totalDue: 0, alreadyPaid: 0, toBePaid: 0 };
     });
-  }, [allEmis, selectedMonth, selectedYear, monthOptions]);
 
-  const summary = useMemo(() => {
-    const totalDue = filteredEmis.reduce((sum, emi) => sum + emi.emiAmount, 0);
-    const totalPaid = filteredEmis.filter(e => e.status === 'Paid').reduce((sum, emi) => sum + emi.paidAmount, 0);
-    const totalUnpaid = filteredEmis.filter(e => e.status !== 'Paid').reduce((sum, emi) => sum + emi.emiAmount, 0);
-    return { totalDue, totalPaid, totalUnpaid };
-  }, [filteredEmis]);
+    allEmis.forEach(emi => {
+        const emiDate = emi.dueDate.toDate();
+        const emiFinancialYear = getFinancialYear(emiDate);
+
+        if (emiFinancialYear.toString() === selectedYear) {
+            const monthName = financialYearMonths[emiDate.getMonth() - (emiDate.getMonth() >=3 ? 3 : -9)]; // Adjust index for financial year start in April
+            
+            if (summary[monthName]) {
+                summary[monthName].totalDue += emi.emiAmount;
+                if(emi.status === 'Paid') {
+                    summary[monthName].alreadyPaid += emi.paidAmount;
+                }
+            }
+        }
+    });
+    
+    financialYearMonths.forEach(month => {
+        summary[month].toBePaid = summary[month].totalDue - summary[month].alreadyPaid;
+    });
+
+    return summary;
+  }, [allEmis, selectedYear, financialYearMonths]);
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+    if (amount === 0) return '-';
+    return new Intl.NumberFormat('en-IN', { 
+        style: 'currency', 
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
   };
   
   return (
@@ -90,77 +144,56 @@ export default function MonthWiseStatusReportPage() {
         </Link>
         <div>
             <h1 className="text-2xl font-bold">Month-wise EMI Status Report</h1>
-            <CardDescription>Review the status of all EMIs for a selected month and year.</CardDescription>
+            <CardDescription>Review the status of all EMIs for a selected financial year.</CardDescription>
         </div>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-4">
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {monthOptions.map(month => <SelectItem key={month} value={month}>{month}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                {yearOptions.map(year => <SelectItem key={year} value={year}>{`${year}-${(parseInt(year) + 1).toString().slice(-2)}`}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Lender</TableHead>
-                <TableHead>Account No</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>EMI Amount</TableHead>
-                <TableHead>Paid Amount</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={6}><Skeleton className="h-8" /></TableCell>
-                  </TableRow>
-                ))
-              ) : filteredEmis.length > 0 ? (
-                filteredEmis.map(emi => (
-                  <TableRow key={emi.id}>
-                    <TableCell>{emi.loan.lenderName}</TableCell>
-                    <TableCell>{emi.loan.accountNo}</TableCell>
-                    <TableCell>{format(emi.dueDate.toDate(), 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
-                    <TableCell>{formatCurrency(emi.paidAmount)}</TableCell>
-                    <TableCell>
-                      <Badge variant={emi.status === 'Paid' ? 'default' : 'destructive'} className={emi.status === 'Paid' ? 'bg-green-600' : ''}>
-                        {emi.status === 'Paid' ? <CheckCircle className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
-                        {emi.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">No EMIs for {selectedMonth} {selectedYear}.</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-            <TableFooter>
-                <TableRow className="bg-muted/50 font-bold">
-                    <TableCell colSpan={3}>Totals</TableCell>
-                    <TableCell>{formatCurrency(summary.totalDue)}</TableCell>
-                    <TableCell>{formatCurrency(summary.totalPaid)}</TableCell>
-                    <TableCell>{formatCurrency(summary.totalUnpaid)}</TableCell>
-                </TableRow>
-            </TableFooter>
-          </Table>
+            {isLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-border border">
+                     {financialYearMonths.map(month => (
+                        <div key={month} className="bg-background"><Skeleton className="h-32"/></div>
+                     ))}
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-border border">
+                    {financialYearMonths.map(month => {
+                        const data = yearlySummary[month];
+                        return (
+                            <div key={month} className="bg-background">
+                                <h3 className="p-2 text-center font-bold bg-yellow-200 text-yellow-900 border-b">{month.toUpperCase()}</h3>
+                                <Table>
+                                    <TableBody>
+                                        <TableRow>
+                                            <TableCell className="font-medium">TOTAL DUE</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(data.totalDue)}</TableCell>
+                                        </TableRow>
+                                        <TableRow>
+                                            <TableCell className="font-medium">ALREADY PAID</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(data.alreadyPaid)}</TableCell>
+                                        </TableRow>
+                                        <TableRow>
+                                            <TableCell className="font-medium">TO BE PAID</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(data.toBePaid)}</TableCell>
+                                        </TableRow>
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </CardContent>
       </Card>
     </div>
