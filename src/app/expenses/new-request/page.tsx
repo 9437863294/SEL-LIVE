@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -44,7 +45,12 @@ function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  
   const departmentIdFromUrl = searchParams.get('departmentId');
+  const amountFromUrl = searchParams.get('amount');
+  const projectIdFromUrl = searchParams.get('projectId');
+  const partyNameFromUrl = searchParams.get('partyName');
+  const descriptionFromUrl = searchParams.get('description');
 
   const [isSaving, setIsSaving] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -63,15 +69,21 @@ function NewExpenseRequestForm() {
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
       departmentId: departmentIdFromUrl || '',
-      projectId: '',
-      amount: 0,
+      projectId: projectIdFromUrl || '',
+      amount: amountFromUrl ? parseFloat(amountFromUrl) : 0,
       headOfAccount: '',
       subHeadOfAccount: '',
       remarks: '',
-      description: '',
-      partyName: '',
+      description: descriptionFromUrl || '',
+      partyName: partyNameFromUrl || '',
     },
   });
+  
+  useEffect(() => {
+    if (partyNameFromUrl) {
+      setPartySearch(partyNameFromUrl);
+    }
+  }, [partyNameFromUrl]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -103,7 +115,11 @@ function NewExpenseRequestForm() {
   
   useEffect(() => {
     form.setValue('departmentId', departmentIdFromUrl || '');
-  }, [departmentIdFromUrl, form]);
+    form.setValue('projectId', projectIdFromUrl || '');
+    form.setValue('amount', amountFromUrl ? parseFloat(amountFromUrl) : 0);
+    form.setValue('partyName', partyNameFromUrl || '');
+    form.setValue('description', descriptionFromUrl || '');
+  }, [departmentIdFromUrl, projectIdFromUrl, amountFromUrl, partyNameFromUrl, descriptionFromUrl, form]);
 
   useEffect(() => {
     const generatePreviewId = async () => {
@@ -200,7 +216,16 @@ function NewExpenseRequestForm() {
             title: 'Request Created',
             description: `Expense request ${newRequestNo} has been successfully created.`,
         });
-        form.reset();
+        form.reset({
+            departmentId: departmentIdFromUrl || '',
+            projectId: '',
+            amount: 0,
+            headOfAccount: '',
+            subHeadOfAccount: '',
+            remarks: '',
+            description: '',
+            partyName: '',
+        });
         setPartySearch("");
     } catch (error: any) {
         console.error("Error creating expense request: ", error);
@@ -259,7 +284,7 @@ function NewExpenseRequestForm() {
                       render={({ field }) => (
                         <FormItem className="space-y-2">
                           <FormLabel>Project Name</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Select Project" /></SelectTrigger>
                             </FormControl>
