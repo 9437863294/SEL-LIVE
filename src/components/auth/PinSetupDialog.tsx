@@ -108,7 +108,7 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
               maxLength={4}
               value={pin}
               onChange={(e) => handlePinChange(e, setPin)}
-              placeholder="Enter 4-digit PIN"
+              placeholder="PIN"
               className="text-center text-2xl tracking-[1rem] h-14"
             />
              <Input

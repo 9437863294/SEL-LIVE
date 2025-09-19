@@ -123,7 +123,7 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onLogout()}>
-      <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-xs" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Your session has expired</DialogTitle>
           <DialogDescription>
@@ -131,9 +131,9 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
           </DialogDescription>
         </DialogHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col items-center">
-            <TabsList>
-                <TabsTrigger value="password">Password</TabsTrigger>
-                <TabsTrigger value="pin" disabled={!savedUser}>PIN</TabsTrigger>
+            <TabsList className="h-auto p-1">
+                <TabsTrigger value="password" className="text-xs px-2 py-1 h-auto">Password</TabsTrigger>
+                <TabsTrigger value="pin" className="text-xs px-2 py-1 h-auto" disabled={!savedUser}>PIN</TabsTrigger>
             </TabsList>
             <TabsContent value="password" className="w-full">
                 <div className="space-y-2 py-4">
@@ -158,7 +158,7 @@ export function SessionExpiryDialog({ isOpen, onSessionExtend, onLogout }: Sessi
                         value={pin}
                         onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
                         onKeyDown={(e) => e.key === 'Enter' && handleExtendWithPin()}
-                        placeholder="Enter your 4-digit PIN"
+                        placeholder="PIN"
                         className="text-center text-xl tracking-[1rem]"
                     />
                 </div>

@@ -256,7 +256,7 @@ export default function LoginPage() {
             value={pin}
             onChange={handlePinChange}
             onKeyDown={(e) => e.key === 'Enter' && handlePinSubmit()}
-            placeholder="Enter PIN"
+            placeholder="PIN"
             className="text-center text-2xl tracking-[1rem] h-14"
           />
           {pinError && <p className="text-destructive text-sm mt-2">{pinError}</p>}
