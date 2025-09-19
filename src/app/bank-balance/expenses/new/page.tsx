@@ -408,7 +408,7 @@ export default function NewPaymentPage() {
                        <div className="space-y-2">
                         <Label>Description <span className="text-destructive">*</span></Label>
                         <Textarea 
-                          placeholder="e.g. Office supplies" 
+                          placeholder="e.g. Office supplies for the month of September" 
                           value={expense.description} 
                           onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
                         />
@@ -431,5 +431,7 @@ export default function NewPaymentPage() {
   );
 }
 
+
+    
 
     
