@@ -111,6 +111,9 @@ export default function LoanDetailsPage() {
       )
   }
 
+  const paidEmisCount = emis.filter(e => e.status === 'Paid').length;
+  const remainingMonths = loan.tenure - paidEmisCount;
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
@@ -133,6 +136,7 @@ export default function LoanDetailsPage() {
             <div><p className="text-sm text-muted-foreground">Loan Amount</p><p className="font-semibold">{formatCurrency(loan.loanAmount)}</p></div>
             <div><p className="text-sm text-muted-foreground">Interest Rate</p><p className="font-semibold">{loan.interestRate}%</p></div>
             <div><p className="text-sm text-muted-foreground">Tenure</p><p className="font-semibold">{loan.tenure} months</p></div>
+            <div><p className="text-sm text-muted-foreground">Remaining Months</p><p className="font-semibold">{remainingMonths} months</p></div>
             <div><p className="text-sm text-muted-foreground">EMI</p><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
             <div><p className="text-sm text-muted-foreground">Total Paid</p><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
              <div><p className="text-sm text-muted-foreground">Outstanding</p><p className="font-semibold">{formatCurrency(loan.loanAmount - loan.totalPaid)}</p></div>
