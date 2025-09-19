@@ -100,7 +100,7 @@ export default function ManageLoanPage() {
                 <TableRow>
                   <TableHead className="text-center">Date</TableHead>
                   <TableHead className="text-center">A/C No</TableHead>
-                  <TableHead className="text-center">Lender Name</TableHead>
+                  <TableHead className="text-center">Lender</TableHead>
                   <TableHead className="text-center">Loan Amount</TableHead>
                   <TableHead className="text-center">Tenure</TableHead>
                   <TableHead className="text-center">Interest %</TableHead>
