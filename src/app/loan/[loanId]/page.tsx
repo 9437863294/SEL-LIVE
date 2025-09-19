@@ -355,7 +355,7 @@ export default function LoanDetailsPage() {
               <div className="space-y-4 py-4">
                   <div className="space-y-2">
                       <Label htmlFor="dialog-emi">EMI Amount</Label>
-                      <Input id="dialog-emi" type="number" value={dialogPrincipal + dialogInterest} readOnly className="font-semibold" />
+                      <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
                   </div>
                    <div className="space-y-2">
                       <Label htmlFor="dialog-principal">Principal</Label>
