@@ -78,19 +78,24 @@ export default function NewLoanPage() {
     }
   };
 
-  const handleEmiAmountChange = (index: number, newEmiAmount: number) => {
+  const handleEmiScheduleChange = (index: number, field: 'emiAmount' | 'interest', value: number) => {
     const newSchedule = [...emiSchedule];
     const item = newSchedule[index];
     const monthlyRate = parseFloat(loan.interestRate) / 12 / 100;
     
-    // Determine the opening balance for this specific EMI
     const openingBalance = index === 0 
       ? parseFloat(loan.loanAmount) 
       : newSchedule[index - 1].closingPrincipal;
       
-    item.emiAmount = newEmiAmount;
-    item.interest = openingBalance * monthlyRate;
-    item.principal = newEmiAmount - item.interest;
+    if (field === 'emiAmount') {
+        item.emiAmount = value;
+        item.interest = openingBalance * monthlyRate; // Recalculate interest if EMI changes
+        item.principal = item.emiAmount - item.interest;
+    } else if (field === 'interest') {
+        item.interest = value;
+        item.principal = item.emiAmount - item.interest; // Recalculate principal if interest changes
+    }
+    
     item.closingPrincipal = openingBalance - item.principal;
     
     // Recalculate subsequent EMIs
@@ -98,7 +103,6 @@ export default function NewLoanPage() {
       const prevClosingPrincipal = newSchedule[i - 1].closingPrincipal;
       const currentItem = newSchedule[i];
       currentItem.interest = prevClosingPrincipal * monthlyRate;
-      // Keep subsequent EMI amounts the same unless logic dictates otherwise
       currentItem.principal = currentItem.emiAmount - currentItem.interest;
       currentItem.closingPrincipal = prevClosingPrincipal - currentItem.principal;
     }
@@ -217,8 +221,8 @@ export default function NewLoanPage() {
                             <TableHead>EMI No.</TableHead>
                             <TableHead>Due Date</TableHead>
                             <TableHead>EMI Amount</TableHead>
-                            <TableHead>Principal</TableHead>
                             <TableHead>Interest</TableHead>
+                            <TableHead>Principal</TableHead>
                             <TableHead>Closing Principal</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -231,12 +235,19 @@ export default function NewLoanPage() {
                                      <Input 
                                         type="number" 
                                         value={emi.emiAmount.toFixed(2)}
-                                        onChange={(e) => handleEmiAmountChange(index, parseFloat(e.target.value) || 0)}
+                                        onChange={(e) => handleEmiScheduleChange(index, 'emiAmount', parseFloat(e.target.value) || 0)}
+                                        className="w-32"
+                                     />
+                                </TableCell>
+                                <TableCell>
+                                    <Input 
+                                        type="number" 
+                                        value={emi.interest.toFixed(2)}
+                                        onChange={(e) => handleEmiScheduleChange(index, 'interest', parseFloat(e.target.value) || 0)}
                                         className="w-32"
                                      />
                                 </TableCell>
                                 <TableCell>{formatCurrency(emi.principal)}</TableCell>
-                                <TableCell>{formatCurrency(emi.interest)}</TableCell>
                                 <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
                             </TableRow>
                         ))}
