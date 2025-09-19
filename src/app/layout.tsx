@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import type { Metadata } from 'next';
@@ -30,6 +31,9 @@ function AppBody({ children }: { children: React.ReactNode }) {
             <div className="relative flex h-screen flex-col overflow-hidden bg-background">
                 <Header />
                 <main className="flex-1 overflow-auto">{children}</main>
+                <footer className="text-center text-muted-foreground text-sm py-4">
+                    Copyright © 2025 SEL. All Rights Reserved.
+                </footer>
             </div>
             <Toaster />
         </div>

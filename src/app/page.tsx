@@ -13,9 +13,6 @@ export default function Home() {
         <p className="text-muted-foreground">Here are your available modules.</p>
       </div>
       <ModuleDashboard />
-      <footer className="text-center text-muted-foreground text-sm mt-auto py-4">
-          Copyright © 2025 SEL. All Rights Reserved.
-      </footer>
     </div>
   );
 }
