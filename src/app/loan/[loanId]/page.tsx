@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -12,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
-import type { Loan, EMI, AccountHead, SubAccountHead, Department } from '@/lib/types';
+import type { Loan, EMI, AccountHead, SubAccountHead, Department, SerialNumberConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, addMonths } from 'date-fns';
 import {
@@ -298,19 +299,41 @@ export default function LoanDetailsPage() {
     }
   };
 
-    const openCreateExpenseDialog = (emi: EMI) => {
+    const openCreateExpenseDialog = async (emi: EMI) => {
         if (!loan) return;
         const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
         const financeDept = departments.find(d => d.name.toLowerCase() === 'finance');
+        if (!financeDept) {
+            toast({ title: "Configuration Error", description: "Finance department not found.", variant: "destructive" });
+            return;
+        }
+        
+        let previewRequestNo = 'Generating...';
+        try {
+            const configRef = doc(db, 'departmentSerialConfigs', financeDept.id);
+            const configDoc = await getDoc(configRef);
+            if (configDoc.exists()) {
+                const configData = configDoc.data() as SerialNumberConfig;
+                const newIndex = configData.startingIndex;
+                const formattedIndex = String(newIndex).padStart(4, '0');
+                previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+            } else {
+                previewRequestNo = 'Config not found';
+            }
+        } catch (error) {
+            previewRequestNo = 'Error generating ID';
+        }
+
         const expensePayload = {
-            departmentId: financeDept?.id || 'hr9qMqpf1GxP4FkTEygC', // Fallback to HR if Finance not found
+            departmentId: financeDept.id,
             projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
             amount: emi.paidAmount,
             partyName: loan.lenderName,
-            description: `Being EMI paid to ${loan.lenderName} for ${emiMonth} EMI No ${emi.emiNo}`,
+            description: `Being EMI paid to ${loan.lenderName} for A/c no ${loan.accountNo} for ${emiMonth} (EMI No. ${emi.emiNo})`,
             headOfAccount: 'Finance Costs',
             subHeadOfAccount: 'Bank Interest',
-            remarks: `Auto-generated from Loan EMI payment for Acc No: ${loan.accountNo}`,
+            remarks: `Auto-generated from Loan EMI payment`,
+            requestNo: previewRequestNo,
         };
         setExpenseToCreate(expensePayload);
         setIsConfirmExpenseOpen(true);
@@ -320,7 +343,21 @@ export default function LoanDetailsPage() {
         if (!expenseToCreate) return;
         setIsCreatingExpense(true);
         try {
-            const result = await createExpenseRequest(expenseToCreate);
+            // Re-fetch the serial number right before creation to ensure it's the latest
+            const financeDeptId = expenseToCreate.departmentId;
+            const configRef = doc(db, 'departmentSerialConfigs', financeDeptId);
+            const configDoc = await getDoc(configRef);
+            if(!configDoc.exists()) throw new Error("Finance department config not found");
+            const configData = configDoc.data() as SerialNumberConfig;
+
+            const finalPayload = {
+                ...expenseToCreate,
+                requestNo: `${configData.prefix || ''}${configData.format || ''}${String(configData.startingIndex).padStart(4, '0')}${configData.suffix || ''}`,
+            };
+            
+            const { requestNo, ...dataToSave } = finalPayload;
+
+            const result = await createExpenseRequest(dataToSave);
             if (result.success) {
                 toast({
                     title: 'Expense Record Created',
@@ -608,8 +645,8 @@ export default function LoanDetailsPage() {
               <div className="space-y-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                        <Label>Department</Label>
-                        <Input value="Finance" disabled />
+                        <Label>Request No.</Label>
+                        <Input value={expenseToCreate.requestNo} disabled />
                     </div>
                     <div className="space-y-1">
                         <Label>Project</Label>
