@@ -129,6 +129,7 @@ export const permissionModules = {
     'Serial No. Config': ['View', 'Edit'],
     'Appearance': ['View', 'Edit'],
     'Email Authorization': ['View', 'Send Request', 'Revoke'],
+    'Login Expiry': ['View', 'Edit'],
   },
   'Email Management': {
     'View Module': [],
@@ -248,6 +249,7 @@ export type PivotConfig = {
 export type UserSettings = {
   columnPreferences?: Record<string, ColumnPreference>;
   pivotPreferences?: Record<string, PivotConfig>;
+  sessionDuration?: number;
 };
 
 

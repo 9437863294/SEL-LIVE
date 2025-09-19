@@ -15,6 +15,7 @@ import {
   Palette,
   MailCheck,
   Receipt,
+  LogIn,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -43,6 +44,7 @@ const settingsItemsBase = [
   { icon: Clock, text: 'Working Hrs', description: 'Set company working hours and holidays.', href: '/settings/working-hours', permission: 'View' },
   { icon: Palette, text: 'Appearance', description: 'Customize the application\'s look and feel.', href: '/settings/appearance', permission: 'View' },
   { icon: MailCheck, text: 'Email Authorization', description: 'Authorize access to email services.', href: '/settings/email-authorization', permission: 'View' },
+  { icon: LogIn, text: 'Login Expiry', description: 'Manage session timeout settings.', href: '/settings/login-expiry', permission: 'View' },
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {
@@ -81,20 +83,19 @@ export default function SettingsPage() {
   const { can, isLoading } = useAuthorization();
   
   const settingsItems = settingsItemsBase.map(item => {
-    const [mainModule, subModule] = item.href.split('/').filter(p => p && p !== 'settings');
-    let permissionModule = `Settings.${item.text}`; // Default assumption
+    let permissionModule = `Settings.${item.text}`;
     
-    // This logic needs to be robust. Map href to permission module name.
-    switch(mainModule) {
-      case 'department': permissionModule = 'Settings.Manage Department'; break;
-      case 'project': permissionModule = 'Settings.Manage Project'; break;
-      case 'employee': permissionModule = 'Settings.Employee Management'; break;
-      case 'user-management': permissionModule = 'Settings.User Management'; break;
-      case 'role-management': permissionModule = 'Settings.Role Management'; break;
-      case 'serial-no-configuration': permissionModule = 'Settings.Serial No. Config'; break;
-      case 'working-hours': permissionModule = 'Settings.Working Hrs'; break;
-      case 'appearance': permissionModule = 'Settings.Appearance'; break;
-      case 'email-authorization': permissionModule = 'Settings.Email Authorization'; break;
+    switch(item.href) {
+      case '/settings/department': permissionModule = 'Settings.Manage Department'; break;
+      case '/settings/project': permissionModule = 'Settings.Manage Project'; break;
+      case '/settings/employee': permissionModule = 'Settings.Employee Management'; break;
+      case '/settings/user-management': permissionModule = 'Settings.User Management'; break;
+      case '/settings/role-management': permissionModule = 'Settings.Role Management'; break;
+      case '/settings/serial-no-configuration': permissionModule = 'Settings.Serial No. Config'; break;
+      case '/settings/working-hours': permissionModule = 'Settings.Working Hrs'; break;
+      case '/settings/appearance': permissionModule = 'Settings.Appearance'; break;
+      case '/settings/email-authorization': permissionModule = 'Settings.Email Authorization'; break;
+      case '/settings/login-expiry': permissionModule = 'Settings.Login Expiry'; break;
     }
 
     return {
@@ -112,7 +113,7 @@ export default function SettingsPage() {
             <Skeleton className="h-8 w-32" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {Array.from({length: 9}).map((_, i) => <Skeleton key={i} className="h-28" />)}
+            {Array.from({length: 10}).map((_, i) => <Skeleton key={i} className="h-28" />)}
         </div>
     </div>
     )

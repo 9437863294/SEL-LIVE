@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Settings, ChevronLeft, ChevronRight, Briefcase, Construction, Users, ShieldCheck, Hash, Palette, MailCheck, Clock, User as UserIcon } from 'lucide-react';
+import { Settings, ChevronLeft, ChevronRight, Briefcase, Construction, Users, ShieldCheck, Hash, Palette, MailCheck, Clock, User as UserIcon, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,7 @@ export default function SettingsLayout({
     { href: '/settings/working-hours', icon: Clock, label: 'Working Hrs', permission: can('View', 'Settings.Working Hrs') },
     { href: '/settings/appearance', icon: Palette, label: 'Appearance', permission: can('View', 'Settings.Appearance') },
     { href: '/settings/email-authorization', icon: MailCheck, label: 'Email Authorization', permission: can('View', 'Settings.Email Authorization') },
+    { href: '/settings/login-expiry', icon: LogIn, label: 'Login Expiry', permission: can('View', 'Settings.Login Expiry') },
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);
