@@ -102,7 +102,7 @@ export default function ManageLoanPage() {
                   <TableHead className="text-center">A/C No</TableHead>
                   <TableHead className="text-center">Lender</TableHead>
                   <TableHead className="text-center">Principal</TableHead>
-                  <TableHead className="text-center">Total Interest</TableHead>
+                  <TableHead className="text-center">Interest</TableHead>
                   <TableHead className="text-center">EMI</TableHead>
                   <TableHead className="text-center">Tenure</TableHead>
                   <TableHead className="text-center">Start Date</TableHead>
