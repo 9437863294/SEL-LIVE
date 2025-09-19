@@ -177,10 +177,10 @@ export default function LoanDashboardPage() {
                 <TableHead className="text-center">A/C No</TableHead>
                 <TableHead className="text-center">Lender Name</TableHead>
                 <TableHead className="text-center">Principal</TableHead>
-                <TableHead className="text-center">Interest Amount</TableHead>
-                <TableHead className="text-center">EMI Amount</TableHead>
+                <TableHead className="text-center">Interest</TableHead>
+                <TableHead className="text-center">EMI</TableHead>
                 <TableHead className="text-center">Total Months</TableHead>
-                <TableHead className="text-center">Remaining Months</TableHead>
+                <TableHead className="text-center">Remaining</TableHead>
                 <TableHead className="text-center">Due Day</TableHead>
                 <TableHead className="text-center">Balance</TableHead>
               </TableRow>

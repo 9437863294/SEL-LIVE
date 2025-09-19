@@ -77,7 +77,6 @@ export type Module = {
 };
 
 export const permissionModules = {
-  'Module Hub': ['View Module', 'Add', 'Edit', 'Delete'],
   'Site Fund Requisition': [
     'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
     'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
