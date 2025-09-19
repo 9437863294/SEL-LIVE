@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -92,7 +93,7 @@ export default function LoginPage() {
                         <AvatarImage src={user.photoURL} alt={user.name}/>
                         <AvatarFallback className="text-2xl">{getInitials(user.name)}</AvatarFallback>
                     </Avatar>
-                    <p className="font-medium text-center">{user.name}</p>
+                    <p className="font-medium text-center whitespace-nowrap">{user.name}</p>
                 </div>
             ))}
         </div>
