@@ -104,6 +104,9 @@ export const permissionModules = {
     'Reports': ['View'],
     'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
   },
+  'Loan': {
+    'View Module': [],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],

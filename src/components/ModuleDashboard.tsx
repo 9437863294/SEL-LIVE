@@ -18,6 +18,7 @@ const moduleIcons: Record<string, string> = {
   'Expenses': 'Receipt',
   'Settings': 'Settings',
   'Chat System': 'MessageSquare',
+  'Loan': 'Coins',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -29,6 +30,7 @@ const moduleDescriptions: Record<string, string> = {
     'Expenses': 'Track and manage project expenses.',
     'Settings': 'Manage application-wide settings.',
     'Chat System': 'A real-time messaging system for your team.',
+    'Loan': 'Manage and track loan activities.',
 }
 
 export default function ModuleDashboard() {
