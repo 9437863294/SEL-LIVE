@@ -5,31 +5,11 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'zod';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, doc, runTransaction, getDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
-import { logUserActivity } from '@/lib/activity-logger';
-import type { SerialNumberConfig, Department } from '@/lib/types';
+import type { SerialNumberConfig, Department, CreateExpenseRequestInput, CreateExpenseRequestOutput } from '@/lib/types';
+import { CreateExpenseRequestInputSchema, CreateExpenseRequestOutputSchema } from '@/lib/types';
 
-
-export const CreateExpenseRequestInputSchema = z.object({
-    departmentId: z.string(),
-    projectId: z.string(),
-    amount: z.number(),
-    partyName: z.string(),
-    description: z.string(),
-    headOfAccount: z.string().optional(),
-    subHeadOfAccount: z.string().optional(),
-    remarks: z.string().optional(),
-});
-export type CreateExpenseRequestInput = z.infer<typeof CreateExpenseRequestInputSchema>;
-
-export const CreateExpenseRequestOutputSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
-  requestNo: z.string().optional(),
-});
-export type CreateExpenseRequestOutput = z.infer<typeof CreateExpenseRequestOutputSchema>;
 
 const createExpenseRequestFlow = ai.defineFlow(
   {

@@ -1,5 +1,7 @@
 
 
+import { z } from 'zod';
+
 export type Email = {
   id: string;
   sender: string;
@@ -170,6 +172,25 @@ export type SubAccountHead = {
   name: string;
   headId: string;
 };
+
+export const CreateExpenseRequestInputSchema = z.object({
+    departmentId: z.string(),
+    projectId: z.string(),
+    amount: z.number(),
+    partyName: z.string(),
+    description: z.string(),
+    headOfAccount: z.string().optional(),
+    subHeadOfAccount: z.string().optional(),
+    remarks: z.string().optional(),
+});
+export type CreateExpenseRequestInput = z.infer<typeof CreateExpenseRequestInputSchema>;
+
+export const CreateExpenseRequestOutputSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  requestNo: z.string().optional(),
+});
+export type CreateExpenseRequestOutput = z.infer<typeof CreateExpenseRequestOutputSchema>;
 
 export type ExpenseRequest = {
     id: string;
@@ -510,5 +531,3 @@ export type EMI = {
   paidAt?: any; // Firestore Timestamp
   paidById?: string;
 };
-
-    
