@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Plus } from 'lucide-react';
+import { Home, Plus, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -79,9 +79,17 @@ export default function LoanDashboardPage() {
           </Link>
           <h1 className="text-2xl font-bold">Loan Dashboard</h1>
         </div>
-        <Link href="/loan/new">
-          <Button><Plus className="mr-2 h-4 w-4" /> Add New Loan</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+            <Link href="/loan/emi-summary">
+              <Button variant="outline">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  EMI Monthly Summary
+              </Button>
+            </Link>
+            <Link href="/loan/new">
+              <Button><Plus className="mr-2 h-4 w-4" /> Add New Loan</Button>
+            </Link>
+        </div>
       </div>
 
       <Card>
