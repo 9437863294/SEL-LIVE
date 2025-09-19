@@ -276,21 +276,39 @@ export default function ManageRolePage() {
 
   const calculateGrantedPermissions = (role: Role, moduleName: string) => {
     if (!role.permissions) return 0;
-    const module = permissionModules[moduleName as keyof typeof permissionModules];
+
+    const moduleDef = permissionModules[moduleName as keyof typeof permissionModules];
     let grantedCount = 0;
-    if (Array.isArray(module)) {
+
+    // Direct permissions for flat modules
+    if (Array.isArray(moduleDef)) {
         grantedCount = role.permissions[moduleName]?.length || 0;
-    } else {
-      grantedCount = Object.keys(module).reduce((acc, subModule) => {
-        const key = subModule === 'View Module' ? moduleName : `${moduleName}.${subModule}`;
-        if (subModule === 'Departments') {
-          return acc + departments.reduce((deptAcc, dept) => {
-            const deptKey = `${key}.${dept.id}`;
-            return deptAcc + (role.permissions[deptKey]?.length || 0);
-          }, 0);
+    } else { // Nested modules
+        // Count 'View Module' permission
+        if (role.permissions[moduleName]?.includes('View Module')) {
+            grantedCount++;
         }
-        return acc + (role.permissions[key]?.length || 0);
-      }, 0);
+        // Count permissions in sub-modules
+        Object.keys(moduleDef).forEach(subModuleKey => {
+            if (subModuleKey === 'View Module') return;
+
+            const fullSubModuleKey = `${moduleName}.${subModuleKey}`;
+            
+            if (subModuleKey === 'Departments') {
+                // Count permissions for each department
+                departments.forEach(dept => {
+                    const deptKey = `${fullSubModuleKey}.${dept.id}`;
+                    if(role.permissions[deptKey]) {
+                        grantedCount += role.permissions[deptKey].length;
+                    }
+                });
+            } else {
+                // Count for regular sub-modules
+                if (role.permissions[fullSubModuleKey]) {
+                    grantedCount += role.permissions[fullSubModuleKey].length;
+                }
+            }
+        });
     }
     return grantedCount;
   };
@@ -584,3 +602,4 @@ export default function ManageRolePage() {
     </div>
   );
 }
+
