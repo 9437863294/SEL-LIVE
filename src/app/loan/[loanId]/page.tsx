@@ -41,6 +41,9 @@ export default function LoanDetailsPage() {
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
+  const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
+  const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
+
   const [selectedEmi, setSelectedEmi] = useState<EMI | null>(null);
   const [dialogPaidAmount, setDialogPaidAmount] = useState(0);
   const [dialogPrincipal, setDialogPrincipal] = useState(0);
@@ -280,26 +283,28 @@ export default function LoanDetailsPage() {
     }
   };
 
-    const handleCreateExpenseRecord = async (emi: EMI) => {
-        if (!loan || !user) return;
-        setIsCreatingExpense(true);
-
+    const openCreateExpenseDialog = (emi: EMI) => {
+        if (!loan) return;
         const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
-        const description = `Being EMI paid to ${loan.lenderName} for ${emiMonth} EMI No ${emi.emiNo}`;
-        
-        try {
-            const result = await createExpenseRequest({
-                departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded HR department
-                projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
-                amount: emi.paidAmount,
-                partyName: loan.lenderName,
-                description: description,
-                // These would be set to defaults or left empty if not applicable
-                headOfAccount: 'Finance Costs',
-                subHeadOfAccount: 'Bank Interest',
-                remarks: `Auto-generated from Loan EMI payment for Acc No: ${loan.accountNo}`,
-            });
+        const expensePayload = {
+            departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded HR department
+            projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
+            amount: emi.paidAmount,
+            partyName: loan.lenderName,
+            description: `Being EMI paid to ${loan.lenderName} for ${emiMonth} EMI No ${emi.emiNo}`,
+            headOfAccount: 'Finance Costs',
+            subHeadOfAccount: 'Bank Interest',
+            remarks: `Auto-generated from Loan EMI payment for Acc No: ${loan.accountNo}`,
+        };
+        setExpenseToCreate(expensePayload);
+        setIsConfirmExpenseOpen(true);
+    };
 
+    const handleConfirmCreateExpense = async () => {
+        if (!expenseToCreate) return;
+        setIsCreatingExpense(true);
+        try {
+            const result = await createExpenseRequest(expenseToCreate);
             if (result.success) {
                 toast({
                     title: 'Expense Record Created',
@@ -316,7 +321,8 @@ export default function LoanDetailsPage() {
             });
         } finally {
             setIsCreatingExpense(false);
-            setIsViewDetailsOpen(false); // Close dialog on completion
+            setIsConfirmExpenseOpen(false);
+            setExpenseToCreate(null);
         }
     };
 
@@ -551,7 +557,7 @@ export default function LoanDetailsPage() {
                   </TableBody>
                 </Table>
                 <DialogFooter>
-                    <Button variant="secondary" onClick={() => handleCreateExpenseRecord(selectedEmi)} disabled={isCreatingExpense}>
+                    <Button variant="secondary" onClick={() => openCreateExpenseDialog(selectedEmi)} disabled={isCreatingExpense}>
                       {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
                       Create Expense Record
@@ -561,6 +567,36 @@ export default function LoanDetailsPage() {
                     </DialogClose>
                 </DialogFooter>
             </DialogContent>
+        </Dialog>
+      )}
+
+      {expenseToCreate && (
+        <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Confirm Expense Creation</DialogTitle>
+                  <DialogDescription>Review the details below before creating the expense request.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-4 text-sm">
+                  <div className="flex justify-between"><span>Department:</span><span className="font-medium">HR</span></div>
+                  <div className="flex justify-between"><span>Project:</span><span className="font-medium">HEAD OFFICE</span></div>
+                  <div className="flex justify-between"><span>Party Name:</span><span className="font-medium">{expenseToCreate.partyName}</span></div>
+                  <div className="flex justify-between"><span>Amount:</span><span className="font-medium">{formatCurrency(expenseToCreate.amount)}</span></div>
+                  <div className="flex justify-between"><span>Head of A/c:</span><span className="font-medium">{expenseToCreate.headOfAccount}</span></div>
+                  <div className="flex justify-between"><span>Sub-Head of A/c:</span><span className="font-medium">{expenseToCreate.subHeadOfAccount}</span></div>
+                  <div className="space-y-1">
+                      <Label>Description:</Label>
+                      <p className="p-2 bg-muted rounded-md">{expenseToCreate.description}</p>
+                  </div>
+              </div>
+              <DialogFooter>
+                  <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                  <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
+                      {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Confirm & Create
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
         </Dialog>
       )}
     </>
