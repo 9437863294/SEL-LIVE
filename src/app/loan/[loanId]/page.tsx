@@ -460,7 +460,7 @@ export default function LoanDetailsPage() {
     if(!expenseToCreate) return;
     const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
     const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
-
+  
     setExpenseToCreate({
       ...expenseToCreate,
       subHeadOfAccount: subHeadName,
@@ -526,11 +526,12 @@ export default function LoanDetailsPage() {
             <CardHeader>
                <CardTitle>Summary</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <CardContent className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               <div className="space-y-1"><Label>Loan Amount</Label>{isEditing ? <Input type="number" value={editedLoan.loanAmount} onChange={e => setEditedLoan({...editedLoan, loanAmount: Number(e.target.value)})} /> : <p className="font-semibold">{formatCurrency(loan.loanAmount)}</p>}</div>
               <div className="space-y-1"><Label>Interest Rate</Label>{isEditing ? <Input type="number" value={editedLoan.interestRate} onChange={e => setEditedLoan({...editedLoan, interestRate: Number(e.target.value)})} /> : <p className="font-semibold">{loan.interestRate}%</p>}</div>
               <div className="space-y-1"><Label>Tenure (months)</Label>{isEditing ? <Input type="number" value={editedLoan.tenure} onChange={e => setEditedLoan({...editedLoan, tenure: Number(e.target.value)})} /> : <p className="font-semibold">{loan.tenure} months</p>}</div>
               <div className="space-y-1"><Label>Start Date</Label>{isEditing ? <Input type="date" value={editedLoan.startDate} onChange={e => setEditedLoan({...editedLoan, startDate: e.target.value})} /> : <p className="font-semibold">{formatDate(loan.startDate)}</p>}</div>
+              <div className="space-y-1"><Label>Linked Bank</Label><p className="font-semibold">{loan.linkedBank || 'N/A'}</p></div>
               <div className="space-y-1"><Label>EMI</Label><p className="font-semibold">{formatCurrency(loan.emiAmount)}</p></div>
               <div className="space-y-1"><Label>Remaining Months</Label><p className="font-semibold">{remainingMonths} months</p></div>
               <div className="space-y-1"><Label>Total Paid</Label><p className="font-semibold">{formatCurrency(loan.totalPaid)}</p></div>
