@@ -26,7 +26,7 @@ export default function LoanLayout({
   const visibleNavItems = navItems.filter(item => item.permission);
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex h-full w-full">
       <aside 
         className={cn(
             "fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300",
@@ -87,7 +87,7 @@ export default function LoanLayout({
         </div>
 
       </aside>
-      <main className={cn("flex-1 transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+      <main className={cn("flex-1 transition-all duration-300 p-4 sm:p-6 lg:p-8", isExpanded ? "ml-56" : "ml-16")}>
         {children}
       </main>
     </div>
