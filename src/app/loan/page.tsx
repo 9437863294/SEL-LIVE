@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Home, Plus, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -143,12 +143,6 @@ export default function LoanDashboardPage() {
           <h1 className="text-2xl font-bold">Loan Dashboard</h1>
         </div>
         <div className="flex items-center gap-2">
-            <Link href="/loan/emi-summary">
-              <Button variant="outline">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  EMI Monthly Summary
-              </Button>
-            </Link>
             <Link href="/loan/new">
               <Button><Plus className="mr-2 h-4 w-4" /> Add New Loan</Button>
             </Link>
@@ -207,16 +201,16 @@ export default function LoanDashboardPage() {
               ) : loansWithDetails.length > 0 ? (
                 loansWithDetails.map(loan => (
                   <TableRow key={loan.id}>
-                    <TableCell>{format(new Date(loan.startDate), 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>{loan.accountNo}</TableCell>
-                    <TableCell>{loan.lenderName}</TableCell>
-                    <TableCell>{`₹${formatCurrency(loan.loanAmount)}`}</TableCell>
-                    <TableCell>{`₹${formatCurrency(loan.totalInterest)}`}</TableCell>
-                    <TableCell>{`₹${formatCurrency(loan.emiAmount)}`}</TableCell>
-                    <TableCell>{loan.tenure}</TableCell>
-                    <TableCell>{loan.remainingMonths}</TableCell>
-                    <TableCell>{loan.dueDate}</TableCell>
-                    <TableCell>{`₹${formatCurrency(loan.balance)}`}</TableCell>
+                    <TableCell className="text-center">{format(new Date(loan.startDate), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell className="text-center">{loan.accountNo}</TableCell>
+                    <TableCell className="text-center">{loan.lenderName}</TableCell>
+                    <TableCell className="text-center">{`₹${formatCurrency(loan.loanAmount)}`}</TableCell>
+                    <TableCell className="text-center">{`₹${formatCurrency(loan.totalInterest)}`}</TableCell>
+                    <TableCell className="text-center">{`₹${formatCurrency(loan.emiAmount)}`}</TableCell>
+                    <TableCell className="text-center">{loan.tenure}</TableCell>
+                    <TableCell className="text-center">{loan.remainingMonths}</TableCell>
+                    <TableCell className="text-center">{loan.dueDate}</TableCell>
+                    <TableCell className="text-center">{`₹${formatCurrency(loan.balance)}`}</TableCell>
                   </TableRow>
                 ))
               ) : (
