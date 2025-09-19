@@ -143,7 +143,7 @@ export default function MonthWiseStatusReportPage() {
           <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
         </Link>
         <div>
-            <h1 className="text-2xl font-bold">Month-wise EMI Status Report</h1>
+            <h1 className="text-2xl font-bold">Month Wise</h1>
             <CardDescription>Review the status of all EMIs for a selected financial year.</CardDescription>
         </div>
       </div>
