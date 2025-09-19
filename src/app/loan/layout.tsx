@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Plus, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Plus, BarChart3, ChevronLeft, ChevronRight, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ export default function LoanLayout({
 
   const navItems = [
     { href: '/loan', icon: LayoutDashboard, label: 'Dashboard', permission: can('View', 'Loan.Dashboard') },
+    { href: '/loan/manage', icon: Briefcase, label: 'Manage Loans', permission: can('View', 'Loan.Dashboard') },
     { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Summary', permission: can('View', 'Loan.Dashboard') },
   ];
 
