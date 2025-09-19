@@ -47,12 +47,9 @@ export default function EditRolePage() {
                     Object.keys(permissionModules).forEach(moduleName => {
                         const sub = permissionModules[moduleName as keyof typeof permissionModules];
                         if (Array.isArray(sub)) {
-                             // Handle simple modules
-                            const viewModulePermission = (roleData.permissions?.[moduleName] || []).includes('View Module') ? ['View Module'] : [];
-                            completePermissions[moduleName] = [...viewModulePermission, ...(roleData.permissions?.[moduleName] || []).filter(p => p !== 'View Module')];
+                            completePermissions[moduleName] = roleData.permissions?.[moduleName] || [];
                         } else {
-                             // Handle complex modules with sub-modules
-                            if (sub['View Module']) {
+                            if (sub['View Module'] !== undefined) {
                                 completePermissions[moduleName] = (roleData.permissions?.[moduleName] || []).includes('View') ? ['View'] : [];
                             }
                             Object.keys(sub).forEach(subModule => {
@@ -155,7 +152,7 @@ export default function EditRolePage() {
     }
 
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-2">
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
             <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/settings/role-management">
@@ -217,7 +214,7 @@ export default function EditRolePage() {
                                                             checked={(editingRole.permissions?.[moduleName] || []).includes('View')}
                                                             onClick={(e) => { e.stopPropagation(); handlePermissionChange(moduleName, 'View', e.currentTarget.dataset.state === 'unchecked')}}
                                                         />
-                                                        <Label htmlFor={`select-all-group-edit-${moduleName}-view`} className="text-xs font-medium">All</Label>
+                                                        <Label htmlFor={`select-all-group-edit-${moduleName}-view`} className="text-xs font-medium">Allow</Label>
                                                     </div>
                                                 </div>
                                             </div>
