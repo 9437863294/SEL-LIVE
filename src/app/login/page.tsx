@@ -15,7 +15,7 @@ import { Loader2, User } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PinDialog } from '@/components/auth/PinDialog';
+import { PinSetupDialog } from '@/components/auth/PinSetupDialog';
 import type { SavedUser } from '@/lib/types';
 
 
@@ -30,7 +30,9 @@ export default function LoginPage() {
 
   const [activeUser, setActiveUser] = useState<SavedUser | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
 
   useEffect(() => {
     // If there are no saved users, default to the password form.
@@ -77,11 +79,55 @@ export default function LoginPage() {
 
   const handleProfileClick = (user: SavedUser) => {
     setActiveUser(user);
-    setIsPinDialogOpen(true);
+    setShowPasswordForm(false);
   };
   
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+  const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/[^0-9]/g, '');
+    if (value.length <= 4) {
+      setPin(value);
+      setPinError('');
+    }
+  };
   
+  const handlePinSubmit = async () => {
+    if (!activeUser) return;
+    if (pin.length !== 4) {
+      setPinError('PIN must be 4 digits.');
+      return;
+    }
+    setIsLoading(true);
+    setPinError('');
+
+    if (pin !== activeUser.pin) {
+        setTimeout(() => {
+            setPinError('Incorrect PIN. Please try again.');
+            setIsLoading(false);
+            setPin('');
+        }, 500);
+        return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, activeUser.email, atob(activeUser.password));
+      toast({
+        title: 'Success',
+        description: `Welcome back, ${activeUser.name}!`,
+      });
+      router.push('/');
+    } catch (error: any) {
+      console.error('PIN Sign In Failed:', error);
+      toast({
+        title: 'Sign In Failed',
+        description: 'An unexpected error occurred. Please try signing in with your password.',
+        variant: 'destructive',
+      });
+      setIsLoading(false);
+    }
+  };
+
   const renderProfileSelection = () => (
     <div className="text-center w-full">
         <div className="relative h-40 w-full max-w-[70%] mx-auto">
@@ -162,13 +208,63 @@ export default function LoginPage() {
                 Sign In
             </Button>
             {savedUsers.length > 0 && (
-                 <Button variant="link" className="w-full" onClick={() => setShowPasswordForm(false)}>
+                 <Button variant="link" className="w-full" onClick={() => { setShowPasswordForm(false); setActiveUser(null); }}>
                     <User className="mr-2 h-4 w-4" /> Sign in with a saved profile
                  </Button>
             )}
         </form>
      </div>
   );
+
+  const renderPinForm = () => {
+    if (!activeUser) return null;
+    return (
+      <div className="w-full text-center">
+        <div className="relative h-40 w-full max-w-[70%] mx-auto">
+            <Image
+                src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
+                alt="Company Logo"
+                fill
+                style={{ objectFit: 'contain' }}
+                priority
+            />
+        </div>
+        <Avatar className="h-24 w-24 mx-auto mt-4">
+          <AvatarImage src={activeUser.photoURL} alt={activeUser.name} />
+          <AvatarFallback className="text-3xl">{getInitials(activeUser.name)}</AvatarFallback>
+        </Avatar>
+        <h2 className="text-2xl font-semibold mt-4">{activeUser.name}</h2>
+        <div className="w-full max-w-xs mx-auto mt-6">
+          <Input
+            type="password"
+            maxLength={4}
+            value={pin}
+            onChange={handlePinChange}
+            onKeyDown={(e) => e.key === 'Enter' && handlePinSubmit()}
+            placeholder="Enter PIN"
+            className="text-center text-2xl tracking-[1rem] h-14"
+          />
+          {pinError && <p className="text-destructive text-sm mt-2">{pinError}</p>}
+          <Button onClick={handlePinSubmit} disabled={isLoading || pin.length !== 4} className="w-full mt-4">
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Sign In
+          </Button>
+        </div>
+        <Button variant="link" className="mt-4" onClick={() => setActiveUser(null)}>Not you? Select a different profile</Button>
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    if (showPasswordForm) {
+      return renderPasswordForm();
+    }
+    if (activeUser) {
+      return renderPinForm();
+    }
+    return renderProfileSelection();
+  };
+
 
   return (
     <>
@@ -191,17 +287,18 @@ export default function LoginPage() {
           />
         </div>
         <div className="p-8 md:p-12 flex flex-col justify-center items-center">
-            {showPasswordForm ? renderPasswordForm() : renderProfileSelection()}
+            {renderContent()}
         </div>
       </div>
     </div>
-    {activeUser && (
-      <PinDialog
-        user={activeUser}
-        isOpen={isPinDialogOpen}
-        onOpenChange={setIsPinDialogOpen}
-      />
-    )}
+    {user && (
+        <PinSetupDialog
+            user={user}
+            isOpen={isPinSetupOpen}
+            onOpenChange={setIsPinSetupOpen}
+            onPinSet={() => {}}
+        />
+      )}
     </>
   );
 }
