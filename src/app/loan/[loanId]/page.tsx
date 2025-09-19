@@ -1,10 +1,11 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -26,15 +27,18 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
   const { toast } = useToast();
+  const { user, users } = useAuth();
   const [loan, setLoan] = useState<Loan | null>(null);
   const [emis, setEmis] = useState<EMI[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
   const [selectedEmi, setSelectedEmi] = useState<EMI | null>(null);
   const [dialogPaidAmount, setDialogPaidAmount] = useState(0);
   const [dialogPrincipal, setDialogPrincipal] = useState(0);
@@ -95,8 +99,13 @@ export default function LoanDetailsPage() {
     setIsPayDialogOpen(true);
   };
 
+  const handleViewDetailsClick = (emi: EMI) => {
+    setSelectedEmi(emi);
+    setIsViewDetailsOpen(true);
+  }
+
   const handleConfirmPayment = async () => {
-    if(!loan || !selectedEmi) return;
+    if(!loan || !selectedEmi || !user) return;
     
     setIsConfirmingPayment(true);
     try {
@@ -106,11 +115,13 @@ export default function LoanDetailsPage() {
         const batch = writeBatch(db);
         
         batch.update(emiDocRef, { 
-            status: selectedEmi.status === 'Paid' ? 'Paid' : 'Paid', // Keep as paid if already paid
+            status: 'Paid',
             paidAmount: dialogPaidAmount,
             principal: dialogPrincipal,
             interest: dialogInterest,
             emiAmount: dialogPrincipal + dialogInterest,
+            paidAt: Timestamp.now(),
+            paidById: user.id,
         });
         
         const originalEmi = emis.find(e => e.id === selectedEmi.id);
@@ -405,7 +416,14 @@ export default function LoanDetailsPage() {
                           emi.status === 'Pending' ? (
                             <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
                           ) : (
-                            <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}>Edit</Button>
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => handleViewDetailsClick(emi)}>
+                                    <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}>
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                            </div>
                           )
                         )}
                       </TableCell>
@@ -458,6 +476,28 @@ export default function LoanDetailsPage() {
               </DialogFooter>
           </DialogContent>
       </Dialog>
+      
+      {selectedEmi && isViewDetailsOpen && (
+        <Dialog open={isViewDetailsOpen} onOpenChange={setIsViewDetailsOpen}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Payment Details for EMI #{selectedEmi.emiNo}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2">
+                    <p><strong>Paid By:</strong> {users.find(u => u.id === selectedEmi.paidById)?.name || 'N/A'}</p>
+                    <p><strong>Paid On:</strong> {selectedEmi.paidAt ? formatDate(selectedEmi.paidAt) : 'N/A'}</p>
+                    <p><strong>Paid Amount:</strong> {formatCurrency(selectedEmi.paidAmount)}</p>
+                    <p><strong>Principal:</strong> {formatCurrency(selectedEmi.principal)}</p>
+                    <p><strong>Interest:</strong> {formatCurrency(selectedEmi.interest)}</p>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button>Close</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

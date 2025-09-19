@@ -507,6 +507,8 @@ export type EMI = {
   paidAmount: number;
   closingPrincipal: number;
   status: 'Paid' | 'Pending' | 'Overdue';
+  paidAt?: any; // Firestore Timestamp
+  paidById?: string;
 };
 
     
