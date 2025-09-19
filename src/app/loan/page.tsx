@@ -35,15 +35,23 @@ export default function LoanDashboardPage() {
           loansData.map(async (loan) => {
             const emiQuery = query(
               collection(db, 'loans', loan.id, 'emis'), 
-              where('status', '==', 'Pending'),
-              orderBy('dueDate', 'asc'),
-              limit(1)
+              where('status', '==', 'Pending')
             );
             const emiSnapshot = await getDocs(emiQuery);
-            const nextEmi = emiSnapshot.docs[0]?.data() as EMI | undefined;
+            const pendingEmis = emiSnapshot.docs.map(doc => doc.data() as EMI);
+            
+            if (pendingEmis.length > 0) {
+              pendingEmis.sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+              const nextEmi = pendingEmis[0];
+              return {
+                ...loan,
+                nextEmiDate: nextEmi ? format(nextEmi.dueDate.toDate(), 'dd MMM, yyyy') : 'N/A',
+              };
+            }
+            
             return {
               ...loan,
-              nextEmiDate: nextEmi ? format(nextEmi.dueDate.toDate(), 'dd MMM, yyyy') : 'N/A',
+              nextEmiDate: 'N/A',
             };
           })
         );
@@ -51,7 +59,7 @@ export default function LoanDashboardPage() {
         setLoans(loansWithEmi);
       } catch (error) {
         console.error("Error fetching loans:", error);
-        toast({ title: "Error", description: "Failed to fetch loans.", variant: "destructive" });
+        toast({ title: "Error", description: "Failed to fetch loans. A database index may be required.", variant: "destructive" });
       }
       setIsLoading(false);
     };
