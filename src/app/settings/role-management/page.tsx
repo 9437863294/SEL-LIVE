@@ -47,11 +47,16 @@ const initialNewRoleState = {
   permissions: Object.keys(permissionModules).reduce((acc, module) => {
     const sub = permissionModules[module as keyof typeof permissionModules];
     if(Array.isArray(sub)){
-      acc[module] = [];
+      const key = module;
+       if (!acc[key]) {
+        acc[key] = [];
+      }
     } else {
       Object.keys(sub).forEach(subModule => {
         const key = subModule === 'View Module' ? module : `${module}.${subModule}`;
-        acc[key] = [];
+        if (!acc[key]) {
+          acc[key] = [];
+        }
       });
     }
     return acc;
@@ -146,7 +151,12 @@ export default function ManageRolePage() {
       if(isChecked) {
         newPermissions[moduleName] = ['View Module'];
       } else {
-        newPermissions[moduleName] = [];
+        // When unchecking "View Module", clear all permissions for that module and its submodules.
+        Object.keys(newPermissions).forEach(key => {
+            if (key === moduleName || key.startsWith(`${moduleName}.`)) {
+                newPermissions[key] = [];
+            }
+        });
       }
       return { ...prevState, permissions: newPermissions };
     });
@@ -202,7 +212,8 @@ export default function ManageRolePage() {
     Object.keys(permissionModules).forEach(moduleName => {
         const sub = permissionModules[moduleName as keyof typeof permissionModules];
         if (Array.isArray(sub)) {
-            completePermissions[moduleName] = role.permissions?.[moduleName] || [];
+            const key = moduleName;
+            completePermissions[key] = role.permissions?.[key] || [];
         } else {
             Object.keys(sub).forEach(subModule => {
                 const key = subModule === 'View Module' ? moduleName : `${moduleName}.${subModule}`;
