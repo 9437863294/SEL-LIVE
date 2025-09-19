@@ -553,45 +553,45 @@ export default function LoanDetailsPage() {
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                  <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
-                  <DialogDescription>
-                      Review the details and confirm the amount paid.
-                  </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                      <Label htmlFor="dialog-emi">EMI Amount</Label>
-                      <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
-                  </div>
-                   <div className="space-y-2">
-                      <Label htmlFor="dialog-principal">Principal</Label>
-                      <Input id="dialog-principal" type="number" value={dialogPrincipal} onChange={(e) => setDialogPrincipal(Number(e.target.value) || 0)} />
-                  </div>
-                   <div className="space-y-2">
-                      <Label htmlFor="dialog-interest">Interest</Label>
-                      <Input id="dialog-interest" type="number" value={dialogInterest} onChange={(e) => setDialogInterest(Number(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-2 pt-4">
-                      <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
-                      <Input
-                        id="paidAmount"
-                        type="number"
-                        value={dialogPaidAmount}
-                        onChange={(e) => setDialogPaidAmount(parseFloat(e.target.value) || 0)}
-                        className="text-lg font-bold h-12"
-                      />
-                  </div>
-              </div>
-              <DialogFooter>
-                  <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                  <Button onClick={handleConfirmPayment} disabled={isConfirmingPayment}>
-                    {isConfirmingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {selectedEmi?.status === 'Paid' ? 'Save Changes' : 'Confirm Payment'}
-                  </Button>
-              </DialogFooter>
-          </DialogContent>
+        <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+                <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
+                <DialogDescription>
+                    Review the details and confirm the amount paid.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4 text-left">
+                <div className="space-y-2">
+                    <Label htmlFor="dialog-emi">EMI Amount</Label>
+                    <Input id="dialog-emi" type="text" value={formatCurrency(dialogPrincipal + dialogInterest)} readOnly className="font-semibold" />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="dialog-principal">Principal</Label>
+                    <Input id="dialog-principal" type="text" value={formatAsCurrency(dialogPrincipal)} onChange={(e) => setDialogPrincipal(parseCurrency(e.target.value))} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="dialog-interest">Interest</Label>
+                    <Input id="dialog-interest" type="text" value={formatAsCurrency(dialogInterest)} onChange={(e) => setDialogInterest(parseCurrency(e.target.value))} />
+                </div>
+                <div className="space-y-2 pt-4">
+                    <Label htmlFor="paidAmount" className="text-lg">Paid Amount</Label>
+                    <Input
+                      id="paidAmount"
+                      type="text"
+                      value={formatAsCurrency(dialogPaidAmount)}
+                      onChange={(e) => setDialogPaidAmount(parseCurrency(e.target.value))}
+                      className="text-lg font-bold h-12"
+                    />
+                </div>
+            </div>
+            <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button onClick={handleConfirmPayment} disabled={isConfirmingPayment}>
+                  {isConfirmingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {selectedEmi?.status === 'Paid' ? 'Save Changes' : 'Confirm Payment'}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
       </Dialog>
       
       {selectedEmi && isViewDetailsOpen && (
