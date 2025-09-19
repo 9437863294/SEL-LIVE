@@ -19,3 +19,6 @@ export type { GetEmailsInput, GetEmailsOutput } from './flows/email-flow';
 
 export { sendEmailAuthorization } from './flows/send-email-authorization-flow';
 export type { SendEmailAuthorizationInput, SendEmailAuthorizationOutput } from './flows/send-email-authorization-flow';
+
+export { createExpenseRequest } from './flows/create-expense-request-flow';
+export type { CreateExpenseRequestInput, CreateExpenseRequestOutput } from './flows/create-expense-request-flow';

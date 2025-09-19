@@ -28,6 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { createExpenseRequest } from '@/ai';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -50,6 +51,7 @@ export default function LoanDetailsPage() {
   const [editedLoan, setEditedLoan] = useState<Loan | null>(null);
   const [regeneratedEmis, setRegeneratedEmis] = useState<EMI[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
 
 
   const fetchLoanData = async () => {
@@ -278,18 +280,44 @@ export default function LoanDetailsPage() {
     }
   };
 
-    const handleCreateExpenseRecord = (emi: EMI) => {
-        if (!loan) return;
+    const handleCreateExpenseRecord = async (emi: EMI) => {
+        if (!loan || !user) return;
+        setIsCreatingExpense(true);
+
         const emiMonth = format(emi.dueDate.toDate(), 'MMMM yyyy');
         const description = `Being EMI paid to ${loan.lenderName} for ${emiMonth} EMI No ${emi.emiNo}`;
-        const params = new URLSearchParams({
-            departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded as per request
-            amount: String(emi.paidAmount),
-            projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded project for "HEAD OFFICE"
-            partyName: loan.lenderName,
-            description,
-        });
-        router.push(`/expenses/new-request?${params.toString()}`);
+        
+        try {
+            const result = await createExpenseRequest({
+                departmentId: 'hr9qMqpf1GxP4FkTEygC', // Hardcoded HR department
+                projectId: 'zSOFw2y3jwYStbA3EaL1', // Hardcoded HEAD OFFICE project
+                amount: emi.paidAmount,
+                partyName: loan.lenderName,
+                description: description,
+                // These would be set to defaults or left empty if not applicable
+                headOfAccount: 'Finance Costs',
+                subHeadOfAccount: 'Bank Interest',
+                remarks: `Auto-generated from Loan EMI payment for Acc No: ${loan.accountNo}`,
+            });
+
+            if (result.success) {
+                toast({
+                    title: 'Expense Record Created',
+                    description: `Request No: ${result.requestNo}`,
+                });
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error: any) {
+            toast({
+                title: 'Error',
+                description: `Failed to create expense record: ${error.message}`,
+                variant: 'destructive',
+            });
+        } finally {
+            setIsCreatingExpense(false);
+            setIsViewDetailsOpen(false); // Close dialog on completion
+        }
     };
 
 
@@ -523,7 +551,8 @@ export default function LoanDetailsPage() {
                   </TableBody>
                 </Table>
                 <DialogFooter>
-                    <Button variant="secondary" onClick={() => handleCreateExpenseRecord(selectedEmi)}>
+                    <Button variant="secondary" onClick={() => handleCreateExpenseRecord(selectedEmi)} disabled={isCreatingExpense}>
+                      {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <FilePlus className="mr-2 h-4 w-4" />
                       Create Expense Record
                     </Button>

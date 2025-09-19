@@ -9,3 +9,4 @@ import '@/ai/flows/sync-categories-flow.ts';
 import '@/ai/flows/get-all-employee-positions-flow.ts';
 import '@/ai/flows/email-flow.ts';
 import '@/ai/flows/send-email-authorization-flow.ts';
+import '@/ai/flows/create-expense-request-flow.ts';
