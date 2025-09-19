@@ -378,7 +378,7 @@ export default function EmiSummaryPage() {
                 <TableRow>
                   <TableHead>Start Date</TableHead>
                   <TableHead>A/C No</TableHead>
-                  <TableHead>Lender Name</TableHead>
+                  <TableHead>Lender</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>EMI Amount</TableHead>
                   <TableHead>Principal</TableHead>
