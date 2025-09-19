@@ -86,6 +86,14 @@ export default function LoanDetailsPage() {
     setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
   };
+  
+  const handleEditEmiClick = (emi: EMI) => {
+    setSelectedEmi(emi);
+    setDialogPaidAmount(emi.emiAmount);
+    setDialogPrincipal(emi.principal);
+    setDialogInterest(emi.interest);
+    setIsPayDialogOpen(true);
+  };
 
   const handleConfirmPayment = async () => {
     if(!loan || !selectedEmi) return;
@@ -98,17 +106,23 @@ export default function LoanDetailsPage() {
         const batch = writeBatch(db);
         
         batch.update(emiDocRef, { 
-            status: 'Paid', 
+            status: selectedEmi.status === 'Paid' ? 'Paid' : 'Paid', // Keep as paid if already paid
             paidAmount: dialogPaidAmount,
             principal: dialogPrincipal,
             interest: dialogInterest,
             emiAmount: dialogPrincipal + dialogInterest,
         });
-        batch.update(loanDocRef, { totalPaid: loan.totalPaid + dialogPaidAmount });
+        
+        // This part needs adjustment if we are editing a paid EMI.
+        // For now, let's assume we are only paying a pending one or editing a paid one.
+        const originalEmi = emis.find(e => e.id === selectedEmi.id);
+        const paidAmountDifference = dialogPaidAmount - (originalEmi?.paidAmount || 0);
+
+        batch.update(loanDocRef, { totalPaid: loan.totalPaid + paidAmountDifference });
 
         await batch.commit();
 
-        toast({ title: "Success", description: `EMI #${selectedEmi.emiNo} marked as paid.`});
+        toast({ title: "Success", description: `EMI #${selectedEmi.emiNo} has been updated.`});
         
         fetchLoanData(); // Refetch all data to ensure consistency
 
@@ -332,9 +346,11 @@ export default function LoanDetailsPage() {
                       <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
                       <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge></TableCell>
                       <TableCell>
-                        {emi.status === 'Pending' && !isEditing && (
+                        {emi.status === 'Pending' && !isEditing ? (
                           <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
-                        )}
+                        ) : emi.status === 'Paid' && !isEditing ? (
+                            <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}>Edit</Button>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                 ))}
@@ -347,7 +363,7 @@ export default function LoanDetailsPage() {
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
           <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                  <DialogTitle>Confirm Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
+                  <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
                   <DialogDescription>
                       Review the details and confirm the amount paid.
                   </DialogDescription>
@@ -380,7 +396,7 @@ export default function LoanDetailsPage() {
                   <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
                   <Button onClick={handleConfirmPayment} disabled={isConfirmingPayment}>
                     {isConfirmingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Confirm Payment
+                    {selectedEmi?.status === 'Paid' ? 'Save Changes' : 'Confirm Payment'}
                   </Button>
               </DialogFooter>
           </DialogContent>
