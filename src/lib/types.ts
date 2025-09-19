@@ -1,4 +1,5 @@
 
+
 import { z } from 'zod';
 
 export type Email = {
@@ -114,6 +115,8 @@ export const permissionModules = {
   },
   'LC Module': {
     'View Module': [],
+    'Dashboard': ['View', 'Create'],
+    'LC Details': ['View', 'Edit', 'Track Payments'],
   },
   'Settings': {
     'View Module': [],
@@ -300,7 +303,7 @@ export type Message = {
     eventDetails?: EventDetails;
     readBy: string[];
     isDeleted?: boolean;
-}
+};
 
 export type Role = {
   id: string;
@@ -534,4 +537,40 @@ export type EMI = {
   paidAt?: any; // Firestore Timestamp
   paidById?: string;
   expenseRequestNo?: string;
+};
+
+export type LcEntry = {
+    id: string;
+    vendor: string;
+    projectId: string;
+    bank: string;
+    lcNo: string;
+    lcAmount: number;
+    selCalculation: number;
+    bankCalculation: number;
+    difference: number;
+    fdMargin: number;
+    status: 'Draft' | 'Opened' | 'In Payment' | 'Closed';
+    createdAt: any;
+    // Document URLs
+    poUrl?: string;
+    applicationUrl?: string;
+    lcCopyUrl?: string;
+};
+
+export type LcPayment = {
+    id: string;
+    lcId: string;
+    date: any; // Timestamp
+    amount: number;
+    commission: number;
+    bank: string;
+};
+
+export type LcInvoice = {
+    id: string;
+    lcId: string;
+    invoiceNo: string;
+    invoiceDate: any; // Timestamp
+    amount: number;
 };
