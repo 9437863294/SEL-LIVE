@@ -483,13 +483,30 @@ export default function LoanDetailsPage() {
                 <DialogHeader>
                     <DialogTitle>Payment Details for EMI #{selectedEmi.emiNo}</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-2">
-                    <p><strong>Paid By:</strong> {users.find(u => u.id === selectedEmi.paidById)?.name || 'N/A'}</p>
-                    <p><strong>Paid On:</strong> {selectedEmi.paidAt ? formatDate(selectedEmi.paidAt) : 'N/A'}</p>
-                    <p><strong>Paid Amount:</strong> {formatCurrency(selectedEmi.paidAmount)}</p>
-                    <p><strong>Principal:</strong> {formatCurrency(selectedEmi.principal)}</p>
-                    <p><strong>Interest:</strong> {formatCurrency(selectedEmi.interest)}</p>
-                </div>
+                <Table>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-medium">Mark as Paid By</TableCell>
+                      <TableCell>{users.find(u => u.id === selectedEmi.paidById)?.name || 'N/A'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium">Paid On</TableCell>
+                      <TableCell>{selectedEmi.paidAt ? formatDate(selectedEmi.paidAt) : 'N/A'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium">Paid Amount</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.paidAmount)}</TableCell>
+                    </TableRow>
+                     <TableRow>
+                      <TableCell className="font-medium">Principal</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.principal)}</TableCell>
+                    </TableRow>
+                     <TableRow>
+                      <TableCell className="font-medium">Interest</TableCell>
+                      <TableCell>{formatCurrency(selectedEmi.interest)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
                 <DialogFooter>
                     <DialogClose asChild>
                         <Button>Close</Button>
