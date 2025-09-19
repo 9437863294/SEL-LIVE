@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -26,7 +25,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { setShouldRemember, savedUsers, clearSavedUsers } = useAuth();
+  const { setShouldRemember, savedUsers, loadSavedUsers } = useAuth();
 
   const [activeUser, setActiveUser] = useState<SavedUser | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -45,7 +44,8 @@ export default function LoginPage() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
+    const finalEmail = activeUser ? activeUser.email : email;
+    if (!finalEmail || !password) {
       toast({
         title: 'Error',
         description: 'Please enter both email and password.',
@@ -59,7 +59,7 @@ export default function LoginPage() {
     }
     setShouldRemember(rememberMe); // Tell AuthProvider to handle saving if login is successful
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, finalEmail, password);
       // The onAuthStateChanged listener in AuthProvider will handle the user state and navigation.
       toast({
         title: 'Success',
@@ -154,12 +154,12 @@ export default function LoginPage() {
                 </div>
             ))}
         </div>
-        <Button variant="link" className="mt-8" onClick={() => setShowPasswordForm(true)}>Sign in with password</Button>
+        <Button variant="link" className="mt-8" onClick={() => { setActiveUser(null); setShowPasswordForm(true); }}>Sign in with password</Button>
     </div>
   );
   
   const renderPasswordForm = () => (
-     <div className="w-full">
+     <div className="w-full text-center">
         <div className="relative h-40 w-full max-w-[70%] mx-auto">
             <Image
                 src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
@@ -169,21 +169,32 @@ export default function LoginPage() {
                 priority
             />
         </div>
-        <p className="text-muted-foreground text-center mt-2 mb-8">Welcome! Please sign in to continue.</p>
+        {activeUser && (
+            <>
+                <Avatar className="h-24 w-24 mx-auto mt-4">
+                    <AvatarImage src={activeUser.photoURL} alt={activeUser.name} />
+                    <AvatarFallback className="text-3xl">{getInitials(activeUser.name)}</AvatarFallback>
+                </Avatar>
+                <h2 className="text-2xl font-semibold mt-4">{activeUser.name}</h2>
+            </>
+        )}
+        <p className="text-muted-foreground mt-2 mb-8">Welcome! Please sign in to continue.</p>
 
         <form onSubmit={handleSignIn} className="space-y-6 w-full max-w-sm mx-auto">
-            <div className="space-y-2 text-left">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                    id="email"
-                    type="email"
-                    placeholder="abc@example.com"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-muted/50 border-0 focus:bg-background"
-                />
-            </div>
+            {!activeUser && (
+                <div className="space-y-2 text-left">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                        id="email"
+                        type="email"
+                        placeholder="abc@example.com"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="bg-muted/50 border-0 focus:bg-background"
+                    />
+                </div>
+            )}
             <div className="space-y-2 text-left">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -196,15 +207,17 @@ export default function LoginPage() {
                     className="bg-muted/50 border-0 focus:bg-background"
                 />
             </div>
-            <div className="flex items-center space-x-2">
-                <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked as boolean)} />
-                <label
-                  htmlFor="remember-me"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  Remember me on this device
-                </label>
-            </div>
+            {!activeUser && (
+                <div className="flex items-center space-x-2">
+                    <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked as boolean)} />
+                    <label
+                    htmlFor="remember-me"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                    Remember me on this device
+                    </label>
+                </div>
+            )}
             <Button type="submit" className="w-full !mt-8" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign In
@@ -257,8 +270,6 @@ export default function LoginPage() {
             className="mt-2 text-xs"
             onClick={() => {
                 if (activeUser) {
-                    setEmail(activeUser.email);
-                    setActiveUser(null);
                     setShowPasswordForm(true);
                 }
             }}
