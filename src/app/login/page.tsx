@@ -252,6 +252,19 @@ export default function LoginPage() {
             Sign In
           </Button>
         </div>
+         <Button
+            variant="link"
+            className="mt-2 text-xs"
+            onClick={() => {
+                if (activeUser) {
+                    setEmail(activeUser.email);
+                    setActiveUser(null);
+                    setShowPasswordForm(true);
+                }
+            }}
+        >
+            Sign in with password
+        </Button>
         <Button variant="link" className="mt-4" onClick={() => setActiveUser(null)}>Not you? Select a different profile</Button>
       </div>
     );
@@ -298,7 +311,7 @@ export default function LoginPage() {
             user={userForPinSetup}
             isOpen={isPinSetupOpen}
             onOpenChange={setIsPinSetupOpen}
-            onPinSet={() => {}}
+            onPinSet={loadSavedUsers}
         />
       )}
     </>
