@@ -274,7 +274,7 @@ export default function ManageRolePage() {
         <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
         <Card className="mt-2">
           <CardContent className="p-4 max-h-[50vh] overflow-y-auto">
-             <Accordion type="multiple" defaultValue={Object.keys(permissionModules)}>
+             <Accordion type="multiple">
               {Object.entries(permissionModules).map(([moduleName, permissions]) => (
                 <AccordionItem value={moduleName} key={moduleName}>
                   <AccordionTrigger className="font-medium text-base hover:no-underline">
@@ -310,7 +310,7 @@ export default function ManageRolePage() {
                                 </Label>
                             </div>
                           )}
-                           <Accordion type="multiple" className="w-full" defaultValue={Object.keys(permissions).filter(k => k !== 'View Module')}>
+                           <Accordion type="multiple" className="w-full">
                               {Object.entries(permissions).filter(([subModuleName]) => subModuleName !== 'View Module' && subModuleName !== 'Departments').map(([subModuleName, subPermissions]) => (
                                   <AccordionItem value={subModuleName} key={subModuleName}>
                                       <AccordionTrigger className="text-sm font-semibold">{subModuleName}</AccordionTrigger>
@@ -388,7 +388,7 @@ export default function ManageRolePage() {
         </div>
     )
   }
-
+  
   if (!canView) {
     return (
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
