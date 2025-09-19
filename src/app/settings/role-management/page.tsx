@@ -256,7 +256,7 @@ export default function ManageRolePage() {
     }
   };
   
- const calculateTotalPermissions = (moduleName: string) => {
+  const calculateTotalPermissions = (moduleName: string) => {
     const module = permissionModules[moduleName as keyof typeof permissionModules];
     if (Array.isArray(module)) {
         return module.length;
@@ -276,9 +276,23 @@ export default function ManageRolePage() {
 
   const calculateGrantedPermissions = (role: Role, moduleName: string) => {
     if (!role.permissions) return 0;
-    return Object.keys(role.permissions)
-      .filter(key => key === moduleName || key.startsWith(`${moduleName}.`))
-      .reduce((acc, key) => acc + role.permissions[key].length, 0);
+    const module = permissionModules[moduleName as keyof typeof permissionModules];
+    let grantedCount = 0;
+    if (Array.isArray(module)) {
+        grantedCount = role.permissions[moduleName]?.length || 0;
+    } else {
+      grantedCount = Object.keys(module).reduce((acc, subModule) => {
+        const key = subModule === 'View Module' ? moduleName : `${moduleName}.${subModule}`;
+        if (subModule === 'Departments') {
+          return acc + departments.reduce((deptAcc, dept) => {
+            const deptKey = `${key}.${dept.id}`;
+            return deptAcc + (role.permissions[deptKey]?.length || 0);
+          }, 0);
+        }
+        return acc + (role.permissions[key]?.length || 0);
+      }, 0);
+    }
+    return grantedCount;
   };
 
 
