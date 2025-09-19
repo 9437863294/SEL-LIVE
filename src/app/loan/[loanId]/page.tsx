@@ -106,7 +106,7 @@ export default function LoanDetailsPage() {
   
   const handleMarkAsPaidClick = (emi: EMI) => {
     setSelectedEmi(emi);
-    setDialogPaidAmount(emi.paidAmount);
+    setDialogPaidAmount(emi.emiAmount);
     setDialogPrincipal(emi.principal);
     setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
