@@ -213,12 +213,10 @@ export default function Header() {
                             <span>Switch User</span>
                         </DropdownMenuItem>
                     )}
-                     <Link href="/settings/login-expiry">
-                        <DropdownMenuItem>
-                          <HistoryIcon className="mr-2 h-4 w-4" />
-                          <span>Login Expiry</span>
-                        </DropdownMenuItem>
-                     </Link>
+                    <DropdownMenuItem onSelect={() => router.push('/settings/login-expiry')}>
+                        <HistoryIcon className="mr-2 h-4 w-4" />
+                        <span>Login Expiry</span>
+                    </DropdownMenuItem>
                    <DropdownMenuSeparator />
                    <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
