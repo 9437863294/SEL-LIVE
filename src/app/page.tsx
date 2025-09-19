@@ -10,7 +10,7 @@ export default function Home() {
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col h-full">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Welcome Back, {user?.name}!</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Here are your available modules.</p>
       </div>
       <ModuleDashboard />

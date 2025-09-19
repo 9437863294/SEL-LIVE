@@ -161,7 +161,10 @@ export default function Header() {
                   />
                 </div>
               </Link>
-              <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
+              <div className="border-l pl-4">
+                 <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
+                 <p className="text-sm text-muted-foreground hidden md:block">Welcome back, {user?.name}!</p>
+              </div>
           </div>
 
 
