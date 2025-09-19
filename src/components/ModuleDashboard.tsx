@@ -20,6 +20,7 @@ const moduleIcons: Record<string, string> = {
   'Settings': 'Settings',
   'Chat System': 'MessageSquare',
   'Loan': 'Coins',
+  'LC Module': 'BookOpenCheck',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -32,6 +33,7 @@ const moduleDescriptions: Record<string, string> = {
     'Settings': 'Manage application-wide settings.',
     'Chat System': 'A real-time messaging system for your team.',
     'Loan': 'Manage and track loan activities.',
+    'LC Module': 'Manage Letters of Credit for trade finance.',
 }
 
 export default function ModuleDashboard() {

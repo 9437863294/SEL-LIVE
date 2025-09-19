@@ -112,6 +112,9 @@ export const permissionModules = {
     'Loan Details': ['View', 'Update EMI'],
     'Reports': ['View'],
   },
+  'LC Module': {
+    'View Module': [],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
