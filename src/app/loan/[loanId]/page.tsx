@@ -106,7 +106,7 @@ export default function LoanDetailsPage() {
   
   const handleMarkAsPaidClick = (emi: EMI) => {
     setSelectedEmi(emi);
-    setDialogPaidAmount(emi.emiAmount);
+    setDialogPaidAmount(emi.paidAmount);
     setDialogPrincipal(emi.principal);
     setDialogInterest(emi.interest);
     setIsPayDialogOpen(true);
@@ -674,7 +674,7 @@ export default function LoanDetailsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Head of A/c</Label>
-                         <Select value={expenseToCreate.headOfAccount} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value})}>
+                         <Select value={expenseToCreate.headOfAccount} disabled>
                             <SelectTrigger><SelectValue/></SelectTrigger>
                              <SelectContent>
                                 {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
