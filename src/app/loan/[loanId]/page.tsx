@@ -307,6 +307,9 @@ export default function LoanDetailsPage() {
             toast({ title: "Configuration Error", description: "Finance department not found.", variant: "destructive" });
             return;
         }
+
+        const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
+        const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
         
         let previewRequestNo = 'Generating...';
         try {
@@ -330,8 +333,8 @@ export default function LoanDetailsPage() {
             amount: emi.paidAmount,
             partyName: loan.lenderName,
             description: `Being EMI paid to ${loan.lenderName} for A/c no ${loan.accountNo} for ${emiMonth} (EMI No. ${emi.emiNo})`,
-            headOfAccount: 'Finance Costs',
-            subHeadOfAccount: 'Bank Interest',
+            headOfAccount: defaultHead,
+            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
             remarks: `Auto-generated from Loan EMI payment`,
             requestNo: previewRequestNo,
         };
@@ -343,19 +346,7 @@ export default function LoanDetailsPage() {
         if (!expenseToCreate) return;
         setIsCreatingExpense(true);
         try {
-            // Re-fetch the serial number right before creation to ensure it's the latest
-            const financeDeptId = expenseToCreate.departmentId;
-            const configRef = doc(db, 'departmentSerialConfigs', financeDeptId);
-            const configDoc = await getDoc(configRef);
-            if(!configDoc.exists()) throw new Error("Finance department config not found");
-            const configData = configDoc.data() as SerialNumberConfig;
-
-            const finalPayload = {
-                ...expenseToCreate,
-                requestNo: `${configData.prefix || ''}${configData.format || ''}${String(configData.startingIndex).padStart(4, '0')}${configData.suffix || ''}`,
-            };
-            
-            const { requestNo, ...dataToSave } = finalPayload;
+            const { requestNo, ...dataToSave } = expenseToCreate;
 
             const result = await createExpenseRequest(dataToSave);
             if (result.success) {
@@ -382,6 +373,19 @@ export default function LoanDetailsPage() {
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(round(amount));
+  };
+
+  const formatAsCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+  
+  const parseCurrency = (value: string): number => {
+    return Number(value.replace(/[^0-9.-]+/g, ''));
   };
   
   const formatDate = (date: any) => {
@@ -659,7 +663,14 @@ export default function LoanDetailsPage() {
                   </div>
                   <div className="space-y-1">
                       <Label>Amount</Label>
-                      <Input type="number" value={expenseToCreate.amount} onChange={(e) => setExpenseToCreate({...expenseToCreate, amount: parseFloat(e.target.value) || 0})} />
+                      <Input
+                        type="text"
+                        value={expenseToCreate.amount ? formatAsCurrency(expenseToCreate.amount) : ''}
+                        onChange={(e) => {
+                          const numericValue = parseCurrency(e.target.value);
+                          setExpenseToCreate({...expenseToCreate, amount: numericValue });
+                        }}
+                      />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
