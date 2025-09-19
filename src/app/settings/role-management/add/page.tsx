@@ -141,7 +141,7 @@ export default function AddRolePage() {
                     id="roleName" 
                     value={newRole.name} 
                     onChange={(e) => setNewRole({ ...newRole, name: e.target.value })} 
-                    className="mt-1"
+                    className="max-w-sm"
                     />
                 </div>
                 <div>
@@ -169,19 +169,24 @@ export default function AddRolePage() {
                                         ))}
                                     </div>
                                 ) : (
-                                    Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
-                                        if (subModuleKey === 'View Module') {
-                                            return (
-                                              <div key={subModuleKey} className="flex items-center space-x-2 border-b pb-4">
-                                                <Checkbox
-                                                    id={`new-${moduleName}-view`}
-                                                    checked={(newRole.permissions?.[moduleName] || []).includes('View')}
-                                                    onCheckedChange={(checked) => handlePermissionChange(moduleName, 'View', !!checked)}
-                                                />
-                                                <Label htmlFor={`new-${moduleName}-view`} className="text-sm font-semibold">{subModuleKey}</Label>
-                                              </div>
-                                            )
-                                        }
+                                  <>
+                                    {moduleValue['View Module'] !== undefined && (
+                                        <div className="p-3 border rounded-md">
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="font-semibold text-sm">View Module</h4>
+                                                <div className="flex items-center space-x-2">
+                                                    <Checkbox
+                                                        id={`select-all-group-new-${moduleName}-view`}
+                                                        checked={(newRole.permissions?.[moduleName] || []).includes('View')}
+                                                        onClick={(e) => { e.stopPropagation(); handlePermissionChange(moduleName, 'View', e.currentTarget.dataset.state === 'unchecked')}}
+                                                    />
+                                                    <Label htmlFor={`select-all-group-new-${moduleName}-view`} className="text-xs font-medium">Allow</Label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
+                                        if (subModuleKey === 'View Module') return null;
 
                                         const fullKey = `${moduleName}.${subModuleKey}`;
                                         
@@ -235,11 +240,11 @@ export default function AddRolePage() {
                                                 <h4 className="font-semibold text-sm">{subModuleKey}</h4>
                                                 <div className="flex items-center space-x-2">
                                                     <Checkbox
-                                                        id={`select-all-group-${fullKey}`}
+                                                        id={`select-all-group-new-${fullKey}`}
                                                         checked={isAllInGroupSelected}
                                                         onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions, e.currentTarget.dataset.state === 'unchecked')}}
                                                     />
-                                                    <Label htmlFor={`select-all-group-${fullKey}`} className="text-xs font-medium">All</Label>
+                                                    <Label htmlFor={`select-all-group-new-${fullKey}`} className="text-xs font-medium">All</Label>
                                                 </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -256,7 +261,8 @@ export default function AddRolePage() {
                                                 </div>
                                             </div>
                                         )
-                                    })
+                                    })}
+                                  </>
                                 )}
                                 </CardContent>
                             </Card>

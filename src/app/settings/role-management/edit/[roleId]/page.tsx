@@ -175,7 +175,7 @@ export default function EditRolePage() {
                         id="roleName" 
                         value={editingRole.name} 
                         onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })} 
-                        className="mt-1"
+                        className="max-w-sm"
                     />
                 </div>
                 <div>
