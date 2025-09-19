@@ -20,13 +20,13 @@ export default function LoanLayout({
   const navItems = [
     { href: '/loan', icon: LayoutDashboard, label: 'Dashboard', permission: can('View', 'Loan.Dashboard') },
     { href: '/loan/new', icon: Plus, label: 'Add New Loan', permission: can('Create', 'Loan.Add Loan') },
-    { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Summary', permission: can('View', 'Loan.Dashboard') }, // Assuming same permission as dashboard
+    { href: '/loan/emi-summary', icon: BarChart3, label: 'EMI Summary', permission: can('View', 'Loan.Dashboard') },
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex w-full h-full">
       <aside 
         className={cn(
             "fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300",
