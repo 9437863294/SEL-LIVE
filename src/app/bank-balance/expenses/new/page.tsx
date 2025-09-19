@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
   Loader2,
   ChevronUp,
   History,
+  X,
+  File as FileIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +40,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -142,7 +145,7 @@ export default function NewPaymentPage() {
     setExpenses(prev => 
         prev.map(exp => exp.id === id ? {...exp, [field]: file} : exp)
     );
-  }
+  };
 
   const handleSave = async () => {
     if (!date || !selectedBank) {
@@ -320,7 +323,7 @@ export default function NewPaymentPage() {
                   >
                     <div className="flex justify-between items-center">
                       <CollapsibleTrigger asChild className="flex-grow cursor-pointer">
-                        <div className="flex flex-col">
+                        <div className="flex flex-col w-full">
                           <div className="flex justify-between items-center w-full">
                              <h4 className="text-lg font-semibold">Payment #{index + 1}</h4>
                              <div className="flex items-center gap-4">
@@ -408,7 +411,7 @@ export default function NewPaymentPage() {
                        <div className="space-y-2">
                         <Label>Description <span className="text-destructive">*</span></Label>
                         <Textarea 
-                          placeholder="e.g. Office supplies for the month of September" 
+                          placeholder="e.g. Office supplies..." 
                           value={expense.description} 
                           onChange={(e) => handleExpenseChange(expense.id, 'description', e.target.value)} 
                         />
@@ -430,8 +433,3 @@ export default function NewPaymentPage() {
     </div>
   );
 }
-
-
-    
-
-    
