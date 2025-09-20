@@ -1,5 +1,4 @@
 
-
 import { z } from 'zod';
 
 export type Email = {
@@ -596,6 +595,11 @@ export type PolicyHolder = {
   contact: string;
   email: string;
   address: string;
+};
+
+export type InsuranceCompany = {
+  id: string;
+  name: string;
 };
 
 export type InsurancePolicy = {
