@@ -5,9 +5,6 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,8 +13,8 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { Label } from '../ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+
 
 interface SessionExpiryDialogProps {
   isOpen: boolean;
@@ -33,7 +30,7 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
-  const [activeTab, setActiveTab] = useState('password');
+  const [authMethod, setAuthMethod] = useState<'pin' | 'password'>('pin');
 
   const savedUser = useMemo(() => {
     if (!user) return null;
@@ -43,14 +40,15 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isOpen) {
-      setCountdown(60); 
-      setActiveTab(savedUser ? 'pin' : 'password');
+      setCountdown(60);
+      // Prefer PIN if available, otherwise default to password
+      setAuthMethod(savedUser ? 'pin' : 'password');
       timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
             onLogout();
-            onOpenChange(false); // Close the dialog
+            onOpenChange(false);
             return 0;
           }
           return prev - 1;
@@ -75,6 +73,7 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
       toast({ title: 'Session Extended!', description: 'You can continue working.' });
       setPassword('');
       setPin('');
+      onOpenChange(false);
 
     } catch (error: any) {
       console.error("Re-authentication error:", error);
@@ -95,17 +94,18 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
     }
     if (pin !== savedUser.pin) {
         toast({ title: 'Incorrect PIN', variant: 'destructive' });
+        setIsLoading(false);
         return;
     }
 
     setIsLoading(true);
     try {
-      // Re-authenticate silently using the stored (albeit insecurely) password
       await signInWithEmailAndPassword(auth, savedUser.email, atob(savedUser.password));
       onSessionExtend();
       toast({ title: 'Session Extended!', description: 'You can continue working.' });
       setPassword('');
       setPin('');
+      onOpenChange(false);
     } catch (error) {
       console.error("PIN re-authentication error:", error);
       toast({ title: 'Authentication Failed', description: 'Could not extend session with PIN.', variant: 'destructive' });
@@ -114,8 +114,9 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
     }
   };
 
-  const handleAction = () => {
-    if (activeTab === 'pin') {
+  const handleAction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authMethod === 'pin') {
         handleExtendWithPin();
     } else {
         handleExtendWithPassword();
@@ -129,56 +130,61 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
     onOpenChange(open);
   }
 
+  const getInitials = (name: string | undefined | null) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogClose}>
-      <DialogContent className="sm:max-w-xs" onInteractOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle>Your session has expired</DialogTitle>
-          <DialogDescription>
-            For your security, please re-authenticate to continue. You will be logged out in {countdown} seconds.
-          </DialogDescription>
-        </DialogHeader>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col items-center">
-            <TabsList className="h-auto p-1">
-                <TabsTrigger value="password" className="text-xs px-2 py-1 h-auto">Password</TabsTrigger>
-                <TabsTrigger value="pin" className="text-xs px-2 py-1 h-auto" disabled={!savedUser}>PIN</TabsTrigger>
-            </TabsList>
-            <TabsContent value="password" className="w-full">
-                <div className="space-y-2 py-4">
-                    <Label htmlFor="session-password">Password</Label>
-                    <Input
-                        id="session-password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleExtendWithPassword()}
-                        placeholder="Enter your password"
-                    />
-                </div>
-            </TabsContent>
-             <TabsContent value="pin" className="w-full">
-                <div className="space-y-2 py-4">
-                    <Label htmlFor="session-pin">PIN</Label>
-                    <Input
-                        id="session-pin"
-                        type="password"
-                        maxLength={4}
-                        value={pin}
-                        onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
-                        onKeyDown={(e) => e.key === 'Enter' && handleExtendWithPin()}
-                        placeholder="PIN"
-                        className="text-center text-xl tracking-[1rem]"
-                    />
-                </div>
-            </TabsContent>
-        </Tabs>
-        <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onLogout}>Logout</Button>
-            <Button onClick={handleAction} disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Continue Session
-            </Button>
-        </div>
+      <DialogContent className="sm:max-w-xs text-center p-8" onInteractOutside={(e) => e.preventDefault()}>
+         <form onSubmit={handleAction}>
+            <div className="flex flex-col items-center">
+                <Avatar className="h-24 w-24 mb-4">
+                    <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User'} />
+                    <AvatarFallback className="text-3xl">{getInitials(user?.name)}</AvatarFallback>
+                </Avatar>
+                <h2 className="text-2xl font-semibold">{user?.name}</h2>
+                <p className="text-muted-foreground text-sm mt-4 mb-2">
+                    Your session has expired. To continue, please sign in.
+                </p>
+                <p className="text-xs text-destructive mb-6">Auto-logout in {countdown}s</p>
+
+                {authMethod === 'pin' ? (
+                     <div className="relative w-full">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">PIN</span>
+                        <Input
+                            id="session-pin"
+                            type="password"
+                            maxLength={4}
+                            value={pin}
+                            onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
+                            className="text-center text-xl tracking-[1rem] pl-12 border-0 border-b-2 rounded-none border-primary/50 focus-visible:ring-0 focus-visible:border-primary"
+                        />
+                     </div>
+                ) : (
+                     <div className="relative w-full">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">Password</span>
+                        <Input
+                            id="session-password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="pl-20 border-0 border-b-2 rounded-none border-primary/50 focus-visible:ring-0 focus-visible:border-primary"
+                        />
+                    </div>
+                )}
+                 <Button type="submit" className="w-full mt-6" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sign In
+                </Button>
+                {savedUser && (
+                     <Button type="button" variant="link" className="mt-4 text-muted-foreground" onClick={() => setAuthMethod(authMethod === 'pin' ? 'password' : 'pin')}>
+                        Sign-in options
+                    </Button>
+                )}
+            </div>
+         </form>
       </DialogContent>
     </Dialog>
   );
