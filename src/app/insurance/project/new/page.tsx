@@ -18,7 +18,7 @@ import { format, addYears, addMonths } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
-import type { InsuredAsset, InsuranceCompany, PolicyCategory } from '@/lib/types';
+import type { InsuredAsset, InsuranceCompany, PolicyCategory, ProjectInsurancePolicy } from '@/lib/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -107,7 +107,7 @@ export default function NewProjectPolicyPage() {
     }
     
     try {
-      const policyData: any = {
+      const policyData: Omit<ProjectInsurancePolicy, 'id'> = {
         ...data,
         assetName: selectedAsset.name,
         assetType: selectedAsset.type,
@@ -201,14 +201,11 @@ export default function NewProjectPolicyPage() {
                 </Card>
                  <Card>
                     <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
                          <DatePickerField name="insurance_start_date" label="Insurance Start Date" />
-                         <div className="space-y-2">
-                            <Label>Tenure</Label>
-                             <div className="flex items-center gap-2">
-                                <FormField control={form.control} name="tenure_years" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Years" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="tenure_months" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Months" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                             </div>
+                         <div className="flex items-center gap-2">
+                            <FormField control={form.control} name="tenure_years" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Years" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="tenure_months" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Months" {...field} /></FormControl><FormMessage /></FormItem>)} />
                          </div>
                         <ReadOnlyDatePickerField name="insured_until" label="Insured Until (Auto-calculated)" />
                     </CardContent>

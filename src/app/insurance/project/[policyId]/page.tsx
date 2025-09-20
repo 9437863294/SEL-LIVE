@@ -108,7 +108,7 @@ export default function ProjectPolicyDetailsPage() {
     setIsSaving(true);
     
     try {
-        const dataToSave = {
+        const dataToSave: Partial<ProjectInsurancePolicy> = {
             ...editedPolicy,
             assetName: selectedAsset.name,
             assetType: selectedAsset.type,
@@ -240,7 +240,7 @@ export default function ProjectPolicyDetailsPage() {
         
         <Card>
             <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
                 <div className="space-y-2">
                     <Label>Insurance Start Date</Label>
                     {isEditing ? (
@@ -255,22 +255,22 @@ export default function ProjectPolicyDetailsPage() {
                         </Popover>
                     ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
                 </div>
-                <div className="space-y-2">
-                    <Label>Tenure</Label>
-                    <div className="flex items-center gap-2">
-                        {isEditing ? (
-                            <>
-                                <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
-                                <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
-                            </>
-                        ) : (
-                            <p className="font-semibold">{policy.tenure_years || 0} years, {policy.tenure_months || 0} months</p>
-                        )}
-                    </div>
+                <div className="flex items-center gap-2">
+                    {isEditing ? (
+                        <>
+                            <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
+                            <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
+                        </>
+                    ) : (
+                        <div className="space-y-2 w-full">
+                           <Label>Tenure</Label>
+                           <p className="font-semibold h-10 flex items-center">{policy.tenure_years || 0} years, {policy.tenure_months || 0} months</p>
+                        </div>
+                    )}
                 </div>
                  <div className="space-y-2">
                     <Label>Insured Until</Label>
-                    <p className="font-semibold">{formatDate(isEditing ? editedPolicy.insured_until : policy.insured_until)}</p>
+                    <p className="font-semibold h-10 flex items-center">{formatDate(isEditing ? editedPolicy.insured_until : policy.insured_until)}</p>
                 </div>
             </CardContent>
         </Card>
