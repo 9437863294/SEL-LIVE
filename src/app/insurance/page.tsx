@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car } from 'lucide-react';
+import { Shield, User, Home, HardHat, Car, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,12 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     text: 'Personal Insurance', 
     href: '/insurance/personal', 
     description: 'Manage personal health and life insurance policies.' 
+  },
+  {
+    icon: Users,
+    text: 'Policy Holders',
+    href: '/insurance/policy-holders',
+    description: 'Manage details of all policy holders.'
   },
   { 
     icon: Home, 

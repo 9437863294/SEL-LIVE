@@ -589,6 +589,15 @@ export type LcInvoice = {
     amount: number;
 };
 
+export type PolicyHolder = {
+  id: string;
+  name: string;
+  date_of_birth: Date | null;
+  contact: string;
+  email: string;
+  address: string;
+};
+
 export type InsurancePolicy = {
   id: string;
   insured_person: string;
