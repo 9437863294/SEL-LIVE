@@ -611,7 +611,6 @@ export type InsurancePolicy = {
   policy_category: string;
   policy_name: string;
   premium: number;
-  due_date: any; // Firestore Timestamp
   sum_insured: number;
   date_of_comm: any; // Firestore Timestamp
   date_of_maturity: any; // Firestore Timestamp
@@ -619,4 +618,6 @@ export type InsurancePolicy = {
   payment_type: 'Monthly' | 'Quarterly' | 'Yearly' | 'One-Time';
   auto_debit: boolean;
   attachments?: Attachment[];
+  tenure: number; // in years
+  due_date: any; // Firestore Timestamp or null
 };

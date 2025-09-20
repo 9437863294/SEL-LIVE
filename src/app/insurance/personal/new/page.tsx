@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon, Loader2, Save, X, File as FileIcon, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, addMonths, addYears, addQuarters } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
@@ -38,10 +38,9 @@ const policySchema = z.object({
   insured_person: z.string().min(1, 'Insured person is required'),
   policy_no: z.string().min(1, 'Policy number is required'),
   insurance_company: z.string().min(1, 'Insurance company is required'),
-  policy_category: z.string().min(1, 'Policy category is required'),
+  policy_category: z.string().min(1, 'Policy name is required'),
   policy_name: z.string().min(1, 'Policy name is required'),
   premium: z.coerce.number().min(0, 'Premium must be a positive number'),
-  due_date: z.date().optional(),
   sum_insured: z.coerce.number().min(0, 'Sum insured must be a positive number'),
   date_of_comm: z.date().optional(),
   date_of_maturity: z.date().optional(),
@@ -49,6 +48,8 @@ const policySchema = z.object({
   payment_type: z.enum(['Monthly', 'Quarterly', 'Yearly', 'One-Time']),
   auto_debit: z.boolean().default(false),
   attachments: z.custom<File[]>().optional(),
+  tenure: z.coerce.number().min(0, "Tenure must be a non-negative number."),
+  due_date: z.date().optional(),
 });
 
 type PolicyFormValues = z.infer<typeof policySchema>;
@@ -93,8 +94,52 @@ export default function NewPolicyPage() {
       sum_insured: 0,
       payment_type: 'Yearly',
       auto_debit: false,
+      tenure: 0,
     },
   });
+  
+  const { watch, setValue } = form;
+  const watchDateOfComm = watch('date_of_comm');
+  const watchPaymentType = watch('payment_type');
+  const watchTenure = watch('tenure');
+
+  useEffect(() => {
+    if (watchDateOfComm && watchPaymentType) {
+      let nextDueDate: Date;
+      const now = new Date();
+      let currentDate = new Date(watchDateOfComm);
+      
+      while (currentDate < now) {
+          switch (watchPaymentType) {
+              case 'Monthly':
+                  currentDate = addMonths(currentDate, 1);
+                  break;
+              case 'Quarterly':
+                  currentDate = addQuarters(currentDate, 1);
+                  break;
+              case 'Yearly':
+                  currentDate = addYears(currentDate, 1);
+                  break;
+              case 'One-Time':
+                  // No recurring due date for one-time payments
+                  currentDate = new Date(watchDateOfComm);
+                  break;
+          }
+      }
+      nextDueDate = currentDate;
+
+      if (watchTenure > 0) {
+        const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
+        if (nextDueDate > maturityDate) {
+          setValue('due_date', undefined); // Policy has matured
+          return;
+        }
+      }
+
+      setValue('due_date', nextDueDate);
+    }
+  }, [watchDateOfComm, watchPaymentType, watchTenure, setValue]);
+
 
   const onSubmit = async (data: PolicyFormValues) => {
     setIsSaving(true);
@@ -136,7 +181,7 @@ export default function NewPolicyPage() {
       }
   };
 
-  const DatePickerField = ({ name, label }: { name: keyof PolicyFormValues, label: string }) => (
+  const DatePickerField = ({ name, label, readOnly = false }: { name: keyof PolicyFormValues, label: string, readOnly?: boolean }) => (
     <FormField
       control={form.control}
       name={name as any}
@@ -146,14 +191,14 @@ export default function NewPolicyPage() {
           <Popover>
             <PopoverTrigger asChild>
               <FormControl>
-                <Button variant="outline" className={cn('pl-3 text-left font-normal', !field.value && 'text-muted-foreground')}>
+                <Button variant="outline" className={cn('pl-3 text-left font-normal', !field.value && 'text-muted-foreground')} disabled={readOnly}>
                   {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
                   <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                 </Button>
               </FormControl>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear() + 5} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear() + 50} />
             </PopoverContent>
           </Popover>
           <FormMessage />
@@ -260,8 +305,10 @@ export default function NewPolicyPage() {
                                 </FormItem>
                             )}
                         />
-                        <DatePickerField name="due_date" label="Next Due Date"/>
+                         <FormField control={form.control} name="tenure" render={({ field }) => (<FormItem><FormLabel>Tenure (in years)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
+
                         <DatePickerField name="date_of_comm" label="Date of Commencement"/>
+                        <DatePickerField name="due_date" label="Next Due Date" readOnly={true}/>
                         <DatePickerField name="date_of_maturity" label="Date of Maturity"/>
                         <DatePickerField name="last_premium_date" label="Last Premium Date"/>
                         <FormField control={form.control} name="auto_debit" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 mt-8"><FormLabel>Auto Debit</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>)}/>
