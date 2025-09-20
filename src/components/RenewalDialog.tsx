@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -21,8 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, collection, addDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
-import type { InsurancePolicy } from '@/lib/types';
+import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X, RotateCw } from 'lucide-react';
+import type { InsurancePolicy, PolicyRenewal } from '@/lib/types';
 import { format, addMonths, addQuarters, addYears } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useAuth } from './auth/AuthProvider';
@@ -32,32 +32,29 @@ interface RenewalDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   policy: InsurancePolicy;
   onSuccess: () => void;
+  defaultPaymentDate?: Date;
 }
 
-export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: RenewalDialogProps) {
+export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, defaultPaymentDate }: RenewalDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   
-  const [paymentDate, setPaymentDate] = useState<Date | undefined>(new Date());
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>(defaultPaymentDate || new Date());
   const [receiptDate, setReceiptDate] = useState<Date | undefined>(new Date());
   const [paymentType, setPaymentType] = useState('');
   const [remarks, setRemarks] = useState('');
   const [renewalCopy, setRenewalCopy] = useState<File | null>(null);
 
-  const resetForm = () => {
-    setPaymentDate(new Date());
-    setReceiptDate(new Date());
-    setPaymentType('');
-    setRemarks('');
-    setRenewalCopy(null);
-  };
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setRenewalCopy(e.target.files[0]);
+  useEffect(() => {
+    if (isOpen) {
+      setPaymentDate(defaultPaymentDate || new Date());
+      setReceiptDate(new Date());
+      setPaymentType('');
+      setRemarks('');
+      setRenewalCopy(null);
     }
-  };
+  }, [isOpen, defaultPaymentDate]);
 
   const handleSave = async () => {
     if (!paymentDate || !receiptDate || !paymentType) {
@@ -79,7 +76,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: Renew
             renewalCopyUrl = await getDownloadURL(storageRef);
         }
         
-        const renewalData = {
+        const renewalData: Omit<PolicyRenewal, 'id'> = {
             policyId: policy.id,
             renewalDate: Timestamp.now(),
             paymentDate: Timestamp.fromDate(paymentDate),
@@ -103,22 +100,30 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: Renew
                 default: break;
             }
         }
-
+        
         const policyRef = doc(db, 'insurance_policies', policy.id);
+        const maturityDate = policy.date_of_maturity?.toDate ? policy.date_of_maturity.toDate() : new Date(policy.date_of_maturity);
+        const willBeMature = nextDueDate && nextDueDate > maturityDate;
+
+
         await updateDoc(policyRef, {
-            due_date: nextDueDate ? Timestamp.fromDate(nextDueDate) : null
+            due_date: nextDueDate && !willBeMature ? Timestamp.fromDate(nextDueDate) : null
         });
 
         toast({ title: "Success", description: "Policy renewal recorded successfully." });
         onSuccess(); // Refresh the list in the parent component
         onOpenChange(false);
-        resetForm();
-
     } catch (error) {
         console.error("Error saving renewal:", error);
         toast({ title: "Error", description: "Failed to save renewal details.", variant: "destructive" });
     } finally {
         setIsSaving(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setRenewalCopy(e.target.files[0]);
     }
   };
 
@@ -142,7 +147,17 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: Renew
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={paymentDate} onSelect={setPaymentDate} initialFocus /></PopoverContent>
+                    <PopoverContent className="w-auto p-0">
+                        <Calendar 
+                            mode="single" 
+                            selected={paymentDate} 
+                            onSelect={setPaymentDate} 
+                            initialFocus 
+                            captionLayout="dropdown-buttons"
+                            fromYear={1980}
+                            toYear={new Date().getFullYear() + 5}
+                        />
+                    </PopoverContent>
                 </Popover>
               </div>
                <div className="space-y-2">
@@ -154,7 +169,17 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: Renew
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={receiptDate} onSelect={setReceiptDate} initialFocus /></PopoverContent>
+                     <PopoverContent className="w-auto p-0">
+                        <Calendar 
+                            mode="single" 
+                            selected={receiptDate} 
+                            onSelect={setReceiptDate} 
+                            initialFocus 
+                            captionLayout="dropdown-buttons"
+                            fromYear={1980}
+                            toYear={new Date().getFullYear() + 5}
+                        />
+                    </PopoverContent>
                 </Popover>
               </div>
               <div className="space-y-2">
@@ -198,4 +223,3 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: Renew
     </Dialog>
   );
 }
-
