@@ -26,9 +26,12 @@ import type { PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const initialFormState = {
     name: '',
+    status: 'Active' as 'Active' | 'Inactive',
 };
 
 export default function ManagePolicyCategoriesPage() {
@@ -73,7 +76,7 @@ export default function ManagePolicyCategoriesPage() {
   const openDialog = (mode: 'add' | 'edit', category?: PolicyCategory) => {
     setDialogMode(mode);
     if (mode === 'edit' && category) {
-        setFormData({ name: category.name });
+        setFormData({ name: category.name, status: category.status || 'Active' });
         setEditingId(category.id);
     } else {
         setFormData(initialFormState);
@@ -161,18 +164,22 @@ export default function ManagePolicyCategoriesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Category Name</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={2}><Skeleton className="h-8" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
               ) : categories.length > 0 ? (
                 categories.map(category => (
                   <TableRow key={category.id}>
                     <TableCell className="font-medium">{category.name}</TableCell>
+                    <TableCell>
+                       <Badge variant={category.status === 'Active' ? 'default' : 'secondary'}>{category.status}</Badge>
+                    </TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', category)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
@@ -194,7 +201,7 @@ export default function ManagePolicyCategoriesPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={2} className="text-center h-24">No policy categories found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={3} className="text-center h-24">No policy categories found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -209,8 +216,18 @@ export default function ManagePolicyCategoriesPage() {
             <div className="py-4 space-y-4">
                <div className="space-y-2">
                   <Label htmlFor="name">Category Name</Label>
-                  <Input id="name" value={formData.name} onChange={e => setFormData({ name: e.target.value })} placeholder="e.g., CAR Policy, Fire Policy" />
+                  <Input id="name" value={formData.name} onChange={e => setFormData(p => ({...p, name: e.target.value}))} placeholder="e.g., CAR Policy, Fire Policy" />
                 </div>
+                 <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={formData.status} onValueChange={(value: 'Active' | 'Inactive') => setFormData(p => ({...p, status: value}))}>
+                      <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                  </Select>
+               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>

@@ -615,6 +615,7 @@ export type InsuranceCompany = {
 export type PolicyCategory = {
   id: string;
   name: string;
+  status: 'Active' | 'Inactive';
 };
 
 export type InsurancePolicy = {

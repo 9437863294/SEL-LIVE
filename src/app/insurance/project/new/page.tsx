@@ -51,7 +51,7 @@ export default function NewProjectPolicyPage() {
           const [projectsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
             getDocs(collection(db, 'projects')),
             getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
-            getDocs(collection(db, 'policyCategories'))
+            getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active')))
           ]);
 
           setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));

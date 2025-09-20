@@ -50,7 +50,7 @@ export default function ProjectPolicyDetailsPage() {
           getDoc(doc(db, 'project_insurance_policies', policyId)),
           getDocs(collection(db, 'projects')),
           getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
-          getDocs(collection(db, 'policyCategories'))
+          getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active')))
         ]);
 
         if (policyDocSnap.exists()) {
