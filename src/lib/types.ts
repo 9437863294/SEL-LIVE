@@ -1,4 +1,5 @@
 
+
 import { z } from 'zod';
 
 export type Email = {
@@ -127,6 +128,7 @@ export const permissionModules = {
     'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
   },
   'Settings': {
     'View Module': [],
@@ -615,6 +617,15 @@ export type PolicyCategory = {
   id: string;
   name: string;
   status: 'Active' | 'Inactive';
+};
+
+export type InsuredAsset = {
+  id: string;
+  name: string;
+  type: 'Project' | 'Property';
+  projectId?: string; // Linked global project ID if type is 'Project'
+  location?: string;
+  description?: string;
 };
 
 export type InsurancePolicy = {

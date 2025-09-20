@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -44,9 +45,9 @@ const settingsItemsBase = [
   },
   {
     icon: Construction,
-    text: 'Project Name/Site',
-    href: '/settings/project',
-    description: 'Manage project names and sites.',
+    text: 'Manage Assets',
+    href: '/insurance/settings/assets',
+    description: 'Manage insurable assets like projects and properties.',
     permission: 'View'
   },
   {
@@ -94,13 +95,13 @@ export default function InsuranceSettingsPage() {
   const canViewPage = can('View', 'Insurance.Settings');
   
   const settingsItems = settingsItemsBase.map(item => {
-      let moduleScope;
+      let moduleScope: string;
       switch(item.text) {
           case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
           case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
           case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
-          case 'Project Name/Site': moduleScope = 'Settings.Manage Project'; break;
-          case 'Help': moduleScope = 'Insurance.Settings'; break; // Everyone who can see settings can see help
+          case 'Manage Assets': moduleScope = 'Insurance.Settings.Assets'; break;
+          case 'Help': moduleScope = 'Insurance.Settings'; break;
           default: moduleScope = 'Insurance.Settings';
       }
       return {
