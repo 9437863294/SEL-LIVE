@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,7 +22,7 @@ import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, collection, addDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
-import type { InsurancePolicy, PolicyRenewal } from '@/lib/types';
+import type { InsurancePolicy, PolicyRenewal, Attachment } from '@/lib/types';
 import { format, addMonths, addQuarters, addYears } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 
@@ -48,7 +48,6 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
   useEffect(() => {
     if (isOpen) {
       setPaymentDate(defaultPaymentDate || new Date());
-      // Don't default receipt date, force user selection
       setReceiptDate(undefined); 
       setPaymentType('');
       setRemarks('');
@@ -150,14 +149,26 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date of Payment</Label>
-                <Popover modal={false}>
+                <Popover>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
+                    <PopoverContent
+                        className="w-auto p-0"
+                        onInteractOutside={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (
+                              target.closest('[data-radix-select-content]') ||
+                              target.closest('[role="combobox"]') ||
+                              target.closest('[data-radix-popper-content]')
+                            ) {
+                              e.preventDefault();
+                            }
+                        }}
+                    >
                         <Calendar 
                             mode="single" 
                             selected={paymentDate} 
@@ -172,14 +183,26 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
               </div>
                <div className="space-y-2">
                 <Label>Date of Receipt</Label>
-                 <Popover modal={false}>
+                 <Popover>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                     <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
+                     <PopoverContent
+                        className="w-auto p-0"
+                        onInteractOutside={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (
+                              target.closest('[data-radix-select-content]') ||
+                              target.closest('[role="combobox"]') ||
+                              target.closest('[data-radix-popper-content]')
+                            ) {
+                              e.preventDefault();
+                            }
+                        }}
+                     >
                         <Calendar 
                             mode="single" 
                             selected={receiptDate} 
@@ -188,7 +211,6 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                             captionLayout="dropdown-buttons"
                             fromYear={1980}
                             toYear={new Date().getFullYear() + 5}
-                            disabled={{ after: new Date() }}
                         />
                     </PopoverContent>
                 </Popover>
