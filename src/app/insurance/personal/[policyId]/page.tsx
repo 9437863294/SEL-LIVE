@@ -198,7 +198,7 @@ export default function PolicyDetailsPage() {
                                 <TableCell className="text-right">
                                     {emi.status !== 'Paid' && (
                                         <Button size="sm" onClick={() => openRenewDialog(emi)}>
-                                            <RotateCw className="mr-2 h-4 w-4" /> Renew
+                                            <RotateCcw className="mr-2 h-4 w-4" /> Renew
                                         </Button>
                                     )}
                                 </TableCell>
@@ -221,4 +221,3 @@ export default function PolicyDetailsPage() {
     </>
   );
 }
-
