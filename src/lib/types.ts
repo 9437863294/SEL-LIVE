@@ -622,6 +622,8 @@ export type InsurancePolicy = {
   attachments?: Attachment[];
   tenure: number; // in years
   due_date: any; // Firestore Timestamp or null
+  last_renewed_at?: any;
+  last_payment_type?: string;
 };
 
 export type PolicyRenewal = {

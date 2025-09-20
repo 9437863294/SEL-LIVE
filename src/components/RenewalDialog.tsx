@@ -21,10 +21,9 @@ import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, collection, addDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X, RotateCw } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
 import type { InsurancePolicy, PolicyRenewal } from '@/lib/types';
 import { format, addMonths, addQuarters, addYears } from 'date-fns';
-import { cn } from '@/lib/utils';
 import { useAuth } from './auth/AuthProvider';
 
 interface RenewalDialogProps {
@@ -40,8 +39,8 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   
-  const [paymentDate, setPaymentDate] = useState<Date | undefined>(defaultPaymentDate || new Date());
-  const [receiptDate, setReceiptDate] = useState<Date | undefined>(new Date());
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>(defaultPaymentDate);
+  const [receiptDate, setReceiptDate] = useState<Date | undefined>();
   const [paymentType, setPaymentType] = useState('');
   const [remarks, setRemarks] = useState('');
   const [renewalCopy, setRenewalCopy] = useState<File | null>(null);
@@ -49,7 +48,8 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
   useEffect(() => {
     if (isOpen) {
       setPaymentDate(defaultPaymentDate || new Date());
-      setReceiptDate(new Date());
+      // Don't default receipt date, force user selection
+      setReceiptDate(undefined); 
       setPaymentType('');
       setRemarks('');
       setRenewalCopy(null);
@@ -89,10 +89,12 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
 
         await addDoc(collection(db, 'insurance_policies', policy.id, 'renewals'), renewalData);
 
-        // Calculate next due date
         let nextDueDate: Date | null = null;
         if(policy.due_date){
-            const currentDueDate = policy.due_date.toDate ? policy.due_date.toDate() : new Date(policy.due_date);
+            const currentDueDate = policy.due_date instanceof Timestamp 
+              ? policy.due_date.toDate() 
+              : new Date(policy.due_date);
+
             switch (policy.payment_type) {
                 case 'Monthly': nextDueDate = addMonths(currentDueDate, 1); break;
                 case 'Quarterly': nextDueDate = addQuarters(currentDueDate, 1); break;
@@ -102,12 +104,20 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
         }
         
         const policyRef = doc(db, 'insurance_policies', policy.id);
-        const maturityDate = policy.date_of_maturity?.toDate ? policy.date_of_maturity.toDate() : new Date(policy.date_of_maturity);
-        const willBeMature = nextDueDate && nextDueDate > maturityDate;
+
+        const maturityDate = policy.date_of_maturity 
+          ? (policy.date_of_maturity instanceof Timestamp 
+             ? policy.date_of_maturity.toDate() 
+             : new Date(policy.date_of_maturity))
+          : null;
+
+        const willBeMature = nextDueDate && maturityDate && nextDueDate > maturityDate;
 
 
         await updateDoc(policyRef, {
-            due_date: nextDueDate && !willBeMature ? Timestamp.fromDate(nextDueDate) : null
+            due_date: nextDueDate && !willBeMature ? Timestamp.fromDate(nextDueDate) : null,
+            last_renewed_at: Timestamp.now(),
+            last_payment_type: paymentType,
         });
 
         toast({ title: "Success", description: "Policy renewal recorded successfully." });
@@ -142,12 +152,12 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                 <Label>Date of Payment</Label>
                 <Popover modal={false}>
                     <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start font-normal">
+                        <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
+                    <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
                         <Calendar 
                             mode="single" 
                             selected={paymentDate} 
@@ -164,12 +174,12 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                 <Label>Date of Receipt</Label>
                  <Popover modal={false}>
                     <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start font-normal">
+                        <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                     <PopoverContent className="w-auto p-0">
+                     <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
                         <Calendar 
                             mode="single" 
                             selected={receiptDate} 
@@ -178,13 +188,14 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                             captionLayout="dropdown-buttons"
                             fromYear={1980}
                             toYear={new Date().getFullYear() + 5}
+                            disabled={{ after: new Date() }}
                         />
                     </PopoverContent>
                 </Popover>
               </div>
               <div className="space-y-2">
                 <Label>Payment Type</Label>
-                <Select onValueChange={setPaymentType}>
+                <Select value={paymentType} onValueChange={setPaymentType} disabled={isSaving}>
                     <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="Cash">Cash</SelectItem>
@@ -197,23 +208,23 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
               </div>
                <div className="space-y-2">
                   <Label>Renewal Copy</Label>
-                  <Input type="file" onChange={handleFileChange} />
+                  <Input type="file" onChange={handleFileChange} disabled={isSaving}/>
                   {renewalCopy && (
                      <div className="text-xs text-muted-foreground flex items-center gap-2">
                         <FileIcon className="h-3 w-3" />
                         <span>{renewalCopy.name}</span>
-                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setRenewalCopy(null)}><X className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setRenewalCopy(null)} disabled={isSaving}><X className="h-3 w-3" /></Button>
                      </div>
                   )}
                </div>
            </div>
             <div className="space-y-2">
               <Label>Remarks</Label>
-              <Textarea placeholder="Add any relevant remarks..." value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <Textarea placeholder="Add any relevant remarks..." value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={isSaving} />
             </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Renewal
