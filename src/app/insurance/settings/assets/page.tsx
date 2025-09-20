@@ -139,7 +139,14 @@ export default function ManageAssetsPage() {
           return projects.find(p => p.id === asset.projectId)?.projectName || asset.name;
       }
       return asset.name;
-  }
+  };
+
+  const getAssetLocation = (asset: InsuredAsset) => {
+    if (asset.type === 'Project' && asset.projectId) {
+      return projects.find(p => p.id === asset.projectId)?.location || 'N/A';
+    }
+    return asset.location || 'N/A';
+  };
 
   if (authLoading || (isLoading && canViewPage)) {
     return (
@@ -199,7 +206,7 @@ export default function ManageAssetsPage() {
                   <TableRow key={asset.id}>
                     <TableCell className="font-medium">{getAssetName(asset)}</TableCell>
                     <TableCell>{asset.type}</TableCell>
-                    <TableCell>{asset.location || 'N/A'}</TableCell>
+                    <TableCell>{getAssetLocation(asset)}</TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', asset)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
