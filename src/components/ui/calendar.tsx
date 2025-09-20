@@ -18,9 +18,6 @@ function Calendar({
 }: CalendarProps) {
   return (
     <DayPicker
-      captionLayout="dropdown-nav"
-      fromYear={1960}
-      toYear={new Date().getFullYear() + 5}
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
       classNames={{
