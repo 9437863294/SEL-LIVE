@@ -187,8 +187,8 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
                                                     <CommandItem
                                                         value={holder.name}
                                                         key={holder.id}
-                                                        onSelect={() => {
-                                                            form.setValue("insured_person", holder.name)
+                                                        onSelect={(currentValue) => {
+                                                            form.setValue("insured_person", currentValue === field.value ? "" : currentValue)
                                                             setIsHolderPopoverOpen(false)
                                                         }}
                                                     >
