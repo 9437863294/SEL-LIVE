@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car, Users, Building } from 'lucide-react';
+import { Shield, User, Home, HardHat, Car, Settings } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -25,18 +25,6 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     href: '/insurance/personal', 
     description: 'Manage personal health and life insurance policies.' 
   },
-  {
-    icon: Users,
-    text: 'Policy Holders',
-    href: '/insurance/policy-holders',
-    description: 'Manage details of all policy holders.'
-  },
-  { 
-    icon: Building, 
-    text: 'Insurance Companies', 
-    href: '/insurance/companies', 
-    description: 'Manage the list of insurance companies.' 
-  },
   { 
     icon: Home, 
     text: 'Property Insurance', 
@@ -55,6 +43,12 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     href: '#', 
     description: 'Track and manage insurance for all company vehicles.' 
   },
+  {
+    icon: Settings,
+    text: 'Settings',
+    href: '/insurance/settings',
+    description: 'Manage policy holders and insurance companies.'
+  }
 ];
 
 function InsuranceCard({ item }: InsuranceCardProps) {
