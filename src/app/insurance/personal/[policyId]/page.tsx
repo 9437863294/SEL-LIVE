@@ -124,11 +124,20 @@ export default function EditPolicyPage() {
   const watchTenure = watch('tenure');
 
   useEffect(() => {
-    if (watchDateOfComm && watchPaymentType) {
+    if (watchDateOfComm && watchPaymentType && watchTenure > 0) {
       let nextDueDate: Date;
       const now = new Date();
       let currentDate = new Date(watchDateOfComm);
       
+      const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
+      setValue('date_of_maturity', maturityDate);
+
+      // If policy has already matured, no need to calculate due date.
+      if (now > maturityDate) {
+          setValue('due_date', undefined);
+          return;
+      }
+
       while (currentDate < now) {
           switch (watchPaymentType) {
               case 'Monthly':
@@ -141,21 +150,17 @@ export default function EditPolicyPage() {
                   currentDate = addYears(currentDate, 1);
                   break;
               case 'One-Time':
-                  currentDate = new Date(watchDateOfComm);
-                  break;
+                  setValue('due_date', undefined);
+                  return; 
           }
       }
       nextDueDate = currentDate;
 
-      if (watchTenure > 0) {
-        const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
-        if (nextDueDate > maturityDate) {
+      if (nextDueDate > maturityDate) {
           setValue('due_date', undefined);
-          return;
-        }
+      } else {
+          setValue('due_date', nextDueDate);
       }
-
-      setValue('due_date', nextDueDate);
     }
   }, [watchDateOfComm, watchPaymentType, watchTenure, setValue]);
 
@@ -327,7 +332,7 @@ export default function EditPolicyPage() {
 
                         <DatePickerField name="date_of_comm" label="Date of Commencement"/>
                         <DatePickerField name="due_date" label="Next Due Date" readOnly={true}/>
-                        <DatePickerField name="date_of_maturity" label="Date of Maturity"/>
+                        <DatePickerField name="date_of_maturity" label="Date of Maturity" readOnly={true} />
                         <DatePickerField name="last_premium_date" label="Last Premium Date"/>
                         <FormField control={form.control} name="auto_debit" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 mt-8"><FormLabel>Auto Debit</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>)}/>
                     </CardContent>
