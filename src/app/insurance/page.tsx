@@ -79,14 +79,6 @@ function InsuranceCard({ item }: InsuranceCardProps) {
 export default function InsurancePage() {
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-       <div className="mb-6 flex items-center gap-2">
-        <Link href="/">
-            <Button variant="ghost" size="icon">
-                <Shield className="h-6 w-6" />
-            </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Insurance Module</h1>
-      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {insuranceItems.map((item) => (
           <InsuranceCard key={item.text} item={{...item, disabled: item.href === '#'}} />
