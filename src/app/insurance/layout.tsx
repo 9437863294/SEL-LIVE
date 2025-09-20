@@ -32,8 +32,6 @@ export default function InsuranceLayout({
 
   const navItems = [
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance' },
-    { href: '/insurance/premium-due', icon: CalendarClock, label: 'Premium Due' },
-    { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due' },
     { href: '/insurance/settings', icon: Settings, label: 'Settings' },
   ];
 
@@ -53,7 +51,7 @@ export default function InsuranceLayout({
                   <TooltipTrigger asChild>
                     <Link href={item.href}>
                       <Button
-                        variant={pathname === item.href ? 'secondary' : 'ghost'}
+                        variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
                         className={cn(
                           'w-full justify-start',
                           !isExpanded && 'h-10 w-10 p-0'

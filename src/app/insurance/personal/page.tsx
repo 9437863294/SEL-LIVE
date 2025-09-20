@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -65,11 +65,23 @@ export default function PersonalInsurancePage() {
             <h1 className="text-xl font-bold">Personal Insurance</h1>
             <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
           </div>
-          <Link href="/insurance/personal/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Add New Policy
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/insurance/premium-due">
+              <Button variant="outline">
+                <CalendarClock className="mr-2 h-4 w-4"/> Premium Due
+              </Button>
+            </Link>
+             <Link href="/insurance/maturity-due">
+              <Button variant="outline">
+                <ShieldCheck className="mr-2 h-4 w-4"/> Maturity Due
+              </Button>
+            </Link>
+            <Link href="/insurance/personal/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Add New Policy
+              </Button>
+            </Link>
+          </div>
         </div>
         
         <Card>

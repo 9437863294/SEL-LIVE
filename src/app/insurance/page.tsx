@@ -26,12 +26,6 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     description: 'Manage personal health and life insurance policies.' 
   },
   { 
-    icon: CalendarClock,
-    text: 'Premium Due',
-    href: '/insurance/premium-due',
-    description: 'View upcoming and overdue premium payments.'
-  },
-  { 
     icon: Home, 
     text: 'Property Insurance', 
     href: '#', 
