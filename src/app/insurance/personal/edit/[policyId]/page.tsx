@@ -172,7 +172,9 @@ export default function EditPolicyPage() {
          }
        }
       
-      const { attachments, ...dataToSave } = data;
+      const dataToSave = { ...data };
+      delete (dataToSave as Partial<PolicyFormValues>).attachments;
+
 
       const policyRef = doc(db, 'insurance_policies', policyId);
       await updateDoc(policyRef, {
@@ -313,3 +315,5 @@ export default function EditPolicyPage() {
     </div>
   );
 }
+
+    
