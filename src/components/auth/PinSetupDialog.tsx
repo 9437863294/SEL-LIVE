@@ -149,7 +149,6 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
                 value={oldPin}
                 onChange={(e) => handlePinChange(e, setOldPin)}
                 placeholder="Enter Old PIN"
-                className="text-center text-2xl tracking-[1rem] h-14"
               />
               <Button onClick={handleVerify} className="w-full">Verify</Button>
           </div>
