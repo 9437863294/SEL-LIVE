@@ -88,6 +88,7 @@ export default function PersonalInsurancePage() {
                   <TableHead>Policy Name</TableHead>
                   <TableHead>Premium</TableHead>
                   <TableHead>Next Due Date</TableHead>
+                  <TableHead>Maturity Date</TableHead>
                   <TableHead>Sum Insured</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -96,7 +97,7 @@ export default function PersonalInsurancePage() {
                 {isLoading ? (
                   Array.from({length: 5}).map((_, i) => (
                       <TableRow key={i}>
-                          <TableCell colSpan={8}><Skeleton className="h-8" /></TableCell>
+                          <TableCell colSpan={9}><Skeleton className="h-8" /></TableCell>
                       </TableRow>
                   ))
                 ) : policies.length > 0 ? (
@@ -108,6 +109,7 @@ export default function PersonalInsurancePage() {
                     <TableCell>{policy.policy_name}</TableCell>
                     <TableCell>{formatCurrency(policy.premium)}</TableCell>
                     <TableCell>{formatDate(policy.due_date)}</TableCell>
+                    <TableCell>{formatDate(policy.date_of_maturity)}</TableCell>
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
                     <TableCell className="text-right">
                       <Link href={`/insurance/personal/${policy.id}`}>
@@ -119,7 +121,7 @@ export default function PersonalInsurancePage() {
                   </TableRow>
                 ))) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">No policies found.</TableCell>
+                    <TableCell colSpan={9} className="text-center h-24">No policies found.</TableCell>
                   </TableRow>
                 )
               }
