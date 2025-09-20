@@ -43,12 +43,6 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     href: '#', 
     description: 'Track and manage insurance for all company vehicles.' 
   },
-  {
-    icon: Settings,
-    text: 'Settings',
-    href: '/insurance/settings',
-    description: 'Manage policy holders and insurance companies.'
-  }
 ];
 
 function InsuranceCard({ item }: InsuranceCardProps) {
