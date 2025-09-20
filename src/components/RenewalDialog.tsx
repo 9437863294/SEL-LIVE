@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -147,7 +148,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
+                    <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
                         <Calendar 
                             mode="single" 
                             selected={paymentDate} 
@@ -169,7 +170,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                     <PopoverContent className="w-auto p-0">
+                     <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
                         <Calendar 
                             mode="single" 
                             selected={receiptDate} 

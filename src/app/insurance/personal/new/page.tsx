@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -139,15 +140,15 @@ export default function NewPolicyPage() {
       }
       nextDueDate = currentDate;
 
-      const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
-      if (nextDueDate >= maturityDate) {
+      const maturityDate = watch('date_of_maturity');
+      if (maturityDate && nextDueDate >= maturityDate) {
         setValue('due_date', undefined); // Policy has matured
         return;
       }
 
       setValue('due_date', nextDueDate);
     }
-  }, [watchDateOfComm, watchPaymentType, watchTenure, setValue]);
+  }, [watchDateOfComm, watchPaymentType, watchTenure, setValue, watch]);
 
 
   const onSubmit = async (data: PolicyFormValues) => {
@@ -207,7 +208,7 @@ export default function NewPolicyPage() {
                 </Button>
               </FormControl>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
+            <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
               <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear() + 50} />
             </PopoverContent>
           </Popover>

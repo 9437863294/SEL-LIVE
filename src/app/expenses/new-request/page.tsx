@@ -353,8 +353,6 @@ function NewExpenseRequestForm() {
                               className="w-[--radix-popover-trigger-width] p-0"
                               side="bottom"
                               align="start"
-                              onEscapeKeyDown={() => setPartyPopoverOpen(false)}
-                              onPointerDownOutside={() => setPartyPopoverOpen(false)}
                             >
                                 <Command>
                                     <CommandInput 

@@ -874,7 +874,7 @@ export default function EntrySheetPage() {
                               {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
                           </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
+                          <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
                           <Calendar
                               mode="single"
                               selected={formState.date}
@@ -929,7 +929,7 @@ export default function EntrySheetPage() {
                               {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
                           </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
+                          <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
                           <Calendar
                               mode="single"
                               selected={formState.date}
