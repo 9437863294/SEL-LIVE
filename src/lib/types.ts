@@ -621,3 +621,15 @@ export type InsurancePolicy = {
   tenure: number; // in years
   due_date: any; // Firestore Timestamp or null
 };
+
+export type PolicyRenewal = {
+  id: string;
+  policyId: string;
+  renewalDate: any; // Timestamp of when the renewal was processed
+  paymentDate: any; // Timestamp from the form
+  receiptDate: any; // Timestamp from the form
+  paymentType: string;
+  remarks: string;
+  renewalCopyUrl?: string;
+  renewedBy: string; // User ID
+};

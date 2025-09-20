@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CalendarClock } from 'lucide-react';
+import { ArrowLeft, CalendarClock, RotateCw, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { RenewalDialog } from '@/components/RenewalDialog';
 
 function PremiumScheduleDialog({ policy, isOpen, onOpenChange }: { policy: InsurancePolicy | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
     if (!policy) return null;
@@ -102,6 +103,7 @@ export default function PremiumDuePage() {
   
   const [selectedPolicy, setSelectedPolicy] = useState<InsurancePolicy | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isRenewOpen, setIsRenewOpen] = useState(false);
 
   const yearOptions = useMemo(() => {
     if (policies.length === 0) return [getYear(new Date()).toString()];
@@ -113,30 +115,31 @@ export default function PremiumDuePage() {
     value: String(i),
     label: format(new Date(0, i), 'MMMM'),
   }));
+  
+  const fetchPolicies = async () => {
+    setIsLoading(true);
+    try {
+      const q = query(collection(db, 'insurance_policies'), where('due_date', '!=', null), orderBy('due_date', 'asc'));
+      const querySnapshot = await getDocs(q);
+      const policiesData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+              id: doc.id,
+              ...data,
+              due_date: data.due_date ? data.due_date.toDate() : null,
+              date_of_comm: data.date_of_comm ? data.date_of_comm.toDate() : null,
+          } as InsurancePolicy
+      });
+      setPolicies(policiesData);
+    } catch (error) {
+      console.error("Error fetching policies:", error);
+      toast({ title: 'Error', description: 'Failed to fetch insurance policies.', variant: 'destructive' });
+    }
+    setIsLoading(false);
+  };
+
 
   useEffect(() => {
-    const fetchPolicies = async () => {
-      setIsLoading(true);
-      try {
-        const q = query(collection(db, 'insurance_policies'), where('due_date', '!=', null), orderBy('due_date', 'asc'));
-        const querySnapshot = await getDocs(q);
-        const policiesData = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                ...data,
-                due_date: data.due_date ? data.due_date.toDate() : null,
-                date_of_comm: data.date_of_comm ? data.date_of_comm.toDate() : null,
-            } as InsurancePolicy
-        });
-        setPolicies(policiesData);
-      } catch (error) {
-        console.error("Error fetching policies:", error);
-        toast({ title: 'Error', description: 'Failed to fetch insurance policies.', variant: 'destructive' });
-      }
-      setIsLoading(false);
-    };
-
     fetchPolicies();
   }, [toast]);
   
@@ -150,12 +153,12 @@ export default function PremiumDuePage() {
   }, [policies, selectedYear, selectedMonth]);
   
   const getStatus = (dueDate: Date | null) => {
-    if (!dueDate) return { text: 'N/A', variant: 'secondary' as const };
-    if (isPast(dueDate)) return { text: 'Overdue', variant: 'destructive' as const };
+    if (!dueDate) return { text: 'N/A', variant: 'secondary' as const, isDue: false };
+    if (isPast(dueDate)) return { text: 'Overdue', variant: 'destructive' as const, isDue: true };
     if (isWithinInterval(dueDate, { start: new Date(), end: addDays(new Date(), 30) })) {
-      return { text: 'Due Soon', variant: 'default' as const };
+      return { text: 'Due Soon', variant: 'default' as const, isDue: true };
     }
-    return { text: 'Upcoming', variant: 'secondary' as const };
+    return { text: 'Upcoming', variant: 'secondary' as const, isDue: false };
   };
 
   const formatCurrency = (amount: number) => {
@@ -166,6 +169,12 @@ export default function PremiumDuePage() {
     setSelectedPolicy(policy);
     setIsDetailsOpen(true);
   }
+  
+  const openRenewDialog = (e: React.MouseEvent, policy: InsurancePolicy) => {
+    e.stopPropagation(); // Prevent row click from opening the details dialog
+    setSelectedPolicy(policy);
+    setIsRenewOpen(true);
+  };
 
   return (
     <>
@@ -185,14 +194,14 @@ export default function PremiumDuePage() {
                 <div className="flex justify-end">
                     <div className="flex flex-wrap items-center gap-4">
                     <Select value={selectedYear} onValueChange={setSelectedYear}>
-                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Year" /></SelectTrigger>
+                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Years</SelectItem>
                             {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
                         </SelectContent>
                     </Select>
                     <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Month" /></SelectTrigger>
+                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Months" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Months</SelectItem>
                             {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
@@ -211,13 +220,14 @@ export default function PremiumDuePage() {
                     <TableHead>Premium</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
                 </TableHeader>
                 <TableBody>
                 {isLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                        <TableCell colSpan={6}><Skeleton className="h-8" /></TableCell>
+                        <TableCell colSpan={7}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                     ))
                 ) : filteredPolicies.length > 0 ? (
@@ -231,12 +241,17 @@ export default function PremiumDuePage() {
                         <TableCell>{formatCurrency(policy.premium)}</TableCell>
                         <TableCell>{policy.due_date ? format(policy.due_date, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                         <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
+                        <TableCell className="text-right">
+                            <Button size="sm" disabled={!status.isDue} onClick={(e) => openRenewDialog(e, policy)}>
+                                <RotateCw className="mr-2 h-4 w-4" /> Renew
+                            </Button>
+                        </TableCell>
                         </TableRow>
                     );
                     })
                 ) : (
                     <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">No policies with upcoming due dates found for the selected period.</TableCell>
+                    <TableCell colSpan={7} className="text-center h-24">No policies with upcoming due dates found for the selected period.</TableCell>
                     </TableRow>
                 )}
                 </TableBody>
@@ -245,6 +260,14 @@ export default function PremiumDuePage() {
         </Card>
         </div>
         <PremiumScheduleDialog policy={selectedPolicy} isOpen={isDetailsOpen} onOpenChange={setIsDetailsOpen} />
+        {selectedPolicy && (
+             <RenewalDialog 
+                isOpen={isRenewOpen}
+                onOpenChange={setIsRenewOpen}
+                policy={selectedPolicy}
+                onSuccess={fetchPolicies}
+             />
+        )}
     </>
   );
 }
