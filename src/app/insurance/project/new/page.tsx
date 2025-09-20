@@ -230,7 +230,7 @@ export default function NewProjectPolicyPage() {
                                 )} 
                             />
                          </div>
-                        <ReadOnlyDatePickerField name="insured_until" label="Insured Until (Auto-calculated)" />
+                        <ReadOnlyDatePickerField name="insured_until" label="Insured Until" />
                     </CardContent>
                  </Card>
             </form>
