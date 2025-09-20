@@ -23,7 +23,7 @@ export default function PremiumDuePage() {
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [selectedYear, setSelectedYear] = useState<string>(getYear(new Date()).toString());
+  const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
 
   const yearOptions = useMemo(() => {
