@@ -102,21 +102,23 @@ export default function PremiumDuePage() {
       
       <Card>
         <CardHeader>
-            <div className="flex flex-wrap items-center gap-4">
-               <Select value={selectedYear} onValueChange={setSelectedYear}>
-                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Year" /></SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="all">All Years</SelectItem>
-                      {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
-                  </SelectContent>
-               </Select>
-               <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Month" /></SelectTrigger>
-                   <SelectContent>
-                      <SelectItem value="all">All Months</SelectItem>
-                      {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
-                  </SelectContent>
-               </Select>
+            <div className="flex justify-end">
+                <div className="flex flex-wrap items-center gap-4">
+                   <Select value={selectedYear} onValueChange={setSelectedYear}>
+                      <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Year" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Years</SelectItem>
+                          {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                      </SelectContent>
+                   </Select>
+                   <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                      <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Month" /></SelectTrigger>
+                       <SelectContent>
+                          <SelectItem value="all">All Months</SelectItem>
+                          {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
+                      </SelectContent>
+                   </Select>
+                </div>
             </div>
         </CardHeader>
         <CardContent className="p-0">
