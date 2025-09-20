@@ -305,6 +305,7 @@ export default function ProjectPolicyDetailsPage() {
                                   <TableHeader>
                                       <TableRow>
                                           <TableHead>Renewed On</TableHead>
+                                          <TableHead>Policy No.</TableHead>
                                           <TableHead>New Start Date</TableHead>
                                           <TableHead>New End Date</TableHead>
                                           <TableHead>Premium</TableHead>
@@ -316,6 +317,7 @@ export default function ProjectPolicyDetailsPage() {
                                         renewals.map(renewal => (
                                           <TableRow key={renewal.id}>
                                             <TableCell>{formatDate(renewal.renewalDate)}</TableCell>
+                                            <TableCell>{renewal.policyNo}</TableCell>
                                             <TableCell>{formatDate(renewal.startDate)}</TableCell>
                                             <TableCell>{formatDate(renewal.endDate)}</TableCell>
                                             <TableCell>{formatCurrency(renewal.premium)}</TableCell>
@@ -324,7 +326,7 @@ export default function ProjectPolicyDetailsPage() {
                                         ))
                                       ) : (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="text-center h-24">No renewal history found.</TableCell>
+                                            <TableCell colSpan={6} className="text-center h-24">No renewal history found.</TableCell>
                                         </TableRow>
                                       )}
                                   </TableBody>
