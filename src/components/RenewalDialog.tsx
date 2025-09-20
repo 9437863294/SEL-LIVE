@@ -48,7 +48,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
   useEffect(() => {
     if (isOpen) {
       setPaymentDate(defaultPaymentDate || new Date());
-      setReceiptDate(undefined); 
+      setReceiptDate(undefined);
       setPaymentType('');
       setRemarks('');
       setRenewalCopy(null);
@@ -57,11 +57,11 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
 
   const handleSave = async () => {
     if (!paymentDate || !receiptDate || !paymentType) {
-      toast({ title: "Validation Error", description: "Please fill all required fields.", variant: "destructive" });
+      toast({ title: "Renewal Error: Validation", description: "Please fill all required fields.", variant: "destructive" });
       return;
     }
     if (!user) {
-        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
+        toast({ title: 'Renewal Error: Authentication', description: 'You must be logged in.', variant: 'destructive' });
         return;
     }
     
@@ -89,7 +89,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
         await addDoc(collection(db, 'insurance_policies', policy.id, 'renewals'), renewalData);
 
         let nextDueDate: Date | null = null;
-        if(policy.due_date){
+        if (policy.due_date) {
             const currentDueDate = policy.due_date instanceof Timestamp 
               ? policy.due_date.toDate() 
               : new Date(policy.due_date);
@@ -111,7 +111,6 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
           : null;
 
         const willBeMature = nextDueDate && maturityDate && nextDueDate > maturityDate;
-
 
         await updateDoc(policyRef, {
             due_date: nextDueDate && !willBeMature ? Timestamp.fromDate(nextDueDate) : null,
@@ -149,26 +148,14 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date of Payment</Label>
-                <Popover>
+                <Popover modal={false}>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent
-                        className="w-auto p-0"
-                        onInteractOutside={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (
-                              target.closest('[data-radix-select-content]') ||
-                              target.closest('[role="combobox"]') ||
-                              target.closest('[data-radix-popper-content]')
-                            ) {
-                              e.preventDefault();
-                            }
-                        }}
-                    >
+                    <PopoverContent className="w-auto p-0">
                         <Calendar 
                             mode="single" 
                             selected={paymentDate} 
@@ -183,26 +170,14 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
               </div>
                <div className="space-y-2">
                 <Label>Date of Receipt</Label>
-                 <Popover>
+                 <Popover modal={false}>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                     <PopoverContent
-                        className="w-auto p-0"
-                        onInteractOutside={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (
-                              target.closest('[data-radix-select-content]') ||
-                              target.closest('[role="combobox"]') ||
-                              target.closest('[data-radix-popper-content]')
-                            ) {
-                              e.preventDefault();
-                            }
-                        }}
-                     >
+                     <PopoverContent className="w-auto p-0">
                         <Calendar 
                             mode="single" 
                             selected={receiptDate} 
