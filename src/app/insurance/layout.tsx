@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -49,6 +48,8 @@ export default function InsuranceLayout({
   ];
   
   const showSubItems = pathname.startsWith('/insurance/personal');
+  const showSettingsSubItems = pathname.startsWith('/insurance/settings');
+
 
   const visibleNavItems = navItems.filter(item => item.permission);
   const visibleSubItems = personalInsuranceSubItems.filter(item => item.permission);
@@ -69,7 +70,7 @@ export default function InsuranceLayout({
                   <TooltipTrigger asChild>
                     <Link href={item.href}>
                       <Button
-                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href)) ? 'secondary' : 'ghost'}
+                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href) && !pathname.startsWith('/insurance/settings')) ? 'secondary' : 'ghost'}
                         className={cn(
                           'w-full justify-start',
                           !isExpanded && 'h-10 w-10 p-0'

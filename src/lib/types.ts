@@ -1,5 +1,4 @@
 
-
 import { z } from 'zod';
 
 export type Email = {
@@ -127,7 +126,7 @@ export const permissionModules = {
     'Settings': ['View'],
     'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings.Categories': ['View', 'Add', 'Edit', 'Delete']
+    'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
   },
   'Settings': {
     'View Module': [],
