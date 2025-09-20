@@ -1,19 +1,24 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { User, SavedUser } from '@/lib/types';
+import { useAuth } from './AuthProvider';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 interface PinSetupDialogProps {
   user: User;
@@ -22,12 +27,32 @@ interface PinSetupDialogProps {
   onPinSet: () => void;
 }
 
+type Stage = 'initial' | 'verify' | 'set' | 'change';
+
 export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetupDialogProps) {
   const { toast } = useToast();
-  const [pin, setPin] = useState('');
+  const { savedUsers } = useAuth();
+  
+  const [stage, setStage] = useState<Stage>('initial');
+  const [oldPin, setOldPin] = useState('');
+  const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const savedUser = savedUsers.find(su => su.id === user.id);
+
+  useEffect(() => {
+    if (isOpen) {
+      // Reset state when dialog opens
+      setOldPin('');
+      setNewPin('');
+      setConfirmPin('');
+      setError('');
+      setIsSaving(false);
+      setStage(savedUser ? 'verify' : 'set'); // Determine initial stage
+    }
+  }, [isOpen, savedUser]);
 
   const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
     const value = e.target.value.replace(/[^0-9]/g, '');
@@ -36,13 +61,29 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
       setError('');
     }
   };
+  
+  const handleVerify = () => {
+    if (oldPin.length !== 4) {
+        setError('PIN must be 4 digits.');
+        return;
+    }
+    if (savedUser && oldPin === savedUser.pin) {
+        setStage('change');
+        setError('');
+    } else {
+        setError('Incorrect PIN.');
+    }
+  };
 
   const handleSavePin = async () => {
-    if (pin.length !== 4) {
-      setError('PIN must be 4 digits.');
+    const pinToSave = stage === 'set' ? newPin : newPin;
+    const pinToConfirm = stage === 'set' ? confirmPin : confirmPin;
+    
+    if (pinToSave.length !== 4) {
+      setError('New PIN must be 4 digits.');
       return;
     }
-    if (pin !== confirmPin) {
+    if (pinToSave !== pinToConfirm) {
       setError('PINs do not match.');
       return;
     }
@@ -50,39 +91,43 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
     setError('');
 
     const tempPassword = sessionStorage.getItem('tempPassword');
-    if (!tempPassword) {
+    const passwordToUse = tempPassword || (savedUser?.password ? atob(savedUser.password) : null);
+    
+    if (!passwordToUse) {
       toast({
         title: 'Error',
-        description: 'Could not save PIN. Please sign in again.',
+        description: 'Could not save PIN. Your session might be invalid. Please sign in again.',
         variant: 'destructive',
       });
       setIsSaving(false);
+      onOpenChange(false);
       return;
     }
     
     try {
-        const savedUsers: SavedUser[] = JSON.parse(localStorage.getItem('savedUsers') || '[]');
+        const currentSavedUsers: SavedUser[] = JSON.parse(localStorage.getItem('savedUsers') || '[]');
         
-        const newUser: SavedUser = {
+        const newUserPinData: SavedUser = {
             id: user.id,
             name: user.name,
             email: user.email,
             photoURL: user.photoURL || '',
-            pin: pin,
-            password: btoa(tempPassword), // Base64 encode for simple obfuscation. NOT secure for production.
+            pin: pinToSave,
+            password: btoa(passwordToUse),
         };
 
-        const existingUserIndex = savedUsers.findIndex(u => u.id === user.id);
+        const existingUserIndex = currentSavedUsers.findIndex(u => u.id === user.id);
         if (existingUserIndex > -1) {
-            savedUsers[existingUserIndex] = newUser;
+            currentSavedUsers[existingUserIndex] = newUserPinData;
         } else {
-            savedUsers.push(newUser);
+            currentSavedUsers.push(newUserPinData);
         }
 
-        localStorage.setItem('savedUsers', JSON.stringify(savedUsers));
-        sessionStorage.removeItem('tempPassword');
+        localStorage.setItem('savedUsers', JSON.stringify(currentSavedUsers));
+        if (tempPassword) sessionStorage.removeItem('tempPassword'); // Clean up temp password
+        
         toast({ title: 'PIN Saved!', description: 'You can now use your PIN to sign in on this device.' });
-        onPinSet();
+        onPinSet(); // Refresh saved users in AuthProvider
         onOpenChange(false);
 
     } catch (error) {
@@ -93,25 +138,35 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
     }
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Set Up Your PIN</DialogTitle>
-          <DialogDescription>
-            Create a 4-digit PIN for faster sign-in on this device.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-4">
+  const renderContent = () => {
+    switch(stage) {
+      case 'verify':
+        return (
+          <div className="space-y-4 py-4">
+              <Input
+                type="password"
+                maxLength={4}
+                value={oldPin}
+                onChange={(e) => handlePinChange(e, setOldPin)}
+                placeholder="Enter Old PIN"
+                className="text-center text-2xl tracking-[1rem] h-14"
+              />
+              <Button onClick={handleVerify} className="w-full">Verify</Button>
+          </div>
+        );
+      case 'set':
+      case 'change':
+        return (
+          <div className="space-y-4 py-4">
             <Input
               type="password"
               maxLength={4}
-              value={pin}
-              onChange={(e) => handlePinChange(e, setPin)}
-              placeholder="PIN"
+              value={newPin}
+              onChange={(e) => handlePinChange(e, setNewPin)}
+              placeholder="New PIN"
               className="text-center text-2xl tracking-[1rem] h-14"
             />
-             <Input
+            <Input
               type="password"
               maxLength={4}
               value={confirmPin}
@@ -119,12 +174,32 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
               placeholder="Confirm PIN"
               className="text-center text-2xl tracking-[1rem] h-14"
             />
-            {error && <p className="text-destructive text-sm mt-2 text-center">{error}</p>}
-        </div>
-        <Button onClick={handleSavePin} disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save PIN
-        </Button>
+            <Button onClick={handleSavePin} disabled={isSaving} className="w-full">
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {stage === 'change' ? 'Change PIN' : 'Save PIN'}
+            </Button>
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+  
+  const title = stage === 'set' ? 'Set Up Your PIN' : (stage === 'change' ? 'Set New PIN' : 'Verify Identity');
+  const description = stage === 'set' 
+      ? 'Create a 4-digit PIN for faster sign-in on this device.' 
+      : (stage === 'change' ? 'Enter your new 4-digit PIN.' : 'Enter your old PIN to continue.');
+
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {renderContent()}
+        {error && <p className="text-destructive text-sm mt-2 text-center">{error}</p>}
       </DialogContent>
     </Dialog>
   );

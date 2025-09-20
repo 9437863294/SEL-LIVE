@@ -168,7 +168,7 @@ export default function ProfilePage() {
                     </Button>
                     <Button variant="outline" className="flex-1 justify-start" onClick={() => setIsPinSetupOpen(true)}>
                         <KeyRound className="mr-2 h-4 w-4"/>
-                        Setup PIN
+                        Manage PIN
                     </Button>
                  </div>
              </div>
@@ -187,4 +187,3 @@ export default function ProfilePage() {
     </>
   );
 }
-
