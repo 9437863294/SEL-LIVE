@@ -32,7 +32,7 @@ export default function InsuranceLayout({
   const pathname = usePathname();
 
   const navItems = [
-    { href: '/insurance', icon: Shield, label: 'Dashboard' },
+    { href: '/insurance', icon: Shield, label: 'Insurance Module' },
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance' },
   ];
   
