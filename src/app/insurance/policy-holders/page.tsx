@@ -211,15 +211,26 @@ export default function ManagePolicyHoldersPage() {
                <div className="space-y-2"><Label htmlFor="name">Name</Label><Input id="name" value={formData.name} onChange={e => handleFormChange('name', e.target.value)} /></div>
                <div className="space-y-2 flex flex-col">
                   <Label>Date of Birth</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn('justify-start text-left font-normal', !formData.date_of_birth && 'text-muted-foreground')}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.date_of_birth ? format(formData.date_of_birth, 'PPP') : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={formData.date_of_birth} onSelect={(d) => handleFormChange('date_of_birth', d)} initialFocus /></PopoverContent>
-                  </Popover>
+                   <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant={"outline"} className={cn("justify-start text-left font-normal", !formData.date_of_birth && "text-muted-foreground")}>
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {formData.date_of_birth ? format(formData.date_of_birth, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar
+                                mode="single"
+                                selected={formData.date_of_birth}
+                                onSelect={(date) => handleFormChange('date_of_birth', date)}
+                                captionLayout="dropdown-buttons"
+                                fromYear={1900}
+                                toYear={new Date().getFullYear()}
+                                disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                initialFocus
+                            />
+                        </PopoverContent>
+                    </Popover>
                </div>
                 <div className="space-y-2"><Label htmlFor="contact">Contact No</Label><Input id="contact" value={formData.contact} onChange={e => handleFormChange('contact', e.target.value)} /></div>
                 <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={formData.email} onChange={e => handleFormChange('email', e.target.value)} /></div>
