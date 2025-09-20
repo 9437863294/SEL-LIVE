@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState } from 'react';
@@ -174,14 +175,18 @@ export default function InsuranceLayout({
           </div>
         </TooltipProvider>
       </aside>
-      <main
-        className={cn(
-          'flex-1 transition-all duration-300 p-4 sm:p-6 lg:p-8',
-          isExpanded ? 'ml-56' : 'ml-16'
-        )}
-      >
-        {children}
-      </main>
+       <div className={cn("flex-1 flex flex-col transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+        <main
+          className={cn(
+            'flex-1 p-4 sm:p-6 lg:p-8',
+          )}
+        >
+          {children}
+        </main>
+         <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
+            <span>Copyright © 2025 SEL. All Rights Reserved.</span>
+        </footer>
+      </div>
     </div>
   );
 }

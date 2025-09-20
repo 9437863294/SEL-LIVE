@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState } from 'react';
@@ -82,9 +83,14 @@ export default function SiteFundRequisitionLayout({
         </div>
 
       </aside>
-      <main className={cn("flex-1 transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
-        {children}
-      </main>
+      <div className={cn("flex-1 flex flex-col transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
+        <main className="flex-1">
+          {children}
+        </main>
+        <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
+            <span>Copyright © 2025 SEL. All Rights Reserved.</span>
+        </footer>
+      </div>
     </div>
   );
 }

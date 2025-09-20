@@ -110,10 +110,6 @@ function AppBody({ children }: { children: React.ReactNode }) {
             <div className="relative flex h-screen flex-col overflow-hidden bg-background">
                 <Header />
                 <main className="flex-1 overflow-auto">{children}</main>
-                <footer className="flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
-                    <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-                    <SessionTimer />
-                </footer>
             </div>
             <Toaster />
             <SessionExpiryDialog

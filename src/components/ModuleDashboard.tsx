@@ -9,6 +9,7 @@ import { Skeleton } from './ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Module } from '@/lib/types';
 import { permissionModules } from '@/lib/types';
+import { useAuth } from './auth/AuthProvider';
 
 const moduleIcons: Record<string, string> = {
   'Site Fund Requisition': 'Landmark',
@@ -40,11 +41,11 @@ const moduleDescriptions: Record<string, string> = {
 
 export default function ModuleDashboard() {
   const { modules, addModule, updateModule, updateModuleOrder, isLoading } = useModules();
-  const { can } = useAuthorization();
+  const { can, isLoading: authLoading } = useAuthorization();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   const allModules = useMemo(() => {
-    if (isLoading) {
+    if (isLoading || authLoading) {
       return [];
     }
     
@@ -82,7 +83,7 @@ export default function ModuleDashboard() {
     );
 
     return [...orderedModules, ...newModules];
-  }, [modules, isLoading, can]);
+  }, [modules, isLoading, can, authLoading]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
@@ -117,7 +118,7 @@ export default function ModuleDashboard() {
   return (
     <div className="flex flex-col gap-8 h-full">
        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" onDragOver={handleDragOver}>
-        {isLoading ? (
+        {isLoading || authLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-28 rounded-xl" />
             ))
