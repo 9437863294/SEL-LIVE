@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -163,7 +164,7 @@ export default function ManageAssetsPage() {
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
-                    <h1 className="text-xl font-bold">Manage Assets</h1>
+                    <h1 className="text-xl font-bold">Manage Projects and Properties</h1>
                 </div>
             </div>
             <Card>
@@ -183,7 +184,7 @@ export default function ManageAssetsPage() {
          <div className="flex items-center gap-4">
             <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
             <div>
-                <h1 className="text-xl font-bold">Manage Assets</h1>
+                <h1 className="text-xl font-bold">Manage Projects and Properties</h1>
                 <p className="text-sm text-muted-foreground">Manage insurable assets like projects and properties.</p>
             </div>
          </div>

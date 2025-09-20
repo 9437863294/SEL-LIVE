@@ -45,7 +45,7 @@ const settingsItemsBase = [
   },
   {
     icon: Construction,
-    text: 'Manage Assets',
+    text: 'Projects and Properties',
     href: '/insurance/settings/assets',
     description: 'Manage insurable assets like projects and properties.',
     permission: 'View'
@@ -100,7 +100,7 @@ export default function InsuranceSettingsPage() {
           case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
           case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
           case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
-          case 'Manage Assets': moduleScope = 'Insurance.Settings.Assets'; break;
+          case 'Projects and Properties': moduleScope = 'Insurance.Settings.Assets'; break;
           case 'Help': moduleScope = 'Insurance.Settings'; break;
           default: moduleScope = 'Insurance.Settings';
       }
