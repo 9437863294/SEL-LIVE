@@ -205,7 +205,7 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
               value={newPin}
               onChange={(e) => handlePinChange(e, setNewPin)}
               placeholder="New PIN"
-              className="text-center text-2xl tracking-[1rem] h-14"
+              className="text-base"
             />
             <Input
               type="password"
@@ -213,7 +213,7 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
               value={confirmPin}
               onChange={(e) => handlePinChange(e, setConfirmPin)}
               placeholder="Confirm PIN"
-              className="text-center text-2xl tracking-[1rem] h-14"
+              className="text-base"
             />
             <Button onClick={handleSavePin} disabled={isSaving} className="w-full">
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
