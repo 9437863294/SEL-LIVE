@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -141,14 +140,14 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date of Payment</Label>
-                <Popover>
+                <Popover modal={false}>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal">
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
+                    <PopoverContent className="w-auto p-0">
                         <Calendar 
                             mode="single" 
                             selected={paymentDate} 
@@ -163,14 +162,14 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
               </div>
                <div className="space-y-2">
                 <Label>Date of Receipt</Label>
-                 <Popover>
+                 <Popover modal={false}>
                     <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start font-normal">
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
                         </Button>
                     </PopoverTrigger>
-                     <PopoverContent className="w-auto p-0" onPointerDownOutside={(e) => e.preventDefault()}>
+                     <PopoverContent className="w-auto p-0">
                         <Calendar 
                             mode="single" 
                             selected={receiptDate} 
