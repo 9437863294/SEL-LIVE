@@ -13,7 +13,7 @@ import { doc, getDoc, updateDoc, collection, getDocs, Timestamp, arrayUnion, run
 import type { InsurancePolicy, PolicyRenewal, Attachment, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
-import { format, addMonths, addYears, addQuarters } from 'date-fns';
+import { format, addMonths, addYears, addQuarters, isPast, isWithinInterval, addDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { RenewalDialog } from '@/components/RenewalDialog';
@@ -61,6 +61,15 @@ export default function PolicyDetailsPage() {
   useEffect(() => {
     fetchPolicyData();
   }, [policyId, toast, router]);
+
+  const getStatus = (dueDate: Date | null) => {
+    if (!dueDate) return { text: 'N/A', variant: 'secondary' as const, isDue: false };
+    if (isPast(dueDate)) return { text: 'Overdue', variant: 'destructive' as const, isDue: true };
+    if (isWithinInterval(dueDate, { start: new Date(), end: addDays(new Date(), 30) })) {
+      return { text: 'Due Soon', variant: 'default' as const, isDue: true };
+    }
+    return { text: 'Upcoming', variant: 'secondary' as const, isDue: false };
+  };
   
   useEffect(() => {
     if (!policy) return;
@@ -97,11 +106,14 @@ export default function PolicyDetailsPage() {
         }
 
         const renewal = renewals.find(r => format(r.paymentDate.toDate(), 'yyyy-MM-dd') === format(dueDate, 'yyyy-MM-dd'));
-
+        const statusDetails = getStatus(dueDate);
+        
         schedule.push({
             no: i + 1,
             dueDate,
-            status: renewal ? 'Paid' : (dueDate < new Date() ? 'Overdue' : 'Upcoming'),
+            status: renewal ? 'Paid' : statusDetails.text,
+            isDue: renewal ? false : statusDetails.isDue,
+            statusVariant: renewal ? 'default' : statusDetails.variant,
             renewalDetails: renewal || null,
         });
     }
@@ -192,12 +204,12 @@ export default function PolicyDetailsPage() {
                             <TableRow key={emi.no}>
                                 <TableCell>{emi.no}</TableCell>
                                 <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                                <TableCell><Badge variant={emi.status === 'Paid' ? 'default' : (emi.status === 'Overdue' ? 'destructive' : 'secondary')}>{emi.status}</Badge></TableCell>
+                                <TableCell><Badge variant={emi.statusVariant}>{emi.status}</Badge></TableCell>
                                 <TableCell>{emi.renewalDetails ? formatDate(emi.renewalDetails.paymentDate.toDate()) : 'N/A'}</TableCell>
                                 <TableCell>{emi.renewalDetails ? emi.renewalDetails.paymentType : 'N/A'}</TableCell>
                                 <TableCell className="text-right">
                                     {emi.status !== 'Paid' && (
-                                        <Button size="sm" onClick={() => openRenewDialog(emi)}>
+                                        <Button size="sm" onClick={() => openRenewDialog(emi)} disabled={!emi.isDue}>
                                             <RotateCcw className="mr-2 h-4 w-4" /> Renew
                                         </Button>
                                     )}
