@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Building,
   Shield,
+  HardHat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +38,7 @@ export default function InsuranceLayout({
   const navItems = [
     { href: '/insurance', icon: Shield, label: 'Insurance Module', permission: can('View Module', 'Insurance') },
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance', permission: can('View', 'Insurance.Personal Insurance') },
+    { href: '/insurance/project', icon: HardHat, label: 'Project Insurance', permission: can('View', 'Insurance.Project Insurance') },
   ];
   
   const settingsItem = { href: '/insurance/settings', icon: Settings, label: 'Settings', permission: can('View', 'Insurance.Settings') };
@@ -53,10 +55,10 @@ export default function InsuranceLayout({
 
   return (
     <div className="flex w-full h-full">
-      <aside
+      <aside 
         className={cn(
-          'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300',
-          isExpanded ? 'w-56' : 'w-16'
+            "fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300",
+            isExpanded ? "w-56" : "w-16"
         )}
       >
         <TooltipProvider delayDuration={0}>

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -28,16 +29,16 @@ const insuranceItemsBase: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     description: 'Manage personal health and life insurance policies.' 
   },
   { 
+    icon: HardHat, 
+    text: 'Project Insurance', 
+    href: '/insurance/project', 
+    description: 'Handle insurance policies related to specific projects.' 
+  },
+  { 
     icon: Home, 
     text: 'Property Insurance', 
     href: '#', 
     description: 'Oversee insurance for properties and assets.' 
-  },
-  { 
-    icon: HardHat, 
-    text: 'Project Insurance', 
-    href: '#', 
-    description: 'Handle insurance policies related to specific projects.' 
   },
   { 
     icon: Car, 
@@ -82,10 +83,14 @@ export default function InsurancePage() {
   const { can, isLoading } = useAuthorization();
   const canViewModule = can('View Module', 'Insurance');
   
-  const insuranceItems = insuranceItemsBase.map(item => ({
-    ...item,
-    disabled: item.href === '#' || (item.text === 'Personal Insurance' && !can('View', 'Insurance.Personal Insurance'))
-  }));
+  const insuranceItems = insuranceItemsBase.map(item => {
+    let permission = 'View';
+    let moduleName = `Insurance.${item.text.replace(' ', ' ')}`;
+    return {
+      ...item,
+      disabled: item.href === '#' || !can(permission, moduleName)
+    };
+  });
 
   if (isLoading) {
     return (

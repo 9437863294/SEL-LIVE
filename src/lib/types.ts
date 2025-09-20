@@ -121,6 +121,7 @@ export const permissionModules = {
   'Insurance': {
     'View Module': [],
     'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
+    'Project Insurance': ['View', 'Add', 'Edit', 'Delete'],
     'Premium Due': ['View'],
     'Maturity Due': ['View'],
     'Settings': ['View'],
@@ -631,6 +632,18 @@ export type InsurancePolicy = {
   last_renewed_at?: any;
   last_payment_type?: string;
 };
+
+export type ProjectInsurancePolicy = {
+  id: string;
+  projectId: string;
+  policy_no: string;
+  insurance_company: string;
+  policy_category: string;
+  premium: number;
+  sum_insured: number;
+  due_date: any; // Firestore Timestamp
+};
+
 
 export type PolicyRenewal = {
   id: string;
