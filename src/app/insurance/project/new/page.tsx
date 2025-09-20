@@ -34,6 +34,7 @@ const policySchema = z.object({
   tenure_years: z.coerce.number().min(0).default(0),
   tenure_months: z.coerce.number().min(0).max(11).default(0),
   insured_until: z.date().optional(),
+  status: z.enum(['Renewable', 'Close', 'Not Required', 'Expired']).default('Renewable'),
 });
 
 type PolicyFormValues = z.infer<typeof policySchema>;
@@ -78,6 +79,7 @@ export default function NewProjectPolicyPage() {
       sum_insured: 0,
       tenure_years: 0,
       tenure_months: 0,
+      status: 'Renewable',
     },
   });
 
@@ -197,6 +199,7 @@ export default function NewProjectPolicyPage() {
                         <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Policy Category</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger></FormControl><SelectContent>{policyCategories.map((category) => (<SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="premium" render={({ field }) => (<FormItem><FormLabel>Premium</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="sum_insured" render={({ field }) => (<FormItem><FormLabel>Sum Insured</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="status" render={({ field }) => (<FormItem><FormLabel>Status</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="Renewable">Renewable</SelectItem><SelectItem value="Close">Close</SelectItem><SelectItem value="Not Required">Not Required</SelectItem><SelectItem value="Expired">Expired</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     </CardContent>
                 </Card>
                  <Card>

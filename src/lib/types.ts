@@ -1,5 +1,4 @@
 
-
 import { z } from 'zod';
 
 export type Email = {
@@ -665,6 +664,7 @@ export type ProjectInsurancePolicy = {
   tenure_years: number;
   tenure_months: number;
   insured_until: any;
+  status?: 'Renewable' | 'Close' | 'Not Required' | 'Expired';
 };
 
 

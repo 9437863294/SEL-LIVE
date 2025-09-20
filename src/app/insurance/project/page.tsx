@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 
 export default function ProjectInsurancePage() {
   const { toast } = useToast();
@@ -124,7 +125,7 @@ export default function ProjectInsurancePage() {
                   <TableHead>Policy Category</TableHead>
                   <TableHead>Premium</TableHead>
                   <TableHead>Insured Until</TableHead>
-                  <TableHead>Sum Insured</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -144,7 +145,7 @@ export default function ProjectInsurancePage() {
                     <TableCell>{policy.policy_category}</TableCell>
                     <TableCell>{formatCurrency(policy.premium)}</TableCell>
                     <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                    <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
+                    <TableCell><Badge>{policy.status || 'N/A'}</Badge></TableCell>
                     <TableCell className="text-right">
                       <Link href={`/insurance/project/${policy.id}`} onClick={(e) => e.stopPropagation()}>
                         <Button variant="outline" size="sm" disabled={!canEdit}>

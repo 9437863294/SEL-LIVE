@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 export default function ProjectPolicyDetailsPage() {
   const { policyId } = useParams() as { policyId: string };
@@ -235,6 +236,20 @@ export default function ProjectPolicyDetailsPage() {
                   <Label>Sum Insured</Label>
                   {isEditing ? <Input type="number" value={editedPolicy.sum_insured} onChange={e => handleInputChange('sum_insured', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.sum_insured)}</p>}
                 </div>
+                <div className="space-y-2">
+                    <Label>Status</Label>
+                    {isEditing ? (
+                        <Select value={editedPolicy.status} onValueChange={(v) => handleInputChange('status', v)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Renewable">Renewable</SelectItem>
+                                <SelectItem value="Close">Close</SelectItem>
+                                <SelectItem value="Not Required">Not Required</SelectItem>
+                                <SelectItem value="Expired">Expired</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    ) : <Badge>{policy.status || 'N/A'}</Badge>}
+                </div>
             </CardContent>
         </Card>
         
@@ -256,23 +271,14 @@ export default function ProjectPolicyDetailsPage() {
                     ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
                 </div>
                 <div className="flex items-end gap-2">
-                    {isEditing ? (
-                        <>
-                            <div className="flex-1 space-y-2">
-                                <Label>Years</Label>
-                                <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
-                            </div>
-                             <div className="flex-1 space-y-2">
-                                <Label>Months</Label>
-                                <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
-                            </div>
-                        </>
-                    ) : (
-                        <div className="space-y-2 w-full">
-                           <Label>Tenure</Label>
-                           <p className="font-semibold h-10 flex items-center">{policy.tenure_years || 0} years, {policy.tenure_months || 0} months</p>
-                        </div>
-                    )}
+                    <div className="flex-1 space-y-2">
+                        <Label>Years</Label>
+                        <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} disabled={!isEditing} />
+                    </div>
+                     <div className="flex-1 space-y-2">
+                        <Label>Months</Label>
+                        <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} disabled={!isEditing} />
+                    </div>
                 </div>
                  <div className="space-y-2">
                     <Label>Insured Until</Label>
