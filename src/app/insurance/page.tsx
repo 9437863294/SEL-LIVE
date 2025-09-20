@@ -32,12 +32,6 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     description: 'View upcoming and overdue premium payments.'
   },
   { 
-    icon: CheckSquare,
-    text: 'Maturity Due',
-    href: '/insurance/maturity-due',
-    description: 'View policies nearing their maturity dates.'
-  },
-  { 
     icon: Home, 
     text: 'Property Insurance', 
     href: '#', 
