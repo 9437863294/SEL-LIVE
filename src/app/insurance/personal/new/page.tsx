@@ -27,8 +27,8 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, Timestamp, getDocs } from 'firebase/firestore';
-import type { PolicyHolder, Attachment } from '@/lib/types';
+import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
+import type { PolicyHolder, Attachment, InsuranceCompany } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -58,20 +58,27 @@ export default function NewPolicyPage() {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [policyHolders, setPolicyHolders] = useState<PolicyHolder[]>([]);
+  const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
 
   useEffect(() => {
-    const fetchPolicyHolders = async () => {
+    const fetchData = async () => {
         try {
-          const querySnapshot = await getDocs(collection(db, 'policyHolders'));
-          const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyHolder));
-          setPolicyHolders(data);
+          const holdersSnapshot = await getDocs(collection(db, 'policyHolders'));
+          const holdersData = holdersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyHolder));
+          setPolicyHolders(holdersData);
+
+          const companiesQuery = query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'));
+          const companiesSnapshot = await getDocs(companiesQuery);
+          const companiesData = companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany));
+          setInsuranceCompanies(companiesData);
+
         } catch (error) {
-          console.error("Error fetching policy holders:", error);
+          console.error("Error fetching data:", error);
         }
     };
-    fetchPolicyHolders();
+    fetchData();
   }, []);
 
   const form = useForm<PolicyFormValues>({
@@ -201,7 +208,30 @@ export default function NewPolicyPage() {
                             )}
                         />
                         <FormField control={form.control} name="policy_no" render={({ field }) => (<FormItem><FormLabel>Policy No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="insurance_company" render={({ field }) => (<FormItem><FormLabel>Insurance Company</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField
+                            control={form.control}
+                            name="insurance_company"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel>Insurance Company</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a company" />
+                                    </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                    {insuranceCompanies.map((company) => (
+                                        <SelectItem key={company.id} value={company.name}>
+                                        {company.name}
+                                        </SelectItem>
+                                    ))}
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                                </FormItem>
+                            )}
+                        />
                         <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="policy_name" render={({ field }) => (<FormItem><FormLabel>Policy Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="sum_insured" render={({ field }) => (<FormItem><FormLabel>Sum Insured</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
