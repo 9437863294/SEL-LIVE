@@ -165,10 +165,9 @@ export default function PremiumDuePage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
   
-  const handleRowClick = (policy: InsurancePolicy) => {
-    setSelectedPolicy(policy);
-    setIsDetailsOpen(true);
-  }
+  const handleRowClick = (policyId: string) => {
+    router.push(`/insurance/personal/${policyId}`);
+  };
   
   const openRenewDialog = (e: React.MouseEvent, policy: InsurancePolicy) => {
     e.stopPropagation(); // Prevent row click from opening the details dialog
@@ -234,7 +233,7 @@ export default function PremiumDuePage() {
                     filteredPolicies.map(policy => {
                     const status = getStatus(policy.due_date);
                     return (
-                        <TableRow key={policy.id} onClick={() => handleRowClick(policy)} className="cursor-pointer">
+                        <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
                         <TableCell className="font-medium">{policy.insured_person}</TableCell>
                         <TableCell>{policy.policy_no}</TableCell>
                         <TableCell>{policy.insurance_company}</TableCell>
@@ -271,3 +270,4 @@ export default function PremiumDuePage() {
     </>
   );
 }
+

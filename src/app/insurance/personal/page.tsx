@@ -102,7 +102,7 @@ export default function PersonalInsurancePage() {
                   ))
                 ) : policies.length > 0 ? (
                   policies.map(policy => (
-                  <TableRow key={policy.id}>
+                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/personal/${policy.id}`)} className="cursor-pointer">
                     <TableCell className="font-medium">{policy.insured_person}</TableCell>
                     <TableCell>{policy.policy_no}</TableCell>
                     <TableCell>{policy.insurance_company}</TableCell>
@@ -112,7 +112,7 @@ export default function PersonalInsurancePage() {
                     <TableCell>{formatDate(policy.date_of_maturity)}</TableCell>
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
                     <TableCell className="text-right">
-                      <Link href={`/insurance/personal/${policy.id}`}>
+                      <Link href={`/insurance/personal/edit/${policy.id}`} onClick={(e) => e.stopPropagation()}>
                         <Button variant="outline" size="sm">
                           <Edit className="mr-2 h-4 w-4" /> Edit
                         </Button>
@@ -133,3 +133,4 @@ export default function PersonalInsurancePage() {
     </>
   );
 }
+
