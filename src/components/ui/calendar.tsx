@@ -81,7 +81,7 @@ function Calendar({
               <SelectTrigger className="pr-1.5 focus:ring-0">
                 <SelectValue>{selected?.props?.children}</SelectValue>
               </SelectTrigger>
-              <SelectContent position="popper">
+              <SelectContent position="popper" onPointerDownOutside={(e) => e.preventDefault()}>
                 <ScrollArea className="h-48">
                   {options.map((option, id: number) => (
                     <SelectItem
