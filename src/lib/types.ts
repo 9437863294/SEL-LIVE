@@ -626,6 +626,7 @@ export type InsuredAsset = {
   projectId?: string; // Linked global project ID if type is 'Project'
   location?: string;
   description?: string;
+  status: 'Active' | 'Inactive';
 };
 
 export type InsurancePolicy = {

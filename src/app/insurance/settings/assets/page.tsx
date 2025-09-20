@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -21,6 +20,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 
 const initialFormState = {
   name: '',
@@ -28,6 +28,7 @@ const initialFormState = {
   projectId: '',
   location: '',
   description: '',
+  status: 'Active' as 'Active' | 'Inactive',
 };
 
 export default function ManageAssetsPage() {
@@ -82,6 +83,7 @@ export default function ManageAssetsPage() {
             projectId: asset.projectId || '',
             location: asset.location || '',
             description: asset.description || '',
+            status: asset.status || 'Active',
         });
         setEditingId(asset.id);
     } else {
@@ -199,6 +201,7 @@ export default function ManageAssetsPage() {
                 <TableHead>Asset Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Location</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -208,6 +211,9 @@ export default function ManageAssetsPage() {
                     <TableCell className="font-medium">{getAssetName(asset)}</TableCell>
                     <TableCell>{asset.type}</TableCell>
                     <TableCell>{getAssetLocation(asset)}</TableCell>
+                    <TableCell>
+                      <Badge variant={asset.status === 'Active' ? 'default' : 'secondary'}>{asset.status}</Badge>
+                    </TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', asset)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
@@ -271,6 +277,16 @@ export default function ManageAssetsPage() {
                     </div>
                 </>
                )}
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={formData.status} onValueChange={(value: 'Active' | 'Inactive') => setFormData(p => ({...p, status: value}))}>
+                      <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                  </Select>
+               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
