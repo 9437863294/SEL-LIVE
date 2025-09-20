@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 const initialFormState = {
     name: '',
@@ -34,6 +35,8 @@ const initialFormState = {
 
 export default function ManageInsuranceCompaniesPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+  
   const [companies, setCompanies] = useState<InsuranceCompany[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -42,9 +45,19 @@ export default function ManageInsuranceCompaniesPage() {
   const [formData, setFormData] = useState(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const canViewPage = can('View', 'Insurance.Settings.Companies');
+  const canAdd = can('Add', 'Insurance.Settings.Companies');
+  const canEdit = can('Edit', 'Insurance.Settings.Companies');
+  const canDelete = can('Delete', 'Insurance.Settings.Companies');
+
   useEffect(() => {
-    fetchCompanies();
-  }, []);
+    if (authLoading) return;
+    if (canViewPage) {
+      fetchCompanies();
+    } else {
+      setIsLoading(false);
+    }
+  }, [canViewPage, authLoading]);
 
   const fetchCompanies = async () => {
     setIsLoading(true);
@@ -104,6 +117,35 @@ export default function ManageInsuranceCompaniesPage() {
       }
   };
 
+  if (authLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-96 w-full" />
+        </div>
+    )
+  }
+
+  if (!canViewPage) {
+    return (
+        <div className="w-full">
+            <div className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-xl font-bold">Manage Insurance Companies</h1>
+                    <p className="text-sm text-muted-foreground">Add, edit, or remove insurance companies.</p>
+                </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+            </Card>
+        </div>
+    )
+  }
+
   return (
     <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
@@ -111,7 +153,7 @@ export default function ManageInsuranceCompaniesPage() {
             <h1 className="text-xl font-bold">Manage Insurance Companies</h1>
             <p className="text-sm text-muted-foreground">Add, edit, or remove insurance companies.</p>
         </div>
-        <Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Company</Button>
+        <Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Company</Button>
       </div>
 
       <Card>
@@ -137,10 +179,10 @@ export default function ManageInsuranceCompaniesPage() {
                       <Badge variant={company.status === 'Active' ? 'default' : 'secondary'}>{company.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                       <Button variant="outline" size="sm" onClick={() => openDialog('edit', company)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                       <Button variant="outline" size="sm" onClick={() => openDialog('edit', company)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="sm" className="ml-2"><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                                <Button variant="destructive" size="sm" className="ml-2" disabled={!canDelete}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>

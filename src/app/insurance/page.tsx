@@ -2,11 +2,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car, Settings, CalendarClock, CheckSquare } from 'lucide-react';
+import { Shield, User, Home, HardHat, Car, Settings, ShieldAlert } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface InsuranceCardProps {
   item: {
@@ -18,7 +20,7 @@ interface InsuranceCardProps {
   };
 }
 
-const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
+const insuranceItemsBase: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
   { 
     icon: User, 
     text: 'Personal Insurance', 
@@ -65,7 +67,7 @@ function InsuranceCard({ item }: InsuranceCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -77,11 +79,45 @@ function InsuranceCard({ item }: InsuranceCardProps) {
 }
 
 export default function InsurancePage() {
+  const { can, isLoading } = useAuthorization();
+  const canViewModule = can('View Module', 'Insurance');
+  
+  const insuranceItems = insuranceItemsBase.map(item => ({
+    ...item,
+    disabled: item.href === '#' || (item.text === 'Personal Insurance' && !can('View', 'Insurance.Personal Insurance'))
+  }));
+
+  if (isLoading) {
+    return (
+        <div className="w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {Array.from({length: 4}).map((_, i) => <Skeleton key={i} className="h-40" />)}
+            </div>
+        </div>
+    )
+  }
+
+  if (!canViewModule) {
+      return (
+        <div className="w-full">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to access the Insurance module.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+      )
+  }
+  
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {insuranceItems.map((item) => (
-          <InsuranceCard key={item.text} item={{...item, disabled: item.href === '#'}} />
+          <InsuranceCard key={item.text} item={item} />
         ))}
       </div>
     </div>

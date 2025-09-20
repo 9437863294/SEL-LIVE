@@ -118,8 +118,14 @@ export const permissionModules = {
     'Dashboard': ['View', 'Create'],
     'LC Details': ['View', 'Edit', 'Track Payments'],
   },
-   'Insurance': {
+  'Insurance': {
     'View Module': [],
+    'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
+    'Premium Due': ['View'],
+    'Maturity Due': ['View'],
+    'Settings': ['View'],
+    'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Companies': ['View', 'Add', 'Edit', 'Delete']
   },
   'Settings': {
     'View Module': [],

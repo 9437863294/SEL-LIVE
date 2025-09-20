@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,12 +14,19 @@ import type { InsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 export default function PersonalInsurancePage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { can, isLoading: authLoading } = useAuthorization();
+  
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const canViewPage = can('View', 'Insurance.Personal Insurance');
+  const canAdd = can('Add', 'Insurance.Personal Insurance');
+  const canEdit = can('Edit', 'Insurance.Personal Insurance');
 
   const fetchPolicies = async () => {
     setIsLoading(true);
@@ -45,8 +52,13 @@ export default function PersonalInsurancePage() {
   };
 
   useEffect(() => {
-    fetchPolicies();
-  }, [toast]);
+    if (authLoading) return;
+    if (canViewPage) {
+      fetchPolicies();
+    } else {
+      setIsLoading(false);
+    }
+  }, [authLoading, canViewPage, toast]);
   
   const formatDate = (date: Date | null) => {
     if (!date) return 'N/A';
@@ -56,6 +68,34 @@ export default function PersonalInsurancePage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
+  
+  if (authLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full">
+            <Skeleton className="h-10 w-96 mb-6" />
+            <Skeleton className="h-[500px] w-full" />
+        </div>
+    );
+  }
+
+  if (!canViewPage) {
+    return (
+        <div className="w-full">
+            <div className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-xl font-bold">Personal Insurance</h1>
+                </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view personal insurance policies.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <>
@@ -67,7 +107,7 @@ export default function PersonalInsurancePage() {
           </div>
           <div className="flex items-center gap-2">
             <Link href="/insurance/personal/new">
-              <Button>
+              <Button disabled={!canAdd}>
                 <Plus className="mr-2 h-4 w-4" /> Add New Policy
               </Button>
             </Link>
@@ -110,7 +150,7 @@ export default function PersonalInsurancePage() {
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
                     <TableCell className="text-right">
                       <Link href={`/insurance/personal/edit/${policy.id}`} onClick={(e) => e.stopPropagation()}>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" disabled={!canEdit}>
                           <Edit className="mr-2 h-4 w-4" /> Edit
                         </Button>
                       </Link>

@@ -2,12 +2,13 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Users, Building } from 'lucide-react';
+import { ArrowLeft, Users, Building, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface SettingsCardProps {
   item: {
@@ -19,18 +20,20 @@ interface SettingsCardProps {
   };
 }
 
-const settingsItems: Omit<SettingsCardProps['item'], 'disabled'>[] = [
+const settingsItemsBase = [
   {
     icon: Users,
     text: 'Policy Holders',
     href: '/insurance/policy-holders',
-    description: 'Manage details of all policy holders.'
+    description: 'Manage details of all policy holders.',
+    permission: 'View'
   },
   { 
     icon: Building, 
     text: 'Insurance Companies', 
     href: '/insurance/companies', 
-    description: 'Manage the list of insurance companies.' 
+    description: 'Manage the list of insurance companies.',
+    permission: 'View'
   },
 ];
 
@@ -66,6 +69,48 @@ function SettingsCard({ item }: SettingsCardProps) {
 }
 
 export default function InsuranceSettingsPage() {
+  const { can, isLoading } = useAuthorization();
+  const canViewPage = can('View', 'Insurance.Settings');
+  
+  const settingsItems = settingsItemsBase.map(item => {
+      let moduleScope = item.text === 'Policy Holders' ? 'Insurance.Settings.Holders' : 'Insurance.Settings.Companies';
+      return {
+          ...item,
+          disabled: !can(item.permission, moduleScope)
+      }
+  });
+
+  if (isLoading) {
+      return (
+        <div className="w-full">
+            <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <Skeleton className="h-40" />
+                <Skeleton className="h-40" />
+            </div>
+        </div>
+      );
+  }
+
+  if (!canViewPage) {
+      return (
+         <div className="w-full">
+            <div className="mb-6 flex items-center gap-2">
+                <h1 className="text-xl font-bold">Insurance Settings</h1>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view settings.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+         </div>
+      );
+  }
+  
   return (
     <div className="w-full">
         <div className="mb-6 flex items-center gap-2">
@@ -73,7 +118,7 @@ export default function InsuranceSettingsPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {settingsItems.map((item) => (
-                <SettingsCard key={item.text} item={{...item, disabled: item.href === '#'}} />
+                <SettingsCard key={item.text} item={item} />
             ))}
         </div>
     </div>

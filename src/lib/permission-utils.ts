@@ -17,7 +17,7 @@ export const getTotalPermissionsForModule = (moduleName: string, departments: De
     let total = 0;
     for (const key in moduleConfig) {
       const perms = moduleConfig[key as keyof typeof moduleConfig];
-      if (key === 'View Module' && typeof perms === 'boolean' && perms) {
+       if (key === 'View Module') {
         total += 1;
         continue;
       }
