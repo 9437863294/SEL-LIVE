@@ -88,18 +88,32 @@ export default function InsuranceLayout({
                   )}
                 </Tooltip>
               ))}
-              {showSubItems && isExpanded && (
-                <div className="pl-4 mt-2 space-y-1 border-l ml-4">
+              {showSubItems && (
+                <div className={cn("space-y-1", isExpanded ? "pl-4 mt-2 border-l ml-4" : "mt-2")}>
                    {personalInsuranceSubItems.map((item) => (
-                      <Link href={item.href} key={item.label}>
-                          <Button
-                            variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
-                            className="w-full justify-start text-sm h-9"
-                          >
-                            <item.icon className="mr-3 h-4 w-4" />
-                            {item.label}
-                          </Button>
-                      </Link>
+                      <Tooltip key={item.label}>
+                          <TooltipTrigger asChild>
+                              <Link href={item.href}>
+                                  <Button
+                                      variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
+                                      className={cn(
+                                          "w-full justify-start text-sm h-9",
+                                          !isExpanded && "h-10 w-10 p-0"
+                                      )}
+                                  >
+                                    <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                      <item.icon className={cn('h-4 w-4', isExpanded && 'mr-3')} />
+                                      <span className={cn(!isExpanded && 'sr-only')}>{item.label}</span>
+                                    </div>
+                                  </Button>
+                              </Link>
+                          </TooltipTrigger>
+                          {!isExpanded && (
+                              <TooltipContent side="right">
+                                  <p>{item.label}</p>
+                              </TooltipContent>
+                          )}
+                      </Tooltip>
                    ))}
                 </div>
               )}
