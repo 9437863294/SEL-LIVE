@@ -255,11 +255,17 @@ export default function ProjectPolicyDetailsPage() {
                         </Popover>
                     ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-end gap-2">
                     {isEditing ? (
                         <>
-                            <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
-                            <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
+                            <div className="flex-1 space-y-2">
+                                <Label>Years</Label>
+                                <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
+                            </div>
+                             <div className="flex-1 space-y-2">
+                                <Label>Months</Label>
+                                <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
+                            </div>
                         </>
                     ) : (
                         <div className="space-y-2 w-full">

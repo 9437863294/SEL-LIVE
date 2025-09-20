@@ -203,9 +203,29 @@ export default function NewProjectPolicyPage() {
                     <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
                          <DatePickerField name="insurance_start_date" label="Insurance Start Date" />
-                         <div className="flex items-center gap-2">
-                            <FormField control={form.control} name="tenure_years" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Years" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="tenure_months" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Months" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                         <div className="flex items-end gap-2">
+                            <FormField 
+                                control={form.control} 
+                                name="tenure_years" 
+                                render={({ field }) => (
+                                    <FormItem className="flex-1 space-y-2">
+                                        <FormLabel>Years</FormLabel>
+                                        <FormControl><Input type="number" placeholder="Years" {...field} /></FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )} 
+                            />
+                            <FormField 
+                                control={form.control} 
+                                name="tenure_months" 
+                                render={({ field }) => (
+                                    <FormItem className="flex-1 space-y-2">
+                                        <FormLabel>Months</FormLabel>
+                                        <FormControl><Input type="number" placeholder="Months" {...field} /></FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )} 
+                            />
                          </div>
                         <ReadOnlyDatePickerField name="insured_until" label="Insured Until (Auto-calculated)" />
                     </CardContent>
