@@ -120,7 +120,7 @@ export default function MaturityDuePage() {
     if (isPast(maturityDate))
       return { text: 'Matured', variant: 'destructive' as const };
     if (isWithinInterval(maturityDate, { start: new Date(), end: addDays(new Date(), 90) })) {
-      return { text: 'Due Soon', variant: 'default' as const };
+      return { text: 'Mature Soon', variant: 'default' as const };
     }
     return { text: 'Upcoming', variant: 'secondary' as const };
   };
