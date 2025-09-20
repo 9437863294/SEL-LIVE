@@ -139,7 +139,7 @@ export default function PolicyDetailsPage() {
   
   if (isLoading) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full">
             <Skeleton className="h-10 w-64 mb-6" />
             <Skeleton className="h-48 mb-6" />
             <Skeleton className="h-96" />
@@ -151,20 +151,17 @@ export default function PolicyDetailsPage() {
 
   return (
     <>
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
         <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/insurance/personal"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-              <div>
-                <h1 className="text-xl font-bold">{policy.policy_name}</h1>
-                <p className="text-muted-foreground">{policy.policy_no} - {policy.insured_person}</p>
-              </div>
-            </div>
-            <Link href={`/insurance/personal/edit/${policy.id}`}>
-              <Button variant="outline">
-                <Edit className="mr-2 h-4 w-4" /> Edit Policy
-              </Button>
-            </Link>
+          <div>
+            <h1 className="text-xl font-bold">{policy.policy_name}</h1>
+            <p className="text-muted-foreground">{policy.policy_no} - {policy.insured_person}</p>
+          </div>
+          <Link href={`/insurance/personal/edit/${policy.id}`}>
+            <Button variant="outline">
+              <Edit className="mr-2 h-4 w-4" /> Edit Policy
+            </Button>
+          </Link>
         </div>
         
         <Card className="mb-6">

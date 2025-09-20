@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car, Settings, CalendarClock } from 'lucide-react';
+import { Shield, User, Home, HardHat, Car, Settings, CalendarClock, CheckSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -30,6 +30,12 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     text: 'Premium Due',
     href: '/insurance/premium-due',
     description: 'View upcoming and overdue premium payments.'
+  },
+  { 
+    icon: CheckSquare,
+    text: 'Maturity Due',
+    href: '/insurance/maturity-due',
+    description: 'View policies nearing their maturity dates.'
   },
   { 
     icon: Home, 

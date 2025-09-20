@@ -136,14 +136,11 @@ export default function ManagePolicyHoldersPage() {
   const formatDate = (date: Date | null) => date ? format(date, 'dd MMM, yyyy') : 'N/A';
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/insurance"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <div>
+        <div>
             <h1 className="text-xl font-bold">Manage Policy Holders</h1>
             <p className="text-sm text-muted-foreground">Add, edit, or remove policy holders.</p>
-          </div>
         </div>
         <Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>
       </div>

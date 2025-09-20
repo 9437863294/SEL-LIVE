@@ -59,16 +59,11 @@ export default function PersonalInsurancePage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/insurance">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold">Personal Insurance</h1>
-              <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
-            </div>
+          <div>
+            <h1 className="text-xl font-bold">Personal Insurance</h1>
+            <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
           </div>
           <Link href="/insurance/personal/new">
             <Button>
@@ -133,4 +128,3 @@ export default function PersonalInsurancePage() {
     </>
   );
 }
-

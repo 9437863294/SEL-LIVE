@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -219,7 +218,7 @@ export default function NewPolicyPage() {
   );
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/insurance/personal">

@@ -67,13 +67,8 @@ function SettingsCard({ item }: SettingsCardProps) {
 
 export default function InsuranceSettingsPage() {
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
         <div className="mb-6 flex items-center gap-2">
-            <Link href="/insurance">
-                <Button variant="ghost" size="icon">
-                    <ArrowLeft className="h-6 w-6" />
-                </Button>
-            </Link>
             <h1 className="text-xl font-bold">Insurance Settings</h1>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

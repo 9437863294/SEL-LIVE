@@ -177,86 +177,83 @@ export default function PremiumDuePage() {
 
   return (
     <>
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-            <Link href="/insurance"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <div>
-                <h1 className="text-xl font-bold">Premium Due</h1>
-                <p className="text-sm text-muted-foreground">Upcoming and overdue insurance premium payments.</p>
-            </div>
-            </div>
-        </div>
-        
-        <Card>
-            <CardHeader>
-                <div className="flex justify-end">
-                    <div className="flex flex-wrap items-center gap-4">
-                    <Select value={selectedYear} onValueChange={setSelectedYear}>
-                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Years</SelectItem>
-                            {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Months" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Months</SelectItem>
-                            {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    </div>
+        <div className="w-full">
+            <div className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-xl font-bold">Premium Due</h1>
+                    <p className="text-sm text-muted-foreground">Upcoming and overdue insurance premium payments.</p>
                 </div>
-            </CardHeader>
-            <CardContent className="p-0">
-            <Table>
-                <TableHeader>
-                <TableRow>
-                    <TableHead>Policy Holder</TableHead>
-                    <TableHead>Policy No.</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Premium</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-                </TableHeader>
-                <TableBody>
-                {isLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                        <TableCell colSpan={7}><Skeleton className="h-8" /></TableCell>
-                    </TableRow>
-                    ))
-                ) : filteredPolicies.length > 0 ? (
-                    filteredPolicies.map(policy => {
-                    const status = getStatus(policy.due_date);
-                    return (
-                        <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
-                        <TableCell className="font-medium">{policy.insured_person}</TableCell>
-                        <TableCell>{policy.policy_no}</TableCell>
-                        <TableCell>{policy.insurance_company}</TableCell>
-                        <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                        <TableCell>{policy.due_date ? format(policy.due_date, 'dd MMM, yyyy') : 'N/A'}</TableCell>
-                        <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
-                        <TableCell className="text-right">
-                            <Button size="sm" disabled={!status.isDue} onClick={(e) => openRenewDialog(e, policy)}>
-                                <RotateCw className="mr-2 h-4 w-4" /> Renew
-                            </Button>
-                        </TableCell>
-                        </TableRow>
-                    );
-                    })
-                ) : (
+            </div>
+            
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-end">
+                        <div className="flex flex-wrap items-center gap-4">
+                        <Select value={selectedYear} onValueChange={setSelectedYear}>
+                            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Years</SelectItem>
+                                {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Months" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Months</SelectItem>
+                                {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                <Table>
+                    <TableHeader>
                     <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">No policies with upcoming due dates found for the selected period.</TableCell>
+                        <TableHead>Policy Holder</TableHead>
+                        <TableHead>Policy No.</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Premium</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                )}
-                </TableBody>
-            </Table>
-            </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                    {isLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => (
+                        <TableRow key={i}>
+                            <TableCell colSpan={7}><Skeleton className="h-8" /></TableCell>
+                        </TableRow>
+                        ))
+                    ) : filteredPolicies.length > 0 ? (
+                        filteredPolicies.map(policy => {
+                        const status = getStatus(policy.due_date);
+                        return (
+                            <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
+                            <TableCell className="font-medium">{policy.insured_person}</TableCell>
+                            <TableCell>{policy.policy_no}</TableCell>
+                            <TableCell>{policy.insurance_company}</TableCell>
+                            <TableCell>{formatCurrency(policy.premium)}</TableCell>
+                            <TableCell>{policy.due_date ? format(policy.due_date, 'dd MMM, yyyy') : 'N/A'}</TableCell>
+                            <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
+                            <TableCell className="text-right">
+                                <Button size="sm" disabled={!status.isDue} onClick={(e) => openRenewDialog(e, policy)}>
+                                    <RotateCw className="mr-2 h-4 w-4" /> Renew
+                                </Button>
+                            </TableCell>
+                            </TableRow>
+                        );
+                        })
+                    ) : (
+                        <TableRow>
+                        <TableCell colSpan={7} className="text-center h-24">No policies with upcoming due dates found for the selected period.</TableCell>
+                        </TableRow>
+                    )}
+                    </TableBody>
+                </Table>
+                </CardContent>
+            </Card>
         </div>
         <PremiumScheduleDialog policy={selectedPolicy} isOpen={isDetailsOpen} onOpenChange={setIsDetailsOpen} />
         {selectedPolicy && (
@@ -270,4 +267,3 @@ export default function PremiumDuePage() {
     </>
   );
 }
-
