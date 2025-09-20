@@ -152,66 +152,29 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
               <div className="space-y-4 px-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
-                        control={form.control}
-                        name="insured_person"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-col">
-                            <FormLabel>Insured Person</FormLabel>
-                            <Popover open={isHolderPopoverOpen} onOpenChange={setIsHolderPopoverOpen}>
-                                <PopoverTrigger asChild>
-                                    <FormControl>
-                                        <Button
-                                            variant="outline"
-                                            role="combobox"
-                                            className={cn(
-                                            "justify-between w-full",
-                                            !field.value && "text-muted-foreground"
-                                            )}
-                                        >
-                                            {field.value
-                                            ? policyHolders.find(
-                                                (holder) => holder.name === field.value
-                                                )?.name
-                                            : "Select policy holder"}
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                        </Button>
-                                    </FormControl>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                    <Command>
-                                        <CommandInput placeholder="Search policy holder..." />
-                                        <CommandEmpty>No holder found.</CommandEmpty>
-                                        <CommandGroup>
-                                            <ScrollArea className="h-48">
-                                                {policyHolders.map((holder) => (
-                                                    <CommandItem
-                                                        value={holder.name}
-                                                        key={holder.id}
-                                                        onSelect={(currentValue) => {
-                                                            form.setValue("insured_person", currentValue === field.value ? "" : currentValue)
-                                                            setIsHolderPopoverOpen(false)
-                                                        }}
-                                                    >
-                                                        <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            holder.name === field.value
-                                                            ? "opacity-100"
-                                                            : "opacity-0"
-                                                        )}
-                                                        />
-                                                        {holder.name}
-                                                    </CommandItem>
-                                                ))}
-                                            </ScrollArea>
-                                        </CommandGroup>
-                                    </Command>
-                                </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      control={form.control}
+                      name="insured_person"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Insured Person</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a policy holder" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {policyHolders.map((holder) => (
+                                <SelectItem key={holder.id} value={holder.name}>
+                                  {holder.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={form.control} name="policy_no" render={({ field }) => (<FormItem><FormLabel>Policy No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="insurance_company" render={({ field }) => (<FormItem><FormLabel>Insurance Company</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
