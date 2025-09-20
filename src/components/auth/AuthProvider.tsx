@@ -11,6 +11,7 @@ import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimest
 import type { User, Role, SavedUser } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
+import { SessionExpiryDialog } from './SessionExpiryDialog';
 
 
 interface AuthContextType {
@@ -282,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearInterval(interval);
       }
     };
-  }, [user, handleSignOut]);
+  }, [user]);
 
   useEffect(() => {
     if (loading) return;

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -47,8 +48,8 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
         setCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            onLogout();
             onOpenChange(false);
+            onLogout();
             return 0;
           }
           return prev - 1;

@@ -57,7 +57,7 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isImpersonating } = useAuth();
+  const { user, isImpersonating, handleSignOut } = useAuth();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isSwitchUserOpen, setIsSwitchUserOpen] = useState(false);
   const { can } = useAuthorization();
@@ -115,25 +115,6 @@ export default function Header() {
   const refreshTasks = () => {
     // This is a placeholder for a more direct refresh mechanism if needed.
     // Currently, onSnapshot provides real-time updates.
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      sessionStorage.clear(); // Clear impersonation session on sign out
-      toast({
-        title: 'Signed Out',
-        description: 'You have been successfully signed out.',
-      });
-      router.push('/login');
-    } catch (error) {
-      console.error('Error signing out:', error);
-       toast({
-        title: 'Error',
-        description: 'Failed to sign out.',
-        variant: 'destructive',
-      });
-    }
   };
 
   if (pathname === '/login') {
@@ -214,7 +195,7 @@ export default function Header() {
                         </DropdownMenuItem>
                     )}
                    <DropdownMenuSeparator />
-                   <DropdownMenuItem onClick={handleSignOut}>
+                   <DropdownMenuItem onClick={() => handleSignOut()}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Sign Out</span>
                   </DropdownMenuItem>
