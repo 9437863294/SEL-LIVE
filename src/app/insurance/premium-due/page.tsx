@@ -12,15 +12,30 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import type { InsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, isPast, isWithinInterval, addDays } from 'date-fns';
+import { format, isPast, isWithinInterval, addDays, getYear } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function PremiumDuePage() {
   const { toast } = useToast();
   const router = useRouter();
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [selectedYear, setSelectedYear] = useState<string>(getYear(new Date()).toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+
+  const yearOptions = useMemo(() => {
+    if (policies.length === 0) return [getYear(new Date()).toString()];
+    const years = new Set(policies.map(p => getYear(p.due_date!)));
+    return Array.from(years).sort((a,b) => b - a).map(String);
+  }, [policies]);
+  
+  const monthOptions = Array.from({ length: 12 }, (_, i) => ({
+    value: String(i),
+    label: format(new Date(0, i), 'MMMM'),
+  }));
 
   useEffect(() => {
     const fetchPolicies = async () => {
@@ -46,6 +61,15 @@ export default function PremiumDuePage() {
 
     fetchPolicies();
   }, [toast]);
+  
+  const filteredPolicies = useMemo(() => {
+      return policies.filter(policy => {
+          if (!policy.due_date) return false;
+          const yearMatch = selectedYear === 'all' || getYear(policy.due_date).toString() === selectedYear;
+          const monthMatch = selectedMonth === 'all' || policy.due_date.getMonth().toString() === selectedMonth;
+          return yearMatch && monthMatch;
+      });
+  }, [policies, selectedYear, selectedMonth]);
   
   const getStatus = (dueDate: Date | null) => {
     if (!dueDate) return { text: 'N/A', variant: 'secondary' as const };
@@ -77,6 +101,24 @@ export default function PremiumDuePage() {
       </div>
       
       <Card>
+        <CardHeader>
+            <div className="flex flex-wrap items-center gap-4">
+               <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Year" /></SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                  </SelectContent>
+               </Select>
+               <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Select Month" /></SelectTrigger>
+                   <SelectContent>
+                      <SelectItem value="all">All Months</SelectItem>
+                      {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
+                  </SelectContent>
+               </Select>
+            </div>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -96,8 +138,8 @@ export default function PremiumDuePage() {
                     <TableCell colSpan={6}><Skeleton className="h-8" /></TableCell>
                   </TableRow>
                 ))
-              ) : policies.length > 0 ? (
-                policies.map(policy => {
+              ) : filteredPolicies.length > 0 ? (
+                filteredPolicies.map(policy => {
                   const status = getStatus(policy.due_date);
                   return (
                     <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
@@ -112,7 +154,7 @@ export default function PremiumDuePage() {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">No policies with upcoming due dates found.</TableCell>
+                  <TableCell colSpan={6} className="text-center h-24">No policies with upcoming due dates found for the selected period.</TableCell>
                 </TableRow>
               )}
             </TableBody>
