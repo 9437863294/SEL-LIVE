@@ -13,13 +13,11 @@ import { collection, getDocs } from 'firebase/firestore';
 import type { InsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import { AddPolicyDialog } from '@/components/AddPolicyDialog';
 
 export default function PersonalInsurancePage() {
   const { toast } = useToast();
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const fetchPolicies = async () => {
     setIsLoading(true);
@@ -70,9 +68,11 @@ export default function PersonalInsurancePage() {
               <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
             </div>
           </div>
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add New Policy
-          </Button>
+          <Link href="/insurance/personal/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" /> Add New Policy
+            </Button>
+          </Link>
         </div>
         
         <Card>
@@ -118,7 +118,6 @@ export default function PersonalInsurancePage() {
           </CardContent>
         </Card>
       </div>
-      <AddPolicyDialog isOpen={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onPolicyAdded={fetchPolicies} />
     </>
   );
 }

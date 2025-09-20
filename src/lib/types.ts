@@ -613,4 +613,5 @@ export type InsurancePolicy = {
   last_premium_date?: any; // Firestore Timestamp
   payment_type: 'Monthly' | 'Quarterly' | 'Yearly' | 'One-Time';
   auto_debit: boolean;
+  attachments?: Attachment[];
 };
