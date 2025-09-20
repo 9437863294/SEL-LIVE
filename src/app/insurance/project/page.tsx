@@ -38,7 +38,8 @@ export default function ProjectInsurancePage() {
           return {
               id: doc.id,
               ...data,
-              due_date: data.due_date ? data.due_date.toDate() : null,
+              insurance_start_date: data.insurance_start_date ? data.insurance_start_date.toDate() : null,
+              insured_until: data.insured_until ? data.insured_until.toDate() : null,
           } as ProjectInsurancePolicy
       });
       setPolicies(policiesData);
@@ -122,7 +123,7 @@ export default function ProjectInsurancePage() {
                   <TableHead>Company</TableHead>
                   <TableHead>Policy Category</TableHead>
                   <TableHead>Premium</TableHead>
-                  <TableHead>Due Date</TableHead>
+                  <TableHead>Insured Until</TableHead>
                   <TableHead>Sum Insured</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -142,7 +143,7 @@ export default function ProjectInsurancePage() {
                     <TableCell>{policy.insurance_company}</TableCell>
                     <TableCell>{policy.policy_category}</TableCell>
                     <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                    <TableCell>{formatDate(policy.due_date)}</TableCell>
+                    <TableCell>{formatDate(policy.insured_until)}</TableCell>
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
                     <TableCell className="text-right">
                       <Link href={`/insurance/project/${policy.id}`} onClick={(e) => e.stopPropagation()}>
@@ -162,6 +163,7 @@ export default function ProjectInsurancePage() {
             </Table>
           </CardContent>
         </Card>
+
       </div>
     </>
   );

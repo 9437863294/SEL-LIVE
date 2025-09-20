@@ -661,7 +661,10 @@ export type ProjectInsurancePolicy = {
   policy_category: string;
   premium: number;
   sum_insured: number;
-  due_date: any; // Firestore Timestamp
+  insurance_start_date: any;
+  tenure_years: number;
+  tenure_months: number;
+  insured_until: any;
 };
 
 

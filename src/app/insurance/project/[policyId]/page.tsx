@@ -13,7 +13,7 @@ import { doc, getDoc, updateDoc, Timestamp, collection, getDocs, query, where } 
 import type { ProjectInsurancePolicy, InsuredAsset, InsuranceCompany, PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
-import { format } from 'date-fns';
+import { format, addYears, addMonths } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -57,7 +57,8 @@ export default function ProjectPolicyDetailsPage() {
           setPolicy(policyData);
           setEditedPolicy({
             ...policyData,
-            due_date: policyData.due_date ? policyData.due_date.toDate() : null,
+            insurance_start_date: policyData.insurance_start_date ? policyData.insurance_start_date.toDate() : null,
+            insured_until: policyData.insured_until ? policyData.insured_until.toDate() : null,
           });
         } else {
           toast({ title: "Error", description: "Policy not found.", variant: "destructive" });
@@ -77,6 +78,17 @@ export default function ProjectPolicyDetailsPage() {
 
     fetchPolicyData();
   }, [policyId, toast, router]);
+
+  useEffect(() => {
+    const { insurance_start_date, tenure_years = 0, tenure_months = 0 } = editedPolicy;
+    if (insurance_start_date && (tenure_years > 0 || tenure_months > 0)) {
+        let endDate = addYears(new Date(insurance_start_date), tenure_years);
+        endDate = addMonths(endDate, tenure_months);
+        setEditedPolicy(prev => ({...prev, insured_until: endDate}));
+    } else {
+        setEditedPolicy(prev => ({...prev, insured_until: undefined}));
+    }
+  }, [editedPolicy.insurance_start_date, editedPolicy.tenure_years, editedPolicy.tenure_months]);
   
   const handleInputChange = (field: keyof ProjectInsurancePolicy, value: string | number) => {
     setEditedPolicy(prev => ({ ...prev, [field]: value }));
@@ -100,20 +112,21 @@ export default function ProjectPolicyDetailsPage() {
             ...editedPolicy,
             assetName: selectedAsset.name,
             assetType: selectedAsset.type,
-            due_date: editedPolicy.due_date ? Timestamp.fromDate(new Date(editedPolicy.due_date)) : null,
+            insurance_start_date: editedPolicy.insurance_start_date ? Timestamp.fromDate(new Date(editedPolicy.insurance_start_date)) : null,
+            insured_until: editedPolicy.insured_until ? Timestamp.fromDate(new Date(editedPolicy.insured_until)) : null,
         };
         const policyRef = doc(db, 'project_insurance_policies', policyId);
         await updateDoc(policyRef, dataToSave);
         toast({ title: 'Success', description: 'Policy updated successfully.' });
         setIsEditing(false);
-        // Refetch data to show updated values
         const updatedDocSnap = await getDoc(policyRef);
         if(updatedDocSnap.exists()) {
           const updatedData = { id: updatedDocSnap.id, ...updatedDocSnap.data() } as ProjectInsurancePolicy;
           setPolicy(updatedData);
           setEditedPolicy({
             ...updatedData,
-            due_date: updatedData.due_date ? updatedData.due_date.toDate() : null,
+            insurance_start_date: updatedData.insurance_start_date ? updatedData.insurance_start_date.toDate() : null,
+            insured_until: updatedData.insured_until ? updatedData.insured_until.toDate() : null,
           });
         }
     } catch(e) {
@@ -219,22 +232,45 @@ export default function ProjectPolicyDetailsPage() {
                   {isEditing ? <Input type="number" value={editedPolicy.premium} onChange={e => handleInputChange('premium', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.premium)}</p>}
                 </div>
                  <div className="space-y-2">
-                  <Label>Due Date</Label>
-                   {isEditing ? (
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !editedPolicy.due_date && "text-muted-foreground")}>
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {editedPolicy.due_date ? format(new Date(editedPolicy.due_date), "PPP") : <span>Pick a date</span>}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={editedPolicy.due_date ? new Date(editedPolicy.due_date) : undefined} onSelect={(date) => handleDateChange('due_date', date)} /></PopoverContent>
-                        </Popover>
-                   ) : <p className="font-semibold">{formatDate(policy.due_date)}</p>}
-                </div>
-                 <div className="space-y-2">
                   <Label>Sum Insured</Label>
                   {isEditing ? <Input type="number" value={editedPolicy.sum_insured} onChange={e => handleInputChange('sum_insured', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.sum_insured)}</p>}
+                </div>
+            </CardContent>
+        </Card>
+        
+        <Card>
+            <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                    <Label>Insurance Start Date</Label>
+                    {isEditing ? (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !editedPolicy.insurance_start_date && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {editedPolicy.insurance_start_date ? format(new Date(editedPolicy.insurance_start_date), "PPP") : <span>Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={editedPolicy.insurance_start_date ? new Date(editedPolicy.insurance_start_date) : undefined} onSelect={(date) => handleDateChange('insurance_start_date', date)} /></PopoverContent>
+                        </Popover>
+                    ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
+                </div>
+                <div className="space-y-2">
+                    <Label>Tenure</Label>
+                    <div className="flex items-center gap-2">
+                        {isEditing ? (
+                            <>
+                                <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} />
+                                <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} />
+                            </>
+                        ) : (
+                            <p className="font-semibold">{policy.tenure_years || 0} years, {policy.tenure_months || 0} months</p>
+                        )}
+                    </div>
+                </div>
+                 <div className="space-y-2">
+                    <Label>Insured Until</Label>
+                    <p className="font-semibold">{formatDate(isEditing ? editedPolicy.insured_until : policy.insured_until)}</p>
                 </div>
             </CardContent>
         </Card>

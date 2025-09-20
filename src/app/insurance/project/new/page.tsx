@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon, Loader2, Save, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, addYears, addMonths } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
@@ -30,7 +30,10 @@ const policySchema = z.object({
   policy_category: z.string().min(1, 'Policy category is required'),
   premium: z.coerce.number().min(0, 'Premium must be a positive number'),
   sum_insured: z.coerce.number().min(0, 'Sum insured must be a positive number'),
-  due_date: z.date({ required_error: "A due date is required." }),
+  insurance_start_date: z.date({ required_error: "A start date is required." }),
+  tenure_years: z.coerce.number().min(0).default(0),
+  tenure_months: z.coerce.number().min(0).max(11).default(0),
+  insured_until: z.date().optional(),
 });
 
 type PolicyFormValues = z.infer<typeof policySchema>;
@@ -73,8 +76,26 @@ export default function NewProjectPolicyPage() {
       policy_category: '',
       premium: 0,
       sum_insured: 0,
+      tenure_years: 0,
+      tenure_months: 0,
     },
   });
+
+  const { watch, setValue } = form;
+  const watchStartDate = watch('insurance_start_date');
+  const watchTenureYears = watch('tenure_years');
+  const watchTenureMonths = watch('tenure_months');
+
+  useEffect(() => {
+    if (watchStartDate && (watchTenureYears > 0 || watchTenureMonths > 0)) {
+        let endDate = addYears(watchStartDate, watchTenureYears);
+        endDate = addMonths(endDate, watchTenureMonths);
+        setValue('insured_until', endDate);
+    } else {
+        setValue('insured_until', undefined);
+    }
+  }, [watchStartDate, watchTenureYears, watchTenureMonths, setValue]);
+
 
   const onSubmit = async (data: PolicyFormValues) => {
     setIsSaving(true);
@@ -90,7 +111,8 @@ export default function NewProjectPolicyPage() {
         ...data,
         assetName: selectedAsset.name,
         assetType: selectedAsset.type,
-        due_date: data.due_date ? Timestamp.fromDate(data.due_date) : null,
+        insurance_start_date: data.insurance_start_date ? Timestamp.fromDate(data.insurance_start_date) : null,
+        insured_until: data.insured_until ? Timestamp.fromDate(data.insured_until) : null,
       };
 
       await addDoc(collection(db, 'project_insurance_policies'), policyData);
@@ -128,6 +150,25 @@ export default function NewProjectPolicyPage() {
       )}
     />
   );
+  
+  const ReadOnlyDatePickerField = ({ name, label }: { name: keyof PolicyFormValues, label: string }) => (
+     <FormField
+      control={form.control}
+      name={name as any}
+      render={({ field }) => (
+        <FormItem className="flex flex-col">
+          <FormLabel>{label}</FormLabel>
+            <FormControl>
+              <Button variant="outline" className={cn('pl-3 text-left font-normal text-muted-foreground cursor-not-allowed')} disabled>
+                {field.value ? format(field.value, 'PPP') : <span>-</span>}
+                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+              </Button>
+            </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
 
   return (
     <div className="w-full">
@@ -150,82 +191,28 @@ export default function NewProjectPolicyPage() {
                 <Card>
                     <CardHeader><CardTitle>Policy Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <FormField
-                            control={form.control}
-                            name="assetId"
-                            render={({ field }) => (
-                                <FormItem>
-                                <FormLabel>Project Name/Site</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                    <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a project or property" />
-                                    </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                    {assets.map((asset) => (
-                                        <SelectItem key={asset.id} value={asset.id}>
-                                        {asset.name}
-                                        </SelectItem>
-                                    ))}
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <FormField control={form.control} name="assetId" render={({ field }) => (<FormItem><FormLabel>Project Name/Site</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select an asset" /></SelectTrigger></FormControl><SelectContent>{assets.map((asset) => (<SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="policy_no" render={({ field }) => (<FormItem><FormLabel>Policy No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField
-                            control={form.control}
-                            name="insurance_company"
-                            render={({ field }) => (
-                                <FormItem>
-                                <FormLabel>Insurance Company</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                    <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a company" />
-                                    </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                    {insuranceCompanies.map((company) => (
-                                        <SelectItem key={company.id} value={company.name}>
-                                        {company.name}
-                                        </SelectItem>
-                                    ))}
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        <FormField control={form.control} name="policy_category"
-                            render={({ field }) => (
-                                <FormItem>
-                                <FormLabel>Policy Category</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                    <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a category" />
-                                    </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                    {policyCategories.map((category) => (
-                                        <SelectItem key={category.id} value={category.name}>
-                                        {category.name}
-                                        </SelectItem>
-                                    ))}
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <FormField control={form.control} name="insurance_company" render={({ field }) => (<FormItem><FormLabel>Insurance Company</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a company" /></SelectTrigger></FormControl><SelectContent>{insuranceCompanies.map((company) => (<SelectItem key={company.id} value={company.name}>{company.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Policy Category</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger></FormControl><SelectContent>{policyCategories.map((category) => (<SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="premium" render={({ field }) => (<FormItem><FormLabel>Premium</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <DatePickerField name="due_date" label="Due Date"/>
                         <FormField control={form.control} name="sum_insured" render={({ field }) => (<FormItem><FormLabel>Sum Insured</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     </CardContent>
                 </Card>
+                 <Card>
+                    <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                         <DatePickerField name="insurance_start_date" label="Insurance Start Date" />
+                         <div className="space-y-2">
+                            <Label>Tenure</Label>
+                             <div className="flex items-center gap-2">
+                                <FormField control={form.control} name="tenure_years" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Years" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="tenure_months" render={({ field }) => (<FormItem className="flex-1"><FormControl><Input type="number" placeholder="Months" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                             </div>
+                         </div>
+                        <ReadOnlyDatePickerField name="insured_until" label="Insured Until (Auto-calculated)" />
+                    </CardContent>
+                 </Card>
             </form>
         </Form>
     </div>
