@@ -126,7 +126,8 @@ export const permissionModules = {
     'Maturity Due': ['View'],
     'Settings': ['View'],
     'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings.Companies': ['View', 'Add', 'Edit', 'Delete']
+    'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Categories': ['View', 'Add', 'Edit', 'Delete']
   },
   'Settings': {
     'View Module': [],
@@ -609,6 +610,11 @@ export type InsuranceCompany = {
   id: string;
   name: string;
   status: 'Active' | 'Inactive';
+};
+
+export type PolicyCategory = {
+  id: string;
+  name: string;
 };
 
 export type InsurancePolicy = {

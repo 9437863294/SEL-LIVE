@@ -5,13 +5,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Edit, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Edit, Save, Loader2, Paperclip, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
-import type { ProjectInsurancePolicy, Project, InsuranceCompany } from '@/lib/types';
+import type { ProjectInsurancePolicy, Project, InsuranceCompany, PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
@@ -32,6 +32,7 @@ export default function ProjectPolicyDetailsPage() {
   const [policy, setPolicy] = useState<ProjectInsurancePolicy | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
+  const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedPolicy, setEditedPolicy] = useState<Partial<ProjectInsurancePolicy>>({});
@@ -45,8 +46,12 @@ export default function ProjectPolicyDetailsPage() {
     const fetchPolicyData = async () => {
       setIsLoading(true);
       try {
-        const policyDocRef = doc(db, 'project_insurance_policies', policyId);
-        const policyDocSnap = await getDoc(policyDocRef);
+        const [policyDocSnap, projectsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
+          getDoc(doc(db, 'project_insurance_policies', policyId)),
+          getDocs(collection(db, 'projects')),
+          getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
+          getDocs(collection(db, 'policyCategories'))
+        ]);
 
         if (policyDocSnap.exists()) {
           const policyData = { id: policyDocSnap.id, ...policyDocSnap.data() } as ProjectInsurancePolicy;
@@ -60,11 +65,9 @@ export default function ProjectPolicyDetailsPage() {
           router.push('/insurance/project');
         }
         
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
         setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-        
-        const companiesSnapshot = await getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active')));
         setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
+        setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
 
       } catch (error) {
         console.error("Error fetching policy data:", error);
@@ -197,7 +200,14 @@ export default function ProjectPolicyDetailsPage() {
                 </div>
                  <div className="space-y-2">
                   <Label>Policy Category</Label>
-                  {isEditing ? <Input value={editedPolicy.policy_category} onChange={e => handleInputChange('policy_category', e.target.value)} /> : <p className="font-semibold">{policy.policy_category}</p>}
+                   {isEditing ? (
+                     <Select value={editedPolicy.policy_category} onValueChange={(v) => handleInputChange('policy_category', v)}>
+                        <SelectTrigger><SelectValue/></SelectTrigger>
+                        <SelectContent>
+                            {policyCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                     </Select>
+                  ) : <p className="font-semibold">{policy.policy_category}</p>}
                 </div>
                  <div className="space-y-2">
                   <Label>Premium</Label>

@@ -1,8 +1,9 @@
 
+
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Users, Building, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Users, Building, ShieldAlert, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
@@ -35,6 +36,13 @@ const settingsItemsBase = [
     description: 'Manage the list of insurance companies.',
     permission: 'View'
   },
+  { 
+    icon: Tags, 
+    text: 'Policy Category', 
+    href: '/insurance/settings/policy-category', 
+    description: 'Define categories for project insurance.',
+    permission: 'View'
+  },
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {
@@ -57,7 +65,7 @@ function SettingsCard({ item }: SettingsCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -73,7 +81,13 @@ export default function InsuranceSettingsPage() {
   const canViewPage = can('View', 'Insurance.Settings');
   
   const settingsItems = settingsItemsBase.map(item => {
-      let moduleScope = item.text === 'Policy Holders' ? 'Insurance.Settings.Holders' : 'Insurance.Settings.Companies';
+      let moduleScope;
+      switch(item.text) {
+          case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
+          case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
+          case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
+          default: moduleScope = 'Insurance.Settings';
+      }
       return {
           ...item,
           disabled: !can(item.permission, moduleScope)
@@ -85,6 +99,7 @@ export default function InsuranceSettingsPage() {
         <div className="w-full">
             <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <Skeleton className="h-40" />
                 <Skeleton className="h-40" />
                 <Skeleton className="h-40" />
             </div>

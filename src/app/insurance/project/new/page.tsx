@@ -19,7 +19,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
-import type { Project, InsuranceCompany } from '@/lib/types';
+import type { Project, InsuranceCompany, PolicyCategory } from '@/lib/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -42,18 +42,21 @@ export default function NewProjectPolicyPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
+  const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
+
 
   useEffect(() => {
     const fetchData = async () => {
         try {
-          const projectsSnapshot = await getDocs(collection(db, 'projects'));
-          const projectsData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-          setProjects(projectsData);
+          const [projectsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
+            getDocs(collection(db, 'projects')),
+            getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
+            getDocs(collection(db, 'policyCategories'))
+          ]);
 
-          const companiesQuery = query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'));
-          const companiesSnapshot = await getDocs(companiesQuery);
-          const companiesData = companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany));
-          setInsuranceCompanies(companiesData);
+          setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+          setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
+          setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
 
         } catch (error) {
           console.error("Error fetching data:", error);
@@ -188,7 +191,28 @@ export default function NewProjectPolicyPage() {
                                 </FormItem>
                             )}
                         />
-                        <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Policy Category</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="policy_category"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel>Policy Category</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a category" />
+                                    </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                    {policyCategories.map((category) => (
+                                        <SelectItem key={category.id} value={category.name}>
+                                        {category.name}
+                                        </SelectItem>
+                                    ))}
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                                </FormItem>
+                            )}
+                        />
                         <FormField control={form.control} name="premium" render={({ field }) => (<FormItem><FormLabel>Premium</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <DatePickerField name="due_date" label="Due Date"/>
                         <FormField control={form.control} name="sum_insured" render={({ field }) => (<FormItem><FormLabel>Sum Insured</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
