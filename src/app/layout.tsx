@@ -14,8 +14,34 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
 import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 
+
+function SessionTimer() {
+  const { sessionRemainingTime } = useAuth();
+
+  const formatTime = (totalSeconds: number | null): string => {
+    if (totalSeconds === null || totalSeconds < 0) return '';
+    
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+  
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  if (sessionRemainingTime === null || sessionRemainingTime <= 0) {
+    return null;
+  }
+
+  return (
+    <span className="font-medium">
+      Session expires in: {formatTime(sessionRemainingTime)}
+    </span>
+  );
+}
+
+
 function AppBody({ children }: { children: React.ReactNode }) {
-    const { user, loading, sessionRemainingTime, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
+    const { user, loading, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
 
@@ -26,16 +52,6 @@ function AppBody({ children }: { children: React.ReactNode }) {
             </div>
         )
     }
-    
-    const formatTime = (totalSeconds: number | null): string => {
-        if (totalSeconds === null || totalSeconds < 0) return '';
-        
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
-      
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    };
 
     return (
         <div className={cn('font-body antialiased', `theme-${themeColor}`, `font-${themeFont}`)}>
@@ -44,11 +60,7 @@ function AppBody({ children }: { children: React.ReactNode }) {
                 <main className="flex-1 overflow-auto">{children}</main>
                 <footer className="flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
                     <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-                    {sessionRemainingTime !== null && sessionRemainingTime > 0 && (
-                        <span className="font-medium">
-                            Session expires in: {formatTime(sessionRemainingTime)}
-                        </span>
-                    )}
+                    <SessionTimer />
                 </footer>
             </div>
             <Toaster />
