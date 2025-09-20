@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,9 +13,11 @@ import { collection, getDocs } from 'firebase/firestore';
 import type { InsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
 
 export default function PersonalInsurancePage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -87,13 +89,14 @@ export default function PersonalInsurancePage() {
                   <TableHead>Premium</TableHead>
                   <TableHead>Next Due Date</TableHead>
                   <TableHead>Sum Insured</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({length: 5}).map((_, i) => (
                       <TableRow key={i}>
-                          <TableCell colSpan={7}><Skeleton className="h-8" /></TableCell>
+                          <TableCell colSpan={8}><Skeleton className="h-8" /></TableCell>
                       </TableRow>
                   ))
                 ) : policies.length > 0 ? (
@@ -106,10 +109,17 @@ export default function PersonalInsurancePage() {
                     <TableCell>{formatCurrency(policy.premium)}</TableCell>
                     <TableCell>{formatDate(policy.due_date)}</TableCell>
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/insurance/personal/${policy.id}`}>
+                        <Button variant="outline" size="sm">
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
+                      </Link>
+                    </TableCell>
                   </TableRow>
                 ))) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">No policies found.</TableCell>
+                    <TableCell colSpan={8} className="text-center h-24">No policies found.</TableCell>
                   </TableRow>
                 )
               }
