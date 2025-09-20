@@ -171,10 +171,12 @@ export default function EditPolicyPage() {
              attachmentUrls.push({ name: file.name, url: downloadURL });
          }
        }
+      
+      const { attachments, ...dataToSave } = data;
 
       const policyRef = doc(db, 'insurance_policies', policyId);
       await updateDoc(policyRef, {
-        ...data,
+        ...dataToSave,
         due_date: data.due_date ? Timestamp.fromDate(data.due_date) : null,
         date_of_comm: data.date_of_comm ? Timestamp.fromDate(data.date_of_comm) : null,
         policy_issue_date: data.policy_issue_date ? Timestamp.fromDate(data.policy_issue_date) : null,
