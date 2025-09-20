@@ -125,17 +125,22 @@ export default function EditPolicyPage() {
 
   useEffect(() => {
     if (watchDateOfComm && watchPaymentType && watchTenure > 0) {
-      let nextDueDate: Date;
-      const now = new Date();
-      let currentDate = new Date(watchDateOfComm);
-      
       const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
       setValue('date_of_maturity', maturityDate);
 
       // If policy has already matured, no need to calculate due date.
-      if (now > maturityDate) {
+      if (new Date() > maturityDate) {
           setValue('due_date', undefined);
           return;
+      }
+      
+      let nextDueDate: Date;
+      const now = new Date();
+      let currentDate = new Date(watchDateOfComm);
+      
+      if (watchPaymentType === 'One-Time') {
+        setValue('due_date', undefined);
+        return;
       }
 
       while (currentDate < now) {
@@ -149,14 +154,11 @@ export default function EditPolicyPage() {
               case 'Yearly':
                   currentDate = addYears(currentDate, 1);
                   break;
-              case 'One-Time':
-                  setValue('due_date', undefined);
-                  return; 
           }
       }
       nextDueDate = currentDate;
 
-      if (nextDueDate > maturityDate) {
+      if (nextDueDate >= maturityDate) {
           setValue('due_date', undefined);
       } else {
           setValue('due_date', nextDueDate);
