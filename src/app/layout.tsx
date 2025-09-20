@@ -8,7 +8,7 @@ import { ModuleProvider } from '@/context/ModuleContext';
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from '@/lib/utils';
 import { AuthProvider } from '@/components/auth/AuthProvider';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Loader2 } from 'lucide-react';
@@ -16,7 +16,38 @@ import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 
 
 function SessionTimer() {
-  const { sessionRemainingTime } = useAuth();
+  const { user } = useAuth();
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setRemainingTime(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
+      if (loginTimestamp === 0) {
+        setRemainingTime(null);
+        return;
+      }
+      
+      const sessionDurationMinutes = user.theme?.sessionDuration || 60;
+      const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+      const expiryTimestamp = loginTimestamp + sessionDurationMs;
+      const now = Date.now();
+      const remainingMs = expiryTimestamp - now;
+
+      if (remainingMs > 0) {
+        setRemainingTime(Math.round(remainingMs / 1000));
+      } else {
+        setRemainingTime(0);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+  
 
   const formatTime = (totalSeconds: number | null): string => {
     if (totalSeconds === null || totalSeconds < 0) return '';
@@ -28,13 +59,13 @@ function SessionTimer() {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
-  if (sessionRemainingTime === null || sessionRemainingTime <= 0) {
+  if (remainingTime === null || remainingTime <= 0) {
     return null;
   }
 
   return (
     <span className="font-medium">
-      Session expires in: {formatTime(sessionRemainingTime)}
+      Session expires in: {formatTime(remainingTime)}
     </span>
   );
 }
@@ -44,6 +75,27 @@ function AppBody({ children }: { children: React.ReactNode }) {
     const { user, loading, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     const themeColor = user?.theme?.color || 'violet';
     const themeFont = user?.theme?.font || 'inter';
+
+    useEffect(() => {
+        if (user) {
+            const sessionDurationMinutes = user.theme?.sessionDuration || 60;
+            const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+            const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
+            
+            if (loginTimestamp === 0) return;
+
+            const checkExpiry = () => {
+                const expiryTimestamp = loginTimestamp + sessionDurationMs;
+                if (Date.now() > expiryTimestamp) {
+                    setIsSessionExpired(true);
+                }
+            };
+            
+            const interval = setInterval(checkExpiry, 30000); // Check every 30 seconds
+            return () => clearInterval(interval);
+        }
+    }, [user, setIsSessionExpired]);
+
 
     if (loading) {
         return (

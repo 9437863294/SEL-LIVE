@@ -22,7 +22,6 @@ interface AuthContextType {
   isImpersonating: boolean;
   originalUser: User | null;
   refreshUserData: () => Promise<void>;
-  sessionRemainingTime: number | null;
   isSessionExpired: boolean;
   setIsSessionExpired: (isExpired: boolean) => void;
   extendSession: () => void;
@@ -42,7 +41,6 @@ const AuthContext = createContext<AuthContextType>({
   isImpersonating: false,
   originalUser: null,
   refreshUserData: async () => {},
-  sessionRemainingTime: null,
   isSessionExpired: false,
   setIsSessionExpired: () => {},
   extendSession: () => {},
@@ -62,7 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
-  const [sessionRemainingTime, setSessionRemainingTime] = useState<number | null>(null);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
@@ -224,7 +221,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             currentUserId = firebaseUser.uid;
             await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
-            await fetchUserData(firebaseUser);
+            const userData = await fetchUserData(firebaseUser);
+            if (userData && !sessionStorage.getItem('sessionTimerSet')) {
+              const sessionDurationMinutes = userData.theme?.sessionDuration || 60;
+              const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+              
+              const expiryTimestamp = (parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10)) + sessionDurationMs;
+
+              const checkSession = () => {
+                  if (Date.now() > expiryTimestamp) {
+                      setIsSessionExpired(true);
+                  }
+              }
+              setInterval(checkSession, 60 * 1000); // Check every minute
+              sessionStorage.setItem('sessionTimerSet', 'true');
+            }
         } else {
             if (currentUserId) {
                 handleBeforeUnload();
@@ -233,8 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setPermissions({});
             setLoading(false);
-            sessionStorage.removeItem('loginTimestamp');
-            setSessionRemainingTime(null);
+            sessionStorage.clear();
         }
     });
 
@@ -246,44 +256,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         handleBeforeUnload();
     };
   }, [fetchUserData, loadSavedUsers]);
-
-   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined;
-
-    if (user) {
-      const startSessionTimer = () => {
-        const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || Date.now().toString(), 10);
-        const sessionDurationMinutes = user.theme?.sessionDuration || 60;
-        const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
-        const expiryTimestamp = loginTimestamp + sessionDurationMs;
-
-        const checkSession = () => {
-          const now = Date.now();
-          const remainingMs = expiryTimestamp - now;
-          
-          if (remainingMs <= 0) {
-            setSessionRemainingTime(0);
-            setIsSessionExpired(true);
-            if (interval) clearInterval(interval);
-          } else {
-            setSessionRemainingTime(Math.round(remainingMs / 1000));
-          }
-        };
-        
-        if (interval) clearInterval(interval);
-        checkSession(); 
-        interval = setInterval(checkSession, 1000);
-      };
-      
-      startSessionTimer();
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [user]);
 
   useEffect(() => {
     if (loading) return;
@@ -307,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, sessionRemainingTime, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
+    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
         {isPublicRoute || !loading ? children : null}
         {userForPinSetup && (
             <PinSetupDialog
