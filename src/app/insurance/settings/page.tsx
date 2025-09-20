@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Users, Building, ShieldAlert, Tags, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Users, Building, ShieldAlert, Tags, HelpCircle, Construction } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
@@ -40,6 +40,13 @@ const settingsItemsBase = [
     text: 'Policy Category', 
     href: '/insurance/settings/policy-category', 
     description: 'Define categories for project insurance.',
+    permission: 'View'
+  },
+  {
+    icon: Construction,
+    text: 'Project Name/Site',
+    href: '/settings/project',
+    description: 'Manage project names and sites.',
     permission: 'View'
   },
   {
@@ -92,6 +99,7 @@ export default function InsuranceSettingsPage() {
           case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
           case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
           case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
+          case 'Project Name/Site': moduleScope = 'Settings.Manage Project'; break;
           case 'Help': moduleScope = 'Insurance.Settings'; break; // Everyone who can see settings can see help
           default: moduleScope = 'Insurance.Settings';
       }
