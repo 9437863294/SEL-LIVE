@@ -588,3 +588,20 @@ export type LcInvoice = {
     invoiceDate: any; // Timestamp
     amount: number;
 };
+
+export type InsurancePolicy = {
+  id: string;
+  insured_person: string;
+  policy_no: string;
+  insurance_company: string;
+  policy_category: string;
+  policy_name: string;
+  premium: number;
+  due_date: any; // Firestore Timestamp
+  sum_insured: number;
+  date_of_comm: any; // Firestore Timestamp
+  date_of_maturity: any; // Firestore Timestamp
+  last_premium_date?: any; // Firestore Timestamp
+  payment_type: 'Monthly' | 'Quarterly' | 'Yearly' | 'One-Time';
+  auto_debit: boolean;
+};

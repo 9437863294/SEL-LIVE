@@ -22,7 +22,7 @@ const insuranceItems: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
   { 
     icon: User, 
     text: 'Personal Insurance', 
-    href: '#', 
+    href: '/insurance/personal', 
     description: 'Manage personal health and life insurance policies.' 
   },
   { 
