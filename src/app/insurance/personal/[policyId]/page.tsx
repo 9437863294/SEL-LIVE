@@ -127,7 +127,7 @@ export default function PolicyDetailsPage() {
   
   if (isLoading) {
     return (
-        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-64 mb-6" />
             <Skeleton className="h-48 mb-6" />
             <Skeleton className="h-96" />
@@ -139,7 +139,7 @@ export default function PolicyDetailsPage() {
 
   return (
     <>
-    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link href="/insurance/personal"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
