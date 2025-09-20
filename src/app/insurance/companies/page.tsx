@@ -24,6 +24,13 @@ import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase
 import type { InsuranceCompany } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+const initialFormState = {
+    name: '',
+    status: 'Active' as 'Active' | 'Inactive',
+};
 
 export default function ManageInsuranceCompaniesPage() {
   const { toast } = useToast();
@@ -32,7 +39,7 @@ export default function ManageInsuranceCompaniesPage() {
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
-  const [companyName, setCompanyName] = useState('');
+  const [formData, setFormData] = useState(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,27 +62,27 @@ export default function ManageInsuranceCompaniesPage() {
   const openDialog = (mode: 'add' | 'edit', company?: InsuranceCompany) => {
     setDialogMode(mode);
     if (mode === 'edit' && company) {
-        setCompanyName(company.name);
+        setFormData({ name: company.name, status: company.status || 'Active' });
         setEditingId(company.id);
     } else {
-        setCompanyName('');
+        setFormData(initialFormState);
         setEditingId(null);
     }
     setIsDialogOpen(true);
   };
   
   const handleSubmit = async () => {
-    if (!companyName.trim()) {
+    if (!formData.name.trim()) {
       toast({ title: 'Validation Error', description: 'Please enter a company name.', variant: 'destructive' });
       return;
     }
     
     try {
       if (dialogMode === 'edit' && editingId) {
-        await updateDoc(doc(db, 'insuranceCompanies', editingId), { name: companyName });
+        await updateDoc(doc(db, 'insuranceCompanies', editingId), formData);
         toast({ title: 'Success', description: 'Insurance company updated.' });
       } else {
-        await addDoc(collection(db, 'insuranceCompanies'), { name: companyName });
+        await addDoc(collection(db, 'insuranceCompanies'), formData);
         toast({ title: 'Success', description: 'New insurance company added.' });
       }
       setIsDialogOpen(false);
@@ -116,18 +123,22 @@ export default function ManageInsuranceCompaniesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Company Name</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={2}><Skeleton className="h-8" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
               ) : companies.length > 0 ? (
                 companies.map(company => (
                   <TableRow key={company.id}>
                     <TableCell className="font-medium">{company.name}</TableCell>
+                    <TableCell>
+                      <Badge variant={company.status === 'Active' ? 'default' : 'secondary'}>{company.status}</Badge>
+                    </TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', company)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
@@ -149,7 +160,7 @@ export default function ManageInsuranceCompaniesPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={2} className="text-center h-24">No insurance companies found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={3} className="text-center h-24">No insurance companies found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -161,8 +172,18 @@ export default function ManageInsuranceCompaniesPage() {
             <DialogHeader>
               <DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Insurance Company</DialogTitle>
             </DialogHeader>
-            <div className="py-4">
-               <div className="space-y-2"><Label htmlFor="name">Company Name</Label><Input id="name" value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
+            <div className="py-4 space-y-4">
+               <div className="space-y-2"><Label htmlFor="name">Company Name</Label><Input id="name" value={formData.name} onChange={e => setFormData(p => ({...p, name: e.target.value}))} /></div>
+               <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={formData.status} onValueChange={(value: 'Active' | 'Inactive') => setFormData(p => ({...p, status: value}))}>
+                      <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                  </Select>
+               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
