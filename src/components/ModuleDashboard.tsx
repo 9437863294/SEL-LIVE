@@ -21,6 +21,7 @@ const moduleIcons: Record<string, string> = {
   'Chat System': 'MessageSquare',
   'Loan': 'Coins',
   'LC Module': 'BookOpenCheck',
+  'Insurance': 'Shield',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -34,6 +35,7 @@ const moduleDescriptions: Record<string, string> = {
     'Chat System': 'A real-time messaging system for your team.',
     'Loan': 'Manage and track loan activities.',
     'LC Module': 'Manage Letters of Credit for trade finance.',
+    'Insurance': 'Manage insurance policies and claims.',
 }
 
 export default function ModuleDashboard() {

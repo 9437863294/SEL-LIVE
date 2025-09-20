@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useModules } from '@/context/ModuleContext';
@@ -47,6 +48,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
   const canDelete = can('Delete', 'Module Hub');
 
   const slugify = (text: string) => {
+    if (!text) return '';
     return text.toString().toLowerCase()
       .replace(/\s+/g, '-')           // Replace spaces with -
       .replace(/[^\w\-]+/g, '')       // Remove all non-word chars

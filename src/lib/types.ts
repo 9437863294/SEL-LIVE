@@ -118,6 +118,9 @@ export const permissionModules = {
     'Dashboard': ['View', 'Create'],
     'LC Details': ['View', 'Edit', 'Track Payments'],
   },
+   'Insurance': {
+    'View Module': [],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
