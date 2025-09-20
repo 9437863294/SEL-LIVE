@@ -4,16 +4,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Edit, Save, Loader2, Paperclip, Download } from 'lucide-react';
+import { ArrowLeft, Edit, Save, Loader2, Paperclip, Download, RotateCw, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
-import type { ProjectInsurancePolicy, InsuredAsset, InsuranceCompany, PolicyCategory } from '@/lib/types';
+import { doc, getDoc, updateDoc, Timestamp, collection, getDocs, query, where, addDoc, orderBy } from 'firebase/firestore';
+import type { ProjectInsurancePolicy, InsuredAsset, InsuranceCompany, PolicyCategory, ProjectPolicyRenewal } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
-import { format, addYears, addMonths } from 'date-fns';
+import { format, addYears, addMonths, isBefore, subDays } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,6 +22,9 @@ import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { ProjectRenewalDialog } from '@/components/ProjectRenewalDialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function ProjectPolicyDetailsPage() {
   const { policyId } = useParams() as { policyId: string };
@@ -33,52 +36,58 @@ export default function ProjectPolicyDetailsPage() {
   const [assets, setAssets] = useState<InsuredAsset[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
+  const [renewals, setRenewals] = useState<ProjectPolicyRenewal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedPolicy, setEditedPolicy] = useState<Partial<ProjectInsurancePolicy>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isRenewOpen, setIsRenewOpen] = useState(false);
 
   const canEdit = can('Edit', 'Insurance.Project Insurance');
+  const canRenew = can('Renew', 'Insurance.Project Insurance');
+  
+  const isRenewalDue = policy?.insured_until ? isBefore(subDays(policy.insured_until.toDate(), 30), new Date()) : false;
+
+  const fetchPolicyData = async () => {
+    if (!policyId) return;
+    setIsLoading(true);
+    try {
+      const [policyDocSnap, assetsSnapshot, companiesSnapshot, categoriesSnapshot, renewalsSnapshot] = await Promise.all([
+        getDoc(doc(db, 'project_insurance_policies', policyId)),
+        getDocs(query(collection(db, 'insuredAssets'), where('status', '==', 'Active'))),
+        getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
+        getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active'))),
+        getDocs(query(collection(db, 'project_insurance_policies', policyId, 'history'), orderBy('renewalDate', 'desc')))
+      ]);
+
+      if (policyDocSnap.exists()) {
+        const policyData = { id: policyDocSnap.id, ...policyDocSnap.data() } as ProjectInsurancePolicy;
+        setPolicy(policyData);
+        setEditedPolicy({
+          ...policyData,
+          insurance_start_date: policyData.insurance_start_date ? policyData.insurance_start_date.toDate() : null,
+          insured_until: policyData.insured_until ? policyData.insured_until.toDate() : null,
+        });
+      } else {
+        toast({ title: "Error", description: "Policy not found.", variant: "destructive" });
+        router.push('/insurance/project');
+      }
+      
+      setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
+      setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
+      setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
+      setRenewals(renewalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectPolicyRenewal)));
+
+    } catch (error) {
+      console.error("Error fetching policy data:", error);
+      toast({ title: "Error", description: "Failed to fetch policy details.", variant: "destructive" });
+    }
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    if (!policyId) return;
-
-    const fetchPolicyData = async () => {
-      setIsLoading(true);
-      try {
-        const [policyDocSnap, assetsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
-          getDoc(doc(db, 'project_insurance_policies', policyId)),
-          getDocs(query(collection(db, 'insuredAssets'), where('status', '==', 'Active'))),
-          getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
-          getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active')))
-        ]);
-
-        if (policyDocSnap.exists()) {
-          const policyData = { id: policyDocSnap.id, ...policyDocSnap.data() } as ProjectInsurancePolicy;
-          setPolicy(policyData);
-          setEditedPolicy({
-            ...policyData,
-            insurance_start_date: policyData.insurance_start_date ? policyData.insurance_start_date.toDate() : null,
-            insured_until: policyData.insured_until ? policyData.insured_until.toDate() : null,
-          });
-        } else {
-          toast({ title: "Error", description: "Policy not found.", variant: "destructive" });
-          router.push('/insurance/project');
-        }
-        
-        setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
-        setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
-        setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
-
-      } catch (error) {
-        console.error("Error fetching policy data:", error);
-        toast({ title: "Error", description: "Failed to fetch policy details.", variant: "destructive" });
-      }
-      setIsLoading(false);
-    };
-
     fetchPolicyData();
-  }, [policyId, toast, router]);
+  }, [policyId]);
 
   useEffect(() => {
     const { insurance_start_date, tenure_years = 0, tenure_months = 0 } = editedPolicy;
@@ -120,16 +129,7 @@ export default function ProjectPolicyDetailsPage() {
         await updateDoc(policyRef, dataToSave);
         toast({ title: 'Success', description: 'Policy updated successfully.' });
         setIsEditing(false);
-        const updatedDocSnap = await getDoc(policyRef);
-        if(updatedDocSnap.exists()) {
-          const updatedData = { id: updatedDocSnap.id, ...updatedDocSnap.data() } as ProjectInsurancePolicy;
-          setPolicy(updatedData);
-          setEditedPolicy({
-            ...updatedData,
-            insurance_start_date: updatedData.insurance_start_date ? updatedData.insurance_start_date.toDate() : null,
-            insured_until: updatedData.insured_until ? updatedData.insured_until.toDate() : null,
-          });
-        }
+        fetchPolicyData();
     } catch(e) {
         console.error("Error updating policy: ", e);
         toast({ title: 'Error', description: 'Failed to update policy.', variant: 'destructive' });
@@ -160,132 +160,188 @@ export default function ProjectPolicyDetailsPage() {
   if (!policy) return null;
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/insurance/project"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-              <div>
-                <h1 className="text-xl font-bold">Project Insurance Details</h1>
-                <p className="text-muted-foreground">{policy.policy_no}</p>
+    <>
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Link href="/insurance/project"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                <div>
+                  <h1 className="text-xl font-bold">Project Insurance Details</h1>
+                  <p className="text-muted-foreground">{policy.policy_no}</p>
+                </div>
               </div>
-            </div>
-            {canEdit && (
-                isEditing ? (
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
-                        <Button onClick={handleSaveChanges} disabled={isSaving}>
-                            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save
-                        </Button>
-                    </div>
-                ) : (
-                    <Button variant="outline" onClick={() => setIsEditing(true)}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit Policy
+              <div className="flex items-center gap-2">
+                 {policy.status === 'Renewable' && isRenewalDue && canRenew && (
+                    <Button onClick={() => setIsRenewOpen(true)}>
+                        <RotateCw className="mr-2 h-4 w-4"/> Renew Policy
                     </Button>
-                )
-            )}
-        </div>
-        
-        <Card className="mb-6">
-            <CardHeader>
-                <CardTitle>Policy Details</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <Label>Project Name/Site</Label>
-                  {isEditing ? (
-                     <Select value={editedPolicy.assetId} onValueChange={(v) => handleInputChange('assetId', v)}>
-                        <SelectTrigger><SelectValue/></SelectTrigger>
-                        <SelectContent>
-                            {assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                        </SelectContent>
-                     </Select>
-                  ) : <p className="font-semibold">{policy.assetName}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Policy No.</Label>
-                  {isEditing ? <Input value={editedPolicy.policy_no} onChange={e => handleInputChange('policy_no', e.target.value)} /> : <p className="font-semibold">{policy.policy_no}</p>}
-                </div>
-                 <div className="space-y-2">
-                  <Label>Insurance Company</Label>
-                  {isEditing ? (
-                     <Select value={editedPolicy.insurance_company} onValueChange={(v) => handleInputChange('insurance_company', v)}>
-                        <SelectTrigger><SelectValue/></SelectTrigger>
-                        <SelectContent>
-                            {insuranceCompanies.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                     </Select>
-                  ) : <p className="font-semibold">{policy.insurance_company}</p>}
-                </div>
-                 <div className="space-y-2">
-                  <Label>Policy Category</Label>
-                   {isEditing ? (
-                     <Select value={editedPolicy.policy_category} onValueChange={(v) => handleInputChange('policy_category', v)}>
-                        <SelectTrigger><SelectValue/></SelectTrigger>
-                        <SelectContent>
-                            {policyCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                     </Select>
-                  ) : <p className="font-semibold">{policy.policy_category}</p>}
-                </div>
-                 <div className="space-y-2">
-                  <Label>Premium</Label>
-                  {isEditing ? <Input type="number" value={editedPolicy.premium} onChange={e => handleInputChange('premium', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.premium)}</p>}
-                </div>
-                 <div className="space-y-2">
-                  <Label>Sum Insured</Label>
-                  {isEditing ? <Input type="number" value={editedPolicy.sum_insured} onChange={e => handleInputChange('sum_insured', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.sum_insured)}</p>}
-                </div>
-                <div className="space-y-2">
-                    <Label>Status</Label>
+                  )}
+                  {canEdit && (
+                      isEditing ? (
+                          <div className="flex gap-2">
+                              <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+                              <Button onClick={handleSaveChanges} disabled={isSaving}>
+                                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                  Save
+                              </Button>
+                          </div>
+                      ) : (
+                          <Button variant="outline" onClick={() => setIsEditing(true)}>
+                              <Edit className="mr-2 h-4 w-4" /> Edit Policy
+                          </Button>
+                      )
+                  )}
+              </div>
+          </div>
+          
+          <Card className="mb-6">
+              <CardHeader>
+                  <CardTitle>Policy Details</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <Label>Project Name/Site</Label>
                     {isEditing ? (
-                        <Select value={editedPolicy.status} onValueChange={(v) => handleInputChange('status', v)}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="Renewable">Renewable</SelectItem>
-                                <SelectItem value="Close">Close</SelectItem>
-                                <SelectItem value="Not Required">Not Required</SelectItem>
-                                <SelectItem value="Expired">Expired</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    ) : <Badge>{policy.status || 'N/A'}</Badge>}
-                </div>
-            </CardContent>
-        </Card>
-        
-        <Card>
-            <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                <div className="space-y-2">
-                    <Label>Insurance Start Date</Label>
+                       <Select value={editedPolicy.assetId} onValueChange={(v) => handleInputChange('assetId', v)}>
+                          <SelectTrigger><SelectValue/></SelectTrigger>
+                          <SelectContent>
+                              {assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                          </SelectContent>
+                       </Select>
+                    ) : <p className="font-semibold">{policy.assetName}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Policy No.</Label>
+                    {isEditing ? <Input value={editedPolicy.policy_no} onChange={e => handleInputChange('policy_no', e.target.value)} /> : <p className="font-semibold">{policy.policy_no}</p>}
+                  </div>
+                   <div className="space-y-2">
+                    <Label>Insurance Company</Label>
                     {isEditing ? (
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !editedPolicy.insurance_start_date && "text-muted-foreground")}>
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {editedPolicy.insurance_start_date ? format(new Date(editedPolicy.insurance_start_date), "PPP") : <span>Pick a date</span>}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={editedPolicy.insurance_start_date ? new Date(editedPolicy.insurance_start_date) : undefined} onSelect={(date) => handleDateChange('insurance_start_date', date)} /></PopoverContent>
-                        </Popover>
-                    ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
-                </div>
-                <div className="flex items-end gap-2">
-                    <div className="flex-1 space-y-2">
-                        <Label>Years</Label>
-                        <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} disabled={!isEditing} />
-                    </div>
-                     <div className="flex-1 space-y-2">
-                        <Label>Months</Label>
-                        <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} disabled={!isEditing} />
-                    </div>
-                </div>
-                 <div className="space-y-2">
-                    <Label>Insured Until</Label>
-                    <p className="font-semibold h-10 flex items-center">{formatDate(isEditing ? editedPolicy.insured_until : policy.insured_until)}</p>
-                </div>
-            </CardContent>
-        </Card>
-    </div>
+                       <Select value={editedPolicy.insurance_company} onValueChange={(v) => handleInputChange('insurance_company', v)}>
+                          <SelectTrigger><SelectValue/></SelectTrigger>
+                          <SelectContent>
+                              {insuranceCompanies.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                       </Select>
+                    ) : <p className="font-semibold">{policy.insurance_company}</p>}
+                  </div>
+                   <div className="space-y-2">
+                    <Label>Policy Category</Label>
+                     {isEditing ? (
+                       <Select value={editedPolicy.policy_category} onValueChange={(v) => handleInputChange('policy_category', v)}>
+                          <SelectTrigger><SelectValue/></SelectTrigger>
+                          <SelectContent>
+                              {policyCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                       </Select>
+                    ) : <p className="font-semibold">{policy.policy_category}</p>}
+                  </div>
+                   <div className="space-y-2">
+                    <Label>Premium</Label>
+                    {isEditing ? <Input type="number" value={editedPolicy.premium} onChange={e => handleInputChange('premium', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.premium)}</p>}
+                  </div>
+                   <div className="space-y-2">
+                    <Label>Sum Insured</Label>
+                    {isEditing ? <Input type="number" value={editedPolicy.sum_insured} onChange={e => handleInputChange('sum_insured', e.target.valueAsNumber)} /> : <p className="font-semibold">{formatCurrency(policy.sum_insured)}</p>}
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Status</Label>
+                      {isEditing ? (
+                          <Select value={editedPolicy.status} onValueChange={(v) => handleInputChange('status', v)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="Renewable">Renewable</SelectItem>
+                                  <SelectItem value="Close">Close</SelectItem>
+                                  <SelectItem value="Not Required">Not Required</SelectItem>
+                                  <SelectItem value="Expired">Expired</SelectItem>
+                              </SelectContent>
+                          </Select>
+                      ) : <Badge>{policy.status || 'N/A'}</Badge>}
+                  </div>
+              </CardContent>
+          </Card>
+          
+          <Card className="mb-6">
+              <CardHeader><CardTitle>Policy Period</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                  <div className="space-y-2">
+                      <Label>Insurance Start Date</Label>
+                      {isEditing ? (
+                          <Popover>
+                              <PopoverTrigger asChild>
+                                  <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !editedPolicy.insurance_start_date && "text-muted-foreground")}>
+                                      <CalendarIcon className="mr-2 h-4 w-4" />
+                                      {editedPolicy.insurance_start_date ? format(new Date(editedPolicy.insurance_start_date), "PPP") : <span>Pick a date</span>}
+                                  </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={editedPolicy.insurance_start_date ? new Date(editedPolicy.insurance_start_date) : undefined} onSelect={(date) => handleDateChange('insurance_start_date', date)} /></PopoverContent>
+                          </Popover>
+                      ) : <p className="font-semibold">{formatDate(policy.insurance_start_date)}</p>}
+                  </div>
+                  <div className="flex items-end gap-2">
+                      <div className="flex-1 space-y-2">
+                          <Label>Years</Label>
+                          <Input type="number" placeholder="Years" value={editedPolicy.tenure_years || ''} onChange={e => handleInputChange('tenure_years', e.target.valueAsNumber || 0)} disabled={!isEditing} />
+                      </div>
+                       <div className="flex-1 space-y-2">
+                          <Label>Months</Label>
+                          <Input type="number" placeholder="Months" value={editedPolicy.tenure_months || ''} onChange={e => handleInputChange('tenure_months', e.target.valueAsNumber || 0)} disabled={!isEditing} />
+                      </div>
+                  </div>
+                   <div className="space-y-2">
+                      <Label>Insured Until</Label>
+                      <p className="font-semibold h-10 flex items-center">{formatDate(isEditing ? editedPolicy.insured_until : policy.insured_until)}</p>
+                  </div>
+              </CardContent>
+          </Card>
+          
+          <Accordion type="single" collapsible>
+              <AccordionItem value="history">
+                  <AccordionTrigger>Renewal History</AccordionTrigger>
+                  <AccordionContent>
+                      <Card>
+                          <CardContent className="p-0">
+                              <Table>
+                                  <TableHeader>
+                                      <TableRow>
+                                          <TableHead>Renewed On</TableHead>
+                                          <TableHead>New Start Date</TableHead>
+                                          <TableHead>New End Date</TableHead>
+                                          <TableHead>Premium</TableHead>
+                                          <TableHead>Sum Insured</TableHead>
+                                      </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                      {renewals.length > 0 ? (
+                                        renewals.map(renewal => (
+                                          <TableRow key={renewal.id}>
+                                            <TableCell>{formatDate(renewal.renewalDate)}</TableCell>
+                                            <TableCell>{formatDate(renewal.startDate)}</TableCell>
+                                            <TableCell>{formatDate(renewal.endDate)}</TableCell>
+                                            <TableCell>{formatCurrency(renewal.premium)}</TableCell>
+                                            <TableCell>{formatCurrency(renewal.sumInsured)}</TableCell>
+                                          </TableRow>
+                                        ))
+                                      ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="text-center h-24">No renewal history found.</TableCell>
+                                        </TableRow>
+                                      )}
+                                  </TableBody>
+                              </Table>
+                          </CardContent>
+                      </Card>
+                  </AccordionContent>
+              </AccordionItem>
+          </Accordion>
+
+      </div>
+      <ProjectRenewalDialog 
+        isOpen={isRenewOpen} 
+        onOpenChange={setIsRenewOpen} 
+        policy={policy}
+        onSuccess={fetchPolicyData}
+      />
+    </>
   );
 }

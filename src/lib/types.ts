@@ -120,7 +120,7 @@ export const permissionModules = {
   'Insurance': {
     'View Module': [],
     'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
-    'Project Insurance': ['View', 'Add', 'Edit', 'Delete'],
+    'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
     'Premium Due': ['View'],
     'Maturity Due': ['View'],
     'Settings': ['View'],
@@ -665,6 +665,17 @@ export type ProjectInsurancePolicy = {
   tenure_months: number;
   insured_until: any;
   status?: 'Renewable' | 'Close' | 'Not Required' | 'Expired';
+};
+
+export type ProjectPolicyRenewal = {
+  id: string;
+  renewalDate: any; // Firestore Timestamp
+  policyNo: string;
+  premium: number;
+  sumInsured: number;
+  startDate: any;
+  endDate: any;
+  renewedBy: string;
 };
 
 
