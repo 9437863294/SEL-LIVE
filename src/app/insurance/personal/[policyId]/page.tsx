@@ -44,6 +44,7 @@ const policySchema = z.object({
   premium: z.coerce.number().min(0, 'Premium must be a positive number'),
   sum_insured: z.coerce.number().min(0, 'Sum insured must be a positive number'),
   date_of_comm: z.date().optional(),
+  policy_issue_date: z.date().optional(),
   date_of_maturity: z.date().optional(),
   last_premium_date: z.date().optional(),
   payment_type: z.enum(['Monthly', 'Quarterly', 'Yearly', 'One-Time']),
@@ -101,6 +102,7 @@ export default function EditPolicyPage() {
           form.reset({
             ...data,
             date_of_comm: data.date_of_comm ? data.date_of_comm.toDate() : undefined,
+            policy_issue_date: data.policy_issue_date ? data.policy_issue_date.toDate() : undefined,
             due_date: data.due_date ? data.due_date.toDate() : undefined,
             date_of_maturity: data.date_of_maturity ? data.date_of_maturity.toDate() : undefined,
             last_premium_date: data.last_premium_date ? data.last_premium_date.toDate() : undefined,
@@ -126,7 +128,6 @@ export default function EditPolicyPage() {
   useEffect(() => {
     if (watchDateOfComm && watchPaymentType && watchTenure > 0) {
       const commencementDate = new Date(watchDateOfComm);
-      const maturityDate = addYears(commencementDate, watchTenure);
       
       // Calculate Last Premium Date
       if (watchTenure > 1) {
@@ -162,6 +163,7 @@ export default function EditPolicyPage() {
       }
       nextDueDate = currentDate;
 
+      const maturityDate = addYears(new Date(watchDateOfComm), watchTenure);
       if (nextDueDate >= maturityDate) {
           setValue('due_date', undefined);
       } else {
@@ -182,6 +184,7 @@ export default function EditPolicyPage() {
         ...data,
         due_date: data.due_date ? Timestamp.fromDate(data.due_date) : null,
         date_of_comm: data.date_of_comm ? Timestamp.fromDate(data.date_of_comm) : null,
+        policy_issue_date: data.policy_issue_date ? Timestamp.fromDate(data.policy_issue_date) : null,
         date_of_maturity: data.date_of_maturity ? Timestamp.fromDate(data.date_of_maturity) : null,
         last_premium_date: data.last_premium_date ? Timestamp.fromDate(data.last_premium_date) : null,
       };
@@ -336,6 +339,7 @@ export default function EditPolicyPage() {
                         />
                          <FormField control={form.control} name="tenure" render={({ field }) => (<FormItem><FormLabel>Tenure (in years)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
 
+                        <DatePickerField name="policy_issue_date" label="Policy Issue Date"/>
                         <DatePickerField name="date_of_comm" label="Date of Commencement"/>
                         <DatePickerField name="due_date" label="Next Due Date" readOnly={true}/>
                         <DatePickerField name="date_of_maturity" label="Date of Maturity" />

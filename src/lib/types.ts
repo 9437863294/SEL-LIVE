@@ -613,6 +613,7 @@ export type InsurancePolicy = {
   premium: number;
   sum_insured: number;
   date_of_comm: any; // Firestore Timestamp
+  policy_issue_date?: any; // Firestore Timestamp
   date_of_maturity: any; // Firestore Timestamp
   last_premium_date?: any; // Firestore Timestamp
   payment_type: 'Monthly' | 'Quarterly' | 'Yearly' | 'One-Time';
