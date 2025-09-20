@@ -653,7 +653,9 @@ export type InsurancePolicy = {
 
 export type ProjectInsurancePolicy = {
   id: string;
-  projectId: string;
+  assetId: string;
+  assetName: string;
+  assetType: 'Project' | 'Property';
   policy_no: string;
   insurance_company: string;
   policy_category: string;

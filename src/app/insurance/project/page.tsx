@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
-import type { ProjectInsurancePolicy, Project } from '@/lib/types';
+import type { ProjectInsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -23,7 +23,6 @@ export default function ProjectInsurancePage() {
   const { can, isLoading: authLoading } = useAuthorization();
   
   const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
@@ -43,10 +42,6 @@ export default function ProjectInsurancePage() {
           } as ProjectInsurancePolicy
       });
       setPolicies(policiesData);
-
-      const projectsSnapshot = await getDocs(collection(db, 'projects'));
-      setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-
     } catch (error) {
       console.error("Error fetching policies:", error);
       toast({ title: 'Error', description: 'Failed to fetch project insurance policies.', variant: 'destructive' });
@@ -72,10 +67,6 @@ export default function ProjectInsurancePage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
 
-  const getProjectName = (projectId: string) => {
-      return projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
-  }
-  
   if (authLoading || (isLoading && canViewPage)) {
     return (
         <div className="w-full">
@@ -146,7 +137,7 @@ export default function ProjectInsurancePage() {
                 ) : policies.length > 0 ? (
                   policies.map(policy => (
                   <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.id}`)} className="cursor-pointer">
-                    <TableCell className="font-medium">{getProjectName(policy.projectId)}</TableCell>
+                    <TableCell className="font-medium">{policy.assetName}</TableCell>
                     <TableCell>{policy.policy_no}</TableCell>
                     <TableCell>{policy.insurance_company}</TableCell>
                     <TableCell>{policy.policy_category}</TableCell>

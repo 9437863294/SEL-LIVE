@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -19,13 +18,13 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
-import type { Project, InsuranceCompany, PolicyCategory } from '@/lib/types';
+import type { InsuredAsset, InsuranceCompany, PolicyCategory } from '@/lib/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 const policySchema = z.object({
-  projectId: z.string().min(1, 'Project is required'),
+  assetId: z.string().min(1, 'Project/Property is required'),
   policy_no: z.string().min(1, 'Policy number is required'),
   insurance_company: z.string().min(1, 'Insurance company is required'),
   policy_category: z.string().min(1, 'Policy category is required'),
@@ -40,7 +39,7 @@ export default function NewProjectPolicyPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [assets, setAssets] = useState<InsuredAsset[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
 
@@ -48,13 +47,13 @@ export default function NewProjectPolicyPage() {
   useEffect(() => {
     const fetchData = async () => {
         try {
-          const [projectsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
-            getDocs(collection(db, 'projects')),
+          const [assetsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
+            getDocs(query(collection(db, 'insuredAssets'), where('status', '==', 'Active'))),
             getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
             getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active')))
           ]);
 
-          setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+          setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
           setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
           setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
 
@@ -68,7 +67,7 @@ export default function NewProjectPolicyPage() {
   const form = useForm<PolicyFormValues>({
     resolver: zodResolver(policySchema),
     defaultValues: {
-      projectId: '',
+      assetId: '',
       policy_no: '',
       insurance_company: '',
       policy_category: '',
@@ -79,9 +78,18 @@ export default function NewProjectPolicyPage() {
 
   const onSubmit = async (data: PolicyFormValues) => {
     setIsSaving(true);
+    const selectedAsset = assets.find(a => a.id === data.assetId);
+    if (!selectedAsset) {
+        toast({ title: 'Error', description: 'Selected asset not found.', variant: 'destructive' });
+        setIsSaving(false);
+        return;
+    }
+    
     try {
       const policyData: any = {
         ...data,
+        assetName: selectedAsset.name,
+        assetType: selectedAsset.type,
         due_date: data.due_date ? Timestamp.fromDate(data.due_date) : null,
       };
 
@@ -144,20 +152,20 @@ export default function NewProjectPolicyPage() {
                     <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <FormField
                             control={form.control}
-                            name="projectId"
+                            name="assetId"
                             render={({ field }) => (
                                 <FormItem>
                                 <FormLabel>Project Name/Site</FormLabel>
                                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                                     <FormControl>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select a project" />
+                                        <SelectValue placeholder="Select a project or property" />
                                     </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
-                                    {projects.map((project) => (
-                                        <SelectItem key={project.id} value={project.id}>
-                                        {project.projectName}
+                                    {assets.map((asset) => (
+                                        <SelectItem key={asset.id} value={asset.id}>
+                                        {asset.name}
                                         </SelectItem>
                                     ))}
                                     </SelectContent>

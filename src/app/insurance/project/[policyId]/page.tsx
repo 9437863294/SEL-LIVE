@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -11,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
-import type { ProjectInsurancePolicy, Project, InsuranceCompany, PolicyCategory } from '@/lib/types';
+import type { ProjectInsurancePolicy, InsuredAsset, InsuranceCompany, PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
@@ -30,7 +29,7 @@ export default function ProjectPolicyDetailsPage() {
   const { can } = useAuthorization();
   
   const [policy, setPolicy] = useState<ProjectInsurancePolicy | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [assets, setAssets] = useState<InsuredAsset[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,9 +45,9 @@ export default function ProjectPolicyDetailsPage() {
     const fetchPolicyData = async () => {
       setIsLoading(true);
       try {
-        const [policyDocSnap, projectsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
+        const [policyDocSnap, assetsSnapshot, companiesSnapshot, categoriesSnapshot] = await Promise.all([
           getDoc(doc(db, 'project_insurance_policies', policyId)),
-          getDocs(collection(db, 'projects')),
+          getDocs(query(collection(db, 'insuredAssets'), where('status', '==', 'Active'))),
           getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active'))),
           getDocs(query(collection(db, 'policyCategories'), where('status', '==', 'Active')))
         ]);
@@ -65,7 +64,7 @@ export default function ProjectPolicyDetailsPage() {
           router.push('/insurance/project');
         }
         
-        setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
         setInsuranceCompanies(companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceCompany)));
         setPolicyCategories(categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyCategory)));
 
@@ -89,10 +88,18 @@ export default function ProjectPolicyDetailsPage() {
 
   const handleSaveChanges = async () => {
     if (!editedPolicy || !policyId) return;
+    const selectedAsset = assets.find(a => a.id === editedPolicy.assetId);
+    if (!selectedAsset) {
+        toast({ title: 'Error', description: 'Selected asset not found.', variant: 'destructive' });
+        return;
+    }
     setIsSaving(true);
+    
     try {
         const dataToSave = {
             ...editedPolicy,
+            assetName: selectedAsset.name,
+            assetType: selectedAsset.type,
             due_date: editedPolicy.due_date ? Timestamp.fromDate(new Date(editedPolicy.due_date)) : null,
         };
         const policyRef = doc(db, 'project_insurance_policies', policyId);
@@ -138,8 +145,6 @@ export default function ProjectPolicyDetailsPage() {
 
   if (!policy) return null;
 
-  const projectName = projects.find(p => p.id === policy.projectId)?.projectName || 'N/A';
-
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
@@ -175,13 +180,13 @@ export default function ProjectPolicyDetailsPage() {
                 <div className="space-y-2">
                   <Label>Project Name/Site</Label>
                   {isEditing ? (
-                     <Select value={editedPolicy.projectId} onValueChange={(v) => handleInputChange('projectId', v)}>
+                     <Select value={editedPolicy.assetId} onValueChange={(v) => handleInputChange('assetId', v)}>
                         <SelectTrigger><SelectValue/></SelectTrigger>
                         <SelectContent>
-                            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                            {assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                         </SelectContent>
                      </Select>
-                  ) : <p className="font-semibold">{projectName}</p>}
+                  ) : <p className="font-semibold">{policy.assetName}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Policy No.</Label>
