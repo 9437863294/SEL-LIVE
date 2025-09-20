@@ -18,7 +18,7 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc, addDoc, collection, Timestamp, runTransaction } from 'firebase/firestore';
 import { Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import type { ProjectInsurancePolicy } from '@/lib/types';
-import { format, addYears, addMonths } from 'date-fns';
+import { format, addYears, addMonths, addDays } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
