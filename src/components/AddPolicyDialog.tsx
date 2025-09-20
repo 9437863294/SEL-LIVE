@@ -59,6 +59,7 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [policyHolders, setPolicyHolders] = useState<PolicyHolder[]>([]);
+  const [isHolderPopoverOpen, setIsHolderPopoverOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -129,7 +130,7 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
               </FormControl>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear()} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear() + 5} />
             </PopoverContent>
           </Popover>
           <FormMessage />
@@ -156,7 +157,7 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
                         render={({ field }) => (
                           <FormItem className="flex flex-col">
                             <FormLabel>Insured Person</FormLabel>
-                            <Popover>
+                            <Popover open={isHolderPopoverOpen} onOpenChange={setIsHolderPopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <FormControl>
                                         <Button
@@ -181,25 +182,28 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
                                         <CommandInput placeholder="Search policy holder..." />
                                         <CommandEmpty>No holder found.</CommandEmpty>
                                         <CommandGroup>
-                                            {policyHolders.map((holder) => (
-                                                <CommandItem
-                                                    value={holder.name}
-                                                    key={holder.id}
-                                                    onSelect={() => {
-                                                        form.setValue("insured_person", holder.name)
-                                                    }}
-                                                >
-                                                    <Check
-                                                    className={cn(
-                                                        "mr-2 h-4 w-4",
-                                                        holder.name === field.value
-                                                        ? "opacity-100"
-                                                        : "opacity-0"
-                                                    )}
-                                                    />
-                                                    {holder.name}
-                                                </CommandItem>
-                                            ))}
+                                            <ScrollArea className="h-48">
+                                                {policyHolders.map((holder) => (
+                                                    <CommandItem
+                                                        value={holder.name}
+                                                        key={holder.id}
+                                                        onSelect={() => {
+                                                            form.setValue("insured_person", holder.name)
+                                                            setIsHolderPopoverOpen(false)
+                                                        }}
+                                                    >
+                                                        <Check
+                                                        className={cn(
+                                                            "mr-2 h-4 w-4",
+                                                            holder.name === field.value
+                                                            ? "opacity-100"
+                                                            : "opacity-0"
+                                                        )}
+                                                        />
+                                                        {holder.name}
+                                                    </CommandItem>
+                                                ))}
+                                            </ScrollArea>
                                         </CommandGroup>
                                     </Command>
                                 </PopoverContent>
