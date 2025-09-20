@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -22,12 +22,14 @@ import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Loader2, Save } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, Save, ChevronsUpDown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, getDocs } from 'firebase/firestore';
+import type { PolicyHolder } from '@/lib/types';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command';
 
 const policySchema = z.object({
   insured_person: z.string().min(1, 'Insured person is required'),
@@ -56,6 +58,22 @@ interface AddPolicyDialogProps {
 export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPolicyDialogProps) {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
+  const [policyHolders, setPolicyHolders] = useState<PolicyHolder[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchPolicyHolders = async () => {
+        try {
+          const querySnapshot = await getDocs(collection(db, 'policyHolders'));
+          const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PolicyHolder));
+          setPolicyHolders(data);
+        } catch (error) {
+          console.error("Error fetching policy holders:", error);
+        }
+      };
+      fetchPolicyHolders();
+    }
+  }, [isOpen]);
 
   const form = useForm<PolicyFormValues>({
     resolver: zodResolver(policySchema),
@@ -111,7 +129,7 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
               </FormControl>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear()} />
             </PopoverContent>
           </Popover>
           <FormMessage />
@@ -132,7 +150,64 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
             <ScrollArea className="h-96 p-1">
               <div className="space-y-4 px-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="insured_person" render={({ field }) => (<FormItem><FormLabel>Insured Person</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField
+                        control={form.control}
+                        name="insured_person"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-col">
+                            <FormLabel>Insured Person</FormLabel>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <FormControl>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            className={cn(
+                                            "justify-between w-full",
+                                            !field.value && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {field.value
+                                            ? policyHolders.find(
+                                                (holder) => holder.name === field.value
+                                                )?.name
+                                            : "Select policy holder"}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                    <Command>
+                                        <CommandInput placeholder="Search policy holder..." />
+                                        <CommandEmpty>No holder found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {policyHolders.map((holder) => (
+                                                <CommandItem
+                                                    value={holder.name}
+                                                    key={holder.id}
+                                                    onSelect={() => {
+                                                        form.setValue("insured_person", holder.name)
+                                                    }}
+                                                >
+                                                    <Check
+                                                    className={cn(
+                                                        "mr-2 h-4 w-4",
+                                                        holder.name === field.value
+                                                        ? "opacity-100"
+                                                        : "opacity-0"
+                                                    )}
+                                                    />
+                                                    {holder.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     <FormField control={form.control} name="policy_no" render={({ field }) => (<FormItem><FormLabel>Policy No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="insurance_company" render={({ field }) => (<FormItem><FormLabel>Insurance Company</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
