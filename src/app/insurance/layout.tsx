@@ -32,8 +32,9 @@ export default function InsuranceLayout({
 
   const navItems = [
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance' },
-    { href: '/insurance/settings', icon: Settings, label: 'Settings' },
   ];
+  
+  const settingsItem = { href: '/insurance/settings', icon: Settings, label: 'Settings' };
 
   const personalInsuranceSubItems = [
     { href: '/insurance/premium-due', icon: CalendarClock, label: 'Premium Due' },
@@ -104,28 +105,51 @@ export default function InsuranceLayout({
               )}
             </nav>
           </div>
+          
+          <div className="mt-auto p-2 border-t">
+             <Tooltip>
+                <TooltipTrigger asChild>
+                    <Link href={settingsItem.href}>
+                        <Button
+                            variant={pathname.startsWith(settingsItem.href) ? 'secondary' : 'ghost'}
+                            className={cn(
+                                "w-full justify-start",
+                                !isExpanded && "h-10 w-10 p-0"
+                            )}
+                        >
+                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                <settingsItem.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
+                                <span className={cn(!isExpanded && "sr-only")}>{settingsItem.label}</span>
+                            </div>
+                        </Button>
+                    </Link>
+                </TooltipTrigger>
+                 {!isExpanded && (
+                    <TooltipContent side="right">
+                        <p>{settingsItem.label}</p>
+                    </TooltipContent>
+                )}
+            </Tooltip>
+            <Button
+              variant="ghost"
+              className={cn(
+                'w-full justify-start mt-1',
+                !isExpanded && 'h-10 w-10 p-0 justify-center'
+              )}
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronLeft className="h-5 w-5 mr-3" />
+                  <span>Collapse</span>
+                </>
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )}
+              <span className="sr-only">Toggle Sidebar</span>
+            </Button>
+          </div>
         </TooltipProvider>
-
-        <div className="mt-auto p-2 border-t">
-          <Button
-            variant="ghost"
-            className={cn(
-              'w-full justify-start',
-              !isExpanded && 'h-10 w-10 p-0 justify-center'
-            )}
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? (
-              <>
-                <ChevronLeft className="h-5 w-5 mr-3" />
-                <span>Collapse</span>
-              </>
-            ) : (
-              <ChevronRight className="h-5 w-5" />
-            )}
-            <span className="sr-only">Toggle Sidebar</span>
-          </Button>
-        </div>
       </aside>
       <main
         className={cn(
