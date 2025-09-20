@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,17 @@ export default function ProjectInsurancePage() {
     }
   }, [authLoading, canViewPage, toast]);
   
+  const policiesByProject = useMemo(() => {
+    return policies.reduce((acc, policy) => {
+      const key = policy.assetName || 'Unassigned';
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(policy);
+      return acc;
+    }, {} as Record<string, ProjectInsurancePolicy[]>);
+  }, [policies]);
+  
   const formatDate = (date: Date | null) => {
     if (!date) return 'N/A';
     return format(date, 'dd MMM, yyyy');
@@ -114,57 +125,65 @@ export default function ProjectInsurancePage() {
           </div>
         </div>
         
-        <Card className="mb-6">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Name/Site</TableHead>
-                  <TableHead>Policy No.</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Policy Category</TableHead>
-                  <TableHead>Premium</TableHead>
-                  <TableHead>Insured Until</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({length: 5}).map((_, i) => (
-                      <TableRow key={i}>
-                          <TableCell colSpan={8}><Skeleton className="h-8" /></TableCell>
-                      </TableRow>
-                  ))
-                ) : policies.length > 0 ? (
-                  policies.map(policy => (
-                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.id}`)} className="cursor-pointer">
-                    <TableCell className="font-medium">{policy.assetName}</TableCell>
-                    <TableCell>{policy.policy_no}</TableCell>
-                    <TableCell>{policy.insurance_company}</TableCell>
-                    <TableCell>{policy.policy_category}</TableCell>
-                    <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                    <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                    <TableCell><Badge>{policy.status || 'N/A'}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/insurance/project/${policy.id}`} onClick={(e) => e.stopPropagation()}>
-                        <Button variant="outline" size="sm" disabled={!canEdit}>
-                          <Edit className="mr-2 h-4 w-4" /> Details
-                        </Button>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))) : (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">No policies found.</TableCell>
-                  </TableRow>
-                )
-              }
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
+        {isLoading ? (
+             <div className="space-y-2">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+            </div>
+        ) : Object.keys(policiesByProject).length > 0 ? (
+          <Accordion type="multiple" className="w-full space-y-4" defaultValue={Object.keys(policiesByProject)}>
+            {Object.entries(policiesByProject).map(([projectName, projectPolicies]) => (
+              <AccordionItem value={projectName} key={projectName} className="border rounded-lg bg-card">
+                <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
+                  {projectName}
+                </AccordionTrigger>
+                <AccordionContent className="p-0">
+                  <div className="border-t">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Policy No.</TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Premium</TableHead>
+                          <TableHead>Insured Until</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {projectPolicies.map(policy => (
+                          <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.id}`)} className="cursor-pointer">
+                            <TableCell>{policy.policy_no}</TableCell>
+                            <TableCell>{policy.insurance_company}</TableCell>
+                            <TableCell>{policy.policy_category}</TableCell>
+                            <TableCell>{formatCurrency(policy.premium)}</TableCell>
+                            <TableCell>{formatDate(policy.insured_until)}</TableCell>
+                            <TableCell><Badge>{policy.status || 'N/A'}</Badge></TableCell>
+                            <TableCell className="text-right">
+                              <Link href={`/insurance/project/${policy.id}`} onClick={(e) => e.stopPropagation()}>
+                                <Button variant="outline" size="sm" disabled={!canEdit}>
+                                  <Edit className="mr-2 h-4 w-4" /> Details
+                                </Button>
+                              </Link>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        ) : (
+          <Card>
+            <CardContent className="text-center p-12">
+              <p className="text-muted-foreground">No project insurance policies found.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </>
   );
