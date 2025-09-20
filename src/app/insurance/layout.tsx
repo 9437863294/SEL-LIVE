@@ -35,6 +35,13 @@ export default function InsuranceLayout({
     { href: '/insurance/settings', icon: Settings, label: 'Settings' },
   ];
 
+  const personalInsuranceSubItems = [
+    { href: '/insurance/premium-due', icon: CalendarClock, label: 'Premium Due' },
+    { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due' },
+  ];
+  
+  const showSubItems = pathname.startsWith('/insurance/personal');
+
   return (
     <div className="flex w-full h-full">
       <aside
@@ -80,6 +87,21 @@ export default function InsuranceLayout({
                   )}
                 </Tooltip>
               ))}
+              {showSubItems && isExpanded && (
+                <div className="pl-4 mt-2 space-y-1 border-l ml-4">
+                   {personalInsuranceSubItems.map((item) => (
+                      <Link href={item.href} key={item.label}>
+                          <Button
+                            variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
+                            className="w-full justify-start text-sm h-9"
+                          >
+                            <item.icon className="mr-3 h-4 w-4" />
+                            {item.label}
+                          </Button>
+                      </Link>
+                   ))}
+                </div>
+              )}
             </nav>
           </div>
         </TooltipProvider>

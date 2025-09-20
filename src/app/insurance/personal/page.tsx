@@ -66,16 +66,6 @@ export default function PersonalInsurancePage() {
             <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/insurance/premium-due">
-              <Button variant="outline">
-                <CalendarClock className="mr-2 h-4 w-4"/> Premium Due
-              </Button>
-            </Link>
-             <Link href="/insurance/maturity-due">
-              <Button variant="outline">
-                <ShieldCheck className="mr-2 h-4 w-4"/> Maturity Due
-              </Button>
-            </Link>
             <Link href="/insurance/personal/new">
               <Button>
                 <Plus className="mr-2 h-4 w-4" /> Add New Policy
