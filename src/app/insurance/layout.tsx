@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Building,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +32,7 @@ export default function InsuranceLayout({
   const pathname = usePathname();
 
   const navItems = [
+    { href: '/insurance', icon: Shield, label: 'Dashboard' },
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance' },
   ];
   
@@ -59,7 +61,7 @@ export default function InsuranceLayout({
                   <TooltipTrigger asChild>
                     <Link href={item.href}>
                       <Button
-                        variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
+                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href)) ? 'secondary' : 'ghost'}
                         className={cn(
                           'w-full justify-start',
                           !isExpanded && 'h-10 w-10 p-0'
@@ -133,7 +135,7 @@ export default function InsuranceLayout({
                         >
                             <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
                                 <settingsItem.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
-                                <span className={cn(!isExpanded && "sr-only")}>{settingsItem.label}</span>
+                                <span className={cn(!isExpanded && 'sr-only')}>{settingsItem.label}</span>
                             </div>
                         </Button>
                     </Link>
