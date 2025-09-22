@@ -225,7 +225,7 @@ export default function MyTasksPage() {
                                                     ) : (
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="outline" size="sm">
+                                                                <Button variant="outline" size="sm" disabled={!currentStep?.actions.length}>
                                                                     Actions <MoreHorizontal className="ml-2 h-4 w-4" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
