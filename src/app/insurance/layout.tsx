@@ -33,7 +33,7 @@ import { collection, getDocs, query, where, Timestamp, addDoc } from 'firebase/f
 import { db } from '@/lib/firebase';
 import type { InsurancePolicy } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { isWithinInterval, addDays, startOfDay } from 'date-fns';
+import { isWithinInterval, addDays, startOfDay, isPast } from 'date-fns';
 
 export default function InsuranceLayout({
   children,
@@ -63,7 +63,12 @@ export default function InsuranceLayout({
       for (const policy of policies) {
         if (policy.due_date) {
           const dueDate = policy.due_date.toDate();
-          if (isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow })) {
+          
+          // Create a task if the policy is overdue OR if it's due within the next 30 days.
+          const isOverdue = isPast(dueDate);
+          const isDueSoon = isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow });
+
+          if (isOverdue || isDueSoon) {
             
             // Check if a task for this policy already exists
             const taskQuery = query(collection(db, 'insuranceTasks'), where('policyId', '==', policy.id));
