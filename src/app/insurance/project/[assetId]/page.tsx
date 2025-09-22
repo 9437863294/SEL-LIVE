@@ -1,22 +1,28 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, RotateCw } from 'lucide-react';
+import { ArrowLeft, Plus, RotateCw, ChevronRight, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { ProjectInsurancePolicy, InsuredAsset, Project } from '@/lib/types';
+import type { ProjectInsurancePolicy, InsuredAsset, Project, ProjectPolicyRenewal } from '@/lib/types';
 import { format, isWithinInterval, addDays, isPast } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ProjectRenewalDialog } from '@/components/ProjectRenewalDialog';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+
+
+interface EnrichedPolicy extends ProjectInsurancePolicy {
+  history: ProjectPolicyRenewal[];
+}
 
 export default function AssetPoliciesPage() {
   const { assetId } = useParams() as { assetId: string };
@@ -26,10 +32,11 @@ export default function AssetPoliciesPage() {
   
   const [asset, setAsset] = useState<InsuredAsset | null>(null);
   const [project, setProject] = useState<Project | null>(null);
-  const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
+  const [policies, setPolicies] = useState<EnrichedPolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPolicyForRenewal, setSelectedPolicyForRenewal] = useState<ProjectInsurancePolicy | null>(null);
   const [isRenewDialogOpen, setIsRenewDialogOpen] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
   const canAddPolicy = can('Add', 'Insurance.Project Insurance');
@@ -59,8 +66,16 @@ export default function AssetPoliciesPage() {
 
       const policiesQuery = query(collection(db, 'project_insurance_policies'), where('assetId', '==', assetId));
       const policiesSnapshot = await getDocs(policiesQuery);
-      const policiesData = policiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
+
+      const policiesDataPromises = policiesSnapshot.docs.map(async (pDoc) => {
+        const policy = { id: pDoc.id, ...pDoc.data() } as ProjectInsurancePolicy;
+        const historySnapshot = await getDocs(collection(db, 'project_insurance_policies', pDoc.id, 'history'));
+        const history = historySnapshot.docs.map(hDoc => ({ id: hDoc.id, ...hDoc.data() } as ProjectPolicyRenewal));
+        history.sort((a,b) => b.renewalDate.toMillis() - a.renewalDate.toMillis());
+        return { ...policy, history };
+      });
       
+      const policiesData = await Promise.all(policiesDataPromises);
       setPolicies(policiesData);
 
     } catch (error) {
@@ -92,9 +107,23 @@ export default function AssetPoliciesPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
 
-  const handleRenewClick = (policy: ProjectInsurancePolicy) => {
+  const handleRenewClick = (e: React.MouseEvent, policy: ProjectInsurancePolicy) => {
+    e.stopPropagation();
     setSelectedPolicyForRenewal(policy);
     setIsRenewDialogOpen(true);
+  };
+
+  const toggleRowExpansion = (e: React.MouseEvent, policyId: string) => {
+    e.stopPropagation();
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(policyId)) {
+        newSet.delete(policyId);
+      } else {
+        newSet.add(policyId);
+      }
+      return newSet;
+    });
   };
 
   const getStatus = (policy: ProjectInsurancePolicy) => {
@@ -144,6 +173,7 @@ export default function AssetPoliciesPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12"></TableHead>
                 <TableHead>Policy Category</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Sum Insured</TableHead>
@@ -156,7 +186,7 @@ export default function AssetPoliciesPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7}><Skeleton className="h-8 w-full" /></TableCell>
+                  <TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell>
                 </TableRow>
               ) : policies.length > 0 ? (
                 policies.map(policy => {
@@ -164,8 +194,16 @@ export default function AssetPoliciesPage() {
                   const isRenewable = policy.status === 'Active' && 
                                      policy.insured_until && 
                                      isWithinInterval(policy.insured_until.toDate(), { start: new Date(), end: addDays(new Date(), 30) });
+                  const isExpanded = expandedRows.has(policy.id);
+
                   return (
-                      <TableRow key={policy.id}>
+                    <Fragment key={policy.id}>
+                      <TableRow>
+                          <TableCell className="px-2">
+                              <Button size="icon" variant="ghost" onClick={(e) => toggleRowExpansion(e, policy.id)}>
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </Button>
+                          </TableCell>
                           <TableCell>{policy.policy_category}</TableCell>
                           <TableCell>{policy.policy_no}</TableCell>
                           <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
@@ -174,17 +212,53 @@ export default function AssetPoliciesPage() {
                           <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
                           <TableCell className="text-right">
                               {isRenewable && canRenewPolicy && (
-                                  <Button size="sm" variant="outline" onClick={() => handleRenewClick(policy)}>
+                                  <Button size="sm" variant="outline" onClick={(e) => handleRenewClick(e, policy)}>
                                       <RotateCw className="mr-2 h-4 w-4" /> Renew
                                   </Button>
                               )}
                           </TableCell>
                       </TableRow>
+                      {isExpanded && (
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableCell colSpan={8} className="p-0">
+                                  <div className="p-4">
+                                      <h4 className="font-semibold mb-2 ml-2">Renewal History</h4>
+                                      {policy.history && policy.history.length > 0 ? (
+                                          <Table>
+                                              <TableHeader>
+                                                  <TableRow>
+                                                      <TableHead>Renewal Date</TableHead>
+                                                      <TableHead>Old Policy No.</TableHead>
+                                                      <TableHead>Old Premium</TableHead>
+                                                      <TableHead>Old Sum Insured</TableHead>
+                                                      <TableHead>Old Period</TableHead>
+                                                  </TableRow>
+                                              </TableHeader>
+                                              <TableBody>
+                                                  {policy.history.map(h => (
+                                                      <TableRow key={h.id}>
+                                                          <TableCell>{formatDate(h.renewalDate)}</TableCell>
+                                                          <TableCell>{h.policyNo}</TableCell>
+                                                          <TableCell>{formatCurrency(h.premium)}</TableCell>
+                                                          <TableCell>{formatCurrency(h.sumInsured)}</TableCell>
+                                                          <TableCell>{formatDate(h.startDate)} - {formatDate(h.endDate)}</TableCell>
+                                                      </TableRow>
+                                                  ))}
+                                              </TableBody>
+                                          </Table>
+                                      ) : (
+                                          <p className="text-sm text-muted-foreground p-4 text-center">No renewal history for this policy.</p>
+                                      )}
+                                  </div>
+                              </TableCell>
+                          </TableRow>
+                      )}
+                    </Fragment>
                   );
                 })
               ) : (
                  <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">
+                    <TableCell colSpan={8} className="text-center h-24">
                         No insurance policies found for this asset.
                     </TableCell>
                  </TableRow>
