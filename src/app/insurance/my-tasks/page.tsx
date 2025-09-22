@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,6 +22,7 @@ import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 export default function MyTasksPage() {
@@ -39,39 +41,41 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    const fetchWorkflow = async () => {
-        const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
-        if(workflowDoc.exists()){
-            setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
+    useEffect(() => {
+        const fetchWorkflow = async () => {
+            const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+            if(workflowDoc.exists()){
+                setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
+            }
         }
-    }
+        fetchWorkflow();
+    }, []);
 
     useEffect(() => {
-        if (!user || !canViewPage) {
+        if (!user || !canViewPage || authLoading) {
             setIsLoading(false);
             return;
         }
 
         setIsLoading(true);
-        fetchWorkflow();
 
-        const tasksQuery = query(
-            collection(db, 'insuranceTasks'),
-            where('assignedTo', '==', user.id)
+        const q = query(
+            collection(db, 'insuranceTasks')
         );
         
-        const unsubscribe = onSnapshot(tasksQuery, (querySnapshot) => {
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
             const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
             tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
             setTasks(tasksData);
             setIsLoading(false);
         }, (error) => {
             console.error("Error with real-time task listener:", error);
+            toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
             setIsLoading(false);
         });
 
         return () => unsubscribe();
-    }, [user, canViewPage, authLoading]);
+    }, [user, canViewPage, authLoading, toast]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
         if (!workflow || !user) return;
@@ -138,7 +142,7 @@ export default function MyTasksPage() {
         }
     };
 
-    if (authLoading || (isLoading && canViewPage)) {
+    if (authLoading) {
         return (
             <div className="w-full">
                 <Skeleton className="h-10 w-64 mb-6" />
@@ -168,7 +172,7 @@ export default function MyTasksPage() {
         );
     }
     
-    const pendingTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected');
+    const pendingTasks = tasks.filter(t => t.assignedTo === user?.id && t.status !== 'Completed' && t.status !== 'Rejected');
     const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Rejected');
     
     const renderTable = (data: InsuranceTask[], isPending: boolean) => {
@@ -196,6 +200,8 @@ export default function MyTasksPage() {
                             ) : data.length > 0 ? (
                                 data.map(task => {
                                     const currentStep = workflow?.find(s => s.id === task.currentStepId);
+                                    const isAssignedToCurrentUser = task.assignedTo === user?.id;
+                                    
                                     return (
                                         <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task)}>
                                             <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
@@ -208,20 +214,33 @@ export default function MyTasksPage() {
                                                     {isActionLoading === task.id ? (
                                                         <Loader2 className="h-4 w-4 animate-spin ml-auto" />
                                                     ) : (
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="outline" size="sm" onClick={e => e.stopPropagation()} disabled={!currentStep?.actions.length}>
-                                                                    Actions <MoreHorizontal className="ml-2 h-4 w-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent>
-                                                                {currentStep?.actions.map(action => (
-                                                                    <DropdownMenuItem key={action} onSelect={() => handleAction(task, action)}>
-                                                                        {action}
-                                                                    </DropdownMenuItem>
-                                                                ))}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <div className="inline-block">
+                                                                        <DropdownMenu>
+                                                                            <DropdownMenuTrigger asChild>
+                                                                                <Button variant="outline" size="sm" onClick={e => e.stopPropagation()} disabled={!currentStep?.actions.length || !isAssignedToCurrentUser}>
+                                                                                    Actions <MoreHorizontal className="ml-2 h-4 w-4" />
+                                                                                </Button>
+                                                                            </DropdownMenuTrigger>
+                                                                            <DropdownMenuContent>
+                                                                                {currentStep?.actions.map(action => (
+                                                                                    <DropdownMenuItem key={action} onSelect={() => handleAction(task, action)}>
+                                                                                        {action}
+                                                                                    </DropdownMenuItem>
+                                                                                ))}
+                                                                            </DropdownMenuContent>
+                                                                        </DropdownMenu>
+                                                                    </div>
+                                                                </TooltipTrigger>
+                                                                {!isAssignedToCurrentUser && (
+                                                                    <TooltipContent>
+                                                                        <p>Not assigned to you</p>
+                                                                    </TooltipContent>
+                                                                )}
+                                                            </Tooltip>
+                                                        </TooltipProvider>
                                                     )}
                                                 </TableCell>
                                             )}
@@ -249,7 +268,7 @@ export default function MyTasksPage() {
                     <div>
                         <h1 className="text-xl font-bold">My Insurance Tasks</h1>
                         <p className="text-sm text-muted-foreground">
-                            A list of all insurance-related tasks assigned to you.
+                            A list of all insurance-related tasks.
                         </p>
                     </div>
                      <Button onClick={handleSync} disabled={isSyncing}>
@@ -260,8 +279,8 @@ export default function MyTasksPage() {
                 
                 <Tabs defaultValue="pending">
                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="pending">Pending ({pendingTasks.length})</TabsTrigger>
-                        <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
+                        <TabsTrigger value="pending">My Pending Tasks ({pendingTasks.length})</TabsTrigger>
+                        <TabsTrigger value="completed">Completed / Rejected ({completedTasks.length})</TabsTrigger>
                     </TabsList>
                     <TabsContent value="pending" className="mt-4">
                         {renderTable(pendingTasks, true)}
