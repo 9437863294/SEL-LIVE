@@ -1,8 +1,9 @@
 
+
 'use client';
 
 import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car, Settings, ShieldAlert } from 'lucide-react';
+import { Shield, User, Home, HardHat, Car, Settings, ShieldAlert, ClipboardCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,12 @@ const insuranceItemsBase: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     href: '#', 
     description: 'Track vehicle insurance policies and renewals.' 
   },
+  {
+    icon: ClipboardCheck,
+    text: 'My Tasks',
+    href: '/insurance/my-tasks',
+    description: 'View and manage your assigned insurance tasks.'
+  }
 ];
 
 function InsuranceCard({ item }: InsuranceCardProps) {

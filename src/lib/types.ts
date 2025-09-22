@@ -124,6 +124,7 @@ export const permissionModules = {
     'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History', 'Mark as Not Required'],
     'Premium Due': ['View'],
     'Maturity Due': ['View'],
+    'My Tasks': ['View'],
     'Settings': ['View'],
     'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],

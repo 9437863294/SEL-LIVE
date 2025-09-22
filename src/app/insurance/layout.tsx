@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as React from "react";
@@ -16,6 +17,7 @@ import {
   HardHat,
   History as HistoryIcon,
   Files,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +43,7 @@ export default function InsuranceLayout({
     { href: '/insurance', icon: Shield, label: 'Insurance Module', permission: can('View Module', 'Insurance') },
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance', permission: can('View', 'Insurance.Personal Insurance') },
     { href: '/insurance/project', icon: HardHat, label: 'Project Insurance', permission: can('View', 'Insurance.Project Insurance') },
+    { href: '/insurance/my-tasks', icon: ClipboardCheck, label: 'My Tasks', permission: can('View My Tasks', 'Insurance') },
   ];
   
   const settingsItem = { href: '/insurance/settings', icon: Settings, label: 'Settings', permission: can('View', 'Insurance.Settings') };
