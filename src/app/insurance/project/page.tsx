@@ -53,8 +53,8 @@ export default function ProjectInsurancePage() {
     setIsLoading(false);
   };
   
-  const handleRowClick = (asset: InsuredAsset) => {
-    router.push(`/insurance/project/${asset.id}`);
+  const handleRowClick = (assetId: string) => {
+    router.push(`/insurance/project/${assetId}`);
   };
 
   const getAssetName = (asset: InsuredAsset) => {
@@ -136,7 +136,7 @@ export default function ProjectInsurancePage() {
                   ))
                 ) : assets.length > 0 ? (
                   assets.map(asset => (
-                  <TableRow key={asset.id} onClick={() => handleRowClick(asset)} className="cursor-pointer">
+                  <TableRow key={asset.id} onClick={() => handleRowClick(asset.id)} className="cursor-pointer">
                     <TableCell className="font-medium">{getAssetName(asset)}</TableCell>
                     <TableCell>{asset.type}</TableCell>
                     <TableCell>{getAssetLocation(asset)}</TableCell>
