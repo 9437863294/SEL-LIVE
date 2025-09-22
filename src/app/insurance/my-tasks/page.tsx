@@ -39,29 +39,6 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    const fetchTasks = async () => {
-        if (!user || !canViewPage) {
-            setIsLoading(false);
-            return;
-        }
-
-        setIsLoading(true);
-        const tasksQuery = query(
-            collection(db, 'insuranceTasks'),
-            where('assignedTo', '==', user.id)
-        );
-        try {
-            const querySnapshot = await getDocs(tasksQuery);
-            const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-            tasksData.sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-            setTasks(tasksData);
-        } catch (error) {
-            console.error("Error fetching tasks:", error);
-            toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
-        }
-        setIsLoading(false);
-    };
-    
     const fetchWorkflow = async () => {
         const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
         if(workflowDoc.exists()){
@@ -70,27 +47,30 @@ export default function MyTasksPage() {
     }
 
     useEffect(() => {
-        if (user && canViewPage) {
-            fetchWorkflow();
-            fetchTasks(); 
-
-            const tasksQuery = query(
-                collection(db, 'insuranceTasks'),
-                where('assignedTo', '==', user.id)
-            );
-            
-            const unsubscribe = onSnapshot(tasksQuery, (querySnapshot) => {
-                const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-                tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-                setTasks(tasksData);
-            }, (error) => {
-                console.error("Error with real-time task listener:", error);
-            });
-
-            return () => unsubscribe();
-        } else if (!authLoading) {
+        if (!user || !canViewPage) {
             setIsLoading(false);
+            return;
         }
+
+        setIsLoading(true);
+        fetchWorkflow();
+
+        const tasksQuery = query(
+            collection(db, 'insuranceTasks'),
+            where('assignedTo', '==', user.id)
+        );
+        
+        const unsubscribe = onSnapshot(tasksQuery, (querySnapshot) => {
+            const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+            tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+            setTasks(tasksData);
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error with real-time task listener:", error);
+            setIsLoading(false);
+        });
+
+        return () => unsubscribe();
     }, [user, canViewPage, authLoading]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
@@ -148,7 +128,6 @@ export default function MyTasksPage() {
             const result = await syncInsuranceTasks(user.id);
             if (result.success) {
                 toast({ title: 'Sync Complete', description: result.message });
-                fetchTasks();
             } else {
                 throw new Error(result.message);
             }
@@ -208,7 +187,13 @@ export default function MyTasksPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {data.length > 0 ? (
+                            {isLoading ? (
+                                Array.from({length: 3}).map((_, i) => (
+                                    <TableRow key={i}>
+                                        <TableCell colSpan={isPending ? 6 : 5}><Skeleton className="h-8" /></TableCell>
+                                    </TableRow>
+                                ))
+                            ) : data.length > 0 ? (
                                 data.map(task => {
                                     const currentStep = workflow?.find(s => s.id === task.currentStepId);
                                     return (
@@ -225,7 +210,7 @@ export default function MyTasksPage() {
                                                     ) : (
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="outline" size="sm" disabled={!currentStep?.actions.length}>
+                                                                <Button variant="outline" size="sm" onClick={e => e.stopPropagation()} disabled={!currentStep?.actions.length}>
                                                                     Actions <MoreHorizontal className="ml-2 h-4 w-4" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
