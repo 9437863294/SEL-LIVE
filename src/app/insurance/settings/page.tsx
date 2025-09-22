@@ -3,7 +3,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Users, Building, ShieldAlert, Tags, HelpCircle, Construction } from 'lucide-react';
+import { ArrowLeft, Users, Building, ShieldAlert, Tags, HelpCircle, Construction, GitMerge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
@@ -51,6 +51,13 @@ const settingsItemsBase = [
     permission: 'View'
   },
   {
+    icon: GitMerge,
+    text: 'Workflow',
+    href: '/insurance/settings/workflow',
+    description: 'Configure insurance approval workflows.',
+    permission: 'View'
+  },
+  {
     icon: HelpCircle,
     text: 'Help',
     href: '/insurance/settings/help',
@@ -64,7 +71,7 @@ function SettingsCard({ item }: SettingsCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-col items-center text-center gap-4 p-6">
@@ -101,6 +108,7 @@ export default function InsuranceSettingsPage() {
           case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
           case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
           case 'Projects and Properties': moduleScope = 'Insurance.Settings.Assets'; break;
+          case 'Workflow': moduleScope = 'Insurance.Settings'; break; // Simplified permission for now
           case 'Help': moduleScope = 'Insurance.Settings'; break;
           default: moduleScope = 'Insurance.Settings';
       }
