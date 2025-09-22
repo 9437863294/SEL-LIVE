@@ -47,9 +47,7 @@ export default function InsuranceLayout({
     { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due', permission: can('View', 'Insurance.Maturity Due') },
   ];
   
-  const showSubItems = pathname.startsWith('/insurance/personal') || pathname === '/insurance/premium-due' || pathname === '/insurance/maturity-due';
-  const showSettingsSubItems = pathname.startsWith('/insurance/settings');
-
+  const showPersonalSubItems = pathname.startsWith('/insurance/personal') || pathname === '/insurance/premium-due' || pathname === '/insurance/maturity-due';
 
   const visibleNavItems = navItems.filter(item => item.permission);
   const visibleSubItems = personalInsuranceSubItems.filter(item => item.permission);
@@ -66,68 +64,70 @@ export default function InsuranceLayout({
           <div className="flex-1 p-2">
             <nav className="flex flex-col gap-1">
               {visibleNavItems.map((item) => (
-                <Tooltip key={item.label}>
-                  <TooltipTrigger asChild>
-                    <Link href={item.href}>
-                      <Button
-                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href) && !pathname.startsWith('/insurance/settings') && item.href !== '/insurance/personal') || (item.href === '/insurance/personal' && showSubItems) ? 'secondary' : 'ghost'}
-                        className={cn(
-                          'w-full justify-start',
-                          !isExpanded && 'h-10 w-10 p-0'
-                        )}
-                      >
-                        <div
+                <React.Fragment key={item.label}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link href={item.href}>
+                        <Button
+                          variant={pathname === item.href || (item.href === '/insurance/personal' && showPersonalSubItems) || (item.href !== '/insurance' && pathname.startsWith(item.href) && !showPersonalSubItems) ? 'secondary' : 'ghost'}
                           className={cn(
-                            'flex items-center',
-                            isExpanded ? '' : 'w-full justify-center'
+                            'w-full justify-start',
+                            !isExpanded && 'h-10 w-10 p-0'
                           )}
                         >
-                          <item.icon
-                            className={cn('h-5 w-5', isExpanded && 'mr-3')}
-                          />
-                          <span className={cn(!isExpanded && 'sr-only')}>
-                            {item.label}
-                          </span>
-                        </div>
-                      </Button>
-                    </Link>
-                  </TooltipTrigger>
-                  {!isExpanded && (
-                    <TooltipContent side="right">
-                      <p>{item.label}</p>
-                    </TooltipContent>
+                          <div
+                            className={cn(
+                              'flex items-center',
+                              isExpanded ? '' : 'w-full justify-center'
+                            )}
+                          >
+                            <item.icon
+                              className={cn('h-5 w-5', isExpanded && 'mr-3')}
+                            />
+                            <span className={cn(!isExpanded && 'sr-only')}>
+                              {item.label}
+                            </span>
+                          </div>
+                        </Button>
+                      </Link>
+                    </TooltipTrigger>
+                    {!isExpanded && (
+                      <TooltipContent side="right">
+                        <p>{item.label}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                  {item.href === '/insurance/personal' && showPersonalSubItems && (
+                     <div className={cn("space-y-1", isExpanded ? "pl-4 mt-2 border-l ml-4" : "mt-2")}>
+                       {visibleSubItems.map((subItem) => (
+                          <Tooltip key={subItem.label}>
+                              <TooltipTrigger asChild>
+                                  <Link href={subItem.href}>
+                                      <Button
+                                          variant={pathname.startsWith(subItem.href) ? 'secondary' : 'ghost'}
+                                          className={cn(
+                                              "w-full justify-start text-sm h-9",
+                                              !isExpanded && "h-10 w-10 p-0"
+                                          )}
+                                      >
+                                        <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                          <subItem.icon className={cn('h-4 w-4', isExpanded && 'mr-3')} />
+                                          <span className={cn(!isExpanded && 'sr-only')}>{subItem.label}</span>
+                                        </div>
+                                      </Button>
+                                  </Link>
+                              </TooltipTrigger>
+                              {!isExpanded && (
+                                  <TooltipContent side="right">
+                                      <p>{subItem.label}</p>
+                                  </TooltipContent>
+                              )}
+                          </Tooltip>
+                       ))}
+                    </div>
                   )}
-                </Tooltip>
+                </React.Fragment>
               ))}
-              {showSubItems && (
-                <div className={cn("space-y-1", isExpanded ? "pl-4 mt-2 border-l ml-4" : "mt-2")}>
-                   {visibleSubItems.map((item) => (
-                      <Tooltip key={item.label}>
-                          <TooltipTrigger asChild>
-                              <Link href={item.href}>
-                                  <Button
-                                      variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
-                                      className={cn(
-                                          "w-full justify-start text-sm h-9",
-                                          !isExpanded && "h-10 w-10 p-0"
-                                      )}
-                                  >
-                                    <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
-                                      <item.icon className={cn('h-4 w-4', isExpanded && 'mr-3')} />
-                                      <span className={cn(!isExpanded && 'sr-only')}>{item.label}</span>
-                                    </div>
-                                  </Button>
-                              </Link>
-                          </TooltipTrigger>
-                          {!isExpanded && (
-                              <TooltipContent side="right">
-                                  <p>{item.label}</p>
-                              </TooltipContent>
-                          )}
-                      </Tooltip>
-                   ))}
-                </div>
-              )}
             </nav>
           </div>
           
