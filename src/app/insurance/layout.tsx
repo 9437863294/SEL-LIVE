@@ -14,6 +14,7 @@ import {
   Building,
   Shield,
   HardHat,
+  History as HistoryIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +47,7 @@ export default function InsuranceLayout({
   const personalInsuranceSubItems = [
     { href: '/insurance/premium-due', icon: CalendarClock, label: 'Premium Due', permission: can('View', 'Insurance.Premium Due') },
     { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due', permission: can('View', 'Insurance.Maturity Due') },
+    { href: '/insurance/personal/history', icon: HistoryIcon, label: 'History', permission: can('View History', 'Insurance.Personal Insurance') },
   ];
   
   const projectInsuranceSubItems = [
