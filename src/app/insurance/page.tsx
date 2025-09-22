@@ -44,16 +44,12 @@ export default function InsuranceDashboardPage() {
       <Tabs defaultValue="all-policies" className="flex flex-col h-full">
         <div className="flex-shrink-0">
           <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
-            <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>
             <TabsTrigger value="all-policies" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Policies</TabsTrigger>
             <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Pending At Me</TabsTrigger>
             <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
           </TabsList>
         </div>
         <div className="flex-grow pt-6">
-          <TabsContent value="dashboard">
-            Dashboard content will go here.
-          </TabsContent>
           <TabsContent value="all-policies">
             <AllPoliciesTab />
           </TabsContent>
