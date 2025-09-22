@@ -106,7 +106,7 @@ export default function AssetPoliciesPage() {
            <Link href="/insurance/project">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
-          <h1 className="text-lg font-semibold">Insurance Policy Report</h1>
+          <h1 className="text-lg font-semibold">Insurance Policies for: {assetName}</h1>
         </div>
         <div className="flex items-center gap-2">
             <Link href={`/insurance/project/new?assetId=${assetId}`}>
@@ -116,9 +116,6 @@ export default function AssetPoliciesPage() {
       </div>
       
       <Card>
-        <CardHeader className="text-center">
-            <CardTitle>Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}</CardTitle>
-        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
