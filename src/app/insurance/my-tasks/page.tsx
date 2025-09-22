@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -17,6 +16,7 @@ import type { InsuranceTask } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function MyTasksPage() {
     const { can, isLoading: authLoading } = useAuthorization();
@@ -114,83 +114,86 @@ export default function MyTasksPage() {
                 </div>
             </div>
             
-            <Card className="mb-6">
-                <CardHeader>
-                    <CardTitle>Pending Tasks ({pendingTasks.length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Policy No.</TableHead>
-                                <TableHead>Insured Person</TableHead>
-                                <TableHead>Due Date</TableHead>
-                                <TableHead>Task Type</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {pendingTasks.length > 0 ? (
-                                pendingTasks.map(task => (
-                                    <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
-                                        <TableCell>{task.policyNo}</TableCell>
-                                        <TableCell>{task.insuredPerson}</TableCell>
-                                        <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                        <TableCell>{task.taskType}</TableCell>
-                                        <TableCell className="text-right">
-                                            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleMarkAsComplete(task.id); }}>
-                                                <Check className="mr-2 h-4 w-4"/> Mark Complete
-                                            </Button>
-                                        </TableCell>
+            <Tabs defaultValue="pending">
+                <TabsList>
+                    <TabsTrigger value="pending">Pending ({pendingTasks.length})</TabsTrigger>
+                    <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
+                </TabsList>
+                <TabsContent value="pending" className="mt-4">
+                    <Card>
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Policy No.</TableHead>
+                                        <TableHead>Insured Person</TableHead>
+                                        <TableHead>Due Date</TableHead>
+                                        <TableHead>Task Type</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center">
-                                        No pending tasks.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Completed Tasks ({completedTasks.length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                     <Table>
-                        <TableHeader>
-                             <TableRow>
-                                <TableHead>Policy No.</TableHead>
-                                <TableHead>Insured Person</TableHead>
-                                <TableHead>Due Date</TableHead>
-                                <TableHead>Task Type</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                           {completedTasks.length > 0 ? (
-                                completedTasks.map(task => (
-                                    <TableRow key={task.id} className="text-muted-foreground cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
-                                        <TableCell>{task.policyNo}</TableCell>
-                                        <TableCell>{task.insuredPerson}</TableCell>
-                                        <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                        <TableCell>{task.taskType}</TableCell>
+                                </TableHeader>
+                                <TableBody>
+                                    {pendingTasks.length > 0 ? (
+                                        pendingTasks.map(task => (
+                                            <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                                <TableCell>{task.policyNo}</TableCell>
+                                                <TableCell>{task.insuredPerson}</TableCell>
+                                                <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{task.taskType}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleMarkAsComplete(task.id); }}>
+                                                        <Check className="mr-2 h-4 w-4"/> Mark Complete
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="h-24 text-center">
+                                                No pending tasks.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+                <TabsContent value="completed" className="mt-4">
+                    <Card>
+                        <CardContent className="p-0">
+                             <Table>
+                                <TableHeader>
+                                     <TableRow>
+                                        <TableHead>Policy No.</TableHead>
+                                        <TableHead>Insured Person</TableHead>
+                                        <TableHead>Due Date</TableHead>
+                                        <TableHead>Task Type</TableHead>
                                     </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">
-                                        No completed tasks yet.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+                                </TableHeader>
+                                <TableBody>
+                                   {completedTasks.length > 0 ? (
+                                        completedTasks.map(task => (
+                                            <TableRow key={task.id} className="text-muted-foreground cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                                <TableCell>{task.policyNo}</TableCell>
+                                                <TableCell>{task.insuredPerson}</TableCell>
+                                                <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{task.taskType}</TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={4} className="h-24 text-center">
+                                                No completed tasks yet.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
         </div>
     );
 }
