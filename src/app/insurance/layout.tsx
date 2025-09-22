@@ -47,47 +47,50 @@ export default function InsuranceLayout({
 
   useEffect(() => {
     const checkAndCreateTasks = async () => {
-        if (!user) return;
+      if (!user) return;
+  
+      const ASSIGNED_USER_ID = '0EaO3vscq1bNqVfASsUa6MNe3nN2'; 
+      const thirtyDaysFromNow = addDays(new Date(), 30);
+  
+      const policiesQuery = query(
+        collection(db, 'insurance_policies'),
+        where('due_date', '!=', null)
+      );
+  
+      const policiesSnap = await getDocs(policiesQuery);
+      const policies = policiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsurancePolicy));
+  
+      for (const policy of policies) {
+        if (policy.due_date) {
+          const dueDate = policy.due_date.toDate();
+          if (isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow })) {
+            
+            // Check if a task for this policy already exists
+            const taskQuery = query(collection(db, 'insuranceTasks'), where('policyId', '==', policy.id));
+            const taskSnap = await getDocs(taskQuery);
 
-        // Hardcoded user ID to assign tasks to for now. Replace with dynamic logic later.
-        const ASSIGNED_USER_ID = '0EaO3vscq1bNqVfASsUa6MNe3nN2'; 
-        
-        const thirtyDaysFromNow = addDays(new Date(), 30);
-        
-        const policiesQuery = query(
-            collection(db, 'insurance_policies'),
-            where('due_date', '!=', null)
-        );
-
-        const tasksQuery = query(collection(db, 'insuranceTasks'));
-        
-        const [policiesSnap, tasksSnap] = await Promise.all([getDocs(policiesQuery), getDocs(tasksQuery)]);
-        
-        const policies = policiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsurancePolicy));
-        const existingTaskPolicyIds = new Set(tasksSnap.docs.map(doc => doc.data().policyId));
-
-        for (const policy of policies) {
-            if (policy.due_date && !existingTaskPolicyIds.has(policy.id)) {
-                const dueDate = policy.due_date.toDate();
-                if (isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow })) {
-                    try {
-                        await addDoc(collection(db, 'insuranceTasks'), {
-                            policyId: policy.id,
-                            policyNo: policy.policy_no,
-                            insuredPerson: policy.insured_person,
-                            dueDate: Timestamp.fromDate(dueDate),
-                            status: 'Pending',
-                            assignedTo: ASSIGNED_USER_ID,
-                            createdAt: Timestamp.now(),
-                            taskType: 'Premium Due',
-                        });
-                    } catch (error) {
-                        console.error(`Failed to create task for policy ${policy.policy_no}`, error);
-                    }
-                }
+            if (taskSnap.empty) { // Only create if no task exists
+              try {
+                await addDoc(collection(db, 'insuranceTasks'), {
+                  policyId: policy.id,
+                  policyNo: policy.policy_no,
+                  insuredPerson: policy.insured_person,
+                  dueDate: Timestamp.fromDate(dueDate),
+                  status: 'Pending',
+                  assignedTo: ASSIGNED_USER_ID,
+                  createdAt: Timestamp.now(),
+                  taskType: 'Premium Due',
+                });
+              } catch (error) {
+                console.error(`Failed to create task for policy ${policy.policy_no}`, error);
+              }
             }
+          }
         }
+      }
     };
+  
+    // Run once on initial load
     checkAndCreateTasks();
   }, [user]);
 
@@ -95,7 +98,7 @@ export default function InsuranceLayout({
     { href: '/insurance', icon: Shield, label: 'Insurance Module', permission: can('View Module', 'Insurance') },
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance', permission: can('View', 'Insurance.Personal Insurance') },
     { href: '/insurance/project', icon: HardHat, label: 'Project Insurance', permission: can('View', 'Insurance.Project Insurance') },
-    { href: '/insurance/my-tasks', icon: ClipboardCheck, label: 'My Tasks', permission: can('View My Tasks', 'Insurance') },
+    { href: '/insurance/my-tasks', icon: ClipboardCheck, label: 'My Tasks', permission: can('View', 'Insurance.My Tasks') },
   ];
   
   const settingsItem = { href: '/insurance/settings', icon: Settings, label: 'Settings', permission: can('View', 'Insurance.Settings') };
