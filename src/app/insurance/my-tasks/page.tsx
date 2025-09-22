@@ -31,7 +31,7 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    const fetchTasks = () => {
+    const fetchTasks = async () => {
         if (!user || !canViewPage) {
             setIsLoading(false);
             return;
@@ -42,25 +42,41 @@ export default function MyTasksPage() {
             collection(db, 'insuranceTasks'),
             where('assignedTo', '==', user.id)
         );
-
-        const unsubscribe = onSnapshot(tasksQuery, (querySnapshot) => {
+        try {
+            const querySnapshot = await getDocs(tasksQuery);
             const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-            tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+            tasksData.sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
             setTasks(tasksData);
-            setIsLoading(false);
-        }, (error) => {
+        } catch (error) {
             console.error("Error fetching tasks:", error);
             toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
-            setIsLoading(false);
-        });
+        }
+        setIsLoading(false);
+    };
 
-        return unsubscribe;
-    }
-    
     useEffect(() => {
-        const unsubscribe = fetchTasks();
-        return () => unsubscribe && unsubscribe();
-    }, [user, canViewPage, toast]);
+        if (user && canViewPage) {
+            fetchTasks(); // Initial fetch
+
+            const tasksQuery = query(
+                collection(db, 'insuranceTasks'),
+                where('assignedTo', '==', user.id)
+            );
+            
+            // Real-time listener for updates
+            const unsubscribe = onSnapshot(tasksQuery, (querySnapshot) => {
+                const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+                tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+                setTasks(tasksData);
+            }, (error) => {
+                console.error("Error with real-time task listener:", error);
+            });
+
+            return () => unsubscribe();
+        } else if (!authLoading) {
+            setIsLoading(false);
+        }
+    }, [user, canViewPage, authLoading]);
     
     const handleMarkAsComplete = async (taskId: string) => {
         try {
@@ -74,7 +90,12 @@ export default function MyTasksPage() {
     }
 
     const handleRowClick = (policyId: string) => {
-        router.push(`/insurance/personal/${policyId}`);
+        // Simple heuristic to decide where to navigate
+        if (policyId.startsWith('proj-')) {
+             router.push(`/insurance/project/policy/${policyId}`);
+        } else {
+             router.push(`/insurance/personal/${policyId}`);
+        }
     };
 
     const handleSync = async () => {
@@ -84,7 +105,7 @@ export default function MyTasksPage() {
             const result = await syncInsuranceTasks(user.id);
             if (result.success) {
                 toast({ title: 'Sync Complete', description: result.message });
-                fetchTasks(); // Re-fetch tasks after a successful sync
+                fetchTasks();
             } else {
                 throw new Error(result.message);
             }
