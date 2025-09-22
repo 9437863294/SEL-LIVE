@@ -107,11 +107,6 @@ export default function AllPoliciesTab() {
             <h1 className="text-xl font-bold">All Policies</h1>
             <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button disabled={!canAdd} onClick={() => setIsAddPolicyOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Add New Policy
-            </Button>
-          </div>
         </div>
         
         <Card>
