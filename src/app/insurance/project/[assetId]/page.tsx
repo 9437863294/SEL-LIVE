@@ -150,7 +150,7 @@ export default function AssetPoliciesPage() {
           </TableHeader>
           <TableBody>
             {policies.length > 0 ? policies.map(policy => (
-                <TableRow key={policy.id} className="cursor-pointer" onClick={() => router.push(`/insurance/project/policy/${policy.id}`)}>
+              <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/policy/${policy.id}`)} className="cursor-pointer">
                   <TableCell>{policy.policy_category}</TableCell>
                   <TableCell>{policy.policy_no}</TableCell>
                   <TableCell>{policy.insurance_company}</TableCell>
@@ -161,7 +161,7 @@ export default function AssetPoliciesPage() {
                   <TableCell>{policy.tenure_months}</TableCell>
                   <TableCell>{formatDate(policy.insured_until)}</TableCell>
                   <TableCell><Badge variant={policy.status === 'Renewable' ? 'default' : 'secondary'}>{policy.status}</Badge></TableCell>
-                </TableRow>
+              </TableRow>
             )) : (
                 <TableRow>
                     <TableCell colSpan={10} className="h-24 text-center">No insurance policies found for this asset.</TableCell>
