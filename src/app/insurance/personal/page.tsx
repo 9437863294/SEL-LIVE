@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck, ShieldAlert, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -106,6 +106,11 @@ export default function PersonalInsurancePage() {
             <p className="text-sm text-muted-foreground">Manage all personal insurance policies.</p>
           </div>
           <div className="flex items-center gap-2">
+             <Link href="/insurance/personal/history">
+              <Button variant="outline">
+                <History className="mr-2 h-4 w-4" /> History
+              </Button>
+            </Link>
             <Link href="/insurance/personal/new">
               <Button disabled={!canAdd}>
                 <Plus className="mr-2 h-4 w-4" /> Add New Policy
