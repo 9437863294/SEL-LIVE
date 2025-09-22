@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -33,6 +32,12 @@ const insuranceItemsBase: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
     text: 'Project Insurance', 
     href: '/insurance/project', 
     description: 'Handle insurance policies related to specific projects.' 
+  },
+  { 
+    icon: Car, 
+    text: 'Vehicle Insurance', 
+    href: '#', 
+    description: 'Track vehicle insurance policies and renewals.' 
   },
 ];
 
