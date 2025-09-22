@@ -6,7 +6,6 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ShieldAlert } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AllPoliciesTab from '@/components/AllPoliciesTab';
 
 export default function InsuranceDashboardPage() {
@@ -41,26 +40,7 @@ export default function InsuranceDashboardPage() {
   
   return (
     <div className="flex flex-col w-full h-full">
-      <Tabs defaultValue="all-policies" className="flex flex-col h-full">
-        <div className="flex-shrink-0">
-          <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
-            <TabsTrigger value="all-policies" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Policies</TabsTrigger>
-            <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Pending At Me</TabsTrigger>
-            <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
-          </TabsList>
-        </div>
-        <div className="flex-grow pt-6">
-          <TabsContent value="all-policies">
-            <AllPoliciesTab />
-          </TabsContent>
-          <TabsContent value="pending-tasks">
-            Pending tasks will be shown here.
-          </TabsContent>
-           <TabsContent value="history">
-            Your history will be shown here.
-          </TabsContent>
-        </div>
-      </Tabs>
+      <AllPoliciesTab />
     </div>
   );
 }
