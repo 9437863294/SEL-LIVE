@@ -27,16 +27,13 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'firebasestorage.googleapis.com',
         port: '',
-        pathname: '/v0/b/module-hub-uc7tw.appspot.com/**',
+        pathname: '/**',
       },
     ],
   },
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },
-  allowedDevOrigins: [
-    'https://6000-firebase-studio-1757047573465.cluster-ys234awlzbhwoxmkkse6qo3fz6.cloudworkstations.dev',
-  ],
 };
 
 export default nextConfig;
