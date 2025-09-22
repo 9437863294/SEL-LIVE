@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
 
 
 export default function MyTasksPage() {
@@ -34,6 +35,8 @@ export default function MyTasksPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
+    const [selectedTask, setSelectedTask] = useState<InsuranceTask | null>(null);
+    const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
@@ -136,10 +139,9 @@ export default function MyTasksPage() {
     };
 
 
-    const handleRowClick = (policyId: string) => {
-        // This is a simplified navigation. In a real scenario, you might need to
-        // fetch the policy type to decide whether to go to /personal or /project.
-        router.push(`/insurance/personal/${policyId}`);
+    const handleRowClick = (task: InsuranceTask) => {
+        setSelectedTask(task);
+        setIsViewDialogOpen(true);
     };
 
     const handleSync = async () => {
@@ -213,7 +215,7 @@ export default function MyTasksPage() {
                                 data.map(task => {
                                     const currentStep = workflow?.find(s => s.id === task.currentStepId);
                                     return (
-                                        <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                        <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task)}>
                                             <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                             <TableCell>{task.policyNo}</TableCell>
                                             <TableCell>{task.insuredPerson}</TableCell>
@@ -259,33 +261,41 @@ export default function MyTasksPage() {
     };
 
     return (
-        <div className="w-full">
-            <div className="mb-6 flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl font-bold">My Insurance Tasks</h1>
-                    <p className="text-sm text-muted-foreground">
-                        A list of all insurance-related tasks assigned to you.
-                    </p>
+        <>
+            <div className="w-full">
+                <div className="mb-6 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-xl font-bold">My Insurance Tasks</h1>
+                        <p className="text-sm text-muted-foreground">
+                            A list of all insurance-related tasks assigned to you.
+                        </p>
+                    </div>
+                     <Button onClick={handleSync} disabled={isSyncing}>
+                        {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Sync Tasks
+                    </Button>
                 </div>
-                 <Button onClick={handleSync} disabled={isSyncing}>
-                    {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Sync Tasks
-                </Button>
+                
+                <Tabs defaultValue="pending">
+                     <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="pending">Pending ({pendingTasks.length})</TabsTrigger>
+                        <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="pending" className="mt-4">
+                        {renderTable(pendingTasks, true)}
+                    </TabsContent>
+                    <TabsContent value="completed" className="mt-4">
+                        {renderTable(completedTasks, false)}
+                    </TabsContent>
+                </Tabs>
             </div>
-            
-            <Tabs defaultValue="pending">
-                 <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="pending">Pending ({pendingTasks.length})</TabsTrigger>
-                    <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
-                </TabsList>
-                <TabsContent value="pending" className="mt-4">
-                    {renderTable(pendingTasks, true)}
-                </TabsContent>
-                <TabsContent value="completed" className="mt-4">
-                    {renderTable(completedTasks, false)}
-                </TabsContent>
-            </Tabs>
-        </div>
+
+            <ViewInsuranceTaskDialog
+                isOpen={isViewDialogOpen}
+                onOpenChange={setIsViewDialogOpen}
+                task={selectedTask}
+                workflow={workflow}
+            />
+        </>
     );
 }
-
