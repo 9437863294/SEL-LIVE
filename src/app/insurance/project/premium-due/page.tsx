@@ -191,7 +191,7 @@ export default function ProjectPremiumDuePage() {
                                                 className="text-destructive"
                                                 disabled={!canMarkNotRequired || !isDueWithin30Days}
                                             >
-                                                <XCircle className="mr-2 h-4 w-4" /> Mark as Not Required
+                                                <XCircle className="mr-2 h-4 w-4" /> Not Required
                                             </DropdownMenuItem>
                                         </AlertDialogTrigger>
                                     </DropdownMenuContent>
