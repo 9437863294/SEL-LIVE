@@ -16,6 +16,7 @@ async function processPolicies(
     const thirtyDaysFromNow = addDays(new Date(), 30);
 
     for (const policy of policies) {
+        // @ts-ignore
         const policyDate = policy[dateField];
         if (policyDate) {
             const dueDate = policyDate.toDate();
@@ -72,23 +73,26 @@ export async function syncInsuranceTasks(userId: string) {
     try {
         const ASSIGNED_USER_ID = userId;
         
-        // Fetch Personal Policies - Note: Personal policies don't have a status field yet.
+        // Fetch Personal Policies
         const personalPoliciesQuery = query(
             collection(db, 'insurance_policies'),
-            where('due_date', '!=', null)
+            where('status', '==', 'Active')
         );
         const personalPoliciesSnap = await getDocs(personalPoliciesQuery);
-        const personalPolicies = personalPoliciesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsurancePolicy));
+        const personalPolicies = personalPoliciesSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as InsurancePolicy))
+            .filter(policy => policy.due_date); // Filter client-side
         const personalResult = await processPolicies(personalPolicies, 'due_date', ASSIGNED_USER_ID);
 
         // Fetch Project Policies
         const projectPoliciesQuery = query(
             collection(db, 'project_insurance_policies'),
-            where('insured_until', '!=', null),
             where('status', '==', 'Active')
         );
         const projectPoliciesSnap = await getDocs(projectPoliciesQuery);
-        const projectPolicies = projectPoliciesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
+        const projectPolicies = projectPoliciesSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy))
+            .filter(policy => policy.insured_until); // Filter client-side
         const projectResult = await processPolicies(projectPolicies, 'insured_until', ASSIGNED_USER_ID);
 
         const totalCreated = personalResult.tasksCreated + projectResult.tasksCreated;
