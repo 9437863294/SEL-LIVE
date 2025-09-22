@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldAlert, Eye, CalendarClock } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert, Eye, CalendarClock, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -111,6 +111,11 @@ export default function ProjectInsurancePage() {
              <Link href="/insurance/project/all-policies">
               <Button variant="outline">
                 <Eye className="mr-2 h-4 w-4" /> View All Policies
+              </Button>
+            </Link>
+             <Link href="/insurance/project/history">
+              <Button variant="outline">
+                <History className="mr-2 h-4 w-4" /> History
               </Button>
             </Link>
             <Link href="/insurance/project/new">
