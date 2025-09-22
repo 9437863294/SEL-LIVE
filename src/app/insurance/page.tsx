@@ -2,95 +2,17 @@
 
 'use client';
 
-import Link from 'next/link';
-import { Shield, User, Home, HardHat, Car, Settings, ShieldAlert, ClipboardCheck } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { ShieldAlert } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AllPoliciesTab from './all-policies/page';
 
-interface InsuranceCardProps {
-  item: {
-    icon: LucideIcon;
-    text: string;
-    href: string;
-    description: string;
-    disabled?: boolean;
-  };
-}
-
-const insuranceItemsBase: Omit<InsuranceCardProps['item'], 'disabled'>[] = [
-  { 
-    icon: User, 
-    text: 'Personal Insurance', 
-    href: '/insurance/personal', 
-    description: 'Manage personal health and life insurance policies.' 
-  },
-  { 
-    icon: HardHat, 
-    text: 'Project Insurance', 
-    href: '/insurance/project', 
-    description: 'Handle insurance policies related to specific projects.' 
-  },
-  { 
-    icon: Car, 
-    text: 'Vehicle Insurance', 
-    href: '#', 
-    description: 'Track vehicle insurance policies and renewals.' 
-  },
-  {
-    icon: ClipboardCheck,
-    text: 'My Tasks',
-    href: '/insurance/my-tasks',
-    description: 'View and manage your assigned insurance tasks.'
-  }
-];
-
-function InsuranceCard({ item }: InsuranceCardProps) {
-    const cardContent = (
-         <Card
-            className={cn(
-                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-            )}
-            >
-            <CardHeader className="flex-col items-center text-center gap-4 p-6">
-                <div className="bg-primary/10 p-3 rounded-full">
-                  <item.icon className="w-8 h-8 text-primary" />
-                </div>
-                <div className="space-y-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
-                </div>
-            </CardHeader>
-        </Card>
-    )
-
-    if (item.href === '#' || item.disabled) {
-        return <div className="h-full">{cardContent}</div>;
-    }
-    
-    return (
-       <Link href={item.href} className="no-underline h-full">
-            {cardContent}
-        </Link>
-    )
-}
-
-export default function InsurancePage() {
+export default function InsuranceDashboardPage() {
   const { can, isLoading } = useAuthorization();
   const canViewModule = can('View Module', 'Insurance');
-  
-  const insuranceItems = insuranceItemsBase.map(item => {
-    let permission = 'View';
-    let moduleName = `Insurance.${item.text.replace(' ', ' ')}`;
-    return {
-      ...item,
-      disabled: item.href === '#' || !can(permission, moduleName)
-    };
-  });
 
   if (isLoading) {
     return (
@@ -119,12 +41,32 @@ export default function InsurancePage() {
   }
   
   return (
-    <div className="w-full">
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {insuranceItems.map((item) => (
-          <InsuranceCard key={item.text} item={item} />
-        ))}
-      </div>
+    <div className="flex flex-col w-full h-full">
+      <Tabs defaultValue="all-policies" className="flex flex-col h-full">
+        <div className="flex-shrink-0">
+          <TabsList className="bg-transparent p-0 border-b rounded-none w-full justify-start">
+            <TabsTrigger value="dashboard" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Dashboard</TabsTrigger>
+            <TabsTrigger value="all-policies" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">All Policies</TabsTrigger>
+            <TabsTrigger value="pending-tasks" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">Pending At Me</TabsTrigger>
+            <TabsTrigger value="history" className="data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none">My History</TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="flex-grow pt-6">
+          <TabsContent value="dashboard">
+            Dashboard content will go here.
+          </TabsContent>
+          <TabsContent value="all-policies">
+            <AllPoliciesTab />
+          </TabsContent>
+          <TabsContent value="pending-tasks">
+            Pending tasks will be shown here.
+          </TabsContent>
+           <TabsContent value="history">
+            Your history will be shown here.
+          </TabsContent>
+        </div>
+      </Tabs>
     </div>
   );
 }
+
