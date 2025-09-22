@@ -113,11 +113,6 @@ export default function ProjectInsurancePage() {
                 <Eye className="mr-2 h-4 w-4" /> View All Policies
               </Button>
             </Link>
-             <Link href="/insurance/project/history">
-              <Button variant="outline">
-                <History className="mr-2 h-4 w-4" /> History
-              </Button>
-            </Link>
             <Link href="/insurance/project/new">
               <Button disabled={!canAdd}>
                 <Plus className="mr-2 h-4 w-4" /> Add New Policy

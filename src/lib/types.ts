@@ -119,8 +119,8 @@ export const permissionModules = {
   },
   'Insurance': {
     'View Module': [],
-    'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
-    'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew'],
+    'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],
+    'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History', 'Mark as Not Required'],
     'Premium Due': ['View'],
     'Maturity Due': ['View'],
     'Settings': ['View'],
