@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldAlert, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert, Eye, CalendarClock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -108,6 +108,11 @@ export default function ProjectInsurancePage() {
             <p className="text-sm text-muted-foreground">Manage all project-specific insurance policies.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/insurance/project/premium-due">
+              <Button variant="outline">
+                <CalendarClock className="mr-2 h-4 w-4" /> Premium Due
+              </Button>
+            </Link>
              <Link href="/insurance/project/all-policies">
               <Button variant="outline">
                 <Eye className="mr-2 h-4 w-4" /> View All Policies
