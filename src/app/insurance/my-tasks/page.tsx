@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Check } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Check, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -17,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { syncInsuranceTasks } from '../actions';
 
 export default function MyTasksPage() {
     const { can, isLoading: authLoading } = useAuthorization();
@@ -26,10 +28,11 @@ export default function MyTasksPage() {
 
     const [tasks, setTasks] = useState<InsuranceTask[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSyncing, setIsSyncing] = useState(false);
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    useEffect(() => {
+    const fetchTasks = () => {
         if (!user || !canViewPage) {
             setIsLoading(false);
             return;
@@ -52,7 +55,12 @@ export default function MyTasksPage() {
             setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return unsubscribe;
+    }
+    
+    useEffect(() => {
+        const unsubscribe = fetchTasks();
+        return () => unsubscribe && unsubscribe();
     }, [user, canViewPage, toast]);
     
     const handleMarkAsComplete = async (taskId: string) => {
@@ -68,6 +76,23 @@ export default function MyTasksPage() {
 
     const handleRowClick = (policyId: string) => {
         router.push(`/insurance/personal/${policyId}`);
+    };
+
+    const handleSync = async () => {
+        if (!user) return;
+        setIsSyncing(true);
+        try {
+            const result = await syncInsuranceTasks(user.id);
+            if (result.success) {
+                toast({ title: 'Sync Complete', description: result.message });
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (e: any) {
+            toast({ title: 'Sync Failed', description: e.message, variant: 'destructive' });
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     if (authLoading || (isLoading && canViewPage)) {
@@ -112,10 +137,14 @@ export default function MyTasksPage() {
                         A list of all insurance-related tasks assigned to you.
                     </p>
                 </div>
+                 <Button onClick={handleSync} disabled={isSyncing}>
+                    {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    Sync Tasks
+                </Button>
             </div>
             
             <Tabs defaultValue="pending">
-                <TabsList>
+                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="pending">Pending ({pendingTasks.length})</TabsTrigger>
                     <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
                 </TabsList>
