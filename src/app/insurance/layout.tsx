@@ -47,7 +47,7 @@ export default function InsuranceLayout({
     { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due', permission: can('View', 'Insurance.Maturity Due') },
   ];
   
-  const showSubItems = pathname.startsWith('/insurance/personal');
+  const showSubItems = pathname.startsWith('/insurance/personal') || pathname === '/insurance/premium-due' || pathname === '/insurance/maturity-due';
   const showSettingsSubItems = pathname.startsWith('/insurance/settings');
 
 
@@ -70,7 +70,7 @@ export default function InsuranceLayout({
                   <TooltipTrigger asChild>
                     <Link href={item.href}>
                       <Button
-                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href) && !pathname.startsWith('/insurance/settings')) ? 'secondary' : 'ghost'}
+                        variant={pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href) && !pathname.startsWith('/insurance/settings') && item.href !== '/insurance/personal') || (item.href === '/insurance/personal' && showSubItems) ? 'secondary' : 'ghost'}
                         className={cn(
                           'w-full justify-start',
                           !isExpanded && 'h-10 w-10 p-0'
