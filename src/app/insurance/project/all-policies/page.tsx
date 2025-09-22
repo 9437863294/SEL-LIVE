@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,6 +15,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useRouter } from 'next/navigation';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function AllProjectPoliciesPage() {
   const { toast } = useToast();
@@ -22,6 +24,13 @@ export default function AllProjectPoliciesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [filters, setFilters] = useState({
+    search: '',
+    assetName: 'all',
+    insuranceCompany: 'all',
+    policyCategory: 'all',
+  });
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
 
@@ -62,6 +71,28 @@ export default function AllProjectPoliciesPage() {
     if (typeof amount !== 'number') return 'N/A';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
+
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
+      setFilters(prev => ({...prev, [key]: value}));
+  };
+
+  const filteredPolicies = useMemo(() => {
+    return policies.filter(policy => {
+        const searchMatch = filters.search === '' || policy.policy_no.toLowerCase().includes(filters.search.toLowerCase());
+        const assetMatch = filters.assetName === 'all' || policy.assetName === filters.assetName;
+        const companyMatch = filters.insuranceCompany === 'all' || policy.insurance_company === filters.insuranceCompany;
+        const categoryMatch = filters.policyCategory === 'all' || policy.policy_category === filters.policyCategory;
+
+        return searchMatch && assetMatch && companyMatch && categoryMatch;
+    });
+  }, [policies, filters]);
+
+  const filterOptions = useMemo(() => {
+    const assetNames = [...new Set(policies.map(p => p.assetName))];
+    const companies = [...new Set(policies.map(p => p.insurance_company))];
+    const categories = [...new Set(policies.map(p => p.policy_category))];
+    return { assetNames, companies, categories };
+  }, [policies]);
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
@@ -105,6 +136,36 @@ export default function AllProjectPoliciesPage() {
             </div>
         </div>
       </div>
+
+       <Card className="mb-6">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search Policy No..." className="pl-8" value={filters.search} onChange={(e) => handleFilterChange('search', e.target.value)} />
+            </div>
+            <Select value={filters.assetName} onValueChange={(v) => handleFilterChange('assetName', v)}>
+                <SelectTrigger><SelectValue placeholder="Filter by Asset..." /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Assets</SelectItem>
+                    {filterOptions.assetNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+             <Select value={filters.insuranceCompany} onValueChange={(v) => handleFilterChange('insuranceCompany', v)}>
+                <SelectTrigger><SelectValue placeholder="Filter by Company..." /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Companies</SelectItem>
+                    {filterOptions.companies.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+             <Select value={filters.policyCategory} onValueChange={(v) => handleFilterChange('policyCategory', v)}>
+                <SelectTrigger><SelectValue placeholder="Filter by Category..." /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {filterOptions.categories.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        </CardContent>
+      </Card>
       
       <Card>
         <CardContent className="p-0">
@@ -126,8 +187,8 @@ export default function AllProjectPoliciesPage() {
                 Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
-              ) : policies.length > 0 ? (
-                policies.map(policy => (
+              ) : filteredPolicies.length > 0 ? (
+                filteredPolicies.map(policy => (
                   <TableRow key={policy.id} onClick={() => handleRowClick(policy.assetId)} className="cursor-pointer">
                       <TableCell className="font-medium">{policy.assetName}</TableCell>
                       <TableCell>{policy.policy_category}</TableCell>
@@ -142,7 +203,7 @@ export default function AllProjectPoliciesPage() {
               ) : (
                  <TableRow>
                     <TableCell colSpan={8} className="text-center h-24">
-                        No insurance policies found.
+                        No insurance policies found for the selected filters.
                     </TableCell>
                  </TableRow>
               )}
