@@ -85,6 +85,7 @@ export default function MyTasksPage() {
             const result = await syncInsuranceTasks(user.id);
             if (result.success) {
                 toast({ title: 'Sync Complete', description: result.message });
+                fetchTasks(); // Re-fetch tasks after a successful sync
             } else {
                 throw new Error(result.message);
             }
