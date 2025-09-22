@@ -16,16 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
-const slugify = (text: string) => {
-    if (!text) return '';
-    return text.toString().toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-')
-      .replace(/^-+/, '')
-      .replace(/-+$/, '');
-}
-
 export default function ProjectInsurancePage() {
   const { toast } = useToast();
   const router = useRouter();
