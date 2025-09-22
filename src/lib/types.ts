@@ -694,3 +694,15 @@ export type PolicyRenewal = {
   renewalCopyUrl?: string;
   renewedBy: string; // User ID
 };
+
+export type InsuranceTask = {
+  id: string;
+  policyId: string;
+  policyNo: string;
+  insuredPerson: string;
+  dueDate: any; // Firestore Timestamp
+  status: 'Pending' | 'Completed';
+  assignedTo: string; // User ID
+  createdAt: any; // Firestore Timestamp
+  taskType: 'Premium Due' | 'Maturity Due';
+};
