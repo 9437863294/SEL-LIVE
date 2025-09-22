@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,15 +15,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, addDoc, collection, Timestamp, runTransaction } from 'firebase/firestore';
-import { Loader2, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
 import type { ProjectInsurancePolicy } from '@/lib/types';
 import { format, addYears, addMonths, addDays } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface ProjectRenewalDialogProps {
   isOpen: boolean;
@@ -35,6 +37,7 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
   const { toast } = useToast();
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
+  const [renewalCopy, setRenewalCopy] = useState<File | null>(null);
   
   const [renewalData, setRenewalData] = useState({
     newPolicyNo: policy.policy_no,
@@ -57,6 +60,7 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
         newTenureYears: policy.tenure_years,
         newTenureMonths: policy.tenure_months,
       });
+      setRenewalCopy(null);
     }
   }, [isOpen, policy]);
   
@@ -80,6 +84,12 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
       setRenewalData(prev => ({...prev, newStartDate: date || new Date()}));
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setRenewalCopy(e.target.files[0]);
+    }
+  };
+
   const handleSave = async () => {
     if (!user || !newEndDate) {
       toast({ title: "Error", description: "User not logged in or missing renewal details.", variant: "destructive" });
@@ -88,6 +98,14 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
     setIsSaving(true);
     
     try {
+        let renewalCopyUrl: string | undefined = undefined;
+        if (renewalCopy) {
+            const storagePath = `project-renewals/${policy.id}/${renewalCopy.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, renewalCopy);
+            renewalCopyUrl = await getDownloadURL(storageRef);
+        }
+
         await runTransaction(db, async (transaction) => {
             const policyRef = doc(db, 'project_insurance_policies', policy.id);
             const historyRef = doc(collection(db, 'project_insurance_policies', policy.id, 'history'));
@@ -101,6 +119,7 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
                 sumInsured: policy.sum_insured,
                 startDate: policy.insurance_start_date,
                 endDate: policy.insured_until,
+                renewalCopyUrl: renewalCopyUrl,
             };
             transaction.set(historyRef, oldPolicyData);
             
@@ -179,6 +198,19 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
             <div className="space-y-2">
               <Label>New End Date (Auto-calculated)</Label>
               <Input value={newEndDate ? format(newEndDate, 'dd MMM, yyyy') : 'N/A'} readOnly />
+            </div>
+            <div className="space-y-2">
+              <Label>Renewal Copy</Label>
+              <Input type="file" onChange={handleFileChange} />
+              {renewalCopy && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <FileIcon className="h-3 w-3" />
+                    <span>{renewalCopy.name}</span>
+                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setRenewalCopy(null)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+              )}
             </div>
         </div>
         <DialogFooter>

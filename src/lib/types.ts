@@ -1,4 +1,5 @@
 
+
 import { z } from 'zod';
 
 export type Email = {
@@ -676,6 +677,7 @@ export type ProjectPolicyRenewal = {
   startDate: any;
   endDate: any;
   renewedBy: string;
+  renewalCopyUrl?: string;
 };
 
 
