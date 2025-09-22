@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -62,19 +61,17 @@ export default function MyTasksPage() {
         }
         setIsLoading(false);
     };
-
-    useEffect(() => {
-        const fetchWorkflow = async () => {
-            const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
-            if(workflowDoc.exists()){
-                setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
-            }
+    
+    const fetchWorkflow = async () => {
+        const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+        if(workflowDoc.exists()){
+            setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
-        fetchWorkflow();
-    }, []);
+    }
 
     useEffect(() => {
         if (user && canViewPage) {
+            fetchWorkflow();
             fetchTasks(); 
 
             const tasksQuery = query(
