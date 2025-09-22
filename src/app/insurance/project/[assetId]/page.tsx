@@ -13,6 +13,8 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { ProjectInsurancePolicy, InsuredAsset, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function AssetPoliciesPage() {
   const { assetId } = useParams() as { assetId: string };
@@ -28,50 +30,51 @@ export default function AssetPoliciesPage() {
   const canViewPage = can('View', 'Insurance.Project Insurance');
   const canAddPolicy = can('Add', 'Insurance.Project Insurance');
 
-  const fetchAssetData = async () => {
-    if (!assetId) return;
-    setIsLoading(true);
-    try {
-      const assetDocRef = doc(db, 'insuredAssets', assetId);
-      const assetDocSnap = await getDoc(assetDocRef);
-      if (!assetDocSnap.exists()) {
-        toast({ title: "Error", description: "Asset not found.", variant: "destructive" });
-        router.push('/insurance/project');
-        return;
-      }
-      const assetData = { id: assetDocSnap.id, ...assetDocSnap.data() } as InsuredAsset;
-      setAsset(assetData);
-
-      if (assetData.type === 'Project' && assetData.projectId) {
-        const projectDocRef = doc(db, 'projects', assetData.projectId);
-        const projectDocSnap = await getDoc(projectDocRef);
-        if (projectDocSnap.exists()) {
-          setProject(projectDocSnap.data() as Project);
-        }
-      }
-
-      const policiesQuery = query(collection(db, 'project_insurance_policies'), where('assetId', '==', assetId));
-      const policiesSnapshot = await getDocs(policiesQuery);
-      const policiesData = policiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
-      
-      setPolicies(policiesData);
-
-    } catch (error) {
-      console.error("Error fetching asset policies:", error);
-      toast({ title: 'Error', description: 'Failed to fetch asset policies.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (canViewPage) {
-      fetchAssetData();
-    } else {
-      setIsLoading(false);
+    const fetchAssetData = async () => {
+      if (!assetId) return;
+      setIsLoading(true);
+      try {
+        const assetDocRef = doc(db, 'insuredAssets', assetId);
+        const assetDocSnap = await getDoc(assetDocRef);
+        if (!assetDocSnap.exists()) {
+          toast({ title: "Error", description: "Asset not found.", variant: "destructive" });
+          router.push('/insurance/project');
+          return;
+        }
+        const assetData = { id: assetDocSnap.id, ...assetDocSnap.data() } as InsuredAsset;
+        setAsset(assetData);
+
+        if (assetData.type === 'Project' && assetData.projectId) {
+          const projectDocRef = doc(db, 'projects', assetData.projectId);
+          const projectDocSnap = await getDoc(projectDocRef);
+          if (projectDocSnap.exists()) {
+            setProject(projectDocSnap.data() as Project);
+          }
+        }
+
+        const policiesQuery = query(collection(db, 'project_insurance_policies'), where('assetId', '==', assetId));
+        const policiesSnapshot = await getDocs(policiesQuery);
+        const policiesData = policiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
+      
+        setPolicies(policiesData);
+
+      } catch (error) {
+        console.error("Error fetching asset policies:", error);
+        toast({ title: 'Error', description: 'Failed to fetch asset policies.', variant: 'destructive' });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    if (!isAuthLoading) {
+      if (canViewPage) {
+        fetchAssetData();
+      } else {
+        setIsLoading(false);
+      }
     }
-  }, [assetId, isAuthLoading, canViewPage]);
+  }, [assetId, isAuthLoading, canViewPage, router, toast]);
 
   const formatDate = (date: any) => {
     if (!date) return 'N/A';
@@ -97,7 +100,7 @@ export default function AssetPoliciesPage() {
   const assetSite = asset?.type === 'Project' && project ? project.location : asset?.location;
 
   return (
-    <div className="w-full p-4 font-sans">
+    <div className="w-full p-4">
       <div className="flex items-center justify-between mb-4 no-print">
         <div className="flex items-center gap-2">
            <Link href="/insurance/project">
@@ -112,49 +115,57 @@ export default function AssetPoliciesPage() {
         </div>
       </div>
       
-      <div className="border border-blue-800 p-4">
-          <div className="text-center font-semibold mb-6">
-              Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}
-          </div>
-          
-          <div className="grid grid-cols-10 gap-4 text-xs font-bold border-b pb-2">
-            <div className="col-span-1">Policy Category</div>
-            <div className="col-span-1">Policy No.</div>
-            <div className="col-span-1">Insurance Company</div>
-            <div className="text-right">Premium</div>
-            <div className="text-right">Sum Insured</div>
-            <div className="text-center">Start Date</div>
-            <div className="text-center">Years</div>
-            <div className="text-center">Months</div>
-            <div className="text-center">Insured Until</div>
-            <div className="col-span-1">Status</div>
-          </div>
-
-          {isLoading ? (
-            <div className="mt-2">
-              <Skeleton className="h-8 w-full" />
-            </div>
-          ) : policies.length > 0 ? (
-            policies.map(policy => (
-              <div key={policy.id} className="grid grid-cols-10 gap-4 text-xs py-2 border-b">
-                  <div className="col-span-1">{policy.policy_category}</div>
-                  <div className="col-span-1">{policy.policy_no}</div>
-                  <div className="col-span-1">{policy.insurance_company}</div>
-                  <div className="text-right">{formatCurrency(policy.premium)}</div>
-                  <div className="text-right">{formatCurrency(policy.sum_insured)}</div>
-                  <div className="text-center">{formatDate(policy.insurance_start_date)}</div>
-                  <div className="text-center">{policy.tenure_years}</div>
-                  <div className="text-center">{policy.tenure_months}</div>
-                  <div className="text-center">{formatDate(policy.insured_until)}</div>
-                  <div className="col-span-1">{policy.status}</div>
-              </div>
-            ))
-          ) : (
-             <div className="text-center py-8 text-sm text-gray-500">
-                No insurance policies found for this asset.
-             </div>
-          )}
-      </div>
+      <Card>
+        <CardHeader className="text-center">
+            <CardTitle>Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Policy Category</TableHead>
+                <TableHead>Policy No.</TableHead>
+                <TableHead>Insurance Company</TableHead>
+                <TableHead>Premium</TableHead>
+                <TableHead>Sum Insured</TableHead>
+                <TableHead>Start Date</TableHead>
+                <TableHead>Years</TableHead>
+                <TableHead>Months</TableHead>
+                <TableHead>Insured Until</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={10}><Skeleton className="h-8 w-full" /></TableCell>
+                </TableRow>
+              ) : policies.length > 0 ? (
+                policies.map(policy => (
+                  <TableRow key={policy.id}>
+                      <TableCell>{policy.policy_category}</TableCell>
+                      <TableCell>{policy.policy_no}</TableCell>
+                      <TableCell>{policy.insurance_company}</TableCell>
+                      <TableCell>{formatCurrency(policy.premium)}</TableCell>
+                      <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
+                      <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
+                      <TableCell>{policy.tenure_years}</TableCell>
+                      <TableCell>{policy.tenure_months}</TableCell>
+                      <TableCell>{formatDate(policy.insured_until)}</TableCell>
+                      <TableCell>{policy.status}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                 <TableRow>
+                    <TableCell colSpan={10} className="text-center h-24">
+                        No insurance policies found for this asset.
+                    </TableCell>
+                 </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
