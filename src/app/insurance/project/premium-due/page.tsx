@@ -3,13 +3,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCw, CalendarClock, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, RotateCw, CalendarClock, ShieldAlert, MoreHorizontal, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, updateDoc, doc } from 'firebase/firestore';
 import type { ProjectInsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, isPast, isWithinInterval, addDays } from 'date-fns';
@@ -17,6 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { ProjectRenewalDialog } from '@/components/ProjectRenewalDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function ProjectPremiumDuePage() {
   const { toast } = useToast();
@@ -30,6 +32,8 @@ export default function ProjectPremiumDuePage() {
   
   const canViewPage = can('View', 'Insurance.Project Insurance');
   const canRenewPolicy = can('Renew', 'Insurance.Project Insurance');
+  const canMarkNotRequired = can('Mark as Not Required', 'Insurance.Project Insurance');
+
 
   const fetchPolicies = async () => {
     setIsLoading(true);
@@ -40,7 +44,7 @@ export default function ProjectPremiumDuePage() {
       
       const activePolicies = policiesData
         .filter(p => p.status === 'Active' && p.insured_until)
-        .sort((a, b) => a.insured_until.toDate().getTime() - b.insured_until.toDate().getTime());
+        .sort((a, b) => a.insured_until!.toDate().getTime() - b.insured_until!.toDate().getTime());
         
       setPolicies(activePolicies);
     } catch (error) {
@@ -63,9 +67,22 @@ export default function ProjectPremiumDuePage() {
     const date = expiryDate.toDate();
     if (isPast(date)) return { text: 'Expired', variant: 'destructive' as const, isDue: true };
     if (isWithinInterval(date, { start: new Date(), end: addDays(new Date(), 30) })) {
-      return { text: 'Expires Soon', variant: 'default' as const, isDue: true };
+      return { text: 'Expires Soon', variant: 'destructive' as const, isDue: true };
     }
-    return { text: 'Active', variant: 'secondary' as const, isDue: false };
+    return { text: 'Active', variant: 'default' as const, isDue: false };
+  };
+  
+  const handleMarkNotRequired = async (policyId: string) => {
+    try {
+      await updateDoc(doc(db, 'project_insurance_policies', policyId), {
+        status: 'Not Required'
+      });
+      toast({ title: 'Success', description: 'Policy marked as not required.' });
+      fetchPolicies(); // Refresh data
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update policy status.', variant: 'destructive' });
+      console.error("Error updating policy status:", error);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -154,9 +171,43 @@ export default function ProjectPremiumDuePage() {
                         <TableCell>{formatDate(policy.insured_until)}</TableCell>
                         <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
                         <TableCell className="text-right">
-                            <Button size="sm" disabled={!status.isDue || !canRenewPolicy} onClick={() => handleRenewClick(policy)}>
-                                <RotateCw className="mr-2 h-4 w-4" /> Renew
-                            </Button>
+                            <AlertDialog>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                            <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                            onSelect={() => handleRenewClick(policy)}
+                                            disabled={!status.isDue || !canRenewPolicy}
+                                        >
+                                            <RotateCw className="mr-2 h-4 w-4" /> Renew
+                                        </DropdownMenuItem>
+                                        <AlertDialogTrigger asChild>
+                                            <DropdownMenuItem
+                                                className="text-destructive"
+                                                disabled={!canMarkNotRequired}
+                                            >
+                                                <XCircle className="mr-2 h-4 w-4" /> Mark as Not Required
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This will mark the policy "{policy.policy_no}" as not required and it will be hidden from this list.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleMarkNotRequired(policy.id)}>Confirm</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
                         </TableCell>
                       </TableRow>
                     );
