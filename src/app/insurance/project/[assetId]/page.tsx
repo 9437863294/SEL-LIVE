@@ -4,11 +4,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -75,12 +73,6 @@ export default function AssetPoliciesPage() {
     }
   }, [assetId, isAuthLoading, canViewPage]);
 
-  const handleRowClick = (policyId: string) => {
-    // This is where you'd navigate to a more detailed view of a single policy if you had one.
-    // For now, this is just a placeholder.
-    // router.push(`/insurance/project/policy/${policyId}`);
-  };
-
   const formatDate = (date: any) => {
     if (!date) return 'N/A';
     const d = date.toDate ? date.toDate() : new Date(date);
@@ -101,25 +93,6 @@ export default function AssetPoliciesPage() {
     );
   }
   
-  if (!canViewPage) {
-      return (
-          <div className="w-full p-4">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h1 className="text-xl font-bold">Asset Policies</h1>
-                </div>
-              </div>
-              <Card>
-                <CardHeader>
-                    <CardTitle>Access Denied</CardTitle>
-                    <CardDescription>You do not have permission to view project insurance policies.</CardDescription>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
-              </Card>
-          </div>
-      );
-  }
-
   const assetName = asset?.type === 'Project' && project ? project.projectName : asset?.name;
   const assetSite = asset?.type === 'Project' && project ? project.location : asset?.location;
 
