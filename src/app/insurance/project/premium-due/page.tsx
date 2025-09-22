@@ -34,10 +34,15 @@ export default function ProjectPremiumDuePage() {
   const fetchPolicies = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'project_insurance_policies'), where('status', '==', 'Active'), orderBy('insured_until', 'asc'));
+      const q = query(collection(db, 'project_insurance_policies'));
       const querySnapshot = await getDocs(q);
       const policiesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
-      setPolicies(policiesData);
+      
+      const activePolicies = policiesData
+        .filter(p => p.status === 'Active' && p.insured_until)
+        .sort((a, b) => a.insured_until.toDate().getTime() - b.insured_until.toDate().getTime());
+        
+      setPolicies(activePolicies);
     } catch (error) {
       console.error("Error fetching policies:", error);
       toast({ title: 'Error', description: 'Failed to fetch insurance policies.', variant: 'destructive' });
