@@ -36,6 +36,7 @@ export default function AssetPoliciesPage() {
       const assetDocSnap = await getDoc(assetDocRef);
       if (!assetDocSnap.exists()) {
         toast({ title: "Error", description: "Asset not found.", variant: "destructive" });
+        router.push('/insurance/project');
         return;
       }
       const assetData = { id: assetDocSnap.id, ...assetDocSnap.data() } as InsuredAsset;
@@ -116,7 +117,6 @@ export default function AssetPoliciesPage() {
               Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}
           </div>
           
-          {/* Header Row */}
           <div className="grid grid-cols-10 gap-4 text-xs font-bold border-b pb-2">
             <div className="col-span-1">Policy Category</div>
             <div className="col-span-1">Policy No.</div>
@@ -130,7 +130,6 @@ export default function AssetPoliciesPage() {
             <div className="col-span-1">Status</div>
           </div>
 
-          {/* Data Rows */}
           {isLoading ? (
             <div className="mt-2">
               <Skeleton className="h-8 w-full" />
