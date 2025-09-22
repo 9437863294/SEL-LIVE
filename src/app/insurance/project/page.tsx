@@ -10,11 +10,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import type { InsuredAsset, Project } from '@/lib/types';
+import type { InsuredAsset, Project, ProjectInsurancePolicy } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { addDays, isWithinInterval } from 'date-fns';
+
+interface EnrichedAsset extends InsuredAsset {
+  policyCount: number;
+  activePolicies: number;
+  expiringPolicies: number;
+}
 
 export default function ProjectInsurancePage() {
   const { toast } = useToast();
@@ -23,6 +30,7 @@ export default function ProjectInsurancePage() {
   
   const [assets, setAssets] = useState<InsuredAsset[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
@@ -40,18 +48,40 @@ export default function ProjectInsurancePage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [assetsSnap, projectsSnap] = await Promise.all([
+      const [assetsSnap, projectsSnap, policiesSnap] = await Promise.all([
         getDocs(collection(db, 'insuredAssets')),
         getDocs(collection(db, 'projects')),
+        getDocs(collection(db, 'project_insurance_policies')),
       ]);
       setAssets(assetsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
       setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+      setPolicies(policiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy)));
     } catch (error) {
       console.error("Error fetching assets:", error);
       toast({ title: 'Error', description: 'Failed to fetch insurable assets.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
+
+  const enrichedAssets = useMemo((): EnrichedAsset[] => {
+    return assets.map(asset => {
+      const assetPolicies = policies.filter(p => p.assetId === asset.id);
+      const activePolicies = assetPolicies.filter(p => p.status === 'Active');
+      
+      const expiringPolicies = activePolicies.filter(p => {
+        if (!p.insured_until) return false;
+        const expiryDate = p.insured_until.toDate();
+        return isWithinInterval(expiryDate, { start: new Date(), end: addDays(new Date(), 30) });
+      }).length;
+      
+      return {
+        ...asset,
+        policyCount: assetPolicies.length,
+        activePolicies: activePolicies.length,
+        expiringPolicies,
+      };
+    });
+  }, [assets, policies]);
   
   const handleRowClick = (assetId: string) => {
     router.push(`/insurance/project/${assetId}`);
@@ -123,7 +153,9 @@ export default function ProjectInsurancePage() {
                 <TableRow>
                   <TableHead>Asset Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead>Total Policies</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead>Expiring Soon</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -131,22 +163,28 @@ export default function ProjectInsurancePage() {
                 {isLoading ? (
                   Array.from({length: 3}).map((_, i) => (
                       <TableRow key={i}>
-                          <TableCell colSpan={4}><Skeleton className="h-8" /></TableCell>
+                          <TableCell colSpan={6}><Skeleton className="h-8" /></TableCell>
                       </TableRow>
                   ))
-                ) : assets.length > 0 ? (
-                  assets.map(asset => (
+                ) : enrichedAssets.length > 0 ? (
+                  enrichedAssets.map(asset => (
                   <TableRow key={asset.id} onClick={() => handleRowClick(asset.id)} className="cursor-pointer">
                     <TableCell className="font-medium">{getAssetName(asset)}</TableCell>
                     <TableCell>{asset.type}</TableCell>
-                    <TableCell>{getAssetLocation(asset)}</TableCell>
+                    <TableCell>{asset.policyCount}</TableCell>
+                    <TableCell>{asset.activePolicies}</TableCell>
+                    <TableCell>
+                        <Badge variant={asset.expiringPolicies > 0 ? 'destructive' : 'outline'}>
+                            {asset.expiringPolicies}
+                        </Badge>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={asset.status === 'Active' ? 'default' : 'secondary'}>{asset.status}</Badge>
                     </TableCell>
                   </TableRow>
                 ))) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center h-24">No assets found.</TableCell>
+                    <TableCell colSpan={6} className="text-center h-24">No assets found.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
