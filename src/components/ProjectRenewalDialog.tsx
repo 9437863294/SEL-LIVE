@@ -128,10 +128,6 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
     }
   };
   
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
