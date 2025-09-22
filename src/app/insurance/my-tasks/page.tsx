@@ -175,10 +175,10 @@ export default function MyTasksPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
+                                        <TableHead>Created At</TableHead>
                                         <TableHead>Policy No.</TableHead>
                                         <TableHead>Insured Person</TableHead>
                                         <TableHead>Due Date</TableHead>
-                                        <TableHead>Created At</TableHead>
                                         <TableHead>Task Type</TableHead>
                                         <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
@@ -187,10 +187,10 @@ export default function MyTasksPage() {
                                     {pendingTasks.length > 0 ? (
                                         pendingTasks.map(task => (
                                             <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.policyNo}</TableCell>
                                                 <TableCell>{task.insuredPerson}</TableCell>
                                                 <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.taskType}</TableCell>
                                                 <TableCell className="text-right">
                                                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleMarkAsComplete(task.id); }}>
@@ -217,10 +217,10 @@ export default function MyTasksPage() {
                              <Table>
                                 <TableHeader>
                                      <TableRow>
+                                        <TableHead>Created At</TableHead>
                                         <TableHead>Policy No.</TableHead>
                                         <TableHead>Insured Person</TableHead>
                                         <TableHead>Due Date</TableHead>
-                                        <TableHead>Created At</TableHead>
                                         <TableHead>Task Type</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -228,10 +228,10 @@ export default function MyTasksPage() {
                                    {completedTasks.length > 0 ? (
                                         completedTasks.map(task => (
                                             <TableRow key={task.id} className="text-muted-foreground cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.policyNo}</TableCell>
                                                 <TableCell>{task.insuredPerson}</TableCell>
                                                 <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.taskType}</TableCell>
                                             </TableRow>
                                         ))
