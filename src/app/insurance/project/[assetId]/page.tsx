@@ -13,7 +13,7 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { ProjectInsurancePolicy, InsuredAsset, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function AssetPoliciesPage() {
