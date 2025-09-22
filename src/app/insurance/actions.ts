@@ -4,7 +4,7 @@
 import { collection, getDocs, query, where, doc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { InsurancePolicy, ProjectInsurancePolicy, InsuranceTask } from '@/lib/types';
-import { isWithinInterval, addDays, startOfDay, isPast, format as formatDate } from 'date-fns';
+import { isWithinInterval, addDays, startOfDay, isPast, format as formatDate, subDays, setHours, setMinutes, setSeconds } from 'date-fns';
 
 async function processPolicies(
     policies: (InsurancePolicy | ProjectInsurancePolicy)[], 
@@ -29,6 +29,19 @@ async function processPolicies(
                 const taskSnap = await getDocs(q);
 
                 if (taskSnap.empty) {
+                    // Calculate the timestamp for 30 days before the due date at 09:30
+                    let taskCreationDate = subDays(dueDate, 30);
+                    taskCreationDate = setHours(taskCreationDate, 9);
+                    taskCreationDate = setMinutes(taskCreationDate, 30);
+                    taskCreationDate = setSeconds(taskCreationDate, 0);
+
+                    // If the calculated creation date is in the future, use the current time instead.
+                    // This handles policies that are already overdue or are very close to their due date.
+                    const now = new Date();
+                    if (taskCreationDate > now) {
+                        taskCreationDate = now;
+                    }
+                    
                     await addDoc(collection(db, 'insuranceTasks'), {
                         id: taskId,
                         policyId: policy.id,
@@ -37,7 +50,7 @@ async function processPolicies(
                         dueDate: Timestamp.fromDate(dueDate),
                         status: 'Pending',
                         assignedTo: ASSIGNED_USER_ID,
-                        createdAt: Timestamp.now(),
+                        createdAt: Timestamp.fromDate(taskCreationDate),
                         taskType: 'Premium Due',
                     });
                     tasksCreated++;
