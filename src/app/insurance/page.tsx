@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -8,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ShieldAlert } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import AllPoliciesTab from './all-policies/page';
+import AllPoliciesTab from '@/components/AllPoliciesTab';
 
 export default function InsuranceDashboardPage() {
   const { can, isLoading } = useAuthorization();
@@ -69,4 +68,3 @@ export default function InsuranceDashboardPage() {
     </div>
   );
 }
-
