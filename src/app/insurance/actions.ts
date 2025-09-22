@@ -57,7 +57,7 @@ export async function syncInsuranceTasks(userId: string) {
     }
 
     try {
-        const ASSIGNED_USER_ID = '0EaO3vscq1bNqVfASsUa6MNe3nN2'; 
+        const ASSIGNED_USER_ID = userId;
         
         // Fetch Personal Policies
         const personalPoliciesQuery = query(
