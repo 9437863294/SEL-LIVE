@@ -162,6 +162,7 @@ export default function ProjectPremiumDuePage() {
                 ) : policies.length > 0 ? (
                   policies.map(policy => {
                     const status = getStatus(policy.insured_until);
+                    const isDueWithin30Days = status.text === 'Expires Soon';
                     return (
                       <TableRow key={policy.id}>
                         <TableCell className="font-medium">{policy.assetName}</TableCell>
@@ -188,7 +189,7 @@ export default function ProjectPremiumDuePage() {
                                         <AlertDialogTrigger asChild>
                                             <DropdownMenuItem
                                                 className="text-destructive"
-                                                disabled={!canMarkNotRequired || !status.isDue}
+                                                disabled={!canMarkNotRequired || !isDueWithin30Days}
                                             >
                                                 <XCircle className="mr-2 h-4 w-4" /> Mark as Not Required
                                             </DropdownMenuItem>
