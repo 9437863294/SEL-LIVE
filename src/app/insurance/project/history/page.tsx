@@ -129,7 +129,7 @@ export default function ProjectInsuranceHistoryPage() {
                             ) : events.length > 0 ? (
                                 events.map(event => (
                                     <TableRow key={event.id}>
-                                        <TableCell>{format(event.date, 'dd MMM, yyyy')}</TableCell>
+                                        <TableCell>{format(event.date, 'dd MMM, yyyy HH:mm')}</TableCell>
                                         <TableCell>{event.assetName}</TableCell>
                                         <TableCell>{event.policyNo}</TableCell>
                                         <TableCell>{event.eventType}</TableCell>
