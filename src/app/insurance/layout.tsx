@@ -48,10 +48,16 @@ export default function InsuranceLayout({
     { href: '/insurance/maturity-due', icon: ShieldCheck, label: 'Maturity Due', permission: can('View', 'Insurance.Maturity Due') },
   ];
   
-  const showPersonalSubItems = pathname.startsWith('/insurance/personal') || pathname === '/insurance/premium-due' || pathname === '/insurance/maturity-due';
+  const projectInsuranceSubItems = [
+      { href: '/insurance/project/premium-due', icon: CalendarClock, label: 'Premium Due', permission: can('View', 'Insurance.Project Insurance') },
+  ];
+  
+  const showPersonalSubItems = pathname.startsWith('/insurance/personal') || pathname.startsWith('/insurance/premium-due') || pathname.startsWith('/insurance/maturity-due');
+  const showProjectSubItems = pathname.startsWith('/insurance/project');
 
   const visibleNavItems = navItems.filter(item => item.permission);
-  const visibleSubItems = personalInsuranceSubItems.filter(item => item.permission);
+  const visiblePersonalSubItems = personalInsuranceSubItems.filter(item => item.permission);
+  const visibleProjectSubItems = projectInsuranceSubItems.filter(item => item.permission);
 
   return (
     <div className="flex w-full h-full">
@@ -70,7 +76,11 @@ export default function InsuranceLayout({
                     <TooltipTrigger asChild>
                       <Link href={item.href}>
                         <Button
-                          variant={pathname === item.href || (item.href === '/insurance/personal' && showPersonalSubItems) || (item.href !== '/insurance' && pathname.startsWith(item.href) && !showPersonalSubItems) ? 'secondary' : 'ghost'}
+                          variant={
+                            (pathname === item.href || (item.href !== '/insurance' && pathname.startsWith(item.href))) && !(item.href === '/insurance/personal' && showProjectSubItems)
+                             ? 'secondary' 
+                             : 'ghost'
+                          }
                           className={cn(
                             'w-full justify-start',
                             !isExpanded && 'h-10 w-10 p-0'
@@ -100,7 +110,36 @@ export default function InsuranceLayout({
                   </Tooltip>
                   {item.href === '/insurance/personal' && showPersonalSubItems && (
                      <div className={cn("space-y-1", isExpanded ? "pl-4 mt-2 border-l ml-4" : "mt-2")}>
-                       {visibleSubItems.map((subItem) => (
+                       {visiblePersonalSubItems.map((subItem) => (
+                          <Tooltip key={subItem.label}>
+                              <TooltipTrigger asChild>
+                                  <Link href={subItem.href}>
+                                      <Button
+                                          variant={pathname.startsWith(subItem.href) ? 'secondary' : 'ghost'}
+                                          className={cn(
+                                              "w-full justify-start text-sm h-9",
+                                              !isExpanded && "h-10 w-10 p-0"
+                                          )}
+                                      >
+                                        <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                          <subItem.icon className={cn('h-4 w-4', isExpanded && 'mr-3')} />
+                                          <span className={cn(!isExpanded && 'sr-only')}>{subItem.label}</span>
+                                        </div>
+                                      </Button>
+                                  </Link>
+                              </TooltipTrigger>
+                              {!isExpanded && (
+                                  <TooltipContent side="right">
+                                      <p>{subItem.label}</p>
+                                  </TooltipContent>
+                              )}
+                          </Tooltip>
+                       ))}
+                    </div>
+                  )}
+                  {item.href === '/insurance/project' && showProjectSubItems && (
+                     <div className={cn("space-y-1", isExpanded ? "pl-4 mt-2 border-l ml-4" : "mt-2")}>
+                       {visibleProjectSubItems.map((subItem) => (
                           <Tooltip key={subItem.label}>
                               <TooltipTrigger asChild>
                                   <Link href={subItem.href}>

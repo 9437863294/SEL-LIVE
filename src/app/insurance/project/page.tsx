@@ -108,11 +108,6 @@ export default function ProjectInsurancePage() {
             <p className="text-sm text-muted-foreground">Manage all project-specific insurance policies.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/insurance/project/premium-due">
-              <Button variant="outline">
-                <CalendarClock className="mr-2 h-4 w-4" /> Premium Due
-              </Button>
-            </Link>
              <Link href="/insurance/project/all-policies">
               <Button variant="outline">
                 <Eye className="mr-2 h-4 w-4" /> View All Policies
