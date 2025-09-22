@@ -76,7 +76,9 @@ export default function AssetPoliciesPage() {
   }, [assetId, isAuthLoading, canViewPage]);
 
   const handleRowClick = (policyId: string) => {
-    router.push(`/insurance/project/policy/${policyId}`);
+    // This is where you'd navigate to a more detailed view of a single policy if you had one.
+    // For now, this is just a placeholder.
+    // router.push(`/insurance/project/policy/${policyId}`);
   };
 
   const formatDate = (date: any) => {
@@ -163,7 +165,7 @@ export default function AssetPoliciesPage() {
             </div>
           ) : policies.length > 0 ? (
             policies.map(policy => (
-              <div key={policy.id} onClick={() => handleRowClick(policy.id)} className="grid grid-cols-10 gap-4 text-xs py-2 border-b cursor-pointer hover:bg-gray-50">
+              <div key={policy.id} className="grid grid-cols-10 gap-4 text-xs py-2 border-b">
                   <div className="col-span-1">{policy.policy_category}</div>
                   <div className="col-span-1">{policy.policy_no}</div>
                   <div className="col-span-1">{policy.insurance_company}</div>
@@ -185,4 +187,3 @@ export default function AssetPoliciesPage() {
     </div>
   );
 }
-
