@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Edit, Plus, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -74,6 +74,10 @@ export default function AssetPoliciesPage() {
       setIsLoading(false);
     }
   }, [assetId, isAuthLoading, canViewPage]);
+
+  const handleRowClick = (policyId: string) => {
+    router.push(`/insurance/project/policy/${policyId}`);
+  };
 
   const formatDate = (date: any) => {
     if (!date) return 'N/A';
@@ -150,7 +154,7 @@ export default function AssetPoliciesPage() {
           </TableHeader>
           <TableBody>
             {policies.length > 0 ? policies.map(policy => (
-              <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/policy/${policy.id}`)} className="cursor-pointer">
+              <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
                   <TableCell>{policy.policy_category}</TableCell>
                   <TableCell>{policy.policy_no}</TableCell>
                   <TableCell>{policy.insurance_company}</TableCell>
