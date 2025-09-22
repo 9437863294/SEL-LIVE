@@ -178,6 +178,7 @@ export default function MyTasksPage() {
                                         <TableHead>Policy No.</TableHead>
                                         <TableHead>Insured Person</TableHead>
                                         <TableHead>Due Date</TableHead>
+                                        <TableHead>Created At</TableHead>
                                         <TableHead>Task Type</TableHead>
                                         <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
@@ -189,6 +190,7 @@ export default function MyTasksPage() {
                                                 <TableCell>{task.policyNo}</TableCell>
                                                 <TableCell>{task.insuredPerson}</TableCell>
                                                 <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.taskType}</TableCell>
                                                 <TableCell className="text-right">
                                                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleMarkAsComplete(task.id); }}>
@@ -199,7 +201,7 @@ export default function MyTasksPage() {
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="h-24 text-center">
+                                            <TableCell colSpan={6} className="h-24 text-center">
                                                 No pending tasks.
                                             </TableCell>
                                         </TableRow>
@@ -218,6 +220,7 @@ export default function MyTasksPage() {
                                         <TableHead>Policy No.</TableHead>
                                         <TableHead>Insured Person</TableHead>
                                         <TableHead>Due Date</TableHead>
+                                        <TableHead>Created At</TableHead>
                                         <TableHead>Task Type</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -228,12 +231,13 @@ export default function MyTasksPage() {
                                                 <TableCell>{task.policyNo}</TableCell>
                                                 <TableCell>{task.insuredPerson}</TableCell>
                                                 <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                                                 <TableCell>{task.taskType}</TableCell>
                                             </TableRow>
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={4} className="h-24 text-center">
+                                            <TableCell colSpan={5} className="h-24 text-center">
                                                 No completed tasks yet.
                                             </TableCell>
                                         </TableRow>
