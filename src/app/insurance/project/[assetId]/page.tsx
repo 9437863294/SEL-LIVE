@@ -86,21 +86,22 @@ export default function AssetPoliciesPage() {
   };
 
   const formatCurrency = (amount: number) => {
+    if (typeof amount !== 'number') return 'N/A';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full">
+        <div className="w-full p-4">
             <Skeleton className="h-10 w-96 mb-6" />
-            <Skeleton className="h-96 w-full" />
+            <Skeleton className="h-48 w-full" />
         </div>
     );
   }
   
   if (!canViewPage) {
       return (
-          <div className="w-full">
+          <div className="w-full p-4">
               <div className="mb-6 flex items-center justify-between">
                 <div>
                   <h1 className="text-xl font-bold">Asset Policies</h1>
@@ -121,59 +122,67 @@ export default function AssetPoliciesPage() {
   const assetSite = asset?.type === 'Project' && project ? project.location : asset?.location;
 
   return (
-    <div className="w-full">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="w-full p-4 font-sans">
+      <div className="flex items-center justify-between mb-4 no-print">
         <div className="flex items-center gap-2">
            <Link href="/insurance/project">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
-          <h1 className="text-xl font-bold">Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}</h1>
+          <h1 className="text-lg font-semibold">Insurance Policy Report</h1>
         </div>
         <div className="flex items-center gap-2">
             <Link href={`/insurance/project/new?assetId=${assetId}`}>
-                <Button disabled={!canAddPolicy}><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
+                <Button disabled={!canAddPolicy} size="sm"><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
             </Link>
         </div>
       </div>
       
-      <div className="border rounded-lg overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Policy Category</TableHead>
-              <TableHead>Policy No.</TableHead>
-              <TableHead>Insurance Company</TableHead>
-              <TableHead>Premium</TableHead>
-              <TableHead>Sum Insured</TableHead>
-              <TableHead>Start Date</TableHead>
-              <TableHead>Years</TableHead>
-              <TableHead>Months</TableHead>
-              <TableHead>Insured Until</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {policies.length > 0 ? policies.map(policy => (
-              <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
-                  <TableCell>{policy.policy_category}</TableCell>
-                  <TableCell>{policy.policy_no}</TableCell>
-                  <TableCell>{policy.insurance_company}</TableCell>
-                  <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                  <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
-                  <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
-                  <TableCell>{policy.tenure_years}</TableCell>
-                  <TableCell>{policy.tenure_months}</TableCell>
-                  <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                  <TableCell><Badge variant={policy.status === 'Renewable' ? 'default' : 'secondary'}>{policy.status}</Badge></TableCell>
-              </TableRow>
-            )) : (
-                <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">No insurance policies found for this asset.</TableCell>
-                </TableRow>
-            )}
-          </TableBody>
-        </Table>
+      <div className="border border-blue-800 p-4">
+          <div className="text-center font-semibold mb-6">
+              Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}
+          </div>
+          
+          {/* Header Row */}
+          <div className="grid grid-cols-10 gap-4 text-xs font-bold border-b pb-2">
+            <div className="col-span-1">Policy Category</div>
+            <div className="col-span-1">Policy No.</div>
+            <div className="col-span-1">Insurance Company</div>
+            <div className="text-right">Premium</div>
+            <div className="text-right">Sum Insured</div>
+            <div className="text-center">Start Date</div>
+            <div className="text-center">Years</div>
+            <div className="text-center">Months</div>
+            <div className="text-center">Insured Until</div>
+            <div className="col-span-1">Status</div>
+          </div>
+
+          {/* Data Rows */}
+          {isLoading ? (
+            <div className="mt-2">
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : policies.length > 0 ? (
+            policies.map(policy => (
+              <div key={policy.id} onClick={() => handleRowClick(policy.id)} className="grid grid-cols-10 gap-4 text-xs py-2 border-b cursor-pointer hover:bg-gray-50">
+                  <div className="col-span-1">{policy.policy_category}</div>
+                  <div className="col-span-1">{policy.policy_no}</div>
+                  <div className="col-span-1">{policy.insurance_company}</div>
+                  <div className="text-right">{formatCurrency(policy.premium)}</div>
+                  <div className="text-right">{formatCurrency(policy.sum_insured)}</div>
+                  <div className="text-center">{formatDate(policy.insurance_start_date)}</div>
+                  <div className="text-center">{policy.tenure_years}</div>
+                  <div className="text-center">{policy.tenure_months}</div>
+                  <div className="text-center">{formatDate(policy.insured_until)}</div>
+                  <div className="col-span-1">{policy.status}</div>
+              </div>
+            ))
+          ) : (
+             <div className="text-center py-8 text-sm text-gray-500">
+                No insurance policies found for this asset.
+             </div>
+          )}
       </div>
     </div>
   );
 }
+
