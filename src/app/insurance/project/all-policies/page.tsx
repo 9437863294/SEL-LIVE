@@ -1,29 +1,36 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Search } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import type { ProjectInsurancePolicy } from '@/lib/types';
+import type { ProjectInsurancePolicy, ProjectPolicyRenewal } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+
+
+interface EnrichedPolicy extends ProjectInsurancePolicy {
+  history: ProjectPolicyRenewal[];
+}
 
 export default function AllProjectPoliciesPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
+  const [policies, setPolicies] = useState<EnrichedPolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const [filters, setFilters] = useState({
     search: '',
@@ -48,8 +55,18 @@ export default function AllProjectPoliciesPage() {
     try {
       const q = query(collection(db, 'project_insurance_policies'), orderBy('insurance_start_date', 'desc'));
       const querySnapshot = await getDocs(q);
-      const policiesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
+      
+      const policiesDataPromises = querySnapshot.docs.map(async (doc) => {
+        const policy = { id: doc.id, ...doc.data() } as ProjectInsurancePolicy;
+        const historySnapshot = await getDocs(collection(db, 'project_insurance_policies', doc.id, 'history'));
+        const history = historySnapshot.docs.map(hDoc => ({ id: hDoc.id, ...hDoc.data() } as ProjectPolicyRenewal));
+        history.sort((a,b) => b.renewalDate.toMillis() - a.renewalDate.toMillis());
+        return { ...policy, history };
+      });
+      
+      const policiesData = await Promise.all(policiesDataPromises);
       setPolicies(policiesData);
+
     } catch (error) {
       console.error("Error fetching all policies:", error);
       toast({ title: 'Error', description: 'Failed to fetch policies.', variant: 'destructive' });
@@ -57,8 +74,24 @@ export default function AllProjectPoliciesPage() {
     setIsLoading(false);
   };
   
-  const handleRowClick = (assetId: string) => {
-    router.push(`/insurance/project/${assetId}`);
+  const handleRowClick = (assetId: string, event: React.MouseEvent) => {
+    // Navigate only if the click is not on the expansion toggle
+    const target = event.target as HTMLElement;
+    if (!target.closest('[data-toggle-row]')) {
+        router.push(`/insurance/project/${assetId}`);
+    }
+  };
+
+  const toggleRowExpansion = (policyId: string) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(policyId)) {
+        newSet.delete(policyId);
+      } else {
+        newSet.add(policyId);
+      }
+      return newSet;
+    });
   };
 
   const formatDate = (date: any) => {
@@ -172,6 +205,7 @@ export default function AllProjectPoliciesPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12"></TableHead>
                 <TableHead>Asset Name</TableHead>
                 <TableHead>Policy Category</TableHead>
                 <TableHead>Policy No.</TableHead>
@@ -185,24 +219,66 @@ export default function AllProjectPoliciesPage() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8" /></TableCell></TableRow>
+                    <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
               ) : filteredPolicies.length > 0 ? (
                 filteredPolicies.map(policy => (
-                  <TableRow key={policy.id} onClick={() => handleRowClick(policy.assetId)} className="cursor-pointer">
-                      <TableCell className="font-medium">{policy.assetName}</TableCell>
-                      <TableCell>{policy.policy_category}</TableCell>
-                      <TableCell>{policy.policy_no}</TableCell>
-                      <TableCell>{policy.insurance_company}</TableCell>
-                      <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                      <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
-                      <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
-                      <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                  </TableRow>
+                  <Fragment key={policy.id}>
+                    <TableRow onClick={(e) => handleRowClick(policy.assetId, e)} className="cursor-pointer">
+                        <TableCell className="px-2">
+                           <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); toggleRowExpansion(policy.id); }} data-toggle-row>
+                             {expandedRows.has(policy.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                           </Button>
+                        </TableCell>
+                        <TableCell className="font-medium">{policy.assetName}</TableCell>
+                        <TableCell>{policy.policy_category}</TableCell>
+                        <TableCell>{policy.policy_no}</TableCell>
+                        <TableCell>{policy.insurance_company}</TableCell>
+                        <TableCell>{formatCurrency(policy.premium)}</TableCell>
+                        <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
+                        <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
+                        <TableCell>{formatDate(policy.insured_until)}</TableCell>
+                    </TableRow>
+                    {expandedRows.has(policy.id) && (
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableCell colSpan={9} className="p-0">
+                            <div className="p-4">
+                                <h4 className="font-semibold mb-2 ml-2">Renewal History</h4>
+                                {policy.history && policy.history.length > 0 ? (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Renewal Date</TableHead>
+                                                <TableHead>Old Policy No.</TableHead>
+                                                <TableHead>Old Premium</TableHead>
+                                                <TableHead>Old Sum Insured</TableHead>
+                                                <TableHead>Old Period</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {policy.history.map(h => (
+                                                <TableRow key={h.id}>
+                                                    <TableCell>{formatDate(h.renewalDate)}</TableCell>
+                                                    <TableCell>{h.policyNo}</TableCell>
+                                                    <TableCell>{formatCurrency(h.premium)}</TableCell>
+                                                    <TableCell>{formatCurrency(h.sumInsured)}</TableCell>
+                                                    <TableCell>{formatDate(h.startDate)} - {formatDate(h.endDate)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground p-4 text-center">No renewal history for this policy.</p>
+                                )}
+                            </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 ))
               ) : (
                  <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={9} className="text-center h-24">
                         No insurance policies found for the selected filters.
                     </TableCell>
                  </TableRow>
