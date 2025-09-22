@@ -29,11 +29,11 @@ import {
 import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { collection, getDocs, query, where, Timestamp, addDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, Timestamp, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { InsurancePolicy } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { isWithinInterval, addDays, startOfDay, isPast } from 'date-fns';
+import { isWithinInterval, addDays, startOfDay, isPast, format as formatDate } from 'date-fns';
 
 export default function InsuranceLayout({
   children,
@@ -64,19 +64,22 @@ export default function InsuranceLayout({
         if (policy.due_date) {
           const dueDate = policy.due_date.toDate();
           
-          // Create a task if the policy is overdue OR if it's due within the next 30 days.
           const isOverdue = isPast(dueDate);
           const isDueSoon = isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow });
 
           if (isOverdue || isDueSoon) {
             
-            // Check if a task for this policy already exists
-            const taskQuery = query(collection(db, 'insuranceTasks'), where('policyId', '==', policy.id));
-            const taskSnap = await getDocs(taskQuery);
+            // Create a unique ID for the task based on policy and due date
+            const taskId = `${policy.id}-${formatDate(dueDate, 'yyyy-MM-dd')}`;
+            
+            // Check if a task for this specific due date already exists
+            const taskDocRef = doc(db, 'insuranceTasks', taskId);
+            const taskDocSnap = await getDoc(taskDocRef);
 
-            if (taskSnap.empty) { // Only create if no task exists
+            if (!taskDocSnap.exists()) { // Only create if no task exists for this due date
               try {
                 await addDoc(collection(db, 'insuranceTasks'), {
+                  id: taskId, // Use the custom ID
                   policyId: policy.id,
                   policyNo: policy.policy_no,
                   insuredPerson: policy.insured_person,
