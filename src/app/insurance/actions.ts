@@ -72,7 +72,7 @@ export async function syncInsuranceTasks(userId: string) {
     try {
         const ASSIGNED_USER_ID = userId;
         
-        // Fetch Personal Policies
+        // Fetch Personal Policies - Note: Personal policies don't have a status field yet.
         const personalPoliciesQuery = query(
             collection(db, 'insurance_policies'),
             where('due_date', '!=', null)
@@ -84,7 +84,8 @@ export async function syncInsuranceTasks(userId: string) {
         // Fetch Project Policies
         const projectPoliciesQuery = query(
             collection(db, 'project_insurance_policies'),
-            where('insured_until', '!=', null)
+            where('insured_until', '!=', null),
+            where('status', '==', 'Active')
         );
         const projectPoliciesSnap = await getDocs(projectPoliciesQuery);
         const projectPolicies = projectPoliciesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy));
