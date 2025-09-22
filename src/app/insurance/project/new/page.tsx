@@ -12,13 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Loader2, Save, ArrowLeft } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, Save, ArrowLeft, X, File as FileIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, addYears, addMonths } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
-import type { InsuredAsset, InsuranceCompany, PolicyCategory, ProjectInsurancePolicy } from '@/lib/types';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import type { InsuredAsset, InsuranceCompany, PolicyCategory, ProjectInsurancePolicy, Attachment } from '@/lib/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -35,6 +36,7 @@ const policySchema = z.object({
   tenure_months: z.coerce.number().min(0).max(11).default(0),
   insured_until: z.date().optional(),
   status: z.enum(['Active', 'Close', 'Not Required', 'Expired']).default('Active'),
+  attachments: z.custom<File[]>().optional(),
 });
 
 type PolicyFormValues = z.infer<typeof policySchema>;
@@ -46,6 +48,7 @@ export default function NewProjectPolicyPage() {
   const [assets, setAssets] = useState<InsuredAsset[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [policyCategories, setPolicyCategories] = useState<PolicyCategory[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
 
   useEffect(() => {
@@ -109,12 +112,23 @@ export default function NewProjectPolicyPage() {
     }
     
     try {
+      const attachmentUrls: Attachment[] = [];
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const storageRef = ref(storage, `project-insurance/${data.policy_no}/${file.name}`);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+          attachmentUrls.push({ name: file.name, url: downloadURL });
+        }
+      }
+
       const policyData: Omit<ProjectInsurancePolicy, 'id'> = {
         ...data,
         assetName: selectedAsset.name,
         assetType: selectedAsset.type,
         insurance_start_date: data.insurance_start_date ? Timestamp.fromDate(data.insurance_start_date) : null,
         insured_until: data.insured_until ? Timestamp.fromDate(data.insured_until) : null,
+        attachments: attachmentUrls,
       };
 
       await addDoc(collection(db, 'project_insurance_policies'), policyData);
@@ -126,6 +140,13 @@ export default function NewProjectPolicyPage() {
     }
     setIsSaving(false);
   };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+        setSelectedFiles(Array.from(e.target.files));
+      }
+  };
+
 
   const DatePickerField = ({ name, label }: { name: keyof PolicyFormValues, label: string }) => (
     <FormField
@@ -233,6 +254,30 @@ export default function NewProjectPolicyPage() {
                         <ReadOnlyDatePickerField name="insured_until" label="Insured Until" />
                     </CardContent>
                  </Card>
+                 <Card>
+                    <CardHeader><CardTitle>Documents</CardTitle></CardHeader>
+                    <CardContent>
+                        <Label htmlFor="attachments">Upload Documents</Label>
+                        <FormControl>
+                            <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+                        </FormControl>
+                        {selectedFiles.length > 0 && (
+                            <div className="mt-4 space-y-2">
+                                {selectedFiles.map((file, i) => (
+                                    <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                                        <div className="flex items-center gap-2">
+                                            <FileIcon className="w-4 h-4" />
+                                            <span className="text-sm">{file.name}</span>
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             </form>
         </Form>
     </div>

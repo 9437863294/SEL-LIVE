@@ -666,6 +666,7 @@ export type ProjectInsurancePolicy = {
   tenure_months: number;
   insured_until: any;
   status?: 'Active' | 'Close' | 'Not Required' | 'Expired';
+  attachments?: Attachment[];
 };
 
 export type ProjectPolicyRenewal = {
