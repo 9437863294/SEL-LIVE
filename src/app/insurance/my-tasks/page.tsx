@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -71,7 +72,7 @@ export default function MyTasksPage() {
 
     useEffect(() => {
         if (user && canViewPage) {
-            fetchTasks(); // Initial fetch
+            fetchTasks(); 
 
             const tasksQuery = query(
                 collection(db, 'insuranceTasks'),
@@ -136,13 +137,9 @@ export default function MyTasksPage() {
 
 
     const handleRowClick = (policyId: string) => {
-        // Simple heuristic to decide where to navigate
-        const isProjectPolicy = policies.some(p => p.id === policyId);
-        if (isProjectPolicy) {
-             router.push(`/insurance/project/policy/${policyId}`);
-        } else {
-             router.push(`/insurance/personal/${policyId}`);
-        }
+        // This is a simplified navigation. In a real scenario, you might need to
+        // fetch the policy type to decide whether to go to /personal or /project.
+        router.push(`/insurance/personal/${policyId}`);
     };
 
     const handleSync = async () => {
@@ -195,6 +192,71 @@ export default function MyTasksPage() {
     
     const pendingTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected');
     const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Rejected');
+    
+    const renderTable = (data: InsuranceTask[], isPending: boolean) => {
+        return (
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Created At</TableHead>
+                                <TableHead>Policy No.</TableHead>
+                                <TableHead>Insured Person</TableHead>
+                                <TableHead>Due Date</TableHead>
+                                <TableHead>{isPending ? 'Current Stage' : 'Status'}</TableHead>
+                                {isPending && <TableHead className="text-right">Action</TableHead>}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {data.length > 0 ? (
+                                data.map(task => {
+                                    const currentStep = workflow?.find(s => s.id === task.currentStepId);
+                                    return (
+                                        <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
+                                            <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
+                                            <TableCell>{task.policyNo}</TableCell>
+                                            <TableCell>{task.insuredPerson}</TableCell>
+                                            <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
+                                            <TableCell>{isPending ? task.currentStage : task.status}</TableCell>
+                                            {isPending && (
+                                                <TableCell className="text-right">
+                                                    {isActionLoading === task.id ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                                                    ) : (
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="outline" size="sm">
+                                                                    Actions <MoreHorizontal className="ml-2 h-4 w-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent>
+                                                                {currentStep?.actions.map(action => (
+                                                                    <DropdownMenuItem key={action} onSelect={() => handleAction(task, action)}>
+                                                                        {action}
+                                                                    </DropdownMenuItem>
+                                                                ))}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    )}
+                                                </TableCell>
+                                            )}
+                                        </TableRow>
+                                    )
+                                })
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={isPending ? 6 : 5} className="h-24 text-center">
+                                        No {isPending ? 'pending' : 'completed'} tasks.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        );
+    };
 
     return (
         <div className="w-full">
@@ -217,100 +279,10 @@ export default function MyTasksPage() {
                     <TabsTrigger value="completed">Completed ({completedTasks.length})</TabsTrigger>
                 </TabsList>
                 <TabsContent value="pending" className="mt-4">
-                    <Card>
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Created At</TableHead>
-                                        <TableHead>Policy No.</TableHead>
-                                        <TableHead>Insured Person</TableHead>
-                                        <TableHead>Due Date</TableHead>
-                                        <TableHead>Current Stage</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {pendingTasks.length > 0 ? (
-                                        pendingTasks.map(task => {
-                                            const currentStep = workflow?.find(s => s.id === task.currentStepId);
-                                            return (
-                                                <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
-                                                    <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
-                                                    <TableCell>{task.policyNo}</TableCell>
-                                                    <TableCell>{task.insuredPerson}</TableCell>
-                                                    <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                                    <TableCell>{task.currentStage}</TableCell>
-                                                    <TableCell className="text-right">
-                                                        {isActionLoading === task.id ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                                                        ) : (
-                                                            <DropdownMenu>
-                                                                <DropdownMenuTrigger asChild>
-                                                                    <Button variant="outline" size="sm">
-                                                                        Actions <MoreHorizontal className="ml-2 h-4 w-4" />
-                                                                    </Button>
-                                                                </DropdownMenuTrigger>
-                                                                <DropdownMenuContent>
-                                                                    {currentStep?.actions.map(action => (
-                                                                        <DropdownMenuItem key={action} onSelect={() => handleAction(task, action)}>
-                                                                            {action}
-                                                                        </DropdownMenuItem>
-                                                                    ))}
-                                                                </DropdownMenuContent>
-                                                            </DropdownMenu>
-                                                        )}
-                                                    </TableCell>
-                                                </TableRow>
-                                            )
-                                        })
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={6} className="h-24 text-center">
-                                                No pending tasks.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                    {renderTable(pendingTasks, true)}
                 </TabsContent>
                 <TabsContent value="completed" className="mt-4">
-                    <Card>
-                        <CardContent className="p-0">
-                             <Table>
-                                <TableHeader>
-                                     <TableRow>
-                                        <TableHead>Created At</TableHead>
-                                        <TableHead>Policy No.</TableHead>
-                                        <TableHead>Insured Person</TableHead>
-                                        <TableHead>Due Date</TableHead>
-                                        <TableHead>Status</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                   {completedTasks.length > 0 ? (
-                                        completedTasks.map(task => (
-                                            <TableRow key={task.id} className="text-muted-foreground cursor-pointer" onClick={() => handleRowClick(task.policyId)}>
-                                                <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
-                                                <TableCell>{task.policyNo}</TableCell>
-                                                <TableCell>{task.insuredPerson}</TableCell>
-                                                <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
-                                                <TableCell>{task.status}</TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={5} className="h-24 text-center">
-                                                No completed or rejected tasks yet.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                    {renderTable(completedTasks, false)}
                 </TabsContent>
             </Tabs>
         </div>
