@@ -3,83 +3,84 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, CalendarClock, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query } from 'firebase/firestore';
-import type { ProjectInsurancePolicy } from '@/lib/types';
+import { collection, getDocs } from 'firebase/firestore';
+import type { InsuredAsset, Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
+
+const slugify = (text: string) => {
+    if (!text) return '';
+    return text.toString().toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\-]+/g, '')
+      .replace(/\-\-+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+}
 
 export default function ProjectInsurancePage() {
   const { toast } = useToast();
   const router = useRouter();
   const { can, isLoading: authLoading } = useAuthorization();
   
-  const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
+  const [assets, setAssets] = useState<InsuredAsset[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
   const canAdd = can('Add', 'Insurance.Project Insurance');
-  const canEdit = can('Edit', 'Insurance.Project Insurance');
-
-  const fetchPolicies = async () => {
-    setIsLoading(true);
-    try {
-      const policiesSnapshot = await getDocs(collection(db, 'project_insurance_policies'));
-      const policiesData = policiesSnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-              id: doc.id,
-              ...data,
-              insurance_start_date: data.insurance_start_date ? data.insurance_start_date.toDate() : null,
-              insured_until: data.insured_until ? data.insured_until.toDate() : null,
-          } as ProjectInsurancePolicy
-      });
-      setPolicies(policiesData);
-    } catch (error) {
-      console.error("Error fetching policies:", error);
-      toast({ title: 'Error', description: 'Failed to fetch project insurance policies.', variant: 'destructive' });
-    }
-    setIsLoading(false);
-  };
 
   useEffect(() => {
     if (authLoading) return;
     if (canViewPage) {
-      fetchPolicies();
+      fetchData();
     } else {
       setIsLoading(false);
     }
-  }, [authLoading, canViewPage, toast]);
+  }, [authLoading, canViewPage]);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const [assetsSnap, projectsSnap] = await Promise.all([
+        getDocs(collection(db, 'insuredAssets')),
+        getDocs(collection(db, 'projects')),
+      ]);
+      setAssets(assetsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset)));
+      setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+    } catch (error) {
+      console.error("Error fetching assets:", error);
+      toast({ title: 'Error', description: 'Failed to fetch insurable assets.', variant: 'destructive' });
+    }
+    setIsLoading(false);
+  };
   
-  const policiesByProject = useMemo(() => {
-    return policies.reduce((acc, policy) => {
-      const key = policy.assetName || 'Unassigned';
-      if (!acc[key]) {
-        acc[key] = [];
-      }
-      acc[key].push(policy);
-      return acc;
-    }, {} as Record<string, ProjectInsurancePolicy[]>);
-  }, [policies]);
-  
-  const formatDate = (date: Date | null) => {
-    if (!date) return 'N/A';
-    return format(date, 'dd MMM, yyyy');
+  const handleRowClick = (asset: InsuredAsset) => {
+    router.push(`/insurance/project/${asset.id}`);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  const getAssetName = (asset: InsuredAsset) => {
+    if (asset.type === 'Project' && asset.projectId) {
+        return projects.find(p => p.id === asset.projectId)?.projectName || asset.name;
+    }
+    return asset.name;
   };
 
+  const getAssetLocation = (asset: InsuredAsset) => {
+    if (asset.type === 'Project' && asset.projectId) {
+      return projects.find(p => p.id === asset.projectId)?.location || 'N/A';
+    }
+    return asset.location || 'N/A';
+  };
+  
   if (authLoading || (isLoading && canViewPage)) {
     return (
         <div className="w-full">
@@ -125,65 +126,43 @@ export default function ProjectInsurancePage() {
           </div>
         </div>
         
-        {isLoading ? (
-             <div className="space-y-2">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-            </div>
-        ) : Object.keys(policiesByProject).length > 0 ? (
-          <Accordion type="multiple" className="w-full space-y-4" defaultValue={Object.keys(policiesByProject)}>
-            {Object.entries(policiesByProject).map(([projectName, projectPolicies]) => (
-              <AccordionItem value={projectName} key={projectName} className="border rounded-lg bg-card">
-                <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
-                  {projectName}
-                </AccordionTrigger>
-                <AccordionContent className="p-0">
-                  <div className="border-t">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Policy No.</TableHead>
-                          <TableHead>Company</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Premium</TableHead>
-                          <TableHead>Insured Until</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {projectPolicies.map(policy => (
-                          <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.id}`)} className="cursor-pointer">
-                            <TableCell>{policy.policy_no}</TableCell>
-                            <TableCell>{policy.insurance_company}</TableCell>
-                            <TableCell>{policy.policy_category}</TableCell>
-                            <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                            <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                            <TableCell><Badge>{policy.status || 'N/A'}</Badge></TableCell>
-                            <TableCell className="text-right">
-                              <Link href={`/insurance/project/${policy.id}`} onClick={(e) => e.stopPropagation()}>
-                                <Button variant="outline" size="sm" disabled={!canEdit}>
-                                  <Edit className="mr-2 h-4 w-4" /> Details
-                                </Button>
-                              </Link>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        ) : (
-          <Card>
-            <CardContent className="text-center p-12">
-              <p className="text-muted-foreground">No project insurance policies found.</p>
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Asset Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({length: 3}).map((_, i) => (
+                      <TableRow key={i}>
+                          <TableCell colSpan={4}><Skeleton className="h-8" /></TableCell>
+                      </TableRow>
+                  ))
+                ) : assets.length > 0 ? (
+                  assets.map(asset => (
+                  <TableRow key={asset.id} onClick={() => handleRowClick(asset)} className="cursor-pointer">
+                    <TableCell className="font-medium">{getAssetName(asset)}</TableCell>
+                    <TableCell>{asset.type}</TableCell>
+                    <TableCell>{getAssetLocation(asset)}</TableCell>
+                    <TableCell>
+                      <Badge variant={asset.status === 'Active' ? 'default' : 'secondary'}>{asset.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center h-24">No assets found.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </>
   );
