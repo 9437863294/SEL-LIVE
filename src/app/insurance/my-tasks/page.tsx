@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MyTasksPage() {
     const { can, isLoading } = useAuthorization();
-    const canViewPage = can('View My Tasks', 'Insurance');
+    const canViewPage = can('View', 'Insurance.My Tasks');
 
     if (isLoading) {
         return (
