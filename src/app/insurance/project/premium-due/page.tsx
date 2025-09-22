@@ -57,7 +57,7 @@ export default function ProjectPremiumDuePage() {
   useEffect(() => {
     if (!authLoading && canViewPage) {
         fetchPolicies();
-    } else {
+    } else if (!authLoading && !canViewPage) {
         setIsLoading(false);
     }
   }, [authLoading, canViewPage, toast]);
@@ -188,7 +188,7 @@ export default function ProjectPremiumDuePage() {
                                         <AlertDialogTrigger asChild>
                                             <DropdownMenuItem
                                                 className="text-destructive"
-                                                disabled={!canMarkNotRequired}
+                                                disabled={!canMarkNotRequired || !status.isDue}
                                             >
                                                 <XCircle className="mr-2 h-4 w-4" /> Mark as Not Required
                                             </DropdownMenuItem>
