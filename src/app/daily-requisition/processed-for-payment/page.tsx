@@ -31,6 +31,7 @@ export default function ProcessedForPaymentPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const canViewPage = can('View', 'Daily Requisition.Processed for Payment');
+  const canMarkAsReceived = can('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
 
   useEffect(() => {
     if (!isAuthLoading) {
@@ -85,24 +86,24 @@ export default function ProcessedForPaymentPage() {
       );
   }, [entries, searchTerm]);
   
-  const handleMarkAsPaid = async () => {
+  const handleMarkAsReceivedForPayment = async () => {
     if (selectedIds.length === 0) return;
 
     try {
       const batch = writeBatch(db);
       selectedIds.forEach(id => {
         const docRef = doc(db, 'dailyRequisitions', id);
-        batch.update(docRef, { status: 'Paid' });
+        batch.update(docRef, { status: 'Received for Payment' });
       });
       await batch.commit();
       toast({
         title: 'Success',
-        description: `${selectedIds.length} entries marked as paid.`,
+        description: `${selectedIds.length} entries marked as received for payment.`,
       });
       setSelectedIds([]);
       fetchData(); // Refresh data
     } catch (error) {
-      console.error("Error marking entries as paid:", error);
+      console.error("Error marking entries:", error);
       toast({ title: 'Error', description: 'Failed to update entries.', variant: 'destructive' });
     }
   };
@@ -159,9 +160,9 @@ export default function ProcessedForPaymentPage() {
                     <p className="text-sm text-muted-foreground">Requisitions verified and ready for payment processing.</p>
                 </div>
             </div>
-             <Button onClick={handleMarkAsPaid} disabled={selectedIds.length === 0}>
+             <Button onClick={handleMarkAsReceivedForPayment} disabled={selectedIds.length === 0 || !canMarkAsReceived}>
                 <Check className="mr-2 h-4 w-4" />
-                Mark as Paid ({selectedIds.length})
+                Mark as Received for Payment ({selectedIds.length})
             </Button>
         </div>
 
@@ -185,6 +186,7 @@ export default function ProcessedForPaymentPage() {
                               <Checkbox 
                                 checked={selectedIds.length > 0 && selectedIds.length === filteredEntries.length}
                                 onCheckedChange={handleSelectAll}
+                                disabled={!canMarkAsReceived}
                               />
                             </TableHead>
                             <TableHead>Reception No.</TableHead>
@@ -206,6 +208,7 @@ export default function ProcessedForPaymentPage() {
                                       <Checkbox 
                                         checked={selectedIds.includes(entry.id)}
                                         onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
+                                        disabled={!canMarkAsReceived}
                                       />
                                     </TableCell>
                                     <TableCell className="font-medium">{entry.receptionNo}</TableCell>

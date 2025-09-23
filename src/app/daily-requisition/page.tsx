@@ -15,6 +15,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuthorization } from '@/hooks/useAuthorization';
+
 
 interface DailyRequisitionCardProps {
   item: {
@@ -22,6 +24,7 @@ interface DailyRequisitionCardProps {
     text: string;
     href: string;
     description: string;
+    disabled?: boolean;
   };
 }
 
@@ -30,7 +33,7 @@ function DailyRequisitionCard({ item }: DailyRequisitionCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-col items-center text-center gap-4 p-6">
@@ -45,7 +48,7 @@ function DailyRequisitionCard({ item }: DailyRequisitionCardProps) {
         </Card>
     )
 
-    if (item.href === '#') {
+    if (item.href === '#' || item.disabled) {
         return <div className="h-full">{cardContent}</div>;
     }
     
@@ -58,15 +61,59 @@ function DailyRequisitionCard({ item }: DailyRequisitionCardProps) {
 
 
 export default function DailyRequisitionPage() {
+  const { can } = useAuthorization();
   
   const dailyRequisitionItems = [
-    { icon: FilePlus, text: 'Entry Sheet', href: '/daily-requisition/entry-sheet', description: 'Create a new daily requisition.' },
-    { icon: Landmark, text: 'Receiving at Finance', href: '/daily-requisition/receiving-at-finance', description: 'Manage entries received by finance.' },
-    { icon: Receipt, text: 'GST & TDS Verification', href: '/daily-requisition/gst-tds-verification', 'description': 'Verify GST and TDS for received entries.' },
-    { icon: Banknote, text: 'Processed for Payment', href: '/daily-requisition/processed-for-payment', description: 'View requisitions ready for payment.' },
-    { icon: Files, text: 'Manage Documents', href: '/daily-requisition/manage-documents', description: 'Upload and manage documents for requisitions.' },
-    { icon: Settings, text: 'Settings', href: '/daily-requisition/settings', description: 'Configure settings for this module.' },
-  ];
+    { 
+      icon: FilePlus, 
+      text: 'Entry Sheet', 
+      href: '/daily-requisition/entry-sheet', 
+      description: 'Create a new daily requisition.',
+      permission: 'View'
+    },
+    { 
+      icon: Landmark, 
+      text: 'Receiving at Finance', 
+      href: '/daily-requisition/receiving-at-finance', 
+      description: 'Manage entries received by finance.',
+      permission: 'View'
+    },
+    { 
+      icon: Receipt, 
+      text: 'GST & TDS Verification', 
+      href: '/daily-requisition/gst-tds-verification', 
+      description: 'Verify GST and TDS for received entries.',
+      permission: 'View'
+    },
+    { 
+      icon: Banknote, 
+      text: 'Processed for Payment', 
+      href: '/daily-requisition/processed-for-payment', 
+      description: 'View requisitions ready for payment.',
+      permission: 'View'
+    },
+    { 
+      icon: Files, 
+      text: 'Manage Documents', 
+      href: '/daily-requisition/manage-documents', 
+      description: 'Upload and manage documents for requisitions.',
+      permission: 'View'
+    },
+    { 
+      icon: Settings, 
+      text: 'Settings', 
+      href: '/daily-requisition/settings', 
+      description: 'Configure settings for this module.',
+      permission: 'View'
+    },
+  ].map(item => {
+    // Construct the full permission key, e.g., 'Daily Requisition.Entry Sheet'
+    const moduleScope = `Daily Requisition.${item.text}`;
+    return {
+      ...item,
+      disabled: !can(item.permission, moduleScope)
+    };
+  });
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">

@@ -89,7 +89,7 @@ export const permissionModules = {
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
     'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
-    'Processed for Payment': ['View', 'Mark as Paid'],
+    'Processed for Payment': ['View', 'Mark as Received for Payment'],
     'Manage Documents': ['View', 'Upload', 'Mark as Missing', 'Not Required', 'Move to Pending'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
@@ -435,7 +435,7 @@ export type DailyRequisitionEntry = {
   grossAmount: number;
   netAmount: number;
   depNo: string;
-  status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review' | 'Paid';
+  status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review' | 'Received for Payment' | 'Paid';
   receivedById?: string;
   documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
   documentStatusUpdatedById?: string; // ID of user who marked as missing/not required
