@@ -41,10 +41,6 @@ export default function MyTasksPage() {
     const canViewPage = can('View', 'Insurance.My Tasks');
 
     const fetchData = useCallback(async () => {
-      if (!user || !canViewPage) {
-        setIsLoading(false);
-        return;
-      }
       setIsLoading(true);
       try {
         const [workflowDoc, tasksSnapshot] = await Promise.all([
@@ -65,16 +61,39 @@ export default function MyTasksPage() {
       } finally {
         setIsLoading(false);
       }
-    }, [user, canViewPage, toast]);
+    }, [toast]);
     
+    const handleSync = useCallback(async (showToast = false) => {
+        if (!user) return;
+        setIsSyncing(true);
+        try {
+            const result = await syncInsuranceTasks(user.id);
+            if (result.success) {
+                if (showToast) {
+                    toast({ title: 'Sync Complete', description: result.message });
+                }
+                await fetchData(); // Fetch data after a successful sync
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (e: any) {
+             if (showToast) {
+                toast({ title: 'Sync Failed', description: e.message.includes('permission-denied') ? "You don't have permission to perform this action." : e.message, variant: 'destructive' });
+             }
+             console.error("Sync error:", e);
+        } finally {
+            setIsSyncing(false);
+        }
+    }, [user, fetchData, toast]);
+
     useEffect(() => {
         if (authLoading) return;
         if (canViewPage) {
-            fetchData();
+            handleSync(false); // Auto-sync on page load without showing toast
         } else {
             setIsLoading(false);
         }
-    }, [canViewPage, authLoading, fetchData]);
+    }, [canViewPage, authLoading, handleSync]);
     
     const { pendingTasks, completedTasks } = useMemo(() => {
         if (!user) return { pendingTasks: [], completedTasks: [] };
@@ -190,23 +209,6 @@ export default function MyTasksPage() {
         setIsViewDialogOpen(true);
     };
 
-    const handleSync = async () => {
-        if (!user) return;
-        setIsSyncing(true);
-        try {
-            const result = await syncInsuranceTasks(user.id);
-            if (result.success) {
-                toast({ title: 'Sync Complete', description: result.message });
-                fetchData();
-            } else {
-                throw new Error(result.message);
-            }
-        } catch (e: any) {
-            toast({ title: 'Sync Failed', description: e.message.includes('permission-denied') ? "You don't have permission to perform this action." : e.message, variant: 'destructive' });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
 
     const renderTable = (data: InsuranceTask[], isPending: boolean) => {
         if (isLoading) {
@@ -337,7 +339,7 @@ export default function MyTasksPage() {
                             A list of all insurance-related tasks.
                         </p>
                     </div>
-                     <Button onClick={handleSync} disabled={isSyncing}>
+                     <Button onClick={() => handleSync(true)} disabled={isSyncing}>
                         {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                         Sync Tasks
                     </Button>
