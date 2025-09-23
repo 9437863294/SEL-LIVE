@@ -48,9 +48,10 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const [workflowDoc, tasksSnapshot] = await Promise.all([
+        const [workflowDoc, tasksSnapshot, usersSnapshot] = await Promise.all([
           getDoc(doc(db, 'workflows', 'insurance-workflow')),
-          getDocs(collection(db, 'insuranceTasks')) // Fetch all tasks
+          getDocs(collection(db, 'insuranceTasks')),
+          getDocs(collection(db, 'users')) // Fetch all users for name mapping
         ]);
 
         if (workflowDoc.exists()) {
@@ -65,7 +66,7 @@ export default function MyTasksPage() {
           .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
           
         const myCompleted = allTasks
-          .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
+          .filter(t => t.status === 'Completed' || t.status === 'Rejected')
           .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
           
         setPendingTasks(myPending);
@@ -73,6 +74,7 @@ export default function MyTasksPage() {
         
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+        console.error("Error fetching data:", error);
       } finally {
         setIsLoading(false);
       }
@@ -122,7 +124,12 @@ export default function MyTasksPage() {
                         newStage = nextStep.name;
                         newStatus = 'In Progress';
                         newCurrentStepId = nextStep.id;
-                        const assignee = await getAssigneeForStep(nextStep, { projectId: (task as any).projectId || '', departmentId: '', amount: 0 });
+                        const tempRequisitionDataForAssignment = {
+                            projectId: (task as any).projectId || '',
+                            departmentId: '',
+                            amount: (task as any).premium || 0,
+                        };
+                        const assignee = await getAssigneeForStep(nextStep, tempRequisitionDataForAssignment);
                         if (!assignee) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
                         newAssignedToId = assignee;
                         const deadline = await calculateDeadline(new Date(), nextStep.tat);
