@@ -25,7 +25,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp } from 'firebase/firestore';
@@ -44,19 +44,24 @@ export default function NewInternalTransactionPage() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [transactions, setTransactions] = useState<TransactionItem[]>([initialTransactionItem]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const fetchBankAccounts = async () => {
+    const fetchData = async () => {
       try {
-        const accountsSnap = await getDocs(collection(db, 'bankAccounts'));
+        const [accountsSnap, transactionsSnap] = await Promise.all([
+          getDocs(collection(db, 'bankAccounts')),
+          getDocs(collection(db, 'bankExpenses'))
+        ]);
         setBankAccounts(accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount)));
+        setAllTransactions(transactionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
       } catch (error) {
-        toast({ title: 'Error', description: 'Failed to load bank accounts.', variant: 'destructive' });
+        toast({ title: 'Error', description: 'Failed to load initial data.', variant: 'destructive' });
       }
     };
-    fetchBankAccounts();
+    fetchData();
   }, [toast]);
 
   const handleTransactionChange = (id: number, field: keyof TransactionItem, value: any) => {
@@ -72,12 +77,55 @@ export default function NewInternalTransactionPage() {
   const removeTransaction = (id: number) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
+  
+  const getLatestDp = (account: BankAccount, onDate: Date): number => {
+    if (!account.drawingPower || account.drawingPower.length === 0) return 0;
+    const sortedDp = account.drawingPower.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
+    const applicableDp = sortedDp.find(dp => new Date(dp.fromDate) <= startOfDay(onDate));
+    return applicableDp?.amount || 0;
+  };
+
 
   const handleSave = async () => {
     if (!date || transactions.length === 0 || transactions.some(t => !t.fromAccountId || !t.toAccountId || t.amount <= 0 || t.fromAccountId === t.toAccountId)) {
       toast({ title: 'Validation Error', description: 'Please fill all fields correctly for each transaction. "From" and "To" accounts cannot be the same.', variant: 'destructive' });
       return;
     }
+    
+    // --- Balance Validation ---
+    for (const item of transactions) {
+      const fromAccount = bankAccounts.find(acc => acc.id === item.fromAccountId);
+      if (!fromAccount) {
+        toast({ title: 'Validation Error', description: `Source account for a transaction not found.`, variant: 'destructive' });
+        return;
+      }
+      
+      let balance = fromAccount.openingUtilization || 0;
+      if(fromAccount.openingDate) {
+        const historicalTransactions = allTransactions
+            .filter(t => t.accountId === fromAccount.id && t.date.toDate() < startOfDay(date))
+            .sort((a, b) => a.date.toMillis() - b.date.toMillis());
+        
+        historicalTransactions.forEach(t => {
+            balance += (t.type === 'Credit' ? t.amount : -t.amount);
+        });
+      }
+
+      if (fromAccount.accountType === 'Cash Credit') {
+          const availableDp = getLatestDp(fromAccount, date) - balance;
+          if (item.amount > availableDp) {
+              toast({ title: 'Insufficient Funds', description: `Transfer from ${fromAccount.shortName} exceeds available drawing power of ${availableDp.toLocaleString()}.`, variant: 'destructive' });
+              return;
+          }
+      } else { // Current Account
+          if (item.amount > balance) {
+              toast({ title: 'Insufficient Funds', description: `Transfer from ${fromAccount.shortName} exceeds available balance of ${balance.toLocaleString()}.`, variant: 'destructive' });
+              return;
+          }
+      }
+    }
+    // --- End Balance Validation ---
+
     setIsSaving(true);
     
     try {
@@ -94,9 +142,9 @@ export default function NewInternalTransactionPage() {
                 const fromAccountData = fromAccountDoc.data() as BankAccount;
                 const toAccountData = toAccountDoc.data() as BankAccount;
 
-                // Update account balances
-                const newFromBalance = fromAccountData.currentBalance - item.amount;
-                const newToBalance = toAccountData.currentBalance + item.amount;
+                // Update account balances - THIS LOGIC WAS MISSING
+                const newFromBalance = (fromAccountData.currentBalance || 0) - item.amount;
+                const newToBalance = (toAccountData.currentBalance || 0) + item.amount;
                 transaction.update(fromAccountRef, { currentBalance: newFromBalance });
                 transaction.update(toAccountRef, { currentBalance: newToBalance });
 
