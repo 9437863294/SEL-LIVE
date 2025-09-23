@@ -58,14 +58,14 @@ function CategoryCard({ item }: CategoryCardProps) {
                 (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
         >
-            <CardHeader className="items-center text-center">
-                <div className="bg-primary/10 p-4 rounded-full mb-4">
-                  <item.icon className="w-8 h-8 text-primary" />
+            <CardHeader className="items-center text-center p-4">
+                <div className="bg-primary/10 p-3 rounded-full mb-2">
+                  <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg font-semibold">{item.title}</CardTitle>
+                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="text-center">
-                <CardDescription>{item.description}</CardDescription>
+            <CardContent className="text-center p-4 pt-0">
+                <CardDescription className="text-xs">{item.description}</CardDescription>
             </CardContent>
         </Card>
     );
