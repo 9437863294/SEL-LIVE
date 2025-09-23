@@ -85,7 +85,7 @@ export default function ReceivingAtFinancePage() {
     }
   }, [isAuthLoading, canViewPage]);
 
-  const handleStatusUpdate = async (ids: string[], newStatus: 'Pending' | 'Received' | 'Cancelled') => {
+  const handleStatusUpdate = async (ids: string[], newStatus: 'Pending' | 'Received' | 'Rejected') => {
       if (ids.length === 0) return;
       try {
         await Promise.all(
@@ -114,7 +114,7 @@ export default function ReceivingAtFinancePage() {
       }
   };
 
-  const renderTable = (data: EnrichedEntry[], type: 'pending' | 'received' | 'cancelled') => {
+  const renderTable = (data: EnrichedEntry[], type: 'pending' | 'received' | 'rejected') => {
     const filteredData = data.filter(entry => 
       entry.receptionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -197,7 +197,7 @@ export default function ReceivingAtFinancePage() {
                                     {type === 'received' && canCancel && (
                                       <AlertDialogTrigger asChild>
                                           <DropdownMenuItem className="text-destructive">
-                                              <XCircle className="mr-2 h-4 w-4" /> Cancel
+                                              <XCircle className="mr-2 h-4 w-4" /> Reject
                                           </DropdownMenuItem>
                                       </AlertDialogTrigger>
                                     )}
@@ -206,11 +206,11 @@ export default function ReceivingAtFinancePage() {
                              <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                    <AlertDialogDescription>This will cancel the entry. This action can be undone later.</AlertDialogDescription>
+                                    <AlertDialogDescription>This will reject the entry. This action can be undone later.</AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Close</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleStatusUpdate([entry.id], 'Cancelled')}>Confirm</AlertDialogAction>
+                                    <AlertDialogAction onClick={() => handleStatusUpdate([entry.id], 'Rejected')}>Confirm</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -228,9 +228,9 @@ export default function ReceivingAtFinancePage() {
     );
   };
   
-  const pendingEntries = useMemo(() => entries.filter(e => e.status !== 'Received' && e.status !== 'Cancelled'), [entries]);
+  const pendingEntries = useMemo(() => entries.filter(e => e.status === 'Pending'), [entries]);
   const receivedEntries = useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
-  const cancelledEntries = useMemo(() => entries.filter(e => e.status === 'Cancelled'), [entries]);
+  const rejectedEntries = useMemo(() => entries.filter(e => e.status === 'Rejected'), [entries]);
 
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
@@ -271,7 +271,7 @@ export default function ReceivingAtFinancePage() {
         <TabsList>
           <TabsTrigger value="pending">Pending</TabsTrigger>
           <TabsTrigger value="received">Received</TabsTrigger>
-          <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+          <TabsTrigger value="rejected">Rejected</TabsTrigger>
         </TabsList>
         <TabsContent value="pending" className="mt-4">
           {renderTable(pendingEntries, 'pending')}
@@ -279,8 +279,8 @@ export default function ReceivingAtFinancePage() {
         <TabsContent value="received" className="mt-4">
           {renderTable(receivedEntries, 'received')}
         </TabsContent>
-        <TabsContent value="cancelled" className="mt-4">
-          {renderTable(cancelledEntries, 'cancelled')}
+        <TabsContent value="rejected" className="mt-4">
+          {renderTable(rejectedEntries, 'rejected')}
         </TabsContent>
       </Tabs>
     </div>

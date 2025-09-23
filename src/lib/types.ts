@@ -435,7 +435,7 @@ export type DailyRequisitionEntry = {
   grossAmount: number;
   netAmount: number;
   depNo: string;
-  status: 'Pending' | 'Received' | 'Cancelled' | 'Verified' | 'Needs Review' | 'Received for Payment' | 'Paid';
+  status: 'Pending' | 'Received' | 'Rejected' | 'Verified' | 'Needs Review' | 'Received for Payment' | 'Paid';
   receivedById?: string;
   documentStatus?: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
   documentStatusUpdatedById?: string; // ID of user who marked as missing/not required
