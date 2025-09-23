@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -13,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, compareDesc } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
 interface EnrichedEntry extends DailyRequisitionEntry {
@@ -44,7 +45,7 @@ export default function ProcessedForPaymentPage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', '==', 'Verified'), orderBy('verifiedAt', 'desc'))),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', '==', 'Verified'))),
         getDocs(collection(db, 'projects')),
       ]);
 
@@ -52,32 +53,30 @@ export default function ProcessedForPaymentPage() {
 
       const data = reqsSnap.docs.map(doc => {
         const entry = doc.data() as DailyRequisitionEntry;
-        // Safely format dates
-        const entryDate = entry.date && (entry.date as any).toDate ? (entry.date as any).toDate() : new Date(entry.date as any);
-        const verifiedDate = entry.verifiedAt && (entry.verifiedAt as any).toDate ? (entry.verifiedAt as any).toDate() : null;
-
         return {
           ...entry,
           id: doc.id,
-          date: isValidDate(entryDate) ? format(entryDate, 'dd MMM, yyyy') : 'N/A',
-          verifiedAt: verifiedDate ? format(verifiedDate, 'dd MMM, yyyy HH:mm') : undefined,
-          projectName: projectsMap.get(entry.projectId) || 'N/A',
-        };
+        } as EnrichedEntry;
       });
       
-      setEntries(data as EnrichedEntry[]);
+      // Sort client-side to avoid needing a composite index
+      data.sort((a, b) => {
+        const dateA = a.verifiedAt ? a.verifiedAt.toDate() : 0;
+        const dateB = b.verifiedAt ? b.verifiedAt.toDate() : 0;
+        return compareDesc(dateA, dateB);
+      });
+
+      const formattedData = data.map(entry => ({
+          ...entry,
+          date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
+          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format((entry.verifiedAt as any).toDate(), 'dd MMM, yyyy HH:mm') : undefined,
+          projectName: projectsMap.get(entry.projectId) || 'N/A',
+      }));
+
+      setEntries(formattedData);
     } catch (error: any) {
       console.error("Error fetching entries: ", error);
-      if (error.code === 'failed-precondition') {
-          toast({
-              title: 'Database Index Required',
-              description: "This query may require a custom index. Please check the Firebase console for instructions on how to create it for the 'dailyRequisitions' collection.",
-              variant: 'destructive',
-              duration: 10000,
-          });
-      } else {
-        toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
-      }
+      toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
@@ -180,3 +179,4 @@ export default function ProcessedForPaymentPage() {
     </div>
   );
 }
+
