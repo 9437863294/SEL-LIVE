@@ -71,7 +71,10 @@ export default function BankBalanceDashboard() {
         const balances: Record<string, number> = {};
         
         accounts.forEach(account => {
-            let currentBalance = account.openingUtilization || 0;
+            // Treat both account types similarly for balance calculation: start from an opening value and apply transactions.
+            const openingBalance = account.accountType === 'Cash Credit' ? account.openingUtilization : (account as any).openingBalance || 0;
+            let currentBalance = openingBalance || 0;
+
             if (account.openingDate) {
                 const interval = {
                     start: startOfDay(new Date(account.openingDate)),
@@ -83,10 +86,17 @@ export default function BankBalanceDashboard() {
                     .sort((a,b) => a.date.toMillis() - b.date.toMillis());
                 
                 accountTransactions.forEach(t => {
-                    if (t.type === 'Credit') {
-                        currentBalance += t.amount;
-                    } else if (t.type === 'Debit') {
-                        currentBalance -= t.amount;
+                    const amount = t.amount;
+                    if (account.accountType === 'Cash Credit') {
+                        // For CC, Credit decreases utilization, Debit increases it
+                        if (t.isContra) {
+                            currentBalance += (t.type === 'Debit' ? amount : -amount);
+                        } else {
+                            currentBalance += (t.type === 'Credit' ? -amount : amount);
+                        }
+                    } else { // Current Account
+                        // For Current Account, Credit increases balance, Debit decreases it
+                        currentBalance += (t.type === 'Credit' ? amount : -amount);
                     }
                 });
             }
@@ -261,7 +271,7 @@ export default function BankBalanceDashboard() {
                                 <p className="font-semibold text-green-800 text-center">Receipts</p>
                             </Card>
                         </Link>
-                        <Link href="/bank-balance/internal-transaction" onClick={() => setIsDailyEntryOpen(false)}>
+                        <Link href="/bank-balance/internal-transaction/new" onClick={() => setIsDailyEntryOpen(false)}>
                             <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
                                 <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
                                 <p className="font-semibold text-blue-800 text-center">Internal Transaction</p>
