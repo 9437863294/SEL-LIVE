@@ -53,7 +53,7 @@ export default function ProcessedForPaymentPage() {
           projectName: projectsMap.get(entry.projectId) || 'N/A',
           date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
           verifiedAt: entry.verifiedAt ? format(entry.verifiedAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
-          paidAt: entry.paidAt ? format(entry.paidAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+          paidAt: entry.paidAt && entry.paidAt.toDate ? format(entry.paidAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
         };
       });
       
