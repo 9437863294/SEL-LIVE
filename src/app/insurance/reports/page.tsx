@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -77,7 +78,7 @@ function ReportCard({ item }: ReportCardProps) {
 
 export default function InsuranceReportsPage() {
     const { can, isLoading } = useAuthorization();
-    const canViewPage = can('View', 'Insurance.Reports'); 
+    const canViewPage = can('View Reports', 'Insurance.Reports'); 
 
     const reportItems = reportItemsBase.map(item => ({
         ...item,
@@ -98,7 +99,7 @@ export default function InsuranceReportsPage() {
 
     if (!canViewPage) {
         return (
-            <div className="w-full max-w-lg pr-4">
+            <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
                 <div className="mb-6 flex items-center gap-4">
                     <Link href="/insurance"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                     <h1 className="text-xl font-bold">Insurance Reports</h1>
