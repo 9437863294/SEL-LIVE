@@ -87,7 +87,7 @@ export const permissionModules = {
   'Daily Requisition': {
     'View Module': [],
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
-    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Cancel'],
+    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
     'Processed for Payment': ['View', 'Mark as Received for Payment'],
     'Manage Documents': ['View', 'Upload', 'Mark as Missing', 'Not Required', 'Move to Pending'],
@@ -452,6 +452,7 @@ export type DailyRequisitionEntry = {
   gstNo?: string;
   attachments?: Attachment[];
   receivedAt?: any;
+  paidAt?: any;
 };
 
 export type DpLogEntry = {

@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, MoreHorizontal, RotateCcw, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Search, MoreHorizontal, RotateCcw, ShieldAlert, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,12 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
 import { GstTdsVerificationDialog } from '@/components/GstTdsVerificationDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Checkbox } from '@/components/ui/checkbox';
 
 
 interface EnrichedEntry extends DailyRequisitionEntry {
@@ -37,11 +37,14 @@ export default function GstTdsVerificationPage() {
   
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<EnrichedEntry | null>(null);
+  
+  const [selectedVerifiedIds, setSelectedVerifiedIds] = useState<string[]>([]);
 
   const canViewPage = can('View', 'Daily Requisition.GST & TDS Verification');
   const canVerify = can('Verify', 'Daily Requisition.GST & TDS Verification');
   const canReverify = can('Re-verify', 'Daily Requisition.GST & TDS Verification');
   const canReturnToPending = can('Return to Pending', 'Daily Requisition.GST & TDS Verification');
+  const canSendForPayment = can('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
 
 
   const fetchData = async () => {
@@ -129,12 +132,49 @@ export default function GstTdsVerificationPage() {
     }
   }
 
+  const handleSendForPayment = async () => {
+    if (selectedVerifiedIds.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      selectedVerifiedIds.forEach(id => {
+        const docRef = doc(db, 'dailyRequisitions', id);
+        batch.update(docRef, { status: 'Received for Payment' });
+      });
+      await batch.commit();
+      toast({
+        title: 'Success',
+        description: `${selectedVerifiedIds.length} entries sent for payment.`,
+      });
+      setSelectedVerifiedIds([]);
+      fetchData(); // Refresh data
+    } catch (error) {
+      console.error("Error marking entries:", error);
+      toast({ title: 'Error', description: 'Failed to update entries.', variant: 'destructive' });
+    }
+  };
+
+
   const renderTable = (data: EnrichedEntry[], type: 'pending' | 'verified' | 'needs-review') => {
     const filteredData = data.filter(entry => 
       entry.receptionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (entry.receivedBy || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
+    
+    const handleSelectAllVerified = (checked: boolean) => {
+      if (checked) {
+        setSelectedVerifiedIds(filteredData.map(e => e.id));
+      } else {
+        setSelectedVerifiedIds([]);
+      }
+    };
+    
+    const handleSelectVerifiedRow = (id: string, checked: boolean) => {
+      setSelectedVerifiedIds(prev => 
+        checked ? [...prev, id] : prev.filter(rowId => rowId !== id)
+      );
+    };
 
     const titleMap = {
         pending: 'Pending Verification',
@@ -143,20 +183,38 @@ export default function GstTdsVerificationPage() {
     };
     const descriptionMap = {
         pending: 'Entries received by finance and awaiting GST/TDS verification.',
-        verified: 'Entries that have been successfully verified.',
+        verified: 'Entries that have been successfully verified and are ready to be sent for payment.',
         'needs-review': 'Entries where the calculated amount mismatches the original. Please review and re-verify.',
     }
 
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{titleMap[type]}</CardTitle>
-          <CardDescription>{descriptionMap[type]}</CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle>{titleMap[type]}</CardTitle>
+              <CardDescription>{descriptionMap[type]}</CardDescription>
+            </div>
+            {type === 'verified' && (
+              <Button onClick={handleSendForPayment} disabled={selectedVerifiedIds.length === 0 || !canSendForPayment}>
+                Send for Payment ({selectedVerifiedIds.length})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
+                {type === 'verified' && (
+                  <TableHead className="w-[50px]">
+                    <Checkbox 
+                      checked={selectedVerifiedIds.length > 0 && selectedVerifiedIds.length === filteredData.length}
+                      onCheckedChange={(checked) => handleSelectAllVerified(!!checked)}
+                      disabled={!canSendForPayment}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Reception No.</TableHead>
                 <TableHead>Received At</TableHead>
                 <TableHead>Received By</TableHead>
@@ -168,19 +226,30 @@ export default function GstTdsVerificationPage() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
               ) : filteredData.length > 0 ? (
                 filteredData.map(entry => (
-                  <TableRow key={entry.id}>
+                  <TableRow key={entry.id} data-state={type === 'verified' && selectedVerifiedIds.includes(entry.id) && 'selected'}>
+                    {type === 'verified' && (
+                       <TableCell>
+                          <Checkbox 
+                            checked={selectedVerifiedIds.includes(entry.id)}
+                            onCheckedChange={(checked) => handleSelectVerifiedRow(entry.id, !!checked)}
+                            disabled={!canSendForPayment}
+                          />
+                        </TableCell>
+                    )}
                     <TableCell>{entry.receptionNo}</TableCell>
                     <TableCell>{entry.receivedAt}</TableCell>
                     <TableCell>{entry.receivedBy}</TableCell>
                     <TableCell>{entry.projectName}</TableCell>
                     <TableCell className="text-right">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.netAmount)}</TableCell>
                     <TableCell className="text-right">
-                      {type === 'pending' ? (
-                          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>Verify</Button>
+                      {(type === 'pending' || type === 'needs-review') ? (
+                          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>
+                            {type === 'pending' ? 'Verify' : 'Review & Verify'}
+                          </Button>
                       ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -191,7 +260,7 @@ export default function GstTdsVerificationPage() {
                             <DropdownMenuContent align="end">
                                 {canReverify && (
                                     <DropdownMenuItem onSelect={() => handleOpenVerifyDialog(entry)}>
-                                        {type === 'verified' ? 'Re-verify' : 'Review & Verify'}
+                                        Re-verify
                                     </DropdownMenuItem>
                                 )}
                                 {canReturnToPending && (
@@ -207,7 +276,7 @@ export default function GstTdsVerificationPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={6} className="text-center h-24">No entries found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center h-24">No entries found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -259,18 +328,29 @@ export default function GstTdsVerificationPage() {
 
         <Tabs defaultValue="pending">
           <TabsList>
-            <TabsTrigger value="pending">Pending Verification</TabsTrigger>
-            <TabsTrigger value="needs-review">Needs Review</TabsTrigger>
-            <TabsTrigger value="verified">Verified</TabsTrigger>
+            <TabsTrigger value="pending">Pending Verification ({pendingEntries.length})</TabsTrigger>
+            <TabsTrigger value="verified">Verified ({verifiedEntries.length})</TabsTrigger>
+            <TabsTrigger value="needs-review">Needs Review ({needsReviewEntries.length})</TabsTrigger>
           </TabsList>
+          <div className="mt-4">
+             <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search all lists by Reception No, Project, or Receiver..."
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+          </div>
           <TabsContent value="pending" className="mt-4">
             {renderTable(pendingEntries, 'pending')}
           </TabsContent>
+           <TabsContent value="verified" className="mt-4">
+            {renderTable(verifiedEntries, 'verified')}
+          </TabsContent>
           <TabsContent value="needs-review" className="mt-4">
             {renderTable(needsReviewEntries, 'needs-review')}
-          </TabsContent>
-          <TabsContent value="verified" className="mt-4">
-            {renderTable(verifiedEntries, 'verified')}
           </TabsContent>
         </Tabs>
       </div>
