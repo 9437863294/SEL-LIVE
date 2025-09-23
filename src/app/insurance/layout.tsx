@@ -50,7 +50,7 @@ export default function InsuranceLayout({
     { href: '/insurance/personal', icon: Users, label: 'Personal Insurance', permission: can('View', 'Insurance.Personal Insurance') },
     { href: '/insurance/project', icon: HardHat, label: 'Project Insurance', permission: can('View', 'Insurance.Project Insurance') },
     { href: '/insurance/my-tasks', icon: ClipboardCheck, label: 'My Tasks', permission: can('View', 'Insurance.My Tasks') },
-    { href: '/insurance/reports', icon: BarChart3, label: 'Reports', permission: can('View Reports', 'Insurance') },
+    { href: '/insurance/reports', icon: BarChart3, label: 'Reports', permission: can('View', 'Insurance.Reports') },
   ];
   
   const settingsItem = { href: '/insurance/settings', icon: Settings, label: 'Settings', permission: can('View', 'Insurance.Settings') };
