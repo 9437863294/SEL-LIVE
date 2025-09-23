@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project } from '@/lib/types';
-import { format, compareDesc } from 'date-fns';
+import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -33,16 +33,6 @@ export default function ProcessedForPaymentPage() {
   const canViewPage = can('View', 'Daily Requisition.Processed for Payment');
   const canMarkAsReceived = can('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
 
-  useEffect(() => {
-    if (!isAuthLoading) {
-      if(canViewPage) {
-        fetchData();
-      } else {
-        setIsLoading(false);
-      }
-    }
-  }, [isAuthLoading, canViewPage]);
-
   const fetchData = async () => {
     setIsLoading(true);
     try {
@@ -60,14 +50,14 @@ export default function ProcessedForPaymentPage() {
           id: doc.id,
           projectName: projectsMap.get(entry.projectId) || 'N/A',
           date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
-          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format((entry.verifiedAt as any).toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+          verifiedAt: entry.verifiedAt ? format(entry.verifiedAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
         };
       });
       
       data.sort((a, b) => {
         const dateA = a.verifiedAt ? new Date(a.verifiedAt).getTime() : 0;
         const dateB = b.verifiedAt ? new Date(b.verifiedAt).getTime() : 0;
-        return compareDesc(dateA, dateB);
+        return dateB - dateA;
       });
 
       setEntries(data);
@@ -77,6 +67,17 @@ export default function ProcessedForPaymentPage() {
     }
     setIsLoading(false);
   };
+  
+  useEffect(() => {
+    if (!isAuthLoading) {
+      if(canViewPage) {
+        fetchData();
+      } else {
+        setIsLoading(false);
+      }
+    }
+  }, [isAuthLoading, canViewPage]);
+
   
   const filteredEntries = useMemo(() => {
       return entries.filter(entry => 
@@ -185,7 +186,7 @@ export default function ProcessedForPaymentPage() {
                             <TableHead className="w-[50px]">
                               <Checkbox 
                                 checked={selectedIds.length > 0 && selectedIds.length === filteredEntries.length}
-                                onCheckedChange={handleSelectAll}
+                                onCheckedChange={(checked) => handleSelectAll(!!checked)}
                                 disabled={!canMarkAsReceived}
                               />
                             </TableHead>
