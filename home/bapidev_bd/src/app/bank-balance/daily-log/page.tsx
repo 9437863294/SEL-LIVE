@@ -13,9 +13,9 @@ import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import type { BankAccount, BankExpense, BankDailyLog, DpLogEntry } from '@/lib/types';
+import type { BankAccount, BankExpense, BankDailyLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc, parseISO } from 'date-fns';
+import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -254,11 +254,11 @@ export default function DailyLogPage() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Bank Name</TableHead>
-                <TableHead>Opening</TableHead>
+                <TableHead>Opening Balance</TableHead>
                 <TableHead>Expenses</TableHead>
                 <TableHead>Receipts</TableHead>
                 <TableHead>Contra</TableHead>
-                <TableHead>Closing</TableHead>
+                <TableHead>Closing Balance</TableHead>
                 <TableHead>Available</TableHead>
               </TableRow>
             </TableHeader>
@@ -270,7 +270,7 @@ export default function DailyLogPage() {
               ) : filteredLogs.length > 0 ? (
                 filteredLogs.map(log => (
                   <TableRow key={log.id}>
-                    <TableCell>{format(parseISO(log.date), 'dd MMM, yyyy')}</TableCell>
+                    <TableCell>{format(new Date(log.date), 'dd MMM, yyyy')}</TableCell>
                     <TableCell>{log.accountName}</TableCell>
                     <TableCell>{formatCurrency(log.openingBalance)}</TableCell>
                     <TableCell className="text-red-600">{formatCurrency(log.totalExpenses)}</TableCell>
