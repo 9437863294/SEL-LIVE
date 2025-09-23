@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Home, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,7 @@ export default function MyTasksSummaryPage() {
       applicant: 'all',
   });
   
-  const canViewPage = can('View Reports', 'Insurance');
+  const canViewPage = can('View', 'Insurance.My Tasks');
 
   useEffect(() => {
     if (!isAuthLoading) {
