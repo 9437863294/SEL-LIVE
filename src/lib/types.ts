@@ -158,7 +158,7 @@ export const permissionModules = {
     'Monthly Interest': ['View', 'Edit'],
     'Expenses': ['View', 'Add', 'Delete'],
     'Receipts': ['View', 'Add', 'Delete'],
-    'Internal Transaction': ['View', 'Add'],
+    'Internal Transaction': ['View', 'Add', 'Delete'],
     'Reports': ['View'],
   },
 };
