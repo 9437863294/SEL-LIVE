@@ -59,6 +59,7 @@ import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from '@/components/ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from './ui/scroll-area';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from './ui/tooltip';
 
 
 const formSchema = z.object({
@@ -678,6 +679,7 @@ export default function AllRequisitionsTab() {
         </div>
         <div className="border rounded-lg flex-grow relative">
           <ScrollArea className="absolute inset-0">
+            <TooltipProvider>
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
@@ -703,7 +705,16 @@ export default function AllRequisitionsTab() {
                       <TableCell>{getProjectName(req.projectId)}</TableCell>
                       <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
                       <TableCell>{req.raisedBy}</TableCell>
-                      <TableCell>{req.description}</TableCell>
+                      <TableCell>
+                        <Tooltip>
+                            <TooltipTrigger>
+                                <p className="truncate max-w-[200px]">{req.description}</p>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p className="max-w-sm">{req.description}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
                       <TableCell>{req.amount.toLocaleString()}</TableCell>
                       <TableCell>{req.stage}</TableCell>
                       <TableCell>{req.status}</TableCell>
@@ -740,6 +751,7 @@ export default function AllRequisitionsTab() {
                 )}
               </TableBody>
             </Table>
+            </TooltipProvider>
           </ScrollArea>
         </div>
       {selectedRequisition && (
