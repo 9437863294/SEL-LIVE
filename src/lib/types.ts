@@ -697,12 +697,17 @@ export type PolicyRenewal = {
 
 export type InsuranceTask = {
   id: string;
+  uniqueCheckId: string; // Used to prevent duplicate task creation
   policyId: string;
   policyNo: string;
   insuredPerson: string;
   dueDate: any; // Firestore Timestamp
-  status: 'Pending' | 'Completed';
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
   assignedTo: string; // User ID
   createdAt: any; // Firestore Timestamp
   taskType: 'Premium Due' | 'Maturity Due';
+  currentStepId: string | null;
+  currentStage: string;
+  deadline: any; // Firestore Timestamp
+  projectId?: string;
 };

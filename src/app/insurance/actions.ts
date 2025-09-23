@@ -33,8 +33,9 @@ async function processPolicies(
             const isDueSoon = isWithinInterval(dueDate, { start: startOfDay(new Date()), end: thirtyDaysFromNow });
 
             if (isOverdue || isDueSoon) {
-                const taskId = `${policy.id}-${formatDate(dueDate, 'yyyy-MM-dd')}`;
-                const q = query(collection(db, 'insuranceTasks'), where('id', '==', taskId));
+                // Use a combination of policy ID and due date as a unique identifier for the check
+                const taskIdForCheck = `${policy.id}-${formatDate(dueDate, 'yyyy-MM-dd')}`;
+                const q = query(collection(db, 'insuranceTasks'), where('uniqueCheckId', '==', taskIdForCheck));
                 const taskSnap = await getDocs(q);
 
                 if (taskSnap.empty) {
@@ -49,8 +50,8 @@ async function processPolicies(
                     }
                     
                     let projectId = '';
-                    if ((policy as ProjectInsurancePolicy).assetType === 'Project') {
-                        const asset = insuredAssets.find(a => a.id === (policy as ProjectInsurancePolicy).assetId);
+                    if ('assetType' in policy && policy.assetType === 'Project') {
+                        const asset = insuredAssets.find(a => a.id === policy.assetId);
                         projectId = asset?.projectId || '';
                     }
 
@@ -71,7 +72,7 @@ async function processPolicies(
                     const deadline = await calculateDeadline(new Date(), firstStep.tat);
                     
                     await addDoc(collection(db, 'insuranceTasks'), {
-                        id: taskId,
+                        uniqueCheckId: taskIdForCheck, // Use a consistent, unique field for checking existence
                         policyId: policy.id,
                         policyNo: (policy as InsurancePolicy).policy_no || (policy as ProjectInsurancePolicy).policy_no,
                         insuredPerson: (policy as InsurancePolicy).insured_person || (policy as ProjectInsurancePolicy).assetName,
@@ -83,6 +84,7 @@ async function processPolicies(
                         currentStepId: firstStep.id,
                         currentStage: firstStep.name,
                         deadline: Timestamp.fromDate(deadline),
+                        projectId: projectId, // Ensure projectId is saved
                     });
                     tasksCreated++;
                 } else {

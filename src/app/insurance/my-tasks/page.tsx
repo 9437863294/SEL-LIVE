@@ -30,8 +30,7 @@ export default function MyTasksPage() {
     const { toast } = useToast();
     const router = useRouter();
 
-    const [pendingTasks, setPendingTasks] = useState<InsuranceTask[]>([]);
-    const [completedTasks, setCompletedTasks] = useState<InsuranceTask[]>([]);
+    const [allTasks, setAllTasks] = useState<InsuranceTask[]>([]);
     const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -48,41 +47,17 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const workflowDocPromise = getDoc(doc(db, 'workflows', 'insurance-workflow'));
-        
-        const pendingTasksQuery = query(
-          collection(db, 'insuranceTasks'),
-          where('assignedTo', '==', user.id),
-          where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
-        );
-        const pendingTasksPromise = getDocs(pendingTasksQuery);
-
-        const completedTasksQuery = query(
-          collection(db, 'insuranceTasks'),
-          where('status', 'in', ['Completed', 'Rejected'])
-        );
-        const completedTasksPromise = getDocs(completedTasksQuery);
-
-        const [workflowDoc, pendingTasksSnapshot, completedTasksSnapshot] = await Promise.all([
-          workflowDocPromise,
-          pendingTasksPromise,
-          completedTasksPromise,
+        const [workflowDoc, tasksSnapshot] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'insurance-workflow')),
+          getDocs(collection(db, 'insuranceTasks'))
         ]);
 
         if (workflowDoc.exists()) {
           setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
 
-        const myPending = pendingTasksSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask))
-            .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-          
-        const myCompleted = completedTasksSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask))
-            .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-          
-        setPendingTasks(myPending);
-        setCompletedTasks(myCompleted);
+        const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+        setAllTasks(tasksData);
         
       } catch (error: any) {
         toast({ title: 'Error', description: error.message || 'Failed to fetch tasks or workflow.', variant: 'destructive' });
@@ -101,6 +76,19 @@ export default function MyTasksPage() {
         }
     }, [canViewPage, authLoading, fetchData]);
     
+    const { pendingTasks, completedTasks } = useMemo(() => {
+        const myPending = allTasks
+          .filter(task => task.assignedTo === user?.id && ['Pending', 'In Progress', 'Needs Review'].includes(task.status))
+          .sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+
+        const myCompleted = allTasks
+          .filter(task => ['Completed', 'Rejected'].includes(task.status))
+          .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+          
+        return { pendingTasks: myPending, completedTasks: myCompleted };
+    }, [allTasks, user]);
+
+
     const handleAction = async (taskId: string, action: string) => {
         if (!workflow || !user) return;
         setIsActionLoading(taskId);
