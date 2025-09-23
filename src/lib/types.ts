@@ -712,4 +712,5 @@ export type InsuranceTask = {
   currentStage: string;
   deadline: any; // Firestore Timestamp
   projectId?: string;
+  history?: ActionLog[];
 };
