@@ -90,10 +90,10 @@ export default function DailyLogPage() {
 
                 const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
                 const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? -t.amount : t.amount), 0);
+                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? t.amount : -t.amount), 0);
 
                 const openingBalance = runningBalance;
-                const closingBalance = openingBalance + receipts - expenses + contra;
+                const closingBalance = openingBalance - receipts + expenses + contra;
                 
                 logs.push({
                     id: `${dayString}-${account.id}`,
