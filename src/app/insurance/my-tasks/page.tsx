@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Check, RefreshCw, Loader2, MoreHorizontal, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 export default function MyTasksPage() {
     const { can, isLoading: authLoading } = useAuthorization();
-    const { user, users } = useAuth();
+    const { user, users: allUsers } = useAuth();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -41,61 +41,61 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    const fetchAndSetData = async () => {
-        if (!user || !canViewPage) {
-          setIsLoading(false);
-          return;
+    const fetchAndSetData = useCallback(async () => {
+      if (!user || !canViewPage) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+        if (workflowDoc.exists()) {
+          setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
-        setIsLoading(true);
-        try {
-          const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
-          if (workflowDoc.exists()) {
-            setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
-          }
-    
-          const q = query(collection(db, 'insuranceTasks'));
-          const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const allTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+  
+        const q = query(collection(db, 'insuranceTasks'));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const allTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+          
+          const myPending = allTasks
+            .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
+            .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
             
-            const myPending = allTasks
-              .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
-              .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-              
-            const myCompleted = allTasks
-              .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
-              .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-              
-            setPendingTasks(myPending);
-            setCompletedTasks(myCompleted);
-            setIsLoading(false);
-          });
-    
-          return unsubscribe;
-        } catch (error) {
-          toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+          const myCompleted = allTasks
+            .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
+            .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+            
+          setPendingTasks(myPending);
+          setCompletedTasks(myCompleted);
           setIsLoading(false);
-        }
-      };
-
+        });
+  
+        return unsubscribe;
+      } catch (error) {
+        toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+        setIsLoading(false);
+      }
+    }, [user, canViewPage, toast]);
+    
     useEffect(() => {
-        if (authLoading || !canViewPage) {
-            setIsLoading(false);
-            return;
-        }
+        if (authLoading) return;
     
         let unsubscribe: (() => void) | undefined;
-        const init = async () => {
-          unsubscribe = await fetchAndSetData();
-        };
-    
-        init();
+        if(canViewPage) {
+            const init = async () => {
+              unsubscribe = await fetchAndSetData();
+            };
+            init();
+        } else {
+            setIsLoading(false);
+        }
     
         return () => {
           if (unsubscribe) {
             unsubscribe();
           }
         };
-    }, [user, canViewPage, authLoading, toast]);
+    }, [canViewPage, authLoading, fetchAndSetData]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
         if (!workflow || !user) return;
@@ -354,3 +354,5 @@ export default function MyTasksPage() {
         </>
     );
 }
+
+    
