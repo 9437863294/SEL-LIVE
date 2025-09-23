@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ShieldAlert, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,6 +28,7 @@ export default function OpeningUtilizationPage() {
   const [utilizations, setUtilizations] = useState<Record<string, UtilizationData>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   
   const canView = can('View', 'Bank Balance.Opening Utilization');
   const canEdit = can('Edit', 'Bank Balance.Opening Utilization');
@@ -89,6 +90,7 @@ export default function OpeningUtilizationPage() {
         });
         await batch.commit();
         toast({ title: 'Success', description: 'All opening utilizations have been saved.' });
+        setIsEditing(false); // Exit edit mode on save
         fetchAccounts(); // to refresh the view with persisted data
     } catch (error) {
         console.error("Error saving utilizations:", error);
@@ -140,10 +142,19 @@ export default function OpeningUtilizationPage() {
                     <p className="text-muted-foreground">Manage opening utilization for Cash Credit accounts.</p>
                 </div>
             </div>
-            <Button onClick={handleSaveAll} disabled={isSaving || !canEdit}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4"/>}
-                Save All
-            </Button>
+            <div className="flex items-center gap-2">
+                {isEditing ? (
+                    <Button onClick={handleSaveAll} disabled={isSaving || !canEdit}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4"/>}
+                        Save All
+                    </Button>
+                ) : (
+                    <Button onClick={() => setIsEditing(true)} disabled={!canEdit}>
+                        <Edit className="mr-2 h-4 w-4"/>
+                        Edit
+                    </Button>
+                )}
+            </div>
        </div>
       
         <Card>
@@ -172,16 +183,16 @@ export default function OpeningUtilizationPage() {
                         type="date"
                         value={utilizations[acc.id]?.date || ''}
                         onChange={(e) => handleUtilizationChange(acc.id, 'date', e.target.value)}
-                        disabled={!canEdit}
+                        disabled={!isEditing}
                       />
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
-                        value={utilizations[acc.id]?.amount ?? ''}
+                        value={utilizations[acc.id]?.amount ?? 0}
                         onChange={(e) => handleUtilizationChange(acc.id, 'amount', e.target.value)}
                         placeholder="Enter amount"
-                        disabled={!canEdit}
+                        disabled={!isEditing}
                       />
                     </TableCell>
                   </TableRow>
