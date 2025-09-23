@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -10,6 +9,7 @@ import {
   Receipt,
   Settings,
   Files,
+  Banknote,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -63,6 +63,7 @@ export default function DailyRequisitionPage() {
     { icon: FilePlus, text: 'Entry Sheet', href: '/daily-requisition/entry-sheet', description: 'Create a new daily requisition.' },
     { icon: Landmark, text: 'Receiving at Finance', href: '/daily-requisition/receiving-at-finance', description: 'Manage entries received by finance.' },
     { icon: Receipt, text: 'GST & TDS Verification', href: '/daily-requisition/gst-tds-verification', 'description': 'Verify GST and TDS for received entries.' },
+    { icon: Banknote, text: 'Processed for Payment', href: '/daily-requisition/processed-for-payment', description: 'View requisitions ready for payment.' },
     { icon: Files, text: 'Manage Documents', href: '/daily-requisition/manage-documents', description: 'Upload and manage documents for requisitions.' },
     { icon: Settings, text: 'Settings', href: '/daily-requisition/settings', description: 'Configure settings for this module.' },
   ];
