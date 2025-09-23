@@ -101,12 +101,12 @@ export default function MyTasksPage() {
         }
     }, [canViewPage, authLoading, fetchData]);
     
-    const handleAction = async (task: InsuranceTask, action: string) => {
+    const handleAction = async (taskId: string, action: string) => {
         if (!workflow || !user) return;
-        setIsActionLoading(task.id);
+        setIsActionLoading(taskId);
         
         try {
-            const taskRef = doc(db, 'insuranceTasks', task.id);
+            const taskRef = doc(db, 'insuranceTasks', taskId);
             
             await runTransaction(db, async (transaction) => {
                 const taskDoc = await transaction.get(taskRef);
@@ -141,9 +141,9 @@ export default function MyTasksPage() {
                         newStatus = 'In Progress';
                         newCurrentStepId = nextStep.id;
                         const tempRequisitionDataForAssignment = {
-                            projectId: (task as any).projectId || '',
+                            projectId: (currentTaskData as any).projectId || '',
                             departmentId: '',
-                            amount: (task as any).premium || 0,
+                            amount: (currentTaskData as any).premium || 0,
                         };
                         const assignee = await getAssigneeForStep(nextStep, tempRequisitionDataForAssignment);
                         if (!assignee) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
@@ -260,7 +260,7 @@ export default function MyTasksPage() {
                                                                             </DropdownMenuTrigger>
                                                                             <DropdownMenuContent>
                                                                                 {currentStep?.actions.map(action => (
-                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task, action); }}>
+                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task.id, action); }}>
                                                                                         {action}
                                                                                     </DropdownMenuItem>
                                                                                 ))}
