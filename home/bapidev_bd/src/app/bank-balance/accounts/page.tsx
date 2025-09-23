@@ -306,7 +306,7 @@ export default function ManageBanksPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-              <Button type="button" onClick={handleSubmit}>Save Account</Button>
+              <Button type="button" onClick={handleSubmit} disabled={dialogMode === 'edit' ? !canEdit : !canAdd}>Save Account</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
