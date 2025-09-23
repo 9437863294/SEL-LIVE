@@ -20,18 +20,23 @@ import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
+interface EnrichedBankDailyLog extends BankDailyLog {
+  availableBalance: number;
+}
+
+
 export default function DailyLogPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
-  const [dailyLogs, setDailyLogs] = useState<BankDailyLog[]>([]);
+  const [dailyLogs, setDailyLogs] = useState<EnrichedBankDailyLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfDay(new Date()),
-    to: endOfDay(new Date()),
+    from: new Date(),
+    to: new Date(),
   });
   const [bankFilter, setBankFilter] = useState('all');
 
@@ -64,11 +69,22 @@ export default function DailyLogPage() {
     setIsLoading(false);
   };
   
+  const getDpForDate = (account: BankAccount, date: Date): number => {
+      if (account.accountType !== 'Cash Credit' || !account.drawingPower || account.drawingPower.length === 0) {
+          return 0;
+      }
+      // Sort DP entries by fromDate descending to find the most recent one
+      const sortedDp = [...account.drawingPower].sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
+      
+      const applicableDp = sortedDp.find(dp => new Date(dp.fromDate) <= startOfDay(date));
+      return applicableDp ? applicableDp.amount : 0;
+  };
+  
   useEffect(() => {
     if (isLoading || !canView) return;
     
     const calculateLogs = () => {
-        const logs: BankDailyLog[] = [];
+        const logs: EnrichedBankDailyLog[] = [];
         
         bankAccounts.forEach(account => {
             const isCC = account.accountType === 'Cash Credit';
@@ -94,11 +110,12 @@ export default function DailyLogPage() {
                 const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
                 
                 let contra = 0;
-                if (isCC) {
+                 if (isCC) {
                     contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? t.amount : -t.amount), 0);
                 } else { // Current Account
                     contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Credit' ? t.amount : -t.amount), 0);
                 }
+
 
                 const openingBalance = runningBalance;
                 
@@ -107,6 +124,12 @@ export default function DailyLogPage() {
                     closingBalance = openingBalance + expenses - receipts + contra;
                 } else { // Current Account
                     closingBalance = openingBalance - expenses + receipts + contra;
+                }
+                
+                let availableBalance = closingBalance;
+                if (isCC) {
+                    const drawingPower = getDpForDate(account, day);
+                    availableBalance = drawingPower - closingBalance;
                 }
                 
                 logs.push({
@@ -119,6 +142,7 @@ export default function DailyLogPage() {
                     totalReceipts: receipts,
                     totalContra: contra,
                     closingBalance,
+                    availableBalance,
                 });
 
                 runningBalance = closingBalance;
@@ -235,12 +259,13 @@ export default function DailyLogPage() {
                 <TableHead>Receipts</TableHead>
                 <TableHead>Contra</TableHead>
                 <TableHead>Closing Balance</TableHead>
+                <TableHead>Available</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-6" /></TableCell></TableRow>
                 ))
               ) : filteredLogs.length > 0 ? (
                 filteredLogs.map(log => (
@@ -252,10 +277,11 @@ export default function DailyLogPage() {
                     <TableCell className="text-green-600">{formatCurrency(log.totalReceipts)}</TableCell>
                     <TableCell>{formatCurrency(log.totalContra)}</TableCell>
                     <TableCell>{formatCurrency(log.closingBalance)}</TableCell>
+                    <TableCell className="font-semibold">{formatCurrency(log.availableBalance)}</TableCell>
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={7} className="text-center h-24">No logs found for the selected criteria.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center h-24">No logs found for the selected criteria.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
