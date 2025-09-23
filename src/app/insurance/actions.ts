@@ -84,7 +84,7 @@ async function processPolicies(
                         currentStepId: firstStep.id,
                         currentStage: firstStep.name,
                         deadline: Timestamp.fromDate(deadline),
-                        projectId: projectId, // Ensure projectId is saved
+                        projectId: projectId,
                     });
                     tasksCreated++;
                 } else {

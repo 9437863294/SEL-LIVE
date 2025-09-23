@@ -47,10 +47,9 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const [workflowDoc, tasksSnapshot, usersSnapshot] = await Promise.all([
+        const [workflowDoc, tasksSnapshot] = await Promise.all([
           getDoc(doc(db, 'workflows', 'insurance-workflow')),
           getDocs(collection(db, 'insuranceTasks')),
-          getDocs(collection(db, 'users')),
         ]);
 
         if (workflowDoc.exists()) {
