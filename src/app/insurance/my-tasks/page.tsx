@@ -1,18 +1,18 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Check, RefreshCw, Loader2, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Check, RefreshCw, Loader2, MoreHorizontal, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, onSnapshot, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
+import { collection, query, getDocs, onSnapshot, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import type { InsuranceTask, WorkflowStep, ActionLog } from '@/lib/types';
+import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -26,11 +26,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 export default function MyTasksPage() {
     const { can, isLoading: authLoading } = useAuthorization();
-    const { user } = useAuth();
+    const { user, users } = useAuth();
     const { toast } = useToast();
     const router = useRouter();
 
-    const [tasks, setTasks] = useState<InsuranceTask[]>([]);
+    const [pendingTasks, setPendingTasks] = useState<InsuranceTask[]>([]);
+    const [completedTasks, setCompletedTasks] = useState<InsuranceTask[]>([]);
     const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -40,41 +41,60 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
+    const fetchAndSetData = async () => {
+        if (!user || !canViewPage) {
+          setIsLoading(false);
+          return;
+        }
+        setIsLoading(true);
+        try {
+          const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+          if (workflowDoc.exists()) {
+            setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
+          }
+    
+          const q = query(collection(db, 'insuranceTasks'));
+          const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const allTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+            
+            const myPending = allTasks
+              .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
+              .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+              
+            const myCompleted = allTasks
+              .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
+              .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+              
+            setPendingTasks(myPending);
+            setCompletedTasks(myCompleted);
+            setIsLoading(false);
+          });
+    
+          return unsubscribe;
+        } catch (error) {
+          toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+          setIsLoading(false);
+        }
+      };
+
     useEffect(() => {
-        if (!user || !canViewPage || authLoading) {
-            if (!authLoading) setIsLoading(false);
+        if (authLoading || !canViewPage) {
+            setIsLoading(false);
             return;
         }
-
-        const fetchInitialData = async () => {
-             setIsLoading(true);
-            try {
-                const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
-                if(workflowDoc.exists()){
-                    setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
-                }
-                 const q = query(collection(db, 'insuranceTasks'));
-                const querySnapshot = await getDocs(q);
-                const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-                tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-                setTasks(tasksData);
-            } catch (error) {
-                toast({ title: 'Error', description: 'Failed to fetch initial data.', variant: 'destructive' });
-            } finally {
-                setIsLoading(false);
-            }
+    
+        let unsubscribe: (() => void) | undefined;
+        const init = async () => {
+          unsubscribe = await fetchAndSetData();
         };
-
-        fetchInitialData();
-        
-        const q = query(collection(db, 'insuranceTasks'));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-            tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-            setTasks(tasksData);
-        });
-
-        return () => unsubscribe();
+    
+        init();
+    
+        return () => {
+          if (unsubscribe) {
+            unsubscribe();
+          }
+        };
     }, [user, canViewPage, authLoading, toast]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
@@ -90,8 +110,7 @@ export default function MyTasksPage() {
                     throw new Error("Task document not found!");
                 }
                 const currentTaskData = taskDoc.data() as InsuranceTask;
-                const currentStepIndex = workflow.findIndex(s => s.id === currentTaskData.currentStepId);
-                const currentStep = workflow[currentStepIndex];
+                const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
                 if (!currentStep) throw new Error("Current workflow step not found.");
 
                 const newActionLog: ActionLog = {
@@ -111,6 +130,7 @@ export default function MyTasksPage() {
                 let newDeadline: Timestamp | null = null;
     
                 if (action === 'Approve' || action === 'Complete') {
+                    const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
                     nextStep = workflow[currentStepIndex + 1];
                     if (nextStep) {
                         newStage = nextStep.name;
@@ -176,40 +196,15 @@ export default function MyTasksPage() {
         }
     };
 
-    if (authLoading) {
-        return (
-            <div className="w-full">
-                <Skeleton className="h-10 w-64 mb-6" />
-                <Skeleton className="h-96 w-full" />
-            </div>
-        );
-    }
-    
-    if (!canViewPage) {
-        return (
-            <div className="w-full">
-                <div className="mb-6 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl font-bold">My Insurance Tasks</h1>
-                    </div>
-                </div>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Access Denied</CardTitle>
-                        <CardDescription>You do not have permission to view this page.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex justify-center p-8">
-                        <ShieldAlert className="h-16 w-16 text-destructive" />
-                    </CardContent>
-                </Card>
-            </div>
-        );
-    }
-    
-    const pendingTasks = tasks.filter(t => t.assignedTo === user?.id && t.status !== 'Completed' && t.status !== 'Rejected');
-    const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Rejected');
-    
     const renderTable = (data: InsuranceTask[], isPending: boolean) => {
+        if (isLoading) {
+            return (
+                <div className="space-y-2">
+                    {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+            );
+        }
+        
         return (
             <Card>
                 <CardContent className="p-0">
@@ -225,13 +220,7 @@ export default function MyTasksPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {isLoading ? (
-                                Array.from({length: 3}).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell colSpan={isPending ? 6 : 5}><Skeleton className="h-8" /></TableCell>
-                                    </TableRow>
-                                ))
-                            ) : data.length > 0 ? (
+                            {data.length > 0 ? (
                                 data.map(task => {
                                     const currentStep = workflow?.find(s => s.id === task.currentStepId);
                                     const isAssignedToCurrentUser = task.assignedTo === user?.id;
@@ -260,7 +249,7 @@ export default function MyTasksPage() {
                                                                             </DropdownMenuTrigger>
                                                                             <DropdownMenuContent>
                                                                                 {currentStep?.actions.map(action => (
-                                                                                    <DropdownMenuItem key={action} onSelect={() => handleAction(task, action)}>
+                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task, action); }}>
                                                                                         {action}
                                                                                     </DropdownMenuItem>
                                                                                 ))}
@@ -294,6 +283,37 @@ export default function MyTasksPage() {
             </Card>
         );
     };
+    
+    if (authLoading) {
+        return (
+            <div className="w-full">
+                <Skeleton className="h-10 w-64 mb-6" />
+                <Skeleton className="h-96 w-full" />
+            </div>
+        );
+    }
+    
+    if (!canViewPage) {
+        return (
+            <div className="w-full">
+                <div className="mb-6 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-xl font-bold">My Insurance Tasks</h1>
+                    </div>
+                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Access Denied</CardTitle>
+                        <CardDescription>You do not have permission to view this page.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex justify-center p-8">
+                        <ShieldAlert className="h-16 w-16 text-destructive" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+    
 
     return (
         <>
