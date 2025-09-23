@@ -479,7 +479,8 @@ export type BankAccount = {
   currentBalance: number;
   drawingPower: DpLogEntry[];
   interestRateLog: InterestRateLogEntry[];
-  openingUtilization: number;
+  openingUtilization?: number;
+  openingBalance?: number;
   openingDate: string;
 };
 

@@ -71,9 +71,11 @@ export default function BankBalanceDashboard() {
         const balances: Record<string, number> = {};
         
         accounts.forEach(account => {
-            // Treat both account types similarly for balance calculation: start from an opening value and apply transactions.
-            const openingBalance = account.accountType === 'Cash Credit' ? account.openingUtilization : (account as any).openingBalance || 0;
-            let currentBalance = openingBalance || 0;
+            const openingBalance = account.accountType === 'Cash Credit' 
+              ? account.openingUtilization || 0 
+              : account.openingBalance || 0;
+
+            let currentBalance = openingBalance;
 
             if (account.openingDate) {
                 const interval = {
@@ -88,12 +90,8 @@ export default function BankBalanceDashboard() {
                 accountTransactions.forEach(t => {
                     const amount = t.amount;
                     if (account.accountType === 'Cash Credit') {
-                        // For CC, Credit decreases utilization, Debit increases it
-                        if (t.isContra) {
-                            currentBalance += (t.type === 'Debit' ? amount : -amount);
-                        } else {
-                            currentBalance += (t.type === 'Credit' ? -amount : amount);
-                        }
+                        // For CC, Debit increases utilization, Credit decreases it
+                         currentBalance += (t.type === 'Debit' ? amount : -amount);
                     } else { // Current Account
                         // For Current Account, Credit increases balance, Debit decreases it
                         currentBalance += (t.type === 'Credit' ? amount : -amount);

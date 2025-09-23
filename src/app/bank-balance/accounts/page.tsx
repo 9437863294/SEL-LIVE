@@ -19,7 +19,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
-const initialFormState: Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'> = {
+type FormData = Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'interestRateLog'> & {
+  openingBalanceOrUtilization: number;
+};
+
+
+const initialFormState: FormData = {
   bankName: '',
   shortName: '',
   accountNumber: '',
@@ -27,7 +32,10 @@ const initialFormState: Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPowe
   status: 'Active',
   branch: '',
   ifsc: '',
+  openingBalanceOrUtilization: 0,
+  openingDate: new Date().toISOString().split('T')[0],
 };
+
 
 export default function ManageBanksPage() {
   const { toast } = useToast();
@@ -38,7 +46,7 @@ export default function ManageBanksPage() {
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
-  const [formData, setFormData] = useState<Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'openingUtilization' | 'openingDate'>>(initialFormState);
+  const [formData, setFormData] = useState<FormData>(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const canView = can('View', 'Bank Balance.Accounts');
@@ -71,7 +79,7 @@ export default function ManageBanksPage() {
   const openDialog = (mode: 'add' | 'edit', account?: BankAccount) => {
     setDialogMode(mode);
     if (mode === 'edit' && account) {
-        const accountData = {
+        setFormData({
           bankName: account.bankName || '',
           shortName: account.shortName || '',
           accountNumber: account.accountNumber || '',
@@ -79,8 +87,9 @@ export default function ManageBanksPage() {
           status: account.status || 'Active',
           branch: account.branch || '',
           ifsc: account.ifsc || '',
-        };
-        setFormData(accountData);
+          openingBalanceOrUtilization: account.accountType === 'Current Account' ? account.openingBalance || 0 : account.openingUtilization || 0,
+          openingDate: account.openingDate || new Date().toISOString().split('T')[0],
+        });
         setEditingId(account.id);
     } else {
         setFormData(initialFormState);
@@ -89,7 +98,7 @@ export default function ManageBanksPage() {
     setIsDialogOpen(true);
   };
 
-  const handleFormChange = (field: keyof typeof formData, value: string | number) => {
+  const handleFormChange = (field: keyof typeof formData, value: any) => {
     setFormData(prev => ({...prev, [field]: value}));
   }
 
@@ -99,12 +108,25 @@ export default function ManageBanksPage() {
         return;
     }
 
+    const { openingBalanceOrUtilization, ...restOfForm } = formData;
+    const dataToSave: Partial<BankAccount> = {
+      ...restOfForm,
+      openingBalance: formData.accountType === 'Current Account' ? openingBalanceOrUtilization : 0,
+      openingUtilization: formData.accountType === 'Cash Credit' ? openingBalanceOrUtilization : 0,
+    };
+
     try {
         if (dialogMode === 'edit' && editingId) {
-            await updateDoc(doc(db, 'bankAccounts', editingId), formData);
+            await updateDoc(doc(db, 'bankAccounts', editingId), dataToSave);
             toast({ title: 'Success', description: 'Bank account updated successfully.'});
         } else {
-            await addDoc(collection(db, 'bankAccounts'), {...formData, currentBalance: 0, drawingPower: [], openingUtilization: 0, openingDate: ''});
+            const fullData = {
+              ...dataToSave,
+              currentBalance: 0,
+              drawingPower: [],
+              interestRateLog: [],
+            };
+            await addDoc(collection(db, 'bankAccounts'), fullData);
             toast({ title: 'Success', description: 'New bank account added.'});
         }
         setIsDialogOpen(false);
@@ -260,6 +282,16 @@ export default function ManageBanksPage() {
               <div className="space-y-2">
                 <Label htmlFor="ifsc">IFSC</Label>
                 <Input id="ifsc" value={formData.ifsc} onChange={(e) => handleFormChange('ifsc', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="openingDate">Opening Date</Label>
+                <Input id="openingDate" type="date" value={formData.openingDate} onChange={(e) => handleFormChange('openingDate', e.target.value)} />
+              </div>
+               <div className="space-y-2">
+                <Label htmlFor="openingBalanceOrUtilization">
+                  {formData.accountType === 'Current Account' ? 'Opening Balance' : 'Opening Utilization'}
+                </Label>
+                <Input id="openingBalanceOrUtilization" type="number" value={formData.openingBalanceOrUtilization} onChange={(e) => handleFormChange('openingBalanceOrUtilization', e.target.valueAsNumber)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
