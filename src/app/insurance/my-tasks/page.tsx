@@ -47,15 +47,16 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const [workflowDoc, tasksSnapshot] = await Promise.all([
+        const [workflowDoc, tasksSnapshot, usersSnapshot] = await Promise.all([
           getDoc(doc(db, 'workflows', 'insurance-workflow')),
-          getDocs(collection(db, 'insuranceTasks'))
+          getDocs(collection(db, 'insuranceTasks')),
+          getDocs(collection(db, 'users')),
         ]);
 
         if (workflowDoc.exists()) {
           setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
-
+        
         const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
         setAllTasks(tasksData);
         
@@ -77,8 +78,10 @@ export default function MyTasksPage() {
     }, [canViewPage, authLoading, fetchData]);
     
     const { pendingTasks, completedTasks } = useMemo(() => {
+        if (!user) return { pendingTasks: [], completedTasks: [] };
+        
         const myPending = allTasks
-          .filter(task => task.assignedTo === user?.id && ['Pending', 'In Progress', 'Needs Review'].includes(task.status))
+          .filter(task => task.assignedTo === user.id && ['Pending', 'In Progress', 'Needs Review'].includes(task.status))
           .sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
 
         const myCompleted = allTasks
@@ -121,7 +124,7 @@ export default function MyTasksPage() {
                 let newAssignedToId: string | null = null;
                 let newDeadline: Timestamp | null = null;
     
-                if (action === 'Approve' || action === 'Complete') {
+                if (action === 'Approve' || action === 'Verified' || action === 'Update Approved Amount') {
                     const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
                     nextStep = workflow[currentStepIndex + 1];
                     if (nextStep) {
@@ -143,10 +146,21 @@ export default function MyTasksPage() {
                         newStatus = 'Completed';
                         newCurrentStepId = null;
                     }
+                } else if (action === 'Complete') {
+                    newStage = 'Completed';
+                    newStatus = 'Completed';
+                    newCurrentStepId = null;
+                    newAssignedToId = null;
+                    newDeadline = null;
                 } else if (action === 'Reject') {
                     newStage = 'Rejected';
                     newStatus = 'Rejected';
                     newCurrentStepId = null;
+                    newAssignedToId = null;
+                    newDeadline = null;
+                } else {
+                    newAssignedToId = currentTaskData.assignedTo || null;
+                    newDeadline = currentTaskData.deadline;
                 }
     
                 const updateData = {

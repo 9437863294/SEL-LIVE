@@ -1,6 +1,6 @@
 
 
-import { db } from '@/lib/firebase';
+import { db } from './firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import type { 
     WorkflowStep, 
@@ -95,8 +95,11 @@ export async function calculateDeadline(startDate: Date, tatHours: number): Prom
 export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'> | Record<string, any>): Promise<string | null> {
     switch (step.assignmentType) {
         case 'User-based':
-            // Correctly handle the case where assignedTo is an array of user IDs
-            return Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? step.assignedTo[0] : null;
+            // The assignedTo for User-based is an array of strings (user IDs), but typically we only use the first one.
+            if (Array.isArray(step.assignedTo) && step.assignedTo.length > 0) {
+              return step.assignedTo[0];
+            }
+            return null;
 
         case 'Project-based': {
             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.projectId) {
