@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, CheckCircle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Search, CheckCircle, ShieldAlert, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,10 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project } from '@/lib/types';
 import { format, compareDesc } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface EnrichedEntry extends DailyRequisitionEntry {
   projectName: string;
@@ -28,6 +28,7 @@ export default function ProcessedForPaymentPage() {
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const canViewPage = can('View', 'Daily Requisition.Processed for Payment');
 
@@ -51,37 +52,30 @@ export default function ProcessedForPaymentPage() {
 
       const projectsMap = new Map(projectsSnap.docs.map(doc => [doc.id, (doc.data() as Project).projectName]));
 
-      const data = reqsSnap.docs.map(doc => {
+      const data: EnrichedEntry[] = reqsSnap.docs.map(doc => {
         const entry = doc.data() as DailyRequisitionEntry;
         return {
           ...entry,
           id: doc.id,
-        } as EnrichedEntry;
+          projectName: projectsMap.get(entry.projectId) || 'N/A',
+          date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
+          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format((entry.verifiedAt as any).toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+        };
       });
       
-      // Sort client-side to avoid needing a composite index
       data.sort((a, b) => {
-        const dateA = a.verifiedAt ? a.verifiedAt.toDate() : 0;
-        const dateB = b.verifiedAt ? b.verifiedAt.toDate() : 0;
+        const dateA = a.verifiedAt ? new Date(a.verifiedAt).getTime() : 0;
+        const dateB = b.verifiedAt ? new Date(b.verifiedAt).getTime() : 0;
         return compareDesc(dateA, dateB);
       });
 
-      const formattedData = data.map(entry => ({
-          ...entry,
-          date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
-          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format((entry.verifiedAt as any).toDate(), 'dd MMM, yyyy HH:mm') : undefined,
-          projectName: projectsMap.get(entry.projectId) || 'N/A',
-      }));
-
-      setEntries(formattedData);
+      setEntries(data);
     } catch (error: any) {
       console.error("Error fetching entries: ", error);
       toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
-  
-  const isValidDate = (d: any) => d instanceof Date && !isNaN(d.getTime());
   
   const filteredEntries = useMemo(() => {
       return entries.filter(entry => 
@@ -90,6 +84,42 @@ export default function ProcessedForPaymentPage() {
         entry.partyName.toLowerCase().includes(searchTerm.toLowerCase())
       );
   }, [entries, searchTerm]);
+  
+  const handleMarkAsPaid = async () => {
+    if (selectedIds.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      selectedIds.forEach(id => {
+        const docRef = doc(db, 'dailyRequisitions', id);
+        batch.update(docRef, { status: 'Paid' });
+      });
+      await batch.commit();
+      toast({
+        title: 'Success',
+        description: `${selectedIds.length} entries marked as paid.`,
+      });
+      setSelectedIds([]);
+      fetchData(); // Refresh data
+    } catch (error) {
+      console.error("Error marking entries as paid:", error);
+      toast({ title: 'Error', description: 'Failed to update entries.', variant: 'destructive' });
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(filteredEntries.map(e => e.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: string, checked: boolean) => {
+    setSelectedIds(prev => 
+      checked ? [...prev, id] : prev.filter(rowId => rowId !== id)
+    );
+  };
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -129,6 +159,10 @@ export default function ProcessedForPaymentPage() {
                     <p className="text-sm text-muted-foreground">Requisitions verified and ready for payment processing.</p>
                 </div>
             </div>
+             <Button onClick={handleMarkAsPaid} disabled={selectedIds.length === 0}>
+                <Check className="mr-2 h-4 w-4" />
+                Mark as Paid ({selectedIds.length})
+            </Button>
         </div>
 
         <Card>
@@ -147,6 +181,12 @@ export default function ProcessedForPaymentPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead className="w-[50px]">
+                              <Checkbox 
+                                checked={selectedIds.length > 0 && selectedIds.length === filteredEntries.length}
+                                onCheckedChange={handleSelectAll}
+                              />
+                            </TableHead>
                             <TableHead>Reception No.</TableHead>
                             <TableHead>Verified At</TableHead>
                             <TableHead>Project</TableHead>
@@ -157,11 +197,17 @@ export default function ProcessedForPaymentPage() {
                     <TableBody>
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, i) => (
-                                <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-8" /></TableCell></TableRow>
+                                <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
                             ))
                         ) : filteredEntries.length > 0 ? (
                             filteredEntries.map(entry => (
-                                <TableRow key={entry.id}>
+                                <TableRow key={entry.id} data-state={selectedIds.includes(entry.id) && 'selected'}>
+                                    <TableCell>
+                                      <Checkbox 
+                                        checked={selectedIds.includes(entry.id)}
+                                        onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
+                                      />
+                                    </TableCell>
                                     <TableCell className="font-medium">{entry.receptionNo}</TableCell>
                                     <TableCell>{entry.verifiedAt || 'N/A'}</TableCell>
                                     <TableCell>{entry.projectName}</TableCell>
@@ -170,7 +216,7 @@ export default function ProcessedForPaymentPage() {
                                 </TableRow>
                             ))
                         ) : (
-                            <TableRow><TableCell colSpan={5} className="text-center h-24">No verified entries found.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={6} className="text-center h-24">No verified entries found.</TableCell></TableRow>
                         )}
                     </TableBody>
                 </Table>
@@ -179,4 +225,3 @@ export default function ProcessedForPaymentPage() {
     </div>
   );
 }
-
