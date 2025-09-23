@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
@@ -48,31 +48,44 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const [workflowDoc, tasksSnapshot, usersSnapshot] = await Promise.all([
-          getDoc(doc(db, 'workflows', 'insurance-workflow')),
-          getDocs(collection(db, 'insuranceTasks')),
-          getDocs(collection(db, 'users')) 
+        const workflowDocPromise = getDoc(doc(db, 'workflows', 'insurance-workflow'));
+        
+        const pendingTasksQuery = query(
+          collection(db, 'insuranceTasks'),
+          where('assignedTo', '==', user.id),
+          where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+        );
+        const pendingTasksPromise = getDocs(pendingTasksQuery);
+
+        const completedTasksQuery = query(
+          collection(db, 'insuranceTasks'),
+          where('status', 'in', ['Completed', 'Rejected'])
+        );
+        const completedTasksPromise = getDocs(completedTasksQuery);
+
+        const [workflowDoc, pendingTasksSnapshot, completedTasksSnapshot] = await Promise.all([
+          workflowDocPromise,
+          pendingTasksPromise,
+          completedTasksPromise,
         ]);
 
         if (workflowDoc.exists()) {
           setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
 
-        const allTasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
-        
-        const myPending = allTasks
-          .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
-          .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+        const myPending = pendingTasksSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask))
+            .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
           
-        const myCompleted = allTasks
-          .filter(t => t.status === 'Completed' || t.status === 'Rejected')
-          .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+        const myCompleted = completedTasksSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask))
+            .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
           
         setPendingTasks(myPending);
         setCompletedTasks(myCompleted);
         
-      } catch (error) {
-        toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+      } catch (error: any) {
+        toast({ title: 'Error', description: error.message || 'Failed to fetch tasks or workflow.', variant: 'destructive' });
         console.error("Error fetching data:", error);
       } finally {
         setIsLoading(false);
