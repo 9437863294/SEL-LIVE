@@ -71,8 +71,10 @@ export default function DailyLogPage() {
         const logs: BankDailyLog[] = [];
         
         bankAccounts.forEach(account => {
-            let runningBalance = account.openingUtilization || 0;
-            if (!account.openingDate) return; // Skip if no opening date
+            const isCC = account.accountType === 'Cash Credit';
+            let runningBalance = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
+
+            if (!account.openingDate) return;
 
             const interval = {
                 start: startOfDay(new Date(account.openingDate)),
@@ -90,10 +92,22 @@ export default function DailyLogPage() {
 
                 const expenses = transactionsToday.filter(t => t.type === 'Debit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
                 const receipts = transactionsToday.filter(t => t.type === 'Credit' && !t.isContra).reduce((sum, t) => sum + t.amount, 0);
-                const contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? t.amount : -t.amount), 0);
+                
+                let contra = 0;
+                if (isCC) {
+                    contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Debit' ? t.amount : -t.amount), 0);
+                } else { // Current Account
+                    contra = transactionsToday.filter(t => t.isContra).reduce((sum, t) => sum + (t.type === 'Credit' ? t.amount : -t.amount), 0);
+                }
 
                 const openingBalance = runningBalance;
-                const closingBalance = openingBalance - receipts + expenses + contra;
+                
+                let closingBalance;
+                if (isCC) {
+                    closingBalance = openingBalance + expenses - receipts + contra;
+                } else { // Current Account
+                    closingBalance = openingBalance - expenses + receipts + contra;
+                }
                 
                 logs.push({
                     id: `${dayString}-${account.id}`,
@@ -176,8 +190,8 @@ export default function DailyLogPage() {
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">Daily Utilization Log</h1>
-            <p className="text-sm text-muted-foreground">History of all opening utilization updates.</p>
+            <h1 className="text-xl font-bold">Daily Balance/Utilization Log</h1>
+            <p className="text-sm text-muted-foreground">History of all daily balances and utilization.</p>
           </div>
         </div>
       </div>
@@ -216,11 +230,11 @@ export default function DailyLogPage() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Bank Name</TableHead>
-                <TableHead>Opening Utilization</TableHead>
+                <TableHead>Opening Balance</TableHead>
                 <TableHead>Expenses</TableHead>
                 <TableHead>Receipts</TableHead>
                 <TableHead>Contra</TableHead>
-                <TableHead>Closing Utilization</TableHead>
+                <TableHead>Closing Balance</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
