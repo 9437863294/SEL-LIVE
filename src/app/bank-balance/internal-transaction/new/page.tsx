@@ -230,7 +230,7 @@ export default function NewInternalTransactionPage() {
                 <div key={item.id} className="border p-4 rounded-lg flex items-end gap-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow">
                     <div className="space-y-2">
-                        <Label>From Bank (Debit)</Label>
+                        <Label>From Bank</Label>
                         <Select value={item.fromAccountId} onValueChange={(val) => handleTransactionChange(item.id, 'fromAccountId', val)}>
                         <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                         <SelectContent>
@@ -243,7 +243,7 @@ export default function NewInternalTransactionPage() {
                         </Select>
                     </div>
                     <div className="space-y-2">
-                        <Label>To Bank (Credit)</Label>
+                        <Label>To Bank</Label>
                         <Select value={item.toAccountId} onValueChange={(val) => handleTransactionChange(item.id, 'toAccountId', val)}>
                         <SelectTrigger><SelectValue placeholder="Select Account" /></SelectTrigger>
                         <SelectContent>
