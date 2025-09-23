@@ -3,7 +3,7 @@
 
 import { collection, getDocs, query, where, doc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { InsurancePolicy, ProjectInsurancePolicy, InsuranceTask, WorkflowStep } from '@/lib/types';
+import type { InsurancePolicy, ProjectInsurancePolicy, InsuranceTask, WorkflowStep, InsuredAsset } from '@/lib/types';
 import { isWithinInterval, addDays, startOfDay, isPast, format as formatDate, subDays, setHours, setMinutes, setSeconds } from 'date-fns';
 import { calculateDeadline, getAssigneeForStep } from '@/lib/workflow-utils';
 
@@ -11,7 +11,8 @@ import { calculateDeadline, getAssigneeForStep } from '@/lib/workflow-utils';
 async function processPolicies(
     policies: (InsurancePolicy | ProjectInsurancePolicy)[], 
     dateField: 'due_date' | 'insured_until',
-    workflowSteps: WorkflowStep[]
+    workflowSteps: WorkflowStep[],
+    insuredAssets: InsuredAsset[]
 ) {
     let tasksCreated = 0;
     let tasksSkipped = 0;
@@ -37,7 +38,6 @@ async function processPolicies(
                 const taskSnap = await getDocs(q);
 
                 if (taskSnap.empty) {
-                    // Calculate the timestamp for 30 days before the due date at 09:30
                     let taskCreationDate = subDays(dueDate, 30);
                     taskCreationDate = setHours(taskCreationDate, 9);
                     taskCreationDate = setMinutes(taskCreationDate, 30);
@@ -48,9 +48,14 @@ async function processPolicies(
                         taskCreationDate = now;
                     }
                     
+                    let projectId = '';
+                    if ((policy as ProjectInsurancePolicy).assetType === 'Project') {
+                        const asset = insuredAssets.find(a => a.id === (policy as ProjectInsurancePolicy).assetId);
+                        projectId = asset?.projectId || '';
+                    }
+
                     const tempRequisitionDataForAssignment = {
-                        // Pass projectId for project-based assignment logic
-                        projectId: (policy as ProjectInsurancePolicy).assetType === 'Project' ? (policy as ProjectInsurancePolicy).assetId : '', 
+                        projectId: projectId, 
                         departmentId: '', 
                         amount: policy.premium,
                     };
@@ -102,6 +107,9 @@ export async function syncInsuranceTasks(userId: string) {
         }
         const workflowSteps = workflowDoc.data().steps as WorkflowStep[];
         
+        const assetsSnap = await getDocs(collection(db, 'insuredAssets'));
+        const insuredAssets = assetsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuredAsset));
+        
         // Fetch Personal Policies
         const personalPoliciesQuery = query(
             collection(db, 'insurance_policies'),
@@ -111,7 +119,7 @@ export async function syncInsuranceTasks(userId: string) {
         const personalPolicies = personalPoliciesSnap.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as InsurancePolicy))
             .filter(policy => policy.due_date); 
-        const personalResult = await processPolicies(personalPolicies, 'due_date', workflowSteps);
+        const personalResult = await processPolicies(personalPolicies, 'due_date', workflowSteps, insuredAssets);
 
         // Fetch Project Policies
         const projectPoliciesQuery = query(
@@ -122,7 +130,7 @@ export async function syncInsuranceTasks(userId: string) {
         const projectPolicies = projectPoliciesSnap.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as ProjectInsurancePolicy))
             .filter(policy => policy.insured_until);
-        const projectResult = await processPolicies(projectPolicies, 'insured_until', workflowSteps);
+        const projectResult = await processPolicies(projectPolicies, 'insured_until', workflowSteps, insuredAssets);
 
         const totalCreated = personalResult.tasksCreated + projectResult.tasksCreated;
         const totalSkipped = personalResult.tasksSkipped + projectResult.tasksSkipped;
