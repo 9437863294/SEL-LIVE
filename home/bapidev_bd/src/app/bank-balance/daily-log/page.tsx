@@ -290,5 +290,3 @@ export default function DailyLogPage() {
     </div>
   );
 }
-
-    
