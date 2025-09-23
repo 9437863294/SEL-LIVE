@@ -13,7 +13,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function BankBalanceDashboard() {
@@ -88,9 +88,11 @@ export default function BankBalanceDashboard() {
                 
                 accountTransactions.forEach(t => {
                     const amount = t.amount;
-                    if (isCC) {
+                     if (isCC) {
+                        // For Cash Credit, debits increase utilization, credits decrease it
                         currentBalance += (t.type === 'Debit' ? amount : -amount);
-                    } else {
+                    } else { // For Current Account
+                        // For Current Account, credits increase balance, debits decrease it
                         currentBalance += (t.type === 'Credit' ? amount : -amount);
                     }
                 });
