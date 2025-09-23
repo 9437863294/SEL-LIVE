@@ -49,9 +49,9 @@ async function processPolicies(
                     }
                     
                     const tempRequisitionDataForAssignment = {
-                        // We pass a simplified object for assignment logic as it may not need all fields
-                        projectId: (policy as ProjectInsurancePolicy).assetId || '', // Using assetId as a proxy
-                        departmentId: '', // Not applicable for insurance
+                        // Pass projectId for project-based assignment logic
+                        projectId: (policy as ProjectInsurancePolicy).assetType === 'Project' ? (policy as ProjectInsurancePolicy).assetId : '', 
+                        departmentId: '', 
                         amount: policy.premium,
                     };
                     
