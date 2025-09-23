@@ -61,7 +61,7 @@ export default function ProcessedForPaymentPage() {
         };
       });
       
-      setEntries(data);
+      setEntries(data as EnrichedEntry[]);
     } catch (error: any) {
       console.error("Error fetching entries: ", error);
       toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
@@ -149,7 +149,7 @@ export default function ProcessedForPaymentPage() {
                             filteredEntries.map(entry => (
                                 <TableRow key={entry.id}>
                                     <TableCell className="font-medium">{entry.receptionNo}</TableCell>
-                                    <TableCell>{entry.verifiedAt}</TableCell>
+                                    <TableCell>{entry.verifiedAt || 'N/A'}</TableCell>
                                     <TableCell>{entry.projectName}</TableCell>
                                     <TableCell>{entry.partyName}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(entry.netAmount)}</TableCell>
