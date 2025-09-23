@@ -72,9 +72,9 @@ export default function BankBalanceDashboard() {
         
         accounts.forEach(account => {
             const isCC = account.accountType === 'Cash Credit';
-            const openingBalance = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
+            const openingValue = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
 
-            let currentBalance = openingBalance;
+            let currentBalance = openingValue;
 
             if (account.openingDate) {
                 const interval = {
@@ -88,11 +88,9 @@ export default function BankBalanceDashboard() {
                 
                 accountTransactions.forEach(t => {
                     const amount = t.amount;
-                     if (isCC) {
-                        // For Cash Credit, debits increase utilization, credits decrease it
+                    if (isCC) {
                         currentBalance += (t.type === 'Debit' ? amount : -amount);
-                    } else { // For Current Account
-                        // For Current Account, credits increase balance, debits decrease it
+                    } else { 
                         currentBalance += (t.type === 'Credit' ? amount : -amount);
                     }
                 });
@@ -105,8 +103,18 @@ export default function BankBalanceDashboard() {
 
 
     const totalConsolidatedBalance = useMemo(() => {
-        return Object.values(calculatedBalances).reduce((sum, balance) => sum + balance, 0);
-    }, [calculatedBalances]);
+        let total = 0;
+        accounts.forEach(account => {
+            const balance = calculatedBalances[account.id] || 0;
+            if (account.accountType === 'Cash Credit') {
+                 const latestDp = getLatestDp(account);
+                 total += (latestDp - balance);
+            } else {
+                total += balance;
+            }
+        });
+        return total;
+    }, [calculatedBalances, accounts]);
 
 
     if (authLoading || (isLoading && canView)) {
@@ -224,27 +232,27 @@ export default function BankBalanceDashboard() {
                  </ScrollArea>
             </div>
             <Dialog open={isDailyEntryOpen} onOpenChange={setIsDailyEntryOpen}>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader className="text-center">
                         <DialogTitle>Daily Entry</DialogTitle>
                         <DialogDescription>Select an entry type to proceed.</DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-3 gap-4 pt-4">
                         <Link href="/bank-balance/expenses/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-red-50 hover:bg-red-100 border-red-200">
-                                <ArrowDown className="h-8 w-8 text-red-600 mb-2" />
+                            <Card className="h-full flex flex-col items-center justify-center p-6 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-red-50 hover:bg-red-100 border-red-200">
+                                <ArrowDown className="h-10 w-10 text-red-600 mb-2" />
                                 <p className="font-semibold text-red-800 text-center">Payment</p>
                             </Card>
                         </Link>
                          <Link href="/bank-balance/receipts/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-green-50 hover:bg-green-100 border-green-200">
-                                <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
+                            <Card className="h-full flex flex-col items-center justify-center p-6 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-green-50 hover:bg-green-100 border-green-200">
+                                <ArrowUp className="h-10 w-10 text-green-600 mb-2" />
                                 <p className="font-semibold text-green-800 text-center">Receipts</p>
                             </Card>
                         </Link>
                         <Link href="/bank-balance/internal-transaction/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-blue-50 hover:bg-blue-100 border-blue-200">
-                                <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
+                            <Card className="h-full flex flex-col items-center justify-center p-6 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-blue-50 hover:bg-blue-100 border-blue-200">
+                                <ArrowRightLeft className="h-10 w-10 text-blue-600 mb-2" />
                                 <p className="font-semibold text-blue-800 text-center">Internal Transaction</p>
                             </Card>
                         </Link>
