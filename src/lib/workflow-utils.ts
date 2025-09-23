@@ -92,13 +92,14 @@ export async function calculateDeadline(startDate: Date, tatHours: number): Prom
 }
 
 
-export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'>): Promise<string | null> {
+export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'> | Record<string, any>): Promise<string | null> {
     switch (step.assignmentType) {
         case 'User-based':
-            return Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? (step.assignedTo as string[])[0] : null;
+            // Correctly handle the case where assignedTo is an array of user IDs
+            return Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? step.assignedTo[0] : null;
 
         case 'Project-based': {
-            if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo)) {
+            if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.projectId) {
                 const assignmentMap = step.assignedTo as Record<string, string>;
                 return assignmentMap[requisition.projectId] || null;
             }
@@ -106,7 +107,7 @@ export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<R
         }
 
         case 'Department-based': {
-             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo)) {
+             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.departmentId) {
                 const assignmentMap = step.assignedTo as Record<string, string>;
                 return assignmentMap[requisition.departmentId] || null;
             }
