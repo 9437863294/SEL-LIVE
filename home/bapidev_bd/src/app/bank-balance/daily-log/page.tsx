@@ -35,8 +35,8 @@ export default function DailyLogPage() {
   const [isLoading, setIsLoading] = useState(true);
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfDay(new Date()),
-    to: endOfDay(new Date()),
+    from: new Date(),
+    to: new Date(),
   });
   const [bankFilter, setBankFilter] = useState('all');
 
