@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -36,7 +36,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, runTransaction, Timestamp, getDoc } from 'firebase/firestore';
@@ -77,6 +77,7 @@ export default function NewPaymentPage() {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([initialExpenseItem]);
   const [isSaving, setIsSaving] = useState(false);
   const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(Date.now());
@@ -86,10 +87,11 @@ export default function NewPaymentPage() {
   const fetchBankAccountsAndSettings = async () => {
       setIsSettingsLoading(true);
       try {
-        const [accountsSnap, settingsDoc, methodsSnap] = await Promise.all([
+        const [accountsSnap, settingsDoc, methodsSnap, transactionsSnap] = await Promise.all([
             getDocs(collection(db, 'bankAccounts')),
             getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry')),
             getDocs(collection(db, 'paymentMethods')),
+            getDocs(collection(db, 'bankExpenses')),
         ]);
         
         const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
@@ -100,6 +102,8 @@ export default function NewPaymentPage() {
             : { paymentRequestRefNo: false, utrNumber: false, paymentMethod: false, paymentRefNo: false, approvalCopy: false, bankTransferCopy: false };
         const paymentMethods = methodsSnap.docs.map(d => ({id: d.id, name: d.data().name}));
         setPaymentSettings({ mandatoryFields, paymentMethods });
+
+        setAllTransactions(transactionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
 
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -114,6 +118,46 @@ export default function NewPaymentPage() {
   
 
   const totalAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+  const getLatestDp = (account: BankAccount, onDate: Date): number => {
+    if (!account.drawingPower || account.drawingPower.length === 0) return 0;
+    const sortedDp = account.drawingPower.sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
+    const applicableDp = sortedDp.find(dp => new Date(dp.fromDate) <= startOfDay(onDate));
+    return applicableDp?.amount || 0;
+  };
+  
+  const availableBalance = useMemo(() => {
+    if (!selectedBank || !date) return 0;
+    const account = bankAccounts.find(acc => acc.id === selectedBank);
+    if (!account) return 0;
+
+    let balance = account.accountType === 'Cash Credit'
+        ? (account.openingUtilization || 0)
+        : (account.openingBalance || 0);
+
+    if (account.openingDate) {
+        const historicalTransactions = allTransactions
+            .filter(t => t.accountId === selectedBank && t.date.toDate() < startOfDay(date))
+            .sort((a, b) => a.date.toMillis() - b.date.toMillis());
+
+        historicalTransactions.forEach(t => {
+            const amount = t.amount;
+            if (account.accountType === 'Cash Credit') {
+                 balance += (t.type === 'Debit' ? amount : -amount);
+            } else {
+                 balance += (t.type === 'Credit' ? amount : -amount);
+            }
+        });
+    }
+
+    if(account.accountType === 'Cash Credit') {
+        const currentDp = getLatestDp(account, date);
+        return currentDp - balance;
+    }
+
+    return balance;
+  }, [selectedBank, bankAccounts, allTransactions, date]);
+
 
   const handleExpenseChange = (id: number, field: keyof ExpenseItem, value: any) => {
     setExpenses(prev =>
@@ -181,6 +225,15 @@ export default function NewPaymentPage() {
             }
         }
     }
+    
+    if (totalAmount > availableBalance) {
+        toast({
+            title: 'Insufficient Funds',
+            description: `Total payment amount (${formatCurrency(totalAmount)}) exceeds the available balance (${formatCurrency(availableBalance)}).`,
+            variant: 'destructive',
+        });
+        return;
+    }
 
     setIsSaving(true);
     
@@ -229,6 +282,7 @@ export default function NewPaymentPage() {
         setOpenCollapsibleId(newId);
         setDate(new Date());
         setSelectedBank('');
+        fetchBankAccountsAndSettings(); // Re-fetch to update balance after saving
 
     } catch (error) {
         console.error("Error saving expenses:", error);
@@ -304,6 +358,12 @@ export default function NewPaymentPage() {
                               </SelectContent>
                           </Select>
                       </div>
+                       {selectedBank && (
+                          <div className="space-y-2">
+                            <Label>Available Balance</Label>
+                            <p className="font-bold text-lg">{formatCurrency(availableBalance)}</p>
+                          </div>
+                       )}
                   </div>
                   <div className="text-right flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
                     <p className="text-muted-foreground">Total</p>
