@@ -28,7 +28,7 @@ export default function ProcessedForPaymentPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const canViewPage = can('View', 'Daily Requisition.GST & TDS Verification'); // Assuming same view permission
+  const canViewPage = can('View', 'Daily Requisition.Processed for Payment');
 
   useEffect(() => {
     if (!isAuthLoading) {
