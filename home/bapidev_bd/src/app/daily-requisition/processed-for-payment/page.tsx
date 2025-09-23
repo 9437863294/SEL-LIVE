@@ -52,11 +52,15 @@ export default function ProcessedForPaymentPage() {
 
       const data = reqsSnap.docs.map(doc => {
         const entry = doc.data() as DailyRequisitionEntry;
+        // Safely format dates
+        const entryDate = entry.date && (entry.date as any).toDate ? (entry.date as any).toDate() : new Date(entry.date as any);
+        const verifiedDate = entry.verifiedAt && (entry.verifiedAt as any).toDate ? (entry.verifiedAt as any).toDate() : null;
+
         return {
           ...entry,
           id: doc.id,
-          date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
-          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format((entry.verifiedAt as any).toDate(), 'dd MMM, yyyy HH:mm') : undefined,
+          date: isValidDate(entryDate) ? format(entryDate, 'dd MMM, yyyy') : 'N/A',
+          verifiedAt: verifiedDate ? format(verifiedDate, 'dd MMM, yyyy HH:mm') : undefined,
           projectName: projectsMap.get(entry.projectId) || 'N/A',
         };
       });
@@ -68,6 +72,8 @@ export default function ProcessedForPaymentPage() {
     }
     setIsLoading(false);
   };
+  
+  const isValidDate = (d: any) => d instanceof Date && !isNaN(d.getTime());
   
   const filteredEntries = useMemo(() => {
       return entries.filter(entry => 
