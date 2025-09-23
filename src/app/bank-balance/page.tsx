@@ -71,9 +71,8 @@ export default function BankBalanceDashboard() {
         const balances: Record<string, number> = {};
         
         accounts.forEach(account => {
-            const openingBalance = account.accountType === 'Cash Credit' 
-              ? account.openingUtilization || 0 
-              : account.openingBalance || 0;
+            const isCC = account.accountType === 'Cash Credit';
+            const openingBalance = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
 
             let currentBalance = openingBalance;
 
@@ -89,9 +88,9 @@ export default function BankBalanceDashboard() {
                 
                 accountTransactions.forEach(t => {
                     const amount = t.amount;
-                    if (account.accountType === 'Cash Credit') {
+                    if (isCC) {
                         // For CC, Debit increases utilization, Credit decreases it
-                         currentBalance += (t.type === 'Debit' ? amount : -amount);
+                        currentBalance += (t.type === 'Debit' ? amount : -amount);
                     } else { // Current Account
                         // For Current Account, Credit increases balance, Debit decreases it
                         currentBalance += (t.type === 'Credit' ? amount : -amount);
@@ -105,21 +104,12 @@ export default function BankBalanceDashboard() {
     }, [accounts, allTransactions]);
 
 
-    const { totalDrawingPower, totalCurrentBalance, utilization } = useMemo(() => {
-        const ccAccounts = accounts.filter(acc => acc.accountType === 'Cash Credit');
-        
-        const totalDP = ccAccounts.reduce((sum, acc) => sum + getLatestDp(acc), 0);
-
-        const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + (calculatedBalances[acc.id] || 0), 0);
-        
-        const util = totalDP > 0 ? (totalCCBalance / totalDP) * 100 : 0;
-        
+    const { totalConsolidatedBalance } = useMemo(() => {
+        const total = Object.values(calculatedBalances).reduce((sum, balance) => sum + balance, 0);
         return { 
-            totalDrawingPower: totalDP,
-            totalCurrentBalance: totalCCBalance,
-            utilization: util,
+            totalConsolidatedBalance: total
         };
-    }, [accounts, calculatedBalances]);
+    }, [calculatedBalances]);
 
 
     if (authLoading || (isLoading && canView)) {
@@ -184,27 +174,16 @@ export default function BankBalanceDashboard() {
                 <Card className="mb-4 bg-blue-50 border-blue-200">
                     <CardHeader className="p-4">
                         <div className="flex justify-between items-start">
-                             <CardTitle className="flex items-center gap-2 text-md text-blue-800"><Scale className="h-5 w-5" /> Available Fund</CardTitle>
-                             <div className="text-right">
-                                <p className="text-xs text-blue-600">Total Drawing Power</p>
-                                <p className="font-bold text-blue-900 text-sm">{formatCurrency(totalDrawingPower)}</p>
-                            </div>
+                             <CardTitle className="flex items-center gap-2 text-md text-blue-800"><Scale className="h-5 w-5" /> Total Consolidated Balance</CardTitle>
                         </div>
                          <CardDescription className="text-xs pt-1">
-                            Total available drawing power as of {format(new Date(), 'MMMM do, yyyy')}.
+                            Total balance across all accounts as of {format(new Date(), 'MMMM do, yyyy')}.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="p-4 pt-0">
                          <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalDrawingPower - totalCurrentBalance)}</p>
-                                <p className="text-xs text-muted-foreground">{formatCurrency(totalCurrentBalance)} utilized</p>
-                            </div>
-                            <div className="w-1/3">
-                               <p className="text-right text-xs font-medium">{utilization.toFixed(2)}%</p>
-                               <div className="w-full bg-blue-200 rounded-full h-2">
-                                 <div className="bg-blue-600 h-2 rounded-full" style={{width: `${utilization}%`}}></div>
-                               </div>
+                                <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalConsolidatedBalance)}</p>
                             </div>
                         </div>
                     </CardContent>
