@@ -52,14 +52,15 @@ export default function ProcessedForPaymentPage() {
           id: doc.id,
           projectName: projectsMap.get(entry.projectId) || 'N/A',
           date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
-          verifiedAt: entry.verifiedAt ? format(entry.verifiedAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
-          paidAt: entry.paidAt && entry.paidAt.toDate ? format(entry.paidAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+          verifiedAt: entry.verifiedAt && (entry.verifiedAt as any).toDate ? format(entry.verifiedAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+          receivedAt: entry.receivedAt && (entry.receivedAt as any).toDate ? format(entry.receivedAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
+          paidAt: entry.paidAt && (entry.paidAt as any).toDate ? format(entry.paidAt.toDate(), 'dd MMM, yyyy HH:mm') : 'N/A',
         };
       });
       
       data.sort((a, b) => {
-        const dateA = a.paidAt ? new Date(a.paidAt).getTime() : (a.verifiedAt ? new Date(a.verifiedAt).getTime() : 0);
-        const dateB = b.paidAt ? new Date(b.paidAt).getTime() : (b.verifiedAt ? new Date(b.verifiedAt).getTime() : 0);
+        const dateA = a.paidAt && a.paidAt !== 'N/A' ? new Date(a.paidAt).getTime() : (a.verifiedAt && a.verifiedAt !== 'N/A' ? new Date(a.verifiedAt).getTime() : 0);
+        const dateB = b.paidAt && b.paidAt !== 'N/A' ? new Date(b.paidAt).getTime() : (b.verifiedAt && b.verifiedAt !== 'N/A' ? new Date(b.verifiedAt).getTime() : 0);
         return dateB - dateA;
       });
 
@@ -228,7 +229,7 @@ export default function ProcessedForPaymentPage() {
                                       />
                                     </TableCell>
                                     <TableCell className="font-medium">{entry.receptionNo}</TableCell>
-                                    <TableCell>{entry.receivedAt ? format(new Date(entry.receivedAt), 'dd MMM, yyyy HH:mm') : 'N/A'}</TableCell>
+                                    <TableCell>{entry.receivedAt || 'N/A'}</TableCell>
                                     <TableCell>{entry.projectName}</TableCell>
                                     <TableCell>{entry.partyName}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(entry.netAmount)}</TableCell>
