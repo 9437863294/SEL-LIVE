@@ -9,10 +9,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, onSnapshot, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import type { InsuranceTask, WorkflowStep } from '@/lib/types';
+import type { InsuranceTask, WorkflowStep, ActionLog } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -41,36 +41,37 @@ export default function MyTasksPage() {
     const canViewPage = can('View', 'Insurance.My Tasks');
 
     useEffect(() => {
-        const fetchWorkflow = async () => {
-            const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
-            if(workflowDoc.exists()){
-                setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
-            }
-        }
-        fetchWorkflow();
-    }, []);
-
-    useEffect(() => {
         if (!user || !canViewPage || authLoading) {
-            setIsLoading(false);
+            if (!authLoading) setIsLoading(false);
             return;
         }
 
-        setIsLoading(true);
+        const fetchInitialData = async () => {
+             setIsLoading(true);
+            try {
+                const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+                if(workflowDoc.exists()){
+                    setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
+                }
+                 const q = query(collection(db, 'insuranceTasks'));
+                const querySnapshot = await getDocs(q);
+                const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+                tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+                setTasks(tasksData);
+            } catch (error) {
+                toast({ title: 'Error', description: 'Failed to fetch initial data.', variant: 'destructive' });
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-        const q = query(
-            collection(db, 'insuranceTasks')
-        );
+        fetchInitialData();
         
+        const q = query(collection(db, 'insuranceTasks'));
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
             const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
             tasksData.sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
             setTasks(tasksData);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error with real-time task listener:", error);
-            toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
-            setIsLoading(false);
         });
 
         return () => unsubscribe();
@@ -82,33 +83,67 @@ export default function MyTasksPage() {
         
         try {
             const taskRef = doc(db, 'insuranceTasks', task.id);
-            const currentStepIndex = workflow.findIndex(s => s.id === task.currentStepId);
-            const currentStep = workflow[currentStepIndex];
-            const nextStep = workflow[currentStepIndex + 1];
-
-            let updateData: any = {};
             
-            if (action === 'Approve' || action === 'Complete') {
-                if (nextStep) {
-                    const assignee = await getAssigneeForStep(nextStep, { projectId: (task as any).projectId || '', departmentId: '', amount: 0 });
-                    if (!assignee) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
-                    const deadline = await calculateDeadline(new Date(), nextStep.tat);
-
-                    updateData = {
-                        status: 'In Progress',
-                        currentStepId: nextStep.id,
-                        currentStage: nextStep.name,
-                        assignedTo: assignee,
-                        deadline: Timestamp.fromDate(deadline),
-                    };
-                } else {
-                    updateData = { status: 'Completed', currentStepId: null, currentStage: 'Completed', assignedTo: null, deadline: null };
+            await runTransaction(db, async (transaction) => {
+                const taskDoc = await transaction.get(taskRef);
+                if (!taskDoc.exists()) {
+                    throw new Error("Task document not found!");
                 }
-            } else if (action === 'Reject') {
-                 updateData = { status: 'Rejected', currentStepId: null, currentStage: 'Rejected', assignedTo: null, deadline: null };
-            }
+                const currentTaskData = taskDoc.data() as InsuranceTask;
+                const currentStepIndex = workflow.findIndex(s => s.id === currentTaskData.currentStepId);
+                const currentStep = workflow[currentStepIndex];
+                if (!currentStep) throw new Error("Current workflow step not found.");
+
+                const newActionLog: ActionLog = {
+                    action,
+                    comment: '', // Placeholder for now
+                    userId: user.id,
+                    userName: user.name,
+                    timestamp: Timestamp.now(),
+                    stepName: currentStep.name,
+                };
+                
+                let nextStep: WorkflowStep | undefined;
+                let newStatus: InsuranceTask['status'] = currentTaskData.status;
+                let newStage = currentTaskData.currentStage;
+                let newCurrentStepId: string | null = currentTaskData.currentStepId || null;
+                let newAssignedToId: string | null = null;
+                let newDeadline: Timestamp | null = null;
+    
+                if (action === 'Approve' || action === 'Complete') {
+                    nextStep = workflow[currentStepIndex + 1];
+                    if (nextStep) {
+                        newStage = nextStep.name;
+                        newStatus = 'In Progress';
+                        newCurrentStepId = nextStep.id;
+                        const assignee = await getAssigneeForStep(nextStep, { projectId: (task as any).projectId || '', departmentId: '', amount: 0 });
+                        if (!assignee) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+                        newAssignedToId = assignee;
+                        const deadline = await calculateDeadline(new Date(), nextStep.tat);
+                        newDeadline = Timestamp.fromDate(deadline);
+                    } else {
+                        newStage = 'Completed';
+                        newStatus = 'Completed';
+                        newCurrentStepId = null;
+                    }
+                } else if (action === 'Reject') {
+                    newStage = 'Rejected';
+                    newStatus = 'Rejected';
+                    newCurrentStepId = null;
+                }
+    
+                const updateData = {
+                    status: newStatus,
+                    currentStage: newStage,
+                    currentStepId: newCurrentStepId,
+                    assignedTo: newAssignedToId,
+                    deadline: newDeadline,
+                    history: arrayUnion(newActionLog),
+                };
+                
+                transaction.update(taskRef, updateData);
+            });
             
-            await updateDoc(taskRef, updateData);
             toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}ed.` });
             
         } catch (error: any) {
