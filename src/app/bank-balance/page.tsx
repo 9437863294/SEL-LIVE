@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Home, Banknote, Plus, Settings, DollarSign, Scale, ArrowDown, ArrowUp, ArrowRightLeft, BarChart3, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import type { BankAccount } from '@/lib/types';
+import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -20,6 +20,7 @@ export default function BankBalanceDashboard() {
     const { toast } = useToast();
     const { can, isLoading: authLoading } = useAuthorization();
     const [accounts, setAccounts] = useState<BankAccount[]>([]);
+    const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDailyEntryOpen, setIsDailyEntryOpen] = useState(false);
 
@@ -32,20 +33,28 @@ export default function BankBalanceDashboard() {
             return;
         };
 
-        const fetchAccounts = async () => {
+        const fetchData = async () => {
             setIsLoading(true);
             try {
-                const querySnapshot = await getDocs(collection(db, 'bankAccounts'));
-                const accountsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
+                const [accountsSnap, expensesSnap] = await Promise.all([
+                    getDocs(collection(db, 'bankAccounts')),
+                    getDocs(collection(db, 'bankExpenses'))
+                ]);
+
+                const accountsData = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
                 setAccounts(accountsData);
+
+                const transactionsData = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense));
+                setAllTransactions(transactionsData);
+
             } catch (error) {
-                console.error("Error fetching bank accounts:", error);
-                toast({ title: "Error", description: "Failed to fetch bank accounts.", variant: "destructive" });
+                console.error("Error fetching data:", error);
+                toast({ title: "Error", description: "Failed to fetch bank data.", variant: "destructive" });
             }
             setIsLoading(false);
         };
         
-        fetchAccounts();
+        fetchData();
     }, [canView, toast, authLoading]);
     
     const formatCurrency = (amount: number) => {
@@ -58,13 +67,43 @@ export default function BankBalanceDashboard() {
         return account.drawingPower[0].amount || 0;
     };
     
-    const { totalDrawingPower, totalCurrentBalance, utilization } = (() => {
+     const calculatedBalances = useMemo(() => {
+        const balances: Record<string, number> = {};
+        
+        accounts.forEach(account => {
+            let currentBalance = account.openingUtilization || 0;
+            if (account.openingDate) {
+                const interval = {
+                    start: startOfDay(new Date(account.openingDate)),
+                    end: endOfDay(new Date()),
+                };
+
+                const accountTransactions = allTransactions
+                    .filter(t => t.accountId === account.id && t.date.toDate() >= interval.start && t.date.toDate() <= interval.end)
+                    .sort((a,b) => a.date.toMillis() - b.date.toMillis());
+                
+                accountTransactions.forEach(t => {
+                    if (t.type === 'Credit') {
+                        currentBalance += t.amount;
+                    } else if (t.type === 'Debit') {
+                        currentBalance -= t.amount;
+                    }
+                });
+            }
+            balances[account.id] = currentBalance;
+        });
+
+        return balances;
+    }, [accounts, allTransactions]);
+
+
+    const { totalDrawingPower, totalCurrentBalance, utilization } = useMemo(() => {
         const ccAccounts = accounts.filter(acc => acc.accountType === 'Cash Credit');
         
         const totalDP = ccAccounts.reduce((sum, acc) => sum + getLatestDp(acc), 0);
 
-        const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
-
+        const totalCCBalance = ccAccounts.reduce((sum, acc) => sum + (calculatedBalances[acc.id] || 0), 0);
+        
         const util = totalDP > 0 ? (totalCCBalance / totalDP) * 100 : 0;
         
         return { 
@@ -72,7 +111,8 @@ export default function BankBalanceDashboard() {
             totalCurrentBalance: totalCCBalance,
             utilization: util,
         };
-    })();
+    }, [accounts, calculatedBalances]);
+
 
     if (authLoading || (isLoading && canView)) {
         return (
@@ -165,10 +205,12 @@ export default function BankBalanceDashboard() {
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {accounts.map(account => {
                             const isCC = account.accountType === 'Cash Credit';
-                            let displayBalance = account.currentBalance;
+                            const currentBalance = calculatedBalances[account.id] || 0;
+                            let displayBalance = currentBalance;
+
                             if(isCC) {
                                 const latestDp = getLatestDp(account);
-                                displayBalance = latestDp - account.currentBalance;
+                                displayBalance = latestDp - currentBalance;
                             }
 
                             return (
