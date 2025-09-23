@@ -91,8 +91,14 @@ export default function NewInternalTransactionPage() {
 
                 if (!fromAccountDoc.exists() || !toAccountDoc.exists()) throw new Error("One or both bank accounts in a transaction not found.");
                 
-                const fromAccountData = fromAccountDoc.data();
-                const toAccountData = toAccountDoc.data();
+                const fromAccountData = fromAccountDoc.data() as BankAccount;
+                const toAccountData = toAccountDoc.data() as BankAccount;
+
+                // Update account balances
+                const newFromBalance = fromAccountData.currentBalance - item.amount;
+                const newToBalance = toAccountData.currentBalance + item.amount;
+                transaction.update(fromAccountRef, { currentBalance: newFromBalance });
+                transaction.update(toAccountRef, { currentBalance: newToBalance });
 
                 const contraId = doc(collection(db, 'contraIds')).id;
 
