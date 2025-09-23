@@ -41,7 +41,7 @@ export default function MyTasksPage() {
     
     const canViewPage = can('View', 'Insurance.My Tasks');
 
-    const fetchAndSetData = useCallback(async () => {
+    const fetchData = useCallback(async () => {
       if (!user || !canViewPage) {
         setIsLoading(false);
         return;
@@ -51,7 +51,7 @@ export default function MyTasksPage() {
         const [workflowDoc, tasksSnapshot, usersSnapshot] = await Promise.all([
           getDoc(doc(db, 'workflows', 'insurance-workflow')),
           getDocs(collection(db, 'insuranceTasks')),
-          getDocs(collection(db, 'users')) // Fetch all users for name mapping
+          getDocs(collection(db, 'users')) 
         ]);
 
         if (workflowDoc.exists()) {
@@ -60,7 +60,6 @@ export default function MyTasksPage() {
 
         const allTasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
         
-        // Filter tasks on the client side
         const myPending = allTasks
           .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
           .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
@@ -81,12 +80,13 @@ export default function MyTasksPage() {
     }, [user, canViewPage, toast]);
     
     useEffect(() => {
-        if (authLoading || !canViewPage) {
+        if (authLoading) return;
+        if (canViewPage) {
+            fetchData();
+        } else {
             setIsLoading(false);
-            return;
         }
-        fetchAndSetData();
-    }, [canViewPage, authLoading, fetchAndSetData]);
+    }, [canViewPage, authLoading, fetchData]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
         if (!workflow || !user) return;
@@ -106,7 +106,7 @@ export default function MyTasksPage() {
 
                 const newActionLog: ActionLog = {
                     action,
-                    comment: '', // Placeholder for now
+                    comment: '', 
                     userId: user.id,
                     userName: user.name,
                     timestamp: Timestamp.now(),
@@ -161,7 +161,7 @@ export default function MyTasksPage() {
             });
             
             toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}ed.` });
-            fetchAndSetData();
+            fetchData();
             
         } catch (error: any) {
             toast({ title: 'Error', description: error.message || 'Failed to perform action.', variant: 'destructive'});
@@ -183,7 +183,7 @@ export default function MyTasksPage() {
             const result = await syncInsuranceTasks(user.id);
             if (result.success) {
                 toast({ title: 'Sync Complete', description: result.message });
-                fetchAndSetData();
+                fetchData();
             } else {
                 throw new Error(result.message);
             }
