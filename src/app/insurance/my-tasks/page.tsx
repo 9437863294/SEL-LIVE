@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
