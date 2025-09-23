@@ -81,7 +81,10 @@ export default function MyTasksPage() {
     }, [user, canViewPage, toast]);
     
     useEffect(() => {
-        if (authLoading) return;
+        if (authLoading || !canViewPage) {
+            setIsLoading(false);
+            return;
+        }
         fetchAndSetData();
     }, [canViewPage, authLoading, fetchAndSetData]);
     
@@ -349,8 +352,3 @@ export default function MyTasksPage() {
         </>
     );
 }
-
-    
-
-    
-
