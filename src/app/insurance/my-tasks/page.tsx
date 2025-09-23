@@ -50,7 +50,7 @@ export default function MyTasksPage() {
       try {
         const [workflowDoc, tasksSnapshot] = await Promise.all([
           getDoc(doc(db, 'workflows', 'insurance-workflow')),
-          getDocs(query(collection(db, 'insuranceTasks')))
+          getDocs(collection(db, 'insuranceTasks')) // Fetch all tasks
         ]);
 
         if (workflowDoc.exists()) {
@@ -59,6 +59,7 @@ export default function MyTasksPage() {
 
         const allTasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
         
+        // Filter tasks on the client side
         const myPending = allTasks
           .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
           .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
