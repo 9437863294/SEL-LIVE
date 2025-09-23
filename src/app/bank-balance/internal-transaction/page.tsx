@@ -31,7 +31,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 type UnifiedTransaction = {
-  id: string;
+  id: string; // This will be the contraId
   contraId: string;
   date: string;
   fromAccountId: string;
@@ -67,7 +67,7 @@ export default function InternalTransactionPage() {
         
         contraEntries.sort((a,b) => compareDesc(a.date.toDate(), b.date.toDate()));
         
-        const groupedTransactions: Record<string, Partial<UnifiedTransaction> & { ids?: string[] }> = {};
+        const groupedTransactions: Record<string, Partial<UnifiedTransaction>> = {};
 
         contraEntries.forEach(entry => {
             const contraId = entry.contraId;
@@ -75,14 +75,12 @@ export default function InternalTransactionPage() {
 
             if (!groupedTransactions[contraId]) {
                 groupedTransactions[contraId] = {
-                    ids: [],
+                    contraId: contraId,
                     amount: entry.amount,
                     date: format(entry.date.toDate(), 'yyyy-MM-dd')
                 };
             }
             
-            groupedTransactions[contraId].ids?.push(entry.id);
-
             if (entry.type === 'Debit') {
                 groupedTransactions[contraId].fromAccountId = entry.accountId;
             } else if (entry.type === 'Credit') {
@@ -91,10 +89,10 @@ export default function InternalTransactionPage() {
         });
 
         const unifiedLog: UnifiedTransaction[] = Object.values(groupedTransactions)
-            .filter(t => t.fromAccountId && t.toAccountId && t.ids && t.ids.length > 0)
+            .filter(t => t.fromAccountId && t.toAccountId)
             .map(t => ({
-                id: t.ids![0],
-                contraId: t.ids![0], // Using the first document ID as a proxy for contraId
+                id: t.contraId!, // Use the actual contraId as the unique ID for the unified view
+                contraId: t.contraId!,
                 date: t.date!,
                 fromAccountId: t.fromAccountId!,
                 toAccountId: t.toAccountId!,
