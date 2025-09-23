@@ -89,10 +89,8 @@ export default function BankBalanceDashboard() {
                 accountTransactions.forEach(t => {
                     const amount = t.amount;
                     if (isCC) {
-                        // For CC, Debit increases utilization, Credit decreases it
                         currentBalance += (t.type === 'Debit' ? amount : -amount);
-                    } else { // Current Account
-                        // For Current Account, Credit increases balance, Debit decreases it
+                    } else {
                         currentBalance += (t.type === 'Credit' ? amount : -amount);
                     }
                 });
@@ -104,11 +102,8 @@ export default function BankBalanceDashboard() {
     }, [accounts, allTransactions]);
 
 
-    const { totalConsolidatedBalance } = useMemo(() => {
-        const total = Object.values(calculatedBalances).reduce((sum, balance) => sum + balance, 0);
-        return { 
-            totalConsolidatedBalance: total
-        };
+    const totalConsolidatedBalance = useMemo(() => {
+        return Object.values(calculatedBalances).reduce((sum, balance) => sum + balance, 0);
     }, [calculatedBalances]);
 
 
@@ -171,10 +166,10 @@ export default function BankBalanceDashboard() {
                     </div>
                 </div>
                 
-                <Card className="mb-4 bg-blue-50 border-blue-200">
+                <Card className="mb-4 bg-primary/5 border-primary/20">
                     <CardHeader className="p-4">
                         <div className="flex justify-between items-start">
-                             <CardTitle className="flex items-center gap-2 text-md text-blue-800"><Scale className="h-5 w-5" /> Total Consolidated Balance</CardTitle>
+                             <CardTitle className="flex items-center gap-2 text-md text-primary/90"><Scale className="h-5 w-5" /> Total Consolidated Balance</CardTitle>
                         </div>
                          <CardDescription className="text-xs pt-1">
                             Total balance across all accounts as of {format(new Date(), 'MMMM do, yyyy')}.
@@ -183,7 +178,7 @@ export default function BankBalanceDashboard() {
                     <CardContent className="p-4 pt-0">
                          <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalConsolidatedBalance)}</p>
+                                <p className="text-3xl font-bold text-primary">{formatCurrency(totalConsolidatedBalance)}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -201,10 +196,7 @@ export default function BankBalanceDashboard() {
                             }
 
                             return (
-                                <Card key={account.id} className={
-                                  account.bankName.includes('Punjab') ? 'bg-orange-50 border-orange-200' :
-                                  account.bankName.includes('State Bank') ? 'bg-blue-50 border-blue-200' : ''
-                                }>
+                                <Card key={account.id} className="border-border/60">
                                     <CardHeader className="p-4">
                                         <div className="flex justify-between items-start">
                                             <CardTitle className="text-base">{account.shortName}</CardTitle>
@@ -237,24 +229,29 @@ export default function BankBalanceDashboard() {
                     </DialogHeader>
                     <div className="grid grid-cols-3 gap-4 pt-4">
                         <Link href="/bank-balance/expenses/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-red-50 hover:bg-red-100 border-red-200">
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-red-50 hover:bg-red-100 border-red-200">
                                 <ArrowDown className="h-8 w-8 text-red-600 mb-2" />
                                 <p className="font-semibold text-red-800 text-center">Payment</p>
                             </Card>
                         </Link>
                          <Link href="/bank-balance/receipts/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-green-50 hover:bg-green-100 border-green-200">
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-green-50 hover:bg-green-100 border-green-200">
                                 <ArrowUp className="h-8 w-8 text-green-600 mb-2" />
                                 <p className="font-semibold text-green-800 text-center">Receipts</p>
                             </Card>
                         </Link>
                         <Link href="/bank-balance/internal-transaction/new" onClick={() => setIsDailyEntryOpen(false)}>
-                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-shadow bg-blue-50 hover:bg-blue-100 border-blue-200">
+                            <Card className="h-full flex flex-col items-center justify-center p-4 cursor-pointer hover:shadow-lg transition-transform hover:-translate-y-1 bg-blue-50 hover:bg-blue-100 border-blue-200">
                                 <ArrowRightLeft className="h-8 w-8 text-blue-600 mb-2" />
                                 <p className="font-semibold text-blue-800 text-center">Internal Transaction</p>
                             </Card>
                         </Link>
                     </div>
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button variant="outline" className="mt-4">Close</Button>
+                      </DialogClose>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </>
