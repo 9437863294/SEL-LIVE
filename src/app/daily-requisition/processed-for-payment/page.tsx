@@ -68,7 +68,16 @@ export default function ProcessedForPaymentPage() {
       setEntries(data as EnrichedEntry[]);
     } catch (error: any) {
       console.error("Error fetching entries: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
+      if (error.code === 'failed-precondition') {
+          toast({
+              title: 'Database Index Required',
+              description: "This query may require a custom index. Please check the Firebase console for instructions on how to create it for the 'dailyRequisitions' collection.",
+              variant: 'destructive',
+              duration: 10000,
+          });
+      } else {
+        toast({ title: 'Error', description: 'Failed to fetch verified entries.', variant: 'destructive' });
+      }
     }
     setIsLoading(false);
   };
