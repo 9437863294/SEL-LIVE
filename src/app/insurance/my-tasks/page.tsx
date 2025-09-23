@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, onSnapshot, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
@@ -48,53 +48,38 @@ export default function MyTasksPage() {
       }
       setIsLoading(true);
       try {
-        const workflowDoc = await getDoc(doc(db, 'workflows', 'insurance-workflow'));
+        const [workflowDoc, tasksSnapshot] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'insurance-workflow')),
+          getDocs(query(collection(db, 'insuranceTasks')))
+        ]);
+
         if (workflowDoc.exists()) {
           setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
         }
-  
-        const q = query(collection(db, 'insuranceTasks'));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-          const allTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+
+        const allTasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InsuranceTask));
+        
+        const myPending = allTasks
+          .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
+          .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
           
-          const myPending = allTasks
-            .filter(t => t.assignedTo === user.id && t.status !== 'Completed' && t.status !== 'Rejected')
-            .sort((a,b) => a.dueDate.toMillis() - b.dueDate.toMillis());
-            
-          const myCompleted = allTasks
-            .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
-            .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-            
-          setPendingTasks(myPending);
-          setCompletedTasks(myCompleted);
-          setIsLoading(false);
-        });
-  
-        return unsubscribe;
+        const myCompleted = allTasks
+          .filter(t => (t.status === 'Completed' || t.status === 'Rejected'))
+          .sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+          
+        setPendingTasks(myPending);
+        setCompletedTasks(myCompleted);
+        
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to fetch tasks or workflow.', variant: 'destructive' });
+      } finally {
         setIsLoading(false);
       }
     }, [user, canViewPage, toast]);
     
     useEffect(() => {
         if (authLoading) return;
-    
-        let unsubscribe: (() => void) | undefined;
-        if(canViewPage) {
-            const init = async () => {
-              unsubscribe = await fetchAndSetData();
-            };
-            init();
-        } else {
-            setIsLoading(false);
-        }
-    
-        return () => {
-          if (unsubscribe) {
-            unsubscribe();
-          }
-        };
+        fetchAndSetData();
     }, [canViewPage, authLoading, fetchAndSetData]);
     
     const handleAction = async (task: InsuranceTask, action: string) => {
@@ -165,6 +150,7 @@ export default function MyTasksPage() {
             });
             
             toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}ed.` });
+            fetchAndSetData();
             
         } catch (error: any) {
             toast({ title: 'Error', description: error.message || 'Failed to perform action.', variant: 'destructive'});
@@ -186,6 +172,7 @@ export default function MyTasksPage() {
             const result = await syncInsuranceTasks(user.id);
             if (result.success) {
                 toast({ title: 'Sync Complete', description: result.message });
+                fetchAndSetData();
             } else {
                 throw new Error(result.message);
             }
@@ -354,5 +341,7 @@ export default function MyTasksPage() {
         </>
     );
 }
+
+    
 
     
