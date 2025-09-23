@@ -178,7 +178,7 @@ export default function OpeningUtilizationPage() {
                     <TableCell>
                       <Input
                         type="number"
-                        value={utilizations[acc.id]?.amount || ''}
+                        value={utilizations[acc.id]?.amount ?? ''}
                         onChange={(e) => handleUtilizationChange(acc.id, 'amount', e.target.value)}
                         placeholder="Enter amount"
                         disabled={!canEdit}
