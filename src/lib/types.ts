@@ -358,6 +358,10 @@ export type ActionLog = {
   userName: string;
   timestamp: any; // Firestore Server Timestamp
   stepName: string;
+  attachment?: {
+    name: string;
+    url: string;
+  };
 };
 
 export type Attachment = {
@@ -374,7 +378,7 @@ export type Requisition = {
   description: string;
   raisedBy: string;
   raisedById: string;
-  status: 'Pending' | 'In Progress' | 'Approved' | 'Rejected' | 'Completed';
+  status: 'Pending' | 'In Progress' | 'Approved' | 'Rejected' | 'Completed' | 'Needs Review';
   stage: string;
   date: string;
   createdAt: any; // Firestore Timestamp

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -20,14 +21,15 @@ import { ScrollArea } from './ui/scroll-area';
 import { useAuth } from './auth/AuthProvider';
 import { Textarea } from './ui/textarea';
 import { useState, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Upload } from 'lucide-react';
+import { Input } from './ui/input';
 
 interface ViewInsuranceTaskDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   task: InsuranceTask | null;
   workflow: WorkflowStep[] | null;
-  onAction?: (taskId: string, action: string, comment: string) => Promise<void>;
+  onAction?: (taskId: string, action: string, comment: string, file?: File) => Promise<void>;
   isActionLoading?: boolean;
 }
 
@@ -41,6 +43,7 @@ interface EnrichedStep extends WorkflowStep {
 export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, workflow, onAction, isActionLoading }: ViewInsuranceTaskDialogProps) {
   const { user, users } = useAuth();
   const [actionComment, setActionComment] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   
   const currentStep = useMemo(() => {
     if (!task || !workflow) return null;
@@ -89,6 +92,7 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
   }
   
   const enrichedSteps = getEnrichedSteps();
+  const isUploadRequired = currentStep?.upload === 'Required';
   
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -153,6 +157,12 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
             </div>
              {isActionAllowed && (
                   <div className="space-y-4 pt-4 border-t">
+                      {isUploadRequired && (
+                        <div>
+                            <Label htmlFor="file-upload" className="font-semibold text-destructive">Upload Required Document</Label>
+                            <Input id="file-upload" type="file" className="mt-1" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                        </div>
+                      )}
                       <div>
                           <Label>Action Comment</Label>
                           <Textarea 
@@ -169,7 +179,7 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
            {isActionAllowed && (
             <div className="flex flex-wrap gap-2">
                 {currentStep?.actions.map(action => (
-                    <Button key={action} onClick={() => onAction?.(task.id, action, actionComment)} disabled={isActionLoading}>
+                    <Button key={action} onClick={() => onAction?.(task.id, action, actionComment, file || undefined)} disabled={isActionLoading || (isUploadRequired && !file)}>
                         {isActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         {action}
                     </Button>

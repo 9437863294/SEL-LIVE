@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -22,6 +23,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 
 export default function MyTasksPage() {
@@ -110,7 +112,7 @@ export default function MyTasksPage() {
     }, [allTasks, user]);
 
 
-    const handleAction = async (taskId: string, action: string, comment: string) => {
+    const handleAction = async (taskId: string, action: string, comment: string, file?: File) => {
         if (!workflow || !user) return;
         setIsActionLoading(taskId);
         
@@ -126,6 +128,15 @@ export default function MyTasksPage() {
                 const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
                 if (!currentStep) throw new Error("Current workflow step not found.");
 
+                let attachmentData: { name: string; url: string } | undefined;
+                if (file) {
+                    const storagePath = `insurance-actions/${taskId}/${currentStep.name}/${file.name}`;
+                    const storageRef = ref(storage, storagePath);
+                    await uploadBytes(storageRef, file);
+                    const downloadURL = await getDownloadURL(storageRef);
+                    attachmentData = { name: file.name, url: downloadURL };
+                }
+
                 const newActionLog: ActionLog = {
                     action,
                     comment: comment, 
@@ -133,6 +144,7 @@ export default function MyTasksPage() {
                     userName: user.name,
                     timestamp: Timestamp.now(),
                     stepName: currentStep.name,
+                    attachment: attachmentData,
                 };
                 
                 let nextStep: WorkflowStep | undefined;
@@ -164,12 +176,6 @@ export default function MyTasksPage() {
                         newStatus = 'Completed';
                         newCurrentStepId = null;
                     }
-                } else if (action === 'Complete') {
-                    newStage = 'Completed';
-                    newStatus = 'Completed';
-                    newCurrentStepId = null;
-                    newAssignees = [];
-                    newDeadline = null;
                 } else if (action === 'Reject') {
                     newStage = 'Rejected';
                     newStatus = 'Rejected';
@@ -230,15 +236,12 @@ export default function MyTasksPage() {
                                 <TableHead>Insured Person</TableHead>
                                 <TableHead>Due Date</TableHead>
                                 <TableHead>{isPending ? 'Current Stage' : 'Status'}</TableHead>
-                                {isPending && <TableHead className="text-right">Actions</TableHead>}
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {data.length > 0 ? (
                                 data.map(task => {
-                                    const currentStep = workflow?.find(s => s.id === task.currentStepId);
-                                    const isAssignedToCurrentUser = task.assignees?.includes(user?.id || '');
-                                    
                                     return (
                                         <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task)}>
                                             <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
@@ -246,17 +249,15 @@ export default function MyTasksPage() {
                                             <TableCell>{task.insuredPerson}</TableCell>
                                             <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
                                             <TableCell>{isPending ? task.currentStage : task.status}</TableCell>
-                                            {isPending && (
-                                                <TableCell className="text-right">
-                                                     {isActionLoading === task.id ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                                                    ) : (
-                                                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(task); }}>
-                                                            <Eye className="mr-2 h-4 w-4" /> View
-                                                        </Button>
-                                                    )}
-                                                </TableCell>
-                                            )}
+                                            <TableCell className="text-right">
+                                                 {isActionLoading === task.id ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                                                ) : (
+                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(task); }}>
+                                                        <Eye className="mr-2 h-4 w-4" /> View
+                                                    </Button>
+                                                )}
+                                            </TableCell>
                                         </TableRow>
                                     )
                                 })
@@ -296,9 +297,7 @@ export default function MyTasksPage() {
                         <CardTitle>Access Denied</CardTitle>
                         <CardDescription>You do not have permission to view this page.</CardDescription>
                     </CardHeader>
-                    <CardContent className="flex justify-center p-8">
-                        <ShieldAlert className="h-16 w-16 text-destructive" />
-                    </CardContent>
+                    <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
         );
