@@ -248,34 +248,12 @@ export default function MyTasksPage() {
                                             <TableCell>{isPending ? task.currentStage : task.status}</TableCell>
                                             {isPending && (
                                                 <TableCell className="text-right">
-                                                    {isActionLoading === task.id ? (
+                                                     {isActionLoading === task.id ? (
                                                         <Loader2 className="h-4 w-4 animate-spin ml-auto" />
                                                     ) : (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <div className="inline-block">
-                                                                        <DropdownMenu>
-                                                                            <DropdownMenuTrigger asChild>
-                                                                                <Button variant="outline" size="sm" onClick={e => e.stopPropagation()} disabled={!currentStep?.actions.length || !isAssignedToCurrentUser}>
-                                                                                    Actions <MoreHorizontal className="ml-2 h-4 w-4" />
-                                                                                </Button>
-                                                                            </DropdownMenuTrigger>
-                                                                            <DropdownMenuContent>
-                                                                                <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleRowClick(task) }}>
-                                                                                    <Eye className="mr-2 h-4 w-4" /> View Details
-                                                                                </DropdownMenuItem>
-                                                                            </DropdownMenuContent>
-                                                                        </DropdownMenu>
-                                                                    </div>
-                                                                </TooltipTrigger>
-                                                                {!isAssignedToCurrentUser && (
-                                                                    <TooltipContent>
-                                                                        <p>Not assigned to you</p>
-                                                                    </TooltipContent>
-                                                                )}
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(task); }}>
+                                                            <Eye className="mr-2 h-4 w-4" /> View
+                                                        </Button>
                                                     )}
                                                 </TableCell>
                                             )}
