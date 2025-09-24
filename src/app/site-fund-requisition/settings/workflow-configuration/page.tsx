@@ -371,16 +371,16 @@ export default function WorkflowConfigurationPage() {
                                                      <div className="space-y-2">
                                                         <Label>Alternative User</Label>
                                                         <Select
-                                                            value={Array.isArray(step.assignedTo) ? step.assignedTo[1] || '' : ''}
+                                                            value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] || 'none' : 'none'}
                                                             onValueChange={(value) => {
                                                                 const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
-                                                                newAssignedTo[1] = value;
+                                                                newAssignedTo[1] = value === 'none' ? '' : value;
                                                                 handleStepChange(step.id, 'assignedTo', newAssignedTo);
                                                             }}
                                                         >
                                                             <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
                                                             <SelectContent>
-                                                                <SelectItem value="">None</SelectItem>
+                                                                <SelectItem value="none">None</SelectItem>
                                                                 {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
                                                             </SelectContent>
                                                         </Select>
