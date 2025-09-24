@@ -24,20 +24,20 @@ function getFirebaseAdminApp() {
     return admin.apps[0]!;
   }
 
-  const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serviceAccountEnv) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is not set.');
+  const serviceAccount = {
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  };
+
+  if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
+    throw new Error('Firebase Admin SDK service account credentials are not set correctly in environment variables.');
   }
 
-  try {
-    const serviceAccount = JSON.parse(serviceAccountEnv);
-    return admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    });
-  } catch (error) {
-    throw new Error('Failed to parse FIREBASE_SERVICE_ACCOUNT. Make sure it is a valid JSON string.');
-  }
+  return admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  });
 }
 
 const generateUploadUrlFlow = ai.defineFlow(
