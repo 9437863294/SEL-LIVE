@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -99,7 +100,7 @@ export default function MyTasksPage() {
         if (!user) return { pendingTasks: [], completedTasks: [] };
         
         const myPending = allTasks
-          .filter(task => task.assignedTo === user.id && ['Pending', 'In Progress', 'Needs Review'].includes(task.status))
+          .filter(task => task.assignees?.includes(user.id) && ['Pending', 'In Progress', 'Needs Review'].includes(task.status))
           .sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
 
         const myCompleted = allTasks
@@ -139,7 +140,7 @@ export default function MyTasksPage() {
                 let newStatus: InsuranceTask['status'] = currentTaskData.status;
                 let newStage = currentTaskData.currentStage;
                 let newCurrentStepId: string | null = currentTaskData.currentStepId || null;
-                let newAssignedToId: string | null = null;
+                let newAssignees: string[] = [];
                 let newDeadline: Timestamp | null = null;
     
                 if (action === 'Approve' || action === 'Verified' || action === 'Update Approved Amount') {
@@ -154,9 +155,9 @@ export default function MyTasksPage() {
                             departmentId: '',
                             amount: (currentTaskData as any).premium || 0,
                         };
-                        const assignee = await getAssigneeForStep(nextStep, tempRequisitionDataForAssignment);
-                        if (!assignee) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
-                        newAssignedToId = assignee;
+                        const assignees = await getAssigneeForStep(nextStep, tempRequisitionDataForAssignment);
+                        if (assignees.length === 0) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+                        newAssignees = assignees;
                         const deadline = await calculateDeadline(new Date(), nextStep.tat);
                         newDeadline = Timestamp.fromDate(deadline);
                     } else {
@@ -168,16 +169,16 @@ export default function MyTasksPage() {
                     newStage = 'Completed';
                     newStatus = 'Completed';
                     newCurrentStepId = null;
-                    newAssignedToId = null;
+                    newAssignees = [];
                     newDeadline = null;
                 } else if (action === 'Reject') {
                     newStage = 'Rejected';
                     newStatus = 'Rejected';
                     newCurrentStepId = null;
-                    newAssignedToId = null;
+                    newAssignees = [];
                     newDeadline = null;
                 } else {
-                    newAssignedToId = currentTaskData.assignedTo || null;
+                    newAssignees = currentTaskData.assignees || [];
                     newDeadline = currentTaskData.deadline;
                 }
     
@@ -185,7 +186,7 @@ export default function MyTasksPage() {
                     status: newStatus,
                     currentStage: newStage,
                     currentStepId: newCurrentStepId,
-                    assignedTo: newAssignedToId,
+                    assignees: newAssignees,
                     deadline: newDeadline,
                     history: arrayUnion(newActionLog),
                 };
@@ -237,7 +238,7 @@ export default function MyTasksPage() {
                             {data.length > 0 ? (
                                 data.map(task => {
                                     const currentStep = workflow?.find(s => s.id === task.currentStepId);
-                                    const isAssignedToCurrentUser = task.assignedTo === user?.id;
+                                    const isAssignedToCurrentUser = task.assignees?.includes(user?.id || '');
                                     
                                     return (
                                         <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task)}>

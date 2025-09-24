@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import { collection, getDocs, query, where, doc, getDoc, addDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
@@ -61,9 +62,8 @@ async function processPolicies(
                         amount: policy.premium,
                     };
                     
-                    // @ts-ignore
-                    const assignedToId = await getAssigneeForStep(firstStep, tempRequisitionDataForAssignment);
-                    if (!assignedToId) {
+                    const assignees = await getAssigneeForStep(firstStep, tempRequisitionDataForAssignment);
+                    if (assignees.length === 0) {
                         console.warn(`Could not determine assignee for policy ${policy.policy_no}, skipping task creation.`);
                         tasksSkipped++;
                         continue;
@@ -78,7 +78,7 @@ async function processPolicies(
                         insuredPerson: (policy as InsurancePolicy).insured_person || (policy as ProjectInsurancePolicy).assetName,
                         dueDate: Timestamp.fromDate(dueDate),
                         status: 'Pending',
-                        assignedTo: assignedToId,
+                        assignees: assignees,
                         createdAt: Timestamp.fromDate(taskCreationDate),
                         taskType: 'Premium Due',
                         currentStepId: firstStep.id,

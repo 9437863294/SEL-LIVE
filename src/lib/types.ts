@@ -710,7 +710,7 @@ export type InsuranceTask = {
   insuredPerson: string;
   dueDate: any; // Firestore Timestamp
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
-  assignedTo: string; // User ID
+  assignees: string[]; // User IDs
   createdAt: any; // Firestore Timestamp
   taskType: 'Premium Due' | 'Maturity Due';
   currentStepId: string | null;
