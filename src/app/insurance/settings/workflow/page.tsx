@@ -11,16 +11,19 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition, AssignedTo } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { cn } from '@/lib/utils';
+
 
 const initialSteps: WorkflowStep[] = [
     { 
@@ -118,12 +121,38 @@ export default function InsuranceWorkflowConfigurationPage() {
         setSteps(steps.map(step => {
             if (step.id === id) {
                 const updatedStep = { ...step, [field]: value };
+                if (field === 'assignmentType') {
+                    if (value === 'Amount-based') {
+                        updatedStep.assignedTo = [{id: crypto.randomUUID(), type: 'Below', amount1: 0, userId: '' }];
+                    } else if (value === 'User-based') {
+                        updatedStep.assignedTo = [];
+                    } else {
+                        updatedStep.assignedTo = {};
+                    }
+                }
                 return updatedStep;
             }
             return step;
         }));
     };
     
+    const handleAssignmentDetailChange = (stepId: string, detailKey: string, userType: 'primary' | 'alternative', userId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const currentAssignments = (step.assignedTo as Record<string, { primary: string, alternative?: string }>) || {};
+                const newAssignedTo = {
+                    ...currentAssignments,
+                    [detailKey]: {
+                        ...currentAssignments[detailKey],
+                        [userType]: userId,
+                    }
+                };
+                return { ...step, assignedTo: newAssignedTo };
+            }
+            return step;
+        }));
+    };
+
     const handleActionChange = (stepId: string, action: string, checked: boolean) => {
         setSteps(steps.map(step => {
             if (step.id === stepId) {
@@ -131,6 +160,47 @@ export default function InsuranceWorkflowConfigurationPage() {
                     ? [...step.actions, action]
                     : step.actions.filter(a => a !== action);
                 return { ...step, actions: newActions };
+            }
+            return step;
+        }));
+    };
+
+    const handleAmountConditionChange = (stepId: string, conditionId: string, field: keyof AmountBasedCondition, value: any) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const updatedAssignedTo = (step.assignedTo as AmountBasedCondition[]).map(cond => {
+                    if (cond.id === conditionId) {
+                        return { ...cond, [field]: value };
+                    }
+                    return cond;
+                });
+                return { ...step, assignedTo: updatedAssignedTo };
+            }
+            return step;
+        }));
+    };
+
+    const handleAddAmountCondition = (stepId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newCondition: AmountBasedCondition = {
+                    id: crypto.randomUUID(),
+                    type: 'Between',
+                    amount1: 0,
+                    amount2: 10000,
+                    userId: ''
+                };
+                return { ...step, assignedTo: [...(step.assignedTo as AmountBasedCondition[]), newCondition] };
+            }
+            return step;
+        }));
+    };
+
+    const handleDeleteAmountCondition = (stepId: string, conditionId: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newAssignedTo = (step.assignedTo as AmountBasedCondition[]).filter(cond => cond.id !== conditionId);
+                return { ...step, assignedTo: newAssignedTo };
             }
             return step;
         }));
@@ -251,44 +321,141 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                 </div>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <Label>Primary User</Label>
-                                                    <Select
-                                                        value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[0] || '' : ''}
-                                                        onValueChange={(value) => {
-                                                            const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
-                                                            newAssignedTo[0] = value;
-                                                            handleStepChange(step.id, 'assignedTo', newAssignedTo);
-                                                        }}
-                                                    >
-                                                        <SelectTrigger id={`assigned-user-${step.id}`}>
-                                                            <SelectValue placeholder="Select a user" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label>Alternative User</Label>
-                                                    <Select
-                                                        value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] || '' : ''}
-                                                        onValueChange={(value) => {
-                                                            const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
-                                                            newAssignedTo[1] = value;
-                                                            handleStepChange(step.id, 'assignedTo', newAssignedTo);
-                                                        }}
-                                                    >
-                                                        <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="">None</SelectItem>
-                                                            {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                            <div className="space-y-4">
+                                                <Label>Assignment Type</Label>
+                                                <RadioGroup
+                                                    value={step.assignmentType}
+                                                    onValueChange={(value) => handleStepChange(step.id, 'assignmentType', value)}
+                                                    className="flex flex-wrap gap-4"
+                                                >
+                                                    {['User-based', 'Project-based', 'Department-based', 'Amount-based'].map(type => (
+                                                        <div key={type} className="flex items-center space-x-2">
+                                                            <RadioGroupItem value={type} id={`${step.id}-${type}`} />
+                                                            <Label htmlFor={`${step.id}-${type}`} className="font-normal">{type}</Label>
+                                                        </div>
+                                                    ))}
+                                                </RadioGroup>
                                             </div>
-                                            
+
+                                            {step.assignmentType === 'User-based' && (
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label>Primary User</Label>
+                                                        <Select
+                                                            value={Array.isArray(step.assignedTo) ? step.assignedTo[0] || '' : ''}
+                                                            onValueChange={(value) => {
+                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
+                                                                newAssignedTo[0] = value;
+                                                                handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                                            }}
+                                                        >
+                                                            <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
+                                                            <SelectContent>
+                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                     <div className="space-y-2">
+                                                        <Label>Alternative User</Label>
+                                                        <Select
+                                                            value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] || 'none' : 'none'}
+                                                            onValueChange={(value) => {
+                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
+                                                                newAssignedTo[1] = value === 'none' ? '' : value;
+                                                                handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                                            }}
+                                                        >
+                                                            <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none">None</SelectItem>
+                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {(step.assignmentType === 'Project-based' || step.assignmentType === 'Department-based') && (
+                                                <div className="space-y-2">
+                                                    <Label>Assign Users</Label>
+                                                    <Card className="mt-2">
+                                                        <Table>
+                                                            <TableHeader>
+                                                                <TableRow>
+                                                                    <TableHead>{step.assignmentType === 'Project-based' ? 'Project' : 'Department'}</TableHead>
+                                                                    <TableHead>Primary User</TableHead>
+                                                                    <TableHead>Alternative User</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {(step.assignmentType === 'Project-based' ? projects : departments).map(item => (
+                                                                    <TableRow key={item.id}>
+                                                                        <TableCell>{item.name || (item as Project).projectName}</TableCell>
+                                                                        <TableCell>
+                                                                             <Select
+                                                                                value={(step.assignedTo as Record<string, { primary: string }>)[item.id]?.primary || ''}
+                                                                                onValueChange={(value) => handleAssignmentDetailChange(step.id, item.id, 'primary', value)}
+                                                                            >
+                                                                                <SelectTrigger><SelectValue placeholder="Select primary user" /></SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </TableCell>
+                                                                         <TableCell>
+                                                                             <Select
+                                                                                value={(step.assignedTo as Record<string, { alternative?: string }>)[item.id]?.alternative || ''}
+                                                                                onValueChange={(value) => handleAssignmentDetailChange(step.id, item.id, 'alternative', value)}
+                                                                            >
+                                                                                <SelectTrigger><SelectValue placeholder="Select alternative user" /></SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </Card>
+                                                </div>
+                                            )}
+
+                                            {step.assignmentType === 'Amount-based' && Array.isArray(step.assignedTo) && (
+                                                <div className="space-y-2">
+                                                    <Label>Assign Users per Amount Condition</Label>
+                                                    <Card className="p-4 mt-2 space-y-4">
+                                                        {(step.assignedTo as AmountBasedCondition[]).map(condition => (
+                                                            <div key={condition.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                                                                <Select
+                                                                    value={condition.type}
+                                                                    onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'type', value)}
+                                                                >
+                                                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="Below">Below</SelectItem>
+                                                                        <SelectItem value="Between">Between</SelectItem>
+                                                                        <SelectItem value="Above">Above</SelectItem>
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                <div className={cn("flex gap-2 items-center", condition.type === 'Between' ? 'col-span-1' : 'col-span-1')}>
+                                                                    <Input type="number" value={condition.amount1} onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount1', e.target.valueAsNumber || 0)} />
+                                                                    {condition.type === 'Between' && <><span>&</span><Input type="number" value={condition.amount2} onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount2', e.target.valueAsNumber || 0)} /></>}
+                                                                </div>
+                                                                <div className="col-span-2 flex gap-2">
+                                                                    <Select value={condition.userId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)}><SelectTrigger><SelectValue placeholder="Primary" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
+                                                                    <Select value={condition.alternativeUserId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value)}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
+                                                                    <Button variant="ghost" size="icon" onClick={() => handleDeleteAmountCondition(step.id, condition.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        <Button variant="outline" size="sm" onClick={() => handleAddAmountCondition(step.id)}>
+                                                            <Plus className="mr-2 h-4 w-4" /> Add Condition
+                                                        </Button>
+                                                    </Card>
+                                                </div>
+                                            )}
+
                                             <div className="space-y-4">
                                                 <Label>Actions</Label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
