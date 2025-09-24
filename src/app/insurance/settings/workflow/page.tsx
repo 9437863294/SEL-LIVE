@@ -55,7 +55,7 @@ const initialSteps: WorkflowStep[] = [
     },
 ];
 
-const allActions = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verify'];
+const allActions = ['Approve', 'Reject', 'Needs Correction', 'Verify'];
 
 export default function InsuranceWorkflowConfigurationPage() {
     const { toast } = useToast();
