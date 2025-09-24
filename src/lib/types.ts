@@ -398,14 +398,17 @@ export type AmountBasedCondition = {
   amount1: number;
   amount2?: number;
   userId: string;
+  alternativeUserId?: string;
 };
+
+export type AssignedTo = string[] | Record<string, { primary: string; alternative?: string }> | AmountBasedCondition[];
 
 export type WorkflowStep = {
   id: string;
   name: string;
   tat: number; // Turnaround time in hours
   assignmentType: 'User-based' | 'Project-based' | 'Department-based' | 'Amount-based';
-  assignedTo: string[] | Record<string, string> | AmountBasedCondition[];
+  assignedTo: AssignedTo;
   actions: string[];
   upload: 'Required' | 'Not Required' | 'Optional';
 };

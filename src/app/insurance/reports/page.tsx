@@ -29,20 +29,6 @@ const reportItemsBase = [
     href: '/insurance/reports/my-tasks-summary',
     permission: 'View Reports',
   },
-  { 
-    icon: BarChart3, 
-    title: 'Cashflow Statement', 
-    description: 'Analyze the movement of cash over a period.', 
-    href: '#',
-    permission: 'View Cashflow',
-  },
-  { 
-    icon: PieChart, 
-    title: 'Bank Position Report', 
-    description: 'View a summary of balances across all banks.',
-    href: '#',
-    permission: 'View Bank Position',
-  },
 ];
 
 function ReportCard({ item }: ReportCardProps) {

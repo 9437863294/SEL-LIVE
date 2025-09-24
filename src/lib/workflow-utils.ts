@@ -7,7 +7,8 @@ import type {
     Requisition, 
     AmountBasedCondition, 
     WorkingHours, 
-    Holiday 
+    Holiday,
+    AssignedTo
 } from '@/lib/types';
 import { add, setHours, setMinutes, setSeconds, isSameDay, parse, formatISO } from 'date-fns';
 
@@ -103,16 +104,16 @@ export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<R
 
         case 'Project-based': {
             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.projectId) {
-                const assignmentMap = step.assignedTo as Record<string, string>;
-                return assignmentMap[requisition.projectId] || null;
+                const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
+                return assignmentMap[requisition.projectId]?.primary || null;
             }
             return null;
         }
 
         case 'Department-based': {
              if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.departmentId) {
-                const assignmentMap = step.assignedTo as Record<string, string>;
-                return assignmentMap[requisition.departmentId] || null;
+                const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
+                return assignmentMap[requisition.departmentId]?.primary || null;
             }
             return null;
         }
