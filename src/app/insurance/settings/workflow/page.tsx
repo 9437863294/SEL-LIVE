@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -116,7 +117,8 @@ export default function InsuranceWorkflowConfigurationPage() {
     const handleStepChange = (id: string, field: keyof WorkflowStep, value: any) => {
         setSteps(steps.map(step => {
             if (step.id === id) {
-                return { ...step, [field]: value };
+                const updatedStep = { ...step, [field]: value };
+                return updatedStep;
             }
             return step;
         }));
@@ -249,21 +251,42 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2">
-                                                <Label>Assigned User</Label>
-                                                <Select
-                                                    value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[0] || '' : ''}
-                                                    onValueChange={(value) => handleStepChange(step.id, 'assignedTo', [value])}
-                                                >
-                                                    <SelectTrigger id={`assigned-user-${step.id}`}>
-                                                        <SelectValue placeholder="Select a user" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {users.map(user => (
-                                                            <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label>Primary User</Label>
+                                                    <Select
+                                                        value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[0] || '' : ''}
+                                                        onValueChange={(value) => {
+                                                            const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
+                                                            newAssignedTo[0] = value;
+                                                            handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                                        }}
+                                                    >
+                                                        <SelectTrigger id={`assigned-user-${step.id}`}>
+                                                            <SelectValue placeholder="Select a user" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>Alternative User</Label>
+                                                    <Select
+                                                        value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] || '' : ''}
+                                                        onValueChange={(value) => {
+                                                            const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
+                                                            newAssignedTo[1] = value;
+                                                            handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                                        }}
+                                                    >
+                                                        <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="">None</SelectItem>
+                                                            {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
                                             </div>
                                             
                                             <div className="space-y-4">
