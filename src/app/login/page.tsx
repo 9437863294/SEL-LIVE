@@ -282,7 +282,7 @@ export default function LoginPage() {
   };
 
   const renderContent = () => {
-    if (showPasswordForm) {
+    if (showPasswordForm || savedUsers.length === 0) {
       return renderPasswordForm();
     }
     if (activeUser) {
