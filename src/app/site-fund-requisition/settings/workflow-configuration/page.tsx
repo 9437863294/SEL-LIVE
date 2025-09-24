@@ -376,8 +376,9 @@ export default function WorkflowConfigurationPage() {
                                                                 handleStepChange(step.id, 'assignedTo', newAssignedTo);
                                                             }}
                                                         >
-                                                            <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
+                                                            <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
                                                             <SelectContent>
+                                                                <SelectItem value="">None</SelectItem>
                                                                 {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
                                                             </SelectContent>
                                                         </Select>
@@ -512,3 +513,4 @@ export default function WorkflowConfigurationPage() {
         </div>
     );
 }
+
