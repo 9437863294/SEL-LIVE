@@ -379,7 +379,7 @@ export type Requisition = {
   date: string;
   createdAt: any; // Firestore Timestamp
   currentStepId?: string | null;
-  assignedToId?: string | null;
+  assignees?: string[]; // Changed from assignedToId
   deadline?: any; // Firestore Timestamp
   history: ActionLog[];
   attachments?: Attachment[];

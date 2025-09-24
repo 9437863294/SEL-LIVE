@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -249,8 +250,8 @@ export default function AllRequisitionsTab() {
             requisitionId: 'temp', 
         };
 
-        const assignedToId = await getAssigneeForStep(firstStep, tempRequisition);
-        if (!assignedToId) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
+        const assignees = await getAssigneeForStep(firstStep, tempRequisition);
+        if (assignees.length === 0) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
         
         const deadline = await calculateDeadline(new Date(), firstStep.tat);
 
@@ -292,7 +293,7 @@ export default function AllRequisitionsTab() {
             requisitionId: newRequisitionId,
             createdAt: Timestamp.now(),
             currentStepId: firstStep.id,
-            assignedToId: assignedToId,
+            assignees: assignees,
             deadline: Timestamp.fromDate(deadline),
             history: [initialLog],
             attachments: attachmentUrls,

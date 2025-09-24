@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -46,7 +47,7 @@ export default function MyPendingTasksTab() {
       // Fetch requisitions assigned to the current user
       const q = query(
         collection(db, 'requisitions'),
-        where('assignedToId', '==', user.id),
+        where('assignees', 'array-contains', user.id),
         where('status', 'in', ['Pending', 'In Progress'])
       );
 

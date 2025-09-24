@@ -93,29 +93,36 @@ export async function calculateDeadline(startDate: Date, tatHours: number): Prom
 }
 
 
-export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'> | Record<string, any>): Promise<string | null> {
+export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'> | Record<string, any>): Promise<string[]> {
+    const assignees: (string | undefined)[] = [];
+
     switch (step.assignmentType) {
         case 'User-based':
-            // The assignedTo for User-based is an array of strings (user IDs), but typically we only use the first one.
-            if (Array.isArray(step.assignedTo) && step.assignedTo.length > 0) {
-              return step.assignedTo[0];
+            if (Array.isArray(step.assignedTo)) {
+                return step.assignedTo.filter((id): id is string => !!id);
             }
-            return null;
+            break;
 
         case 'Project-based': {
             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.projectId) {
                 const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
-                return assignmentMap[requisition.projectId]?.primary || null;
+                const assignment = assignmentMap[requisition.projectId];
+                if (assignment) {
+                    assignees.push(assignment.primary, assignment.alternative);
+                }
             }
-            return null;
+            break;
         }
 
         case 'Department-based': {
              if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.departmentId) {
                 const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
-                return assignmentMap[requisition.departmentId]?.primary || null;
+                const assignment = assignmentMap[requisition.departmentId];
+                 if (assignment) {
+                    assignees.push(assignment.primary, assignment.alternative);
+                }
             }
-            return null;
+            break;
         }
         
         case 'Amount-based': {
@@ -123,20 +130,19 @@ export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<R
             const amount = requisition.amount;
             
             for (const condition of conditions) {
-                if (condition.type === 'Below' && amount < condition.amount1) {
-                    return condition.userId;
-                }
-                if (condition.type === 'Between' && amount >= condition.amount1 && amount <= (condition.amount2 ?? Infinity)) {
-                    return condition.userId;
-                }
-                if (condition.type === 'Above' && amount > condition.amount1) {
-                    return condition.userId;
+                let match = false;
+                if (condition.type === 'Below' && amount < condition.amount1) match = true;
+                if (condition.type === 'Between' && amount >= condition.amount1 && amount <= (condition.amount2 ?? Infinity)) match = true;
+                if (condition.type === 'Above' && amount > condition.amount1) match = true;
+                
+                if (match) {
+                    assignees.push(condition.userId, condition.alternativeUserId);
+                    break; // Stop at the first matching condition
                 }
             }
-            return null;
+            break;
         }
-
-        default:
-            return null;
     }
+    
+    return assignees.filter((id): id is string => !!id);
 }
