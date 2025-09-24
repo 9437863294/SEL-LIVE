@@ -263,6 +263,9 @@ export default function MyTasksPage() {
                                                                                 </Button>
                                                                             </DropdownMenuTrigger>
                                                                             <DropdownMenuContent>
+                                                                                <DropdownMenuItem onSelect={() => handleRowClick(task)}>
+                                                                                    <Eye className="mr-2 h-4 w-4" /> View Details
+                                                                                </DropdownMenuItem>
                                                                                 {currentStep?.actions.map(action => (
                                                                                     <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task.id, action); }}>
                                                                                         {action}
