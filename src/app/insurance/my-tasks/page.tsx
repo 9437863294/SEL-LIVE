@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -111,7 +110,7 @@ export default function MyTasksPage() {
     }, [allTasks, user]);
 
 
-    const handleAction = async (taskId: string, action: string) => {
+    const handleAction = async (taskId: string, action: string, comment: string) => {
         if (!workflow || !user) return;
         setIsActionLoading(taskId);
         
@@ -129,7 +128,7 @@ export default function MyTasksPage() {
 
                 const newActionLog: ActionLog = {
                     action,
-                    comment: '', 
+                    comment: comment, 
                     userId: user.id,
                     userName: user.name,
                     timestamp: Timestamp.now(),
@@ -263,11 +262,11 @@ export default function MyTasksPage() {
                                                                                 </Button>
                                                                             </DropdownMenuTrigger>
                                                                             <DropdownMenuContent>
-                                                                                <DropdownMenuItem onSelect={() => handleRowClick(task)}>
+                                                                                <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleRowClick(task) }}>
                                                                                     <Eye className="mr-2 h-4 w-4" /> View Details
                                                                                 </DropdownMenuItem>
                                                                                 {currentStep?.actions.map(action => (
-                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task.id, action); }}>
+                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task.id, action, ''); }}>
                                                                                         {action}
                                                                                     </DropdownMenuItem>
                                                                                 ))}
@@ -368,6 +367,8 @@ export default function MyTasksPage() {
                 onOpenChange={setIsViewDialogOpen}
                 task={selectedTask}
                 workflow={workflow}
+                onAction={handleAction}
+                isActionLoading={!!isActionLoading}
             />
         </>
     );

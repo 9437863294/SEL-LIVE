@@ -18,12 +18,17 @@ import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { useAuth } from './auth/AuthProvider';
+import { Textarea } from './ui/textarea';
+import { useState, useMemo } from 'react';
+import { Loader2 } from 'lucide-react';
 
 interface ViewInsuranceTaskDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   task: InsuranceTask | null;
   workflow: WorkflowStep[] | null;
+  onAction?: (taskId: string, action: string, comment: string) => Promise<void>;
+  isActionLoading?: boolean;
 }
 
 interface EnrichedStep extends WorkflowStep {
@@ -33,9 +38,17 @@ interface EnrichedStep extends WorkflowStep {
     status: 'Pending' | 'Completed' | 'Current';
 }
 
-export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, workflow }: ViewInsuranceTaskDialogProps) {
-  const { users } = useAuth();
+export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, workflow, onAction, isActionLoading }: ViewInsuranceTaskDialogProps) {
+  const { user, users } = useAuth();
+  const [actionComment, setActionComment] = useState('');
   
+  const currentStep = useMemo(() => {
+    if (!task || !workflow) return null;
+    return workflow.find(s => s.id === task.currentStepId) || null;
+  }, [task, workflow]);
+
+  const isActionAllowed = user && task?.assignees?.includes(user.id) && task.status !== 'Completed' && task.status !== 'Rejected';
+
   if (!task || !workflow) return null;
 
   const getEnrichedSteps = (): EnrichedStep[] => {
@@ -60,8 +73,8 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
         const completionUser = completionEntry ? userMap.get(completionEntry.userId) : null;
         if(completionUser) {
             assignedUserName = completionUser;
-        } else if (status === 'Current' && task.assignedTo) {
-            assignedUserName = userMap.get(task.assignedTo) || 'N/A';
+        } else if (status === 'Current' && task.assignees) {
+            assignedUserName = task.assignees.map(id => userMap.get(id) || 'Unknown').join(', ');
         }
         
         return {
@@ -138,9 +151,31 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
                 </Table>
               </div>
             </div>
+             {isActionAllowed && (
+                  <div className="space-y-4 pt-4 border-t">
+                      <div>
+                          <Label>Action Comment</Label>
+                          <Textarea 
+                              placeholder="Add a comment for your action (optional)" 
+                              value={actionComment}
+                              onChange={(e) => setActionComment(e.target.value)}
+                          />
+                      </div>
+                  </div>
+              )}
           </div>
         </ScrollArea>
         <DialogFooter className="mt-4 pr-4">
+           {isActionAllowed && (
+            <div className="flex flex-wrap gap-2">
+                {currentStep?.actions.map(action => (
+                    <Button key={action} onClick={() => onAction?.(task.id, action, actionComment)} disabled={isActionLoading}>
+                        {isActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {action}
+                    </Button>
+                ))}
+            </div>
+           )}
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
