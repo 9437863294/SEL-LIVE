@@ -49,15 +49,15 @@ export default function ModuleDashboard() {
       return [];
     }
     
-    const availableModules = Object.keys(permissionModules)
-        .filter(moduleName => can('View Module', moduleName))
-        .map((moduleName, index) => ({
-            id: String(index + 1), // Using index for a temporary stable ID
-            title: moduleName,
-            content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
-            tags: [],
-            icon: moduleIcons[moduleName] || 'FileText',
-        }));
+    const availableModuleNames = Object.keys(permissionModules).filter(moduleName => can('View Module', moduleName));
+
+    const availableModules = availableModuleNames.map((moduleName, index) => ({
+      id: String(index + 1),
+      title: moduleName,
+      content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
+      tags: [],
+      icon: moduleIcons[moduleName] || 'FileText',
+    }));
     
     const savedChatModule = modules.find(m => m.title === 'Chat System');
     if (savedChatModule && !availableModules.some(m => m.title === 'Chat System')) {
