@@ -48,7 +48,7 @@ export default function MyPendingTasksTab() {
       const q = query(
         collection(db, 'requisitions'),
         where('assignees', 'array-contains', user.id),
-        where('status', 'in', ['Pending', 'In Progress'])
+        where('status', 'in', ['In Progress', 'Needs Review'])
       );
 
       const querySnapshot = await getDocs(q);
