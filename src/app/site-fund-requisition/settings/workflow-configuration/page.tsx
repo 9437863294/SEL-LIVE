@@ -355,7 +355,7 @@ export default function WorkflowConfigurationPage() {
                                                         <Select
                                                             value={Array.isArray(step.assignedTo) ? step.assignedTo[0] || '' : ''}
                                                             onValueChange={(value) => {
-                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : [])];
+                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
                                                                 newAssignedTo[0] = value;
                                                                 handleStepChange(step.id, 'assignedTo', newAssignedTo);
                                                             }}
@@ -371,7 +371,7 @@ export default function WorkflowConfigurationPage() {
                                                         <Select
                                                             value={Array.isArray(step.assignedTo) ? step.assignedTo[1] || '' : ''}
                                                             onValueChange={(value) => {
-                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : [])];
+                                                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
                                                                 newAssignedTo[1] = value;
                                                                 handleStepChange(step.id, 'assignedTo', newAssignedTo);
                                                             }}
@@ -513,4 +513,3 @@ export default function WorkflowConfigurationPage() {
         </div>
     );
 }
-
