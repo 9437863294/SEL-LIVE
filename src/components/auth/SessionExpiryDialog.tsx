@@ -1,11 +1,12 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -140,17 +141,18 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
     <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-xs text-center p-8" onInteractOutside={(e) => e.preventDefault()}>
          <form onSubmit={handleAction}>
-            <div className="flex flex-col items-center">
+            <DialogHeader className="flex flex-col items-center">
                 <Avatar className="h-24 w-24 mb-4">
                     <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User'} />
                     <AvatarFallback className="text-3xl">{getInitials(user?.name)}</AvatarFallback>
                 </Avatar>
-                <h2 className="text-2xl font-semibold">{user?.name}</h2>
-                <p className="text-muted-foreground text-sm mt-4 mb-2">
+                <DialogTitle className="text-2xl font-semibold">{user?.name}</DialogTitle>
+                <p className="text-muted-foreground text-sm pt-2">
                     Your session has expired. To continue, please sign in.
                 </p>
-                <p className="text-xs text-destructive mb-6">Auto-logout in {countdown}s</p>
-
+                <p className="text-xs text-destructive">Auto-logout in {countdown}s</p>
+            </DialogHeader>
+            <div className="py-6 space-y-4">
                 {authMethod === 'pin' ? (
                      <div className="relative w-full">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">PIN</span>
@@ -175,7 +177,7 @@ export function SessionExpiryDialog({ isOpen, onOpenChange, onSessionExtend, onL
                         />
                     </div>
                 )}
-                 <Button type="submit" className="w-full mt-6" disabled={isLoading}>
+                 <Button type="submit" className="w-full !mt-6" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Sign In
                 </Button>
