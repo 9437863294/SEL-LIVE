@@ -118,24 +118,29 @@ export default function MyTasksPage() {
         
         try {
             const taskRef = doc(db, 'insuranceTasks', taskId);
-            
+            const taskDocInitial = await getDoc(taskRef);
+             if (!taskDocInitial.exists()) {
+                throw new Error("Task document not found!");
+            }
+            const currentTaskData = taskDocInitial.data() as InsuranceTask;
+            const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
+            if (!currentStep) throw new Error("Current workflow step not found.");
+
+            let attachmentData: { name: string; url: string } | undefined;
+            if (file) {
+                const storagePath = `insurance-actions/${taskId}/${currentStep.name}/${file.name}`;
+                const storageRef = ref(storage, storagePath);
+                await uploadBytes(storageRef, file);
+                const downloadURL = await getDownloadURL(storageRef);
+                attachmentData = { name: file.name, url: downloadURL };
+            }
+
             await runTransaction(db, async (transaction) => {
                 const taskDoc = await transaction.get(taskRef);
                 if (!taskDoc.exists()) {
                     throw new Error("Task document not found!");
                 }
-                const currentTaskData = taskDoc.data() as InsuranceTask;
-                const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
-                if (!currentStep) throw new Error("Current workflow step not found.");
-
-                let attachmentData: { name: string; url: string } | undefined;
-                if (file) {
-                    const storagePath = `insurance-actions/${taskId}/${currentStep.name}/${file.name}`;
-                    const storageRef = ref(storage, storagePath);
-                    await uploadBytes(storageRef, file);
-                    const downloadURL = await getDownloadURL(storageRef);
-                    attachmentData = { name: file.name, url: downloadURL };
-                }
+                const latestTaskData = taskDoc.data() as InsuranceTask;
 
                 const newActionLog: ActionLog = {
                     action,
@@ -148,9 +153,9 @@ export default function MyTasksPage() {
                 };
                 
                 let nextStep: WorkflowStep | undefined;
-                let newStatus: InsuranceTask['status'] = currentTaskData.status;
-                let newStage = currentTaskData.currentStage;
-                let newCurrentStepId: string | null = currentTaskData.currentStepId || null;
+                let newStatus: InsuranceTask['status'] = latestTaskData.status;
+                let newStage = latestTaskData.currentStage;
+                let newCurrentStepId: string | null = latestTaskData.currentStepId || null;
                 let newAssignees: string[] = [];
                 let newDeadline: Timestamp | null = null;
     
@@ -162,9 +167,9 @@ export default function MyTasksPage() {
                         newStatus = 'In Progress';
                         newCurrentStepId = nextStep.id;
                         const tempRequisitionDataForAssignment = {
-                            projectId: (currentTaskData as any).projectId || '',
+                            projectId: (latestTaskData as any).projectId || '',
                             departmentId: '',
-                            amount: (currentTaskData as any).premium || 0,
+                            amount: (latestTaskData as any).premium || 0,
                         };
                         const assignees = await getAssigneeForStep(nextStep, tempRequisitionDataForAssignment);
                         if (assignees.length === 0) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
@@ -183,8 +188,8 @@ export default function MyTasksPage() {
                     newAssignees = [];
                     newDeadline = null;
                 } else {
-                    newAssignees = currentTaskData.assignees || [];
-                    newDeadline = currentTaskData.deadline;
+                    newAssignees = latestTaskData.assignees || [];
+                    newDeadline = latestTaskData.deadline;
                 }
     
                 const updateData = {
