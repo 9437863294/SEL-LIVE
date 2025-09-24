@@ -79,8 +79,8 @@ export default function Header() {
 
     const q = query(
       collection(db, 'requisitions'),
-      where('assignedToId', '==', user.id),
-      where('status', 'in', ['Pending', 'In Progress'])
+      where('assignees', 'array-contains', user.id),
+      where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
     );
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
