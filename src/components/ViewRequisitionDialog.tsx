@@ -175,7 +175,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             let newStatus: Requisition['status'] = currentRequisitionData.status;
             let newStage = currentRequisitionData.stage;
             let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
-            let newAssignedToId: string | null = null;
+            let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
 
             if (action === 'Approve' || action === 'Complete' || action === 'Verified' || action === 'Update Approved Amount') {
@@ -186,25 +186,25 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newStage = nextStep.name;
                     newStatus = 'In Progress';
                     newCurrentStepId = nextStep.id;
-                    newAssignedToId = await getAssigneeForStep(nextStep, tempReqForAssignment);
-                    if (!newAssignedToId) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
+                    newAssignees = await getAssigneeForStep(nextStep, tempReqForAssignment);
+                    if (newAssignees.length === 0) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
                     const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
                     newDeadline = Timestamp.fromDate(deadlineDate);
                 } else {
                     newStage = 'Completed';
                     newStatus = 'Completed';
                     newCurrentStepId = null;
-                    newAssignedToId = null; 
+                    newAssignees = []; 
                     newDeadline = null;
                 }
             } else if (action === 'Reject') {
                  newStage = 'Rejected';
                  newStatus = 'Rejected';
                  newCurrentStepId = null;
-                 newAssignedToId = null;
+                 newAssignees = [];
                  newDeadline = null;
             } else {
-                newAssignedToId = currentRequisitionData.assignedToId || null;
+                newAssignees = currentRequisitionData.assignees || [];
                 newDeadline = currentRequisitionData.deadline;
             }
 
@@ -212,7 +212,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 status: newStatus,
                 stage: newStage,
                 currentStepId: newCurrentStepId,
-                assignedToId: newAssignedToId,
+                assignees: newAssignees,
                 deadline: newDeadline,
                 history: arrayUnion(newActionLog),
             };
@@ -238,7 +238,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const projectName = projects.find(p => p.id === requisition.projectId)?.projectName || 'N/A';
   const departmentName = departments.find(d => d.id === requisition.departmentId)?.name || 'N/A';
 
-  const isActionAllowed = user && requisition.assignedToId === user.id && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+  const isActionAllowed = user && requisition.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -265,15 +265,22 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="mt-2 space-y-2">
                     {requisition.attachments.map((file, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                         <div className="flex items-center gap-2">
-                           <Paperclip className="h-4 w-4" />
-                           <span className="text-sm font-medium">{file.name}</span>
+                         <div className="flex items-center gap-2 overflow-hidden">
+                           <Paperclip className="h-4 w-4 shrink-0" />
+                           <span className="text-sm font-medium truncate">{file.name}</span>
                          </div>
-                         <Button asChild variant="outline" size="sm">
-                           <Link href={file.url} target="_blank" rel="noopener noreferrer">
-                              <Download className="mr-2 h-4 w-4" /> Download
-                           </Link>
-                         </Button>
+                         <div className="flex items-center shrink-0">
+                             <Button asChild variant="outline" size="sm" className="mr-2 h-7">
+                               <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                  <Eye className="mr-2 h-3 w-3" /> View
+                               </a>
+                             </Button>
+                             <Button asChild variant="outline" size="sm" className="h-7">
+                               <a href={file.url} download={file.name}>
+                                  <Download className="mr-2 h-3 w-3" /> Download
+                               </a>
+                             </Button>
+                         </div>
                       </div>
                     ))}
                   </div>
