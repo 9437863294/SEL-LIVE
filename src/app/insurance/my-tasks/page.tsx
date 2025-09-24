@@ -230,7 +230,7 @@ export default function MyTasksPage() {
                                 <TableHead>Insured Person</TableHead>
                                 <TableHead>Due Date</TableHead>
                                 <TableHead>{isPending ? 'Current Stage' : 'Status'}</TableHead>
-                                {isPending && <TableHead className="text-right">Action</TableHead>}
+                                {isPending && <TableHead className="text-right">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -265,11 +265,6 @@ export default function MyTasksPage() {
                                                                                 <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleRowClick(task) }}>
                                                                                     <Eye className="mr-2 h-4 w-4" /> View Details
                                                                                 </DropdownMenuItem>
-                                                                                {currentStep?.actions.map(action => (
-                                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(task.id, action, ''); }}>
-                                                                                        {action}
-                                                                                    </DropdownMenuItem>
-                                                                                ))}
                                                                             </DropdownMenuContent>
                                                                         </DropdownMenu>
                                                                     </div>
