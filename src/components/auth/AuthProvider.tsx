@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
@@ -202,107 +201,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUserData]);
 
   useEffect(() => {
-    let currentUserId: string | null = null;
-    let unsubscribePresence: () => void = () => {};
-
-    loadSavedUsers(); // Load saved users on initial app load
-
-    const handleBeforeUnload = () => {
-        if (currentUserId) {
-            const userDocRef = doc(db, 'users', currentUserId);
-            updateDoc(userDocRef, { isOnline: false, lastSeen: serverTimestamp() });
-        }
-    };
-    
-    const setupUserSession = async (firebaseUser: FirebaseUser) => {
-        if (!sessionStorage.getItem('loginTimestamp')) {
-            sessionStorage.setItem('loginTimestamp', Date.now().toString());
-        }
-        currentUserId = firebaseUser.uid;
-        await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
-        
-        const userData = await fetchUserData(firebaseUser);
-
-        if (userData && !sessionStorage.getItem('sessionTimerSet')) {
-            const sessionDurationMinutes = userData.theme?.sessionDuration || 60;
-            const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
-            const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
-            const expiryTimestamp = loginTimestamp + sessionDurationMs;
-
-            const checkSession = () => {
-                if (Date.now() > expiryTimestamp) {
-                    setIsSessionExpired(true);
-                }
-            };
-            const intervalId = setInterval(checkSession, 60 * 1000); // Check every minute
-            sessionStorage.setItem('sessionTimerSet', 'true');
-            
-            // Return a cleanup function for this specific session
-            return () => clearInterval(intervalId);
-        }
-        return () => {}; // Return empty cleanup if timer not set
-    };
-    
-    let cleanupSession: (() => void) | null = null;
-
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-        setLoading(true);
-        // Clean up previous session resources if any
-        if (cleanupSession) {
-            cleanupSession();
-            cleanupSession = null;
-        }
-        if (currentUserId) {
-            handleBeforeUnload();
-            currentUserId = null;
-        }
-
         if (firebaseUser) {
-            cleanupSession = await setupUserSession(firebaseUser);
+            await fetchUserData(firebaseUser);
         } else {
             setUser(null);
             setPermissions({});
+            setOriginalUser(null);
+            setIsImpersonating(false);
             setLoading(false);
-            sessionStorage.clear();
+            if (!publicRoutes.includes(pathname)) {
+                router.push('/login');
+            }
         }
     });
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => unsubscribeAuth();
+  }, [fetchUserData, pathname, router]);
 
-    return () => {
-        unsubscribeAuth();
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-        handleBeforeUnload();
-        if (cleanupSession) {
-            cleanupSession();
-        }
-    };
-  }, [fetchUserData, loadSavedUsers]);
-
-  useEffect(() => {
-    if (loading) return;
-
-    const isPublicRoute = publicRoutes.includes(pathname);
-
-    if (!user && !isPublicRoute) {
-      router.push('/login');
-    } else if (user && isPublicRoute) {
-      router.push('/');
-    }
-  }, [user, loading, router, pathname]);
-  
-  const isPublicRoute = publicRoutes.includes(pathname);
-  if (loading && !isPublicRoute) {
-     return (
-        <div className="flex min-h-screen items-center justify-center bg-background">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        </div>
-    );
-  }
 
   return (
     <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
-        {isPublicRoute || !loading ? children : null}
+        {children}
         {userForPinSetup && (
             <PinSetupDialog
                 user={userForPinSetup}
