@@ -142,11 +142,13 @@ export default function InventoryPage() {
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
-            
+            const logsCollection = collection(db, 'inventory_logs');
+    
             for (const item of values.items) {
                 const selectedItem = allItems.find(i => i.id === item.itemId && i.type === item.itemType);
                 if (!selectedItem) throw new Error(`Item with ID ${item.itemId} not found.`);
-
+    
+                // Log the main/sub item itself
                 const logEntry: Omit<InventoryLog, 'id'> = {
                     date: Timestamp.fromDate(values.date),
                     itemId: item.itemId,
@@ -156,12 +158,34 @@ export default function InventoryPage() {
                     quantity: item.quantity,
                     vehicleNo: values.vehicleNo,
                 };
-                const newLogRef = doc(collection(db, 'inventory_logs'));
+                const newLogRef = doc(logsCollection);
                 batch.set(newLogRef, logEntry);
+    
+                // If it's a main item, also stock in its sub-items from the BOM
+                if (item.itemType === 'Main' && 'bom' in selectedItem && selectedItem.bom) {
+                    for (const bomItem of selectedItem.bom) {
+                        const subItemDetails = subItems.find(si => si.id === bomItem.subItemId);
+                        if (subItemDetails) {
+                            const subItemQuantity = bomItem.quantity * item.quantity;
+                            const subItemLogEntry: Omit<InventoryLog, 'id'> = {
+                                date: Timestamp.fromDate(values.date),
+                                itemId: bomItem.subItemId,
+                                itemName: subItemDetails.name,
+                                itemType: 'Sub',
+                                transactionType: 'Stock In',
+                                quantity: subItemQuantity,
+                                description: `Component for ${item.quantity} x ${selectedItem.name}`,
+                                vehicleNo: values.vehicleNo,
+                            };
+                            const subItemLogRef = doc(logsCollection);
+                            batch.set(subItemLogRef, subItemLogEntry);
+                        }
+                    }
+                }
             }
-
+    
             await batch.commit();
-
+    
             await fetchData();
             toast({ title: 'Success', description: 'Stock transactions recorded successfully.' });
             stockInForm.reset({ date: new Date(), vehicleNo: '', items: [{ itemId: '', itemType: undefined, quantity: 1}] });
