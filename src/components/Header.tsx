@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -138,6 +137,7 @@ export default function Header() {
                     src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788"
                     alt="Company Logo"
                     fill
+                    sizes="112px"
                     style={{ objectFit: 'contain' }}
                     priority
                   />
