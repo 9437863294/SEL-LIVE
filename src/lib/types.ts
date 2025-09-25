@@ -575,10 +575,8 @@ export type Loan = {
   linkedBank: string;
   loanType: 'Loan' | 'Investment';
   totalPaid: number;
-  status: 'Active' | 'Closed' | 'Default' | 'Pre-closure Pending';
+  status: 'Active' | 'Closed' | 'Default';
   createdAt: any;
-  finalInterestOnClosure?: number;
-  otherChargesOnClosure?: number;
 };
 
 export type EMI = {
