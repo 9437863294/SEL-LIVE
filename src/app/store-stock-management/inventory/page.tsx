@@ -114,8 +114,8 @@ export default function InventoryPage() {
         allItems.forEach(item => {
             stockMap.set(`${item.id}-${item.type}`, { ...item, stock: 0 });
         });
-        
-        // 2. Calculate initial stock from logs
+
+        // 2. Calculate raw physical stock from logs
         inventoryLogs.forEach(log => {
             const key = `${log.itemId}-${log.itemType}`;
             if (stockMap.has(key)) {
@@ -126,23 +126,6 @@ export default function InventoryPage() {
                     currentItem.stock -= log.quantity;
                 }
                 stockMap.set(key, currentItem);
-            }
-        });
-
-        // 3. Deduct sub-items based on main item stock
-        const mainItemsInStock = Array.from(stockMap.values()).filter(item => item.type === 'Main' && item.stock > 0);
-
-        mainItemsInStock.forEach(mainItem => {
-            if (mainItem.bom && mainItem.stock > 0) {
-                mainItem.bom.forEach(bomItem => {
-                    const subItemKey = `${bomItem.subItemId}-Sub`;
-                    if (stockMap.has(subItemKey)) {
-                        const subItem = stockMap.get(subItemKey)!;
-                        const quantityToDeduct = bomItem.quantity * mainItem.stock;
-                        subItem.stock -= quantityToDeduct;
-                        stockMap.set(subItemKey, subItem);
-                    }
-                });
             }
         });
 
