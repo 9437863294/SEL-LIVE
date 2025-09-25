@@ -17,7 +17,7 @@ import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import type { DailyRequisitionEntry, Attachment } from '@/lib/types';
-import { Loader2, Upload, Paperclip, Download, Trash2, File as FileIcon, X, Eye } from 'lucide-react';
+import { Loader2, Upload, Paperclip, Download, Eye, Trash2, File as FileIcon, X } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { useAuth } from './auth/AuthProvider';
 
@@ -27,9 +27,10 @@ interface RequisitionDocumentDialogProps {
   requisition: DailyRequisitionEntry | null;
   onUploadComplete: () => void;
   canEdit: boolean;
+  canDownload: boolean;
 }
 
-export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, onUploadComplete, canEdit }: RequisitionDocumentDialogProps) {
+export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, onUploadComplete, canEdit, canDownload }: RequisitionDocumentDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -82,7 +83,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
   };
 
   const handleDeleteAttachment = async (attachmentToDelete: Attachment) => {
-    if (!requisition || !user) return;
+    if (!requisition || !user || !canEdit) return;
     
     const originalAttachments = [...currentAttachments];
     setCurrentAttachments(prev => prev.filter(att => att.url !== attachmentToDelete.url));
@@ -145,16 +146,16 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
                                         <span className="text-sm font-medium truncate">{file.name}</span>
                                     </div>
                                     <div className="flex items-center shrink-0">
-                                        <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                                        <Button asChild variant="outline" size="sm" className="mr-2 h-7" disabled={!canDownload}>
                                             <a href={file.url} target="_blank" rel="noopener noreferrer">
-                                                <Eye className="h-4 w-4" />
+                                                <Eye className="mr-2 h-3 w-3" /> View
                                             </a>
                                         </Button>
-                                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                                            <a href={file.url} download={file.name}>
-                                                <Download className="h-4 w-4" />
-                                            </a>
-                                        </Button>
+                                         <Button asChild variant="outline" size="sm" className="h-7" disabled={!canDownload}>
+                                           <a href={file.url} download={file.name}>
+                                              <Download className="mr-2 h-3 w-3" /> Download
+                                           </a>
+                                         </Button>
                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteAttachment(file)} disabled={!canEdit}>
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
@@ -177,9 +178,11 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
                                 <p className="text-sm font-medium">Selected files:</p>
                                 <div className="space-y-1">
                                     {filesToUpload.map((file, i) => (
-                                        <div key={i} className="flex items-center gap-2 text-sm p-1 bg-muted/50 rounded-md">
-                                            <FileIcon className="h-4 w-4" />
-                                            <span className="flex-1 truncate">{file.name}</span>
+                                        <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md">
+                                            <div className="flex items-center gap-2">
+                                                <FileIcon className="h-4 w-4" />
+                                                <span className="text-sm">{file.name}</span>
+                                            </div>
                                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFilesToUpload(prevFiles => prevFiles.filter((_, index) => index !== i))}>
                                                 <X className="h-3 w-3" />
                                             </Button>

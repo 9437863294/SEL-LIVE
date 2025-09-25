@@ -33,6 +33,7 @@ export default function ManageDocumentsPage() {
   
   const canViewPage = can('View', 'Daily Requisition.Manage Documents');
   const canUpload = can('Upload', 'Daily Requisition.Manage Documents');
+  const canDownload = can('Download', 'Daily Requisition.Manage Documents');
   const canMarkMissing = can('Mark as Missing', 'Daily Requisition.Manage Documents');
   const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
   const canMoveToPending = can('Move to Pending', 'Daily Requisition.Manage Documents');
@@ -149,7 +150,7 @@ export default function ManageDocumentsPage() {
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={i}>
-                                    <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 7 : 6)}>
+                                    <TableCell colSpan={type === 'pending' ? 4 : (type === 'missing' ? 8 : 7)}>
                                         <Skeleton className="h-6 w-full" />
                                     </TableCell>
                                 </TableRow>
@@ -278,6 +279,7 @@ export default function ManageDocumentsPage() {
         requisition={selectedRequisition}
         onUploadComplete={fetchRequisitions}
         canEdit={canUpload}
+        canDownload={canDownload}
       />
     </>
   );
