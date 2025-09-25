@@ -103,8 +103,8 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
-export default function PrintChecklistPage() {
-    const { id } = useParams() as { id: string };
+export default function PrintChecklistPage({ params }: { params: { id: string } }) {
+    const { id } = params;
     const router = useRouter();
     const componentRef = useRef<HTMLDivElement>(null);
     const [entry, setEntry] = useState<DailyRequisitionEntry | null>(null);
