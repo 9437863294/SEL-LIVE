@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -32,11 +32,10 @@ import { createExpenseRequest } from '@/ai';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-export default function LoanDetailsPage() {
-  const { loanId } = useParams() as { loanId: string };
+export default function LoanDetailsPage({ params }: { params: { loanId: string } }) {
+  const { loanId } = params;
   const { toast } = useToast();
   const router = useRouter();
   const { user, users } = useAuth();
