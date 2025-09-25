@@ -1,6 +1,7 @@
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type {NextConfig} from 'next';
+
+const nextConfig: NextConfig = {
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,
@@ -29,6 +30,11 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60 * 60 * 24 * 7, // Cache images for 1 week
+  },
+  env: {
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },
 };
 

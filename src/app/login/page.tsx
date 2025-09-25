@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -26,7 +25,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { setShouldRemember, savedUsers, loadSavedUsers } = useAuth();
+  const { setShouldRemember, savedUsers, loadSavedUsers, loading: authLoading } = useAuth();
 
   const [activeUser, setActiveUser] = useState<SavedUser | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -38,10 +37,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     // If there are no saved users, default to the password form.
-    if (savedUsers.length === 0 && !showPasswordForm) {
+    if (!authLoading && savedUsers.length === 0 && !showPasswordForm) {
       setShowPasswordForm(true);
     }
-  }, [savedUsers, showPasswordForm]);
+  }, [savedUsers, showPasswordForm, authLoading]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,6 +310,7 @@ export default function LoginPage() {
             height={1200}
             className="rounded-2xl object-cover"
             data-ai-hint="hot air balloon"
+            priority
           />
         </div>
         <div className="p-8 md:p-12 flex flex-col justify-center items-center">
