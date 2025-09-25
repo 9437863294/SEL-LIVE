@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -8,6 +7,8 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
+import { genkit } from 'genkit';
+
 
 const UploadFileInputSchema = z.object({
   filename: z.string().describe('The name of the file to upload.'),
@@ -18,12 +19,9 @@ const UploadFileOutputSchema = z.object({
   url: z.string(),
 });
 
-// Helper function to initialize Firebase Admin SDK
-function getFirebaseAdminApp() {
-  if (admin.apps.length > 0) {
-    return admin.apps[0]!;
-  }
-  return admin.initializeApp();
+// Initialize Firebase Admin SDK
+if (admin.apps.length === 0) {
+    admin.initializeApp();
 }
 
 const generateUploadUrlFlow = ai.defineFlow(
@@ -34,9 +32,7 @@ const generateUploadUrlFlow = ai.defineFlow(
   },
   async ({ filename, contentType }) => {
     try {
-      getFirebaseAdminApp(); 
       const bucket = admin.storage().bucket();
-
       const file = bucket.file(filename);
 
       const options = {
