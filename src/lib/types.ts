@@ -90,7 +90,7 @@ export const permissionModules = {
     'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
     'Processed for Payment': ['View', 'Mark as Received for Payment'],
-    'Manage Documents': ['View', 'Upload', 'Mark as Missing', 'Not Required', 'Move to Pending'],
+    'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
   'Billing Recon': {
@@ -186,6 +186,24 @@ export type Project = {
   status: 'Active' | 'Inactive';
   billingRequired?: boolean;
 };
+
+export type Site = {
+    id: string;
+    name: string;
+    location: string;
+}
+
+export type MainItem = {
+    id: string;
+    name: string;
+    bom?: { subItemId: string; quantity: number }[];
+}
+
+export type SubItem = {
+    id: string;
+    name: string;
+    currentStock: number;
+}
 
 export type AccountHead = {
   id: string;
@@ -557,8 +575,10 @@ export type Loan = {
   linkedBank: string;
   loanType: 'Loan' | 'Investment';
   totalPaid: number;
-  status: 'Active' | 'Closed' | 'Default';
+  status: 'Active' | 'Closed' | 'Default' | 'Pre-closure Pending';
   createdAt: any;
+  finalInterestOnClosure?: number;
+  otherChargesOnClosure?: number;
 };
 
 export type EMI = {
