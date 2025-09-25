@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -138,21 +138,17 @@ export default function ManageLoanPage() {
       if (!loanToClose) return;
       setIsClosing(true);
       try {
-          // In a real app, you would process the payment here.
-          // For now, we'll just update the loan status.
           await updateDoc(doc(db, 'loans', loanToClose.id), {
-              status: 'Closed',
-              endDate: format(new Date(), 'yyyy-MM-dd'),
-              totalPaid: loanToClose.totalPaid + loanToClose.outstandingPrincipal + finalInterest + otherCharges,
+              status: 'Pre-closure Pending',
               finalInterestOnClosure: finalInterest,
               otherChargesOnClosure: otherCharges,
           });
-           toast({ title: 'Success', description: `Loan ${loanToClose.accountNo} has been pre-closed.` });
+           toast({ title: 'Success', description: `Loan ${loanToClose.accountNo} payment details saved. Pending expense creation.` });
            fetchData();
            setIsPreClosureDialogOpen(false);
       } catch (error) {
           console.error("Error during pre-closure:", error);
-          toast({ title: 'Error', description: 'Failed to pre-close the loan.', variant: 'destructive' });
+          toast({ title: 'Error', description: 'Failed to save pre-closure details.', variant: 'destructive' });
       } finally {
           setIsClosing(false);
       }
@@ -252,7 +248,7 @@ export default function ManageLoanPage() {
                                         <AlertDialogHeader>
                                             <AlertDialogTitle>Are you sure you want to close this loan?</AlertDialogTitle>
                                             <AlertDialogDescription>
-                                                Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. This action cannot be undone easily.
+                                                Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. 
                                             </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
@@ -316,7 +312,7 @@ export default function ManageLoanPage() {
                     <RegularDialogClose asChild><Button variant="outline">Cancel</Button></RegularDialogClose>
                     <Button onClick={handleConfirmPreClosure} disabled={isClosing}>
                         {isClosing && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                        Confirm & Close Loan
+                        Save Payment Details
                     </Button>
                 </RegularDialogFooter>
             </RegularDialogContent>
