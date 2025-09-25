@@ -23,7 +23,7 @@ const moduleIcons: Record<string, string> = {
   'Loan': 'Coins',
   'LC Module': 'BookOpenCheck',
   'Insurance': 'Shield',
-  'Store Stock Management': 'Package',
+  'Store & Stock Management': 'Package',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -38,7 +38,7 @@ const moduleDescriptions: Record<string, string> = {
     'Loan': 'Manage and track loan activities.',
     'LC Module': 'Manage Letters of Credit for trade finance.',
     'Insurance': 'Manage insurance policies and claims.',
-    'Store Stock Management': 'Manage inventory and stock levels.',
+    'Store & Stock Management': 'Manage inventory and stock levels.',
 }
 
 export default function ModuleDashboard() {
