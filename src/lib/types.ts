@@ -214,6 +214,8 @@ export type SubItem = {
     stock?: number;
 }
 
+export type ItemWithStock = (MainItem | SubItem) & { type: 'Main' | 'Sub', stock: number };
+
 export type InventoryLog = {
     id: string;
     date: any; // Firestore Timestamp
@@ -226,6 +228,7 @@ export type InventoryLog = {
     siteId?: string;
     vehicleNo?: string;
     buildTask?: string; // For utilization
+    description?: string; // For BOM conversion notes
 }
 
 export type AccountHead = {

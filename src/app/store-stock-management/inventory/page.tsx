@@ -8,9 +8,9 @@ import { ArrowLeft, Plus, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, Timestamp, runTransaction, doc, getDoc } from 'firebase/firestore';
-import type { MainItem, SubItem, Project, Site, InventoryLog, ItemWithStock } from '@/lib/types';
+import { db, storage } from '@/lib/firebase';
+import { collection, getDocs, addDoc, Timestamp, runTransaction, doc, getDoc, writeBatch } from 'firebase/firestore';
+import type { MainItem, SubItem, Project, Site, InventoryLog, ItemWithStock, BomItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -58,26 +58,27 @@ export default function InventoryPage() {
     
     const watchedStockOutProjectId = stockOutForm.watch('projectId');
 
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const [mainItemsSnap, subItemsSnap, projectsSnap, logsSnap] = await Promise.all([
+                getDocs(collection(db, 'main_items')),
+                getDocs(collection(db, 'sub_items')),
+                getDocs(collection(db, 'projects')),
+                getDocs(collection(db, 'inventory_logs')),
+            ]);
+            setMainItems(mainItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MainItem)));
+            setSubItems(subItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubItem)));
+            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+            setInventoryLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog)));
+        } catch (error) {
+            toast({ title: "Error", description: "Failed to load initial data.", variant: "destructive" });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                const [mainItemsSnap, subItemsSnap, projectsSnap, logsSnap] = await Promise.all([
-                    getDocs(collection(db, 'main_items')),
-                    getDocs(collection(db, 'sub_items')),
-                    getDocs(collection(db, 'projects')),
-                    getDocs(collection(db, 'inventory_logs')),
-                ]);
-                setMainItems(mainItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MainItem)));
-                setSubItems(subItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubItem)));
-                setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-                setInventoryLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog)));
-            } catch (error) {
-                toast({ title: "Error", description: "Failed to load initial data.", variant: "destructive" });
-            } finally {
-                setIsLoading(false);
-            }
-        };
         fetchData();
     }, [toast]);
     
@@ -132,8 +133,51 @@ export default function InventoryPage() {
             setIsSaving(false);
             return;
         }
+        
+        const logsBatch: Omit<InventoryLog, 'id'>[] = [];
 
-        const logEntry: Omit<InventoryLog, 'id'> = {
+        // If it's a main item, handle BOM conversion
+        if (values.itemType === 'Main') {
+            const bom = selectedItem.bom || [];
+            if (bom.length === 0) {
+                 toast({ title: 'Warning', description: 'This main item has no Bill of Materials. Stocking in as a single unit.', variant: 'default'});
+            }
+            
+            // Check if there's enough stock for all sub-items
+            for (const bomItem of bom) {
+                const subItemStock = currentStock.find(s => s.id === bomItem.subItemId && s.type === 'Sub')?.stock || 0;
+                const requiredQty = bomItem.quantity * values.quantity;
+                if (subItemStock < requiredQty) {
+                    const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
+                    toast({
+                        title: 'Insufficient Sub-Item Stock',
+                        description: `Not enough ${subItemDetails?.name || 'sub-item'}. Required: ${requiredQty}, Available: ${subItemStock}.`,
+                        variant: 'destructive',
+                    });
+                    setIsSaving(false);
+                    return;
+                }
+            }
+
+            // Create stock-out logs for sub-items
+            bom.forEach(bomItem => {
+                const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
+                if (subItemDetails) {
+                    logsBatch.push({
+                        date: Timestamp.fromDate(values.date),
+                        itemId: bomItem.subItemId,
+                        itemName: subItemDetails.name,
+                        itemType: 'Sub',
+                        transactionType: 'Stock Out',
+                        quantity: bomItem.quantity * values.quantity,
+                        description: `Consumed for Main Item: ${selectedItem.name}`
+                    });
+                }
+            });
+        }
+        
+        // Add the stock-in log for the main item or sub-item
+        logsBatch.push({
             date: Timestamp.fromDate(values.date),
             itemId: values.itemId,
             itemName: selectedItem.name,
@@ -141,15 +185,21 @@ export default function InventoryPage() {
             transactionType: 'Stock In',
             quantity: values.quantity,
             vehicleNo: values.vehicleNo,
-        };
+        });
 
         try {
-            const newLogDoc = await addDoc(collection(db, 'inventory_logs'), logEntry);
-            setInventoryLogs(prev => [...prev, {id: newLogDoc.id, ...logEntry}]);
-            toast({ title: 'Success', description: 'Stock-in recorded successfully.' });
+            const batch = writeBatch(db);
+            logsBatch.forEach(logEntry => {
+                const newLogRef = doc(collection(db, 'inventory_logs'));
+                batch.set(newLogRef, logEntry);
+            });
+            await batch.commit();
+
+            await fetchData(); // Refetch all data to update stock correctly
+            toast({ title: 'Success', description: 'Stock transaction recorded successfully.' });
             stockInForm.reset({ date: new Date(), quantity: 1, vehicleNo: '' });
         } catch (error) {
-            toast({ title: 'Error', description: 'Failed to record stock-in.', variant: 'destructive' });
+            toast({ title: 'Error', description: 'Failed to record stock transaction.', variant: 'destructive' });
         } finally {
             setIsSaving(false);
         }
