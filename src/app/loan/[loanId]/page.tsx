@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -121,6 +122,14 @@ export default function LoanDetailsPage() {
   };
   
   const handleEditEmiClick = (emi: EMI) => {
+    if (emi.expenseRequestNo) {
+        toast({
+            title: "Cannot Edit",
+            description: "This EMI is linked to an expense request and cannot be edited.",
+            variant: "destructive"
+        });
+        return;
+    }
     setSelectedEmi(emi);
     setDialogPaidAmount(emi.paidAmount);
     setDialogPrincipal(emi.principal);
@@ -183,8 +192,8 @@ export default function LoanDetailsPage() {
     if (!loan) return;
     setIsUpdatingEmi(emi.id);
     try {
-        const emiDocRef = doc(db, 'loans', loan.id, 'emis', emi.id);
-        const loanDocRef = doc(db, 'loans', loan.id);
+        const emiDocRef = doc(db, 'loans', emi.loan.id, 'emis', emi.id);
+        const loanDocRef = doc(db, 'loans', emi.loan.id);
 
         await runTransaction(db, async (transaction) => {
             const loanDoc = await transaction.get(loanDocRef);
@@ -606,7 +615,7 @@ export default function LoanDetailsPage() {
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <div className="w-full">
-                                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={!!emi.expenseRequestNo}>
+                                                <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleEditEmiClick(emi); }} disabled={!!emi.expenseRequestNo}>
                                                     <Edit className="mr-2 h-4 w-4" />Edit Payment
                                                 </DropdownMenuItem>
                                             </div>
