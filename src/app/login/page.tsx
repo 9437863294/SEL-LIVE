@@ -25,7 +25,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { setShouldRemember, savedUsers, loadSavedUsers, loading: authLoading } = useAuth();
+  const { user: authenticatedUser, setShouldRemember, savedUsers, loadSavedUsers, loading: authLoading } = useAuth();
 
   const [activeUser, setActiveUser] = useState<SavedUser | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -34,6 +34,12 @@ export default function LoginPage() {
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
+  useEffect(() => {
+    // If the user is already authenticated, redirect them away from the login page.
+    if (!authLoading && authenticatedUser) {
+      router.push('/');
+    }
+  }, [authenticatedUser, authLoading, router]);
 
   useEffect(() => {
     // If there are no saved users, default to the password form.
