@@ -222,7 +222,7 @@ export type InventoryLog = {
     itemId: string;
     itemName: string;
     itemType: 'Main' | 'Sub';
-    transactionType: 'Stock In' | 'Stock Out' | 'Utilization' | 'Conversion';
+    transactionType: 'Stock In' | 'Stock Out' | 'Build' | 'Utilization' | 'Conversion';
     quantity: number;
     projectId?: string;
     siteId?: string;

@@ -50,6 +50,12 @@ const stockOutSchema = z.object({
     items: z.array(stockOutItemSchema).min(1, "Please add at least one item."),
 });
 
+const buildSchema = z.object({
+    mainItemId: z.string().min(1, "Please select an item to build."),
+    quantity: z.coerce.number().min(1, "Quantity must be at least 1."),
+    buildDate: z.date(),
+});
+
 
 export default function InventoryPage() {
     const { toast } = useToast();
@@ -63,6 +69,7 @@ export default function InventoryPage() {
 
     const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), vehicleNo: '', items: [{ itemId: '', itemType: undefined, quantity: 1}] } });
     const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), projectId: '', siteId: '', items: [{ itemId: '', itemType: undefined, quantity: 1 }] } });
+    const buildForm = useForm<z.infer<typeof buildSchema>>({ resolver: zodResolver(buildSchema), defaultValues: { mainItemId: '', quantity: 1, buildDate: new Date() }});
     
     const { fields: stockInFields, append: appendStockIn, remove: removeStockIn } = useFieldArray({ control: stockInForm.control, name: 'items' });
     const { fields: stockOutFields, append: appendStockOut, remove: removeStockOut } = useFieldArray({ control: stockOutForm.control, name: 'items' });
@@ -107,20 +114,18 @@ export default function InventoryPage() {
         ...subItems.map(i => ({ ...i, type: 'Sub' as const }))
     ], [mainItems, subItems]);
     
-    const currentStock = useMemo(() => {
+     const currentStock = useMemo(() => {
         const stockMap = new Map<string, ItemWithStock>();
 
-        // 1. Initialize all items with 0 stock
         allItems.forEach(item => {
             stockMap.set(`${item.id}-${item.type}`, { ...item, stock: 0 });
         });
 
-        // 2. Calculate raw physical stock from logs
         inventoryLogs.forEach(log => {
             const key = `${log.itemId}-${log.itemType}`;
             if (stockMap.has(key)) {
                 const currentItem = stockMap.get(key)!;
-                if (log.transactionType === 'Stock In') {
+                if (log.transactionType === 'Stock In' || log.transactionType === 'Build') {
                     currentItem.stock += log.quantity;
                 } else if (log.transactionType === 'Stock Out') {
                     currentItem.stock -= log.quantity;
@@ -205,6 +210,76 @@ export default function InventoryPage() {
             setIsSaving(false);
         }
     }
+    
+    const handleBuildSubmit = async (values: z.infer<typeof buildSchema>) => {
+        setIsSaving(true);
+        const { mainItemId, quantity, buildDate } = values;
+
+        const mainItemToBuild = mainItems.find(item => item.id === mainItemId);
+        if (!mainItemToBuild || !mainItemToBuild.bom || mainItemToBuild.bom.length === 0) {
+            toast({ title: "Build Error", description: "Selected main item has no Bill of Materials (BOM) defined.", variant: "destructive" });
+            setIsSaving(false);
+            return;
+        }
+
+        try {
+            const subItemsNeeded: { subItem: SubItem, requiredQty: number }[] = [];
+            // Check for sufficient stock
+            for (const bomItem of mainItemToBuild.bom) {
+                const subItem = subItems.find(si => si.id === bomItem.subItemId);
+                if (!subItem) throw new Error(`Sub-item with ID ${bomItem.subItemId} in BOM not found.`);
+                
+                const requiredQty = bomItem.quantity * quantity;
+                const availableStock = currentStock.find(s => s.id === bomItem.subItemId && s.type === 'Sub')?.stock || 0;
+
+                if (availableStock < requiredQty) {
+                    throw new Error(`Insufficient stock for ${subItem.name}. Required: ${requiredQty}, Available: ${availableStock}`);
+                }
+                subItemsNeeded.push({ subItem, requiredQty });
+            }
+
+            const batch = writeBatch(db);
+
+            // Deduct sub-items
+            for (const { subItem, requiredQty } of subItemsNeeded) {
+                 const logEntry: Omit<InventoryLog, 'id'> = {
+                    date: Timestamp.fromDate(buildDate),
+                    itemId: subItem.id,
+                    itemName: subItem.name,
+                    itemType: 'Sub',
+                    transactionType: 'Stock Out',
+                    quantity: requiredQty,
+                    description: `Consumed for building ${quantity} x ${mainItemToBuild.name}`,
+                 };
+                 const logRef = doc(collection(db, 'inventory_logs'));
+                 batch.set(logRef, logEntry);
+            }
+
+            // Add main item
+            const mainItemLogEntry: Omit<InventoryLog, 'id'> = {
+                date: Timestamp.fromDate(buildDate),
+                itemId: mainItemToBuild.id,
+                itemName: mainItemToBuild.name,
+                itemType: 'Main',
+                transactionType: 'Build',
+                quantity: quantity,
+                description: `Built from sub-items`,
+            };
+            const mainLogRef = doc(collection(db, 'inventory_logs'));
+            batch.set(mainLogRef, mainItemLogEntry);
+
+            await batch.commit();
+
+            toast({ title: 'Build Successful', description: `${quantity} x ${mainItemToBuild.name} have been built.` });
+            await fetchData();
+            buildForm.reset({ mainItemId: '', quantity: 1, buildDate: new Date() });
+            
+        } catch (error: any) {
+            toast({ title: 'Build Failed', description: error.message, variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
 
     const renderStockInForm = () => (
@@ -212,7 +287,7 @@ export default function InventoryPage() {
             <form onSubmit={stockInForm.handleSubmit(handleStockInSubmit)} className="space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
-                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No.</FormLabel><FormControl><Input placeholder="e.g. OD02AB1234" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
+                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No.</FormLabel><FormControl><Input placeholder="e.g. OD02AB1234" {...field} /></FormControl><FormMessage/></FormItem>} />
                  </div>
                 
                 <Table>
@@ -265,6 +340,42 @@ export default function InventoryPage() {
                     <Button type="submit" disabled={isSaving}>
                         {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                         Record Stock Out
+                    </Button>
+                </div>
+            </form>
+        </Form>
+    );
+
+    const renderBuildForm = () => (
+        <Form {...buildForm}>
+            <form onSubmit={buildForm.handleSubmit(handleBuildSubmit)} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <FormField control={buildForm.control} name="mainItemId" render={({ field }) => (
+                        <FormItem><FormLabel>Main Item to Build</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl><SelectTrigger><SelectValue placeholder="Select an item"/></SelectTrigger></FormControl>
+                                <SelectContent>{mainItems.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )} />
+                    <FormField control={buildForm.control} name="quantity" render={({ field }) => (
+                        <FormItem><FormLabel>Quantity to Build</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={buildForm.control} name="buildDate" render={({ field }) => (
+                        <FormItem className="flex flex-col"><FormLabel>Date of Build</FormLabel>
+                            <Popover>
+                                <PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger>
+                                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                    )} />
+                </div>
+                <div className="flex justify-end">
+                    <Button type="submit" disabled={isSaving}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        Build Item(s)
                     </Button>
                 </div>
             </form>
@@ -324,6 +435,7 @@ export default function InventoryPage() {
             <TabsList className="mb-4">
                 <TabsTrigger value="stock-in">Stock In</TabsTrigger>
                 <TabsTrigger value="stock-out">Stock Out</TabsTrigger>
+                <TabsTrigger value="build">Build</TabsTrigger>
                 <TabsTrigger value="current-stock">Current Stock</TabsTrigger>
                 <TabsTrigger value="logs">Logs</TabsTrigger>
             </TabsList>
@@ -337,6 +449,12 @@ export default function InventoryPage() {
                  <Card>
                     <CardHeader><CardTitle>Record Stock Out</CardTitle><CardDescription>Dispatch items from inventory for project use.</CardDescription></CardHeader>
                     <CardContent>{renderStockOutForm()}</CardContent>
+                </Card>
+            </TabsContent>
+            <TabsContent value="build">
+                <Card>
+                    <CardHeader><CardTitle>Build Main Item</CardTitle><CardDescription>Assemble a main item from its sub-item components.</CardDescription></CardHeader>
+                    <CardContent>{renderBuildForm()}</CardContent>
                 </Card>
             </TabsContent>
              <TabsContent value="current-stock">
