@@ -203,44 +203,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let currentUserId: string | null = null;
-    
+    let unsubscribePresence: () => void = () => {};
+
     loadSavedUsers(); // Load saved users on initial app load
-    
+
     const handleBeforeUnload = () => {
         if (currentUserId) {
             const userDocRef = doc(db, 'users', currentUserId);
             updateDoc(userDocRef, { isOnline: false, lastSeen: serverTimestamp() });
         }
     };
+    
+    const setupUserSession = async (firebaseUser: FirebaseUser) => {
+        if (!sessionStorage.getItem('loginTimestamp')) {
+            sessionStorage.setItem('loginTimestamp', Date.now().toString());
+        }
+        currentUserId = firebaseUser.uid;
+        await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
+        
+        const userData = await fetchUserData(firebaseUser);
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (userData && !sessionStorage.getItem('sessionTimerSet')) {
+            const sessionDurationMinutes = userData.theme?.sessionDuration || 60;
+            const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
+            const loginTimestamp = parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10);
+            const expiryTimestamp = loginTimestamp + sessionDurationMs;
+
+            const checkSession = () => {
+                if (Date.now() > expiryTimestamp) {
+                    setIsSessionExpired(true);
+                }
+            };
+            const intervalId = setInterval(checkSession, 60 * 1000); // Check every minute
+            sessionStorage.setItem('sessionTimerSet', 'true');
+            
+            // Return a cleanup function for this specific session
+            return () => clearInterval(intervalId);
+        }
+        return () => {}; // Return empty cleanup if timer not set
+    };
+    
+    let cleanupSession: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
         setLoading(true);
-        if (firebaseUser) {
-            if (!sessionStorage.getItem('loginTimestamp')) {
-              sessionStorage.setItem('loginTimestamp', Date.now().toString());
-            }
-            currentUserId = firebaseUser.uid;
-            await updateDoc(doc(db, 'users', currentUserId), { isOnline: true, lastSeen: serverTimestamp() });
-            const userData = await fetchUserData(firebaseUser);
-            if (userData && !sessionStorage.getItem('sessionTimerSet')) {
-              const sessionDurationMinutes = userData.theme?.sessionDuration || 60;
-              const sessionDurationMs = sessionDurationMinutes * 60 * 1000;
-              
-              const expiryTimestamp = (parseInt(sessionStorage.getItem('loginTimestamp') || '0', 10)) + sessionDurationMs;
-
-              const checkSession = () => {
-                  if (Date.now() > expiryTimestamp) {
-                      setIsSessionExpired(true);
-                  }
-              }
-              setInterval(checkSession, 60 * 1000); // Check every minute
-              sessionStorage.setItem('sessionTimerSet', 'true');
-            }
-        } else {
-            if (currentUserId) {
-                handleBeforeUnload();
-            }
+        // Clean up previous session resources if any
+        if (cleanupSession) {
+            cleanupSession();
+            cleanupSession = null;
+        }
+        if (currentUserId) {
+            handleBeforeUnload();
             currentUserId = null;
+        }
+
+        if (firebaseUser) {
+            cleanupSession = await setupUserSession(firebaseUser);
+        } else {
             setUser(null);
             setPermissions({});
             setLoading(false);
@@ -251,9 +270,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
-        unsubscribe();
+        unsubscribeAuth();
         window.removeEventListener('beforeunload', handleBeforeUnload);
         handleBeforeUnload();
+        if (cleanupSession) {
+            cleanupSession();
+        }
     };
   }, [fetchUserData, loadSavedUsers]);
 

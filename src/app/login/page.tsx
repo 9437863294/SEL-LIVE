@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -37,10 +38,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     // If there are no saved users, default to the password form.
-    if (savedUsers.length === 0) {
+    if (savedUsers.length === 0 && !showPasswordForm) {
       setShowPasswordForm(true);
     }
-  }, [savedUsers]);
+  }, [savedUsers, showPasswordForm]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
