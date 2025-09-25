@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -30,6 +31,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { createExpenseRequest } from '@/ai';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -593,19 +595,20 @@ export default function LoanDetailsPage() {
                           emi.status === 'Pending' ? (
                             <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
                           ) : (
-                            <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => handleViewDetailsClick(emi)}><Eye className="h-4 w-4" /></Button>
-                                <Button size="sm" variant="outline" onClick={() => handleEditEmiClick(emi)}><Edit className="h-4 w-4" /></Button>
-                                <Button 
-                                    size="sm" 
-                                    variant="destructive" 
-                                    onClick={() => handleMarkAsUnpaid(emi)} 
-                                    disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id}
-                                    title={emi.expenseRequestNo ? "Cannot mark as unpaid because an expense request has been generated." : "Mark as unpaid"}
-                                >
-                                  {isUpdatingEmi === emi.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <RotateCcw className="h-4 w-4" />}
-                                </Button>
-                            </div>
+                            <DropdownMenu>
+                               <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                               </DropdownMenuTrigger>
+                               <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onSelect={() => handleViewDetailsClick(emi)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => handleEditEmiClick(emi)} disabled={!!emi.expenseRequestNo}>
+                                    <Edit className="mr-2 h-4 w-4" />Edit Payment
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id} className="text-destructive">
+                                    <RotateCcw className="mr-2 h-4 w-4" />Mark as Unpaid
+                                  </DropdownMenuItem>
+                               </DropdownMenuContent>
+                            </DropdownMenu>
                           )
                         )}
                       </TableCell>
