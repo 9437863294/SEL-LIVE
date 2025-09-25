@@ -1,16 +1,15 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, XCircle } from 'lucide-react';
+import { ArrowLeft, Plus, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -27,10 +26,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent as RegularDialogContent,
+  DialogHeader as RegularDialogHeader,
+  DialogTitle as RegularDialogTitle,
+  DialogDescription as RegularDialogDescription,
+  DialogFooter as RegularDialogFooter,
+  DialogClose as RegularDialogClose,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+
 
 interface LoanWithDetails extends Loan {
   totalInterest: number;
   totalAmountToBePaid: number;
+  areAllEmisPaid: boolean;
+  outstandingPrincipal: number;
 }
 
 export default function ManageLoanPage() {
@@ -38,6 +51,14 @@ export default function ManageLoanPage() {
   const router = useRouter();
   const [loansWithDetails, setLoansWithDetails] = useState<LoanWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // State for pre-closure dialog
+  const [isPreClosureDialogOpen, setIsPreClosureDialogOpen] = useState(false);
+  const [loanToClose, setLoanToClose] = useState<LoanWithDetails | null>(null);
+  const [finalInterest, setFinalInterest] = useState(0);
+  const [otherCharges, setOtherCharges] = useState(0);
+  const [isClosing, setIsClosing] = useState(false);
+  
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -47,13 +68,24 @@ export default function ManageLoanPage() {
       
       const enhancedLoansPromises = loansData.map(async loan => {
         const emisSnapshot = await getDocs(collection(db, 'loans', loan.id, 'emis'));
-        const totalInterest = emisSnapshot.docs.reduce((sum, doc) => sum + (doc.data() as EMI).interest, 0);
+        const emis = emisSnapshot.docs.map(doc => doc.data() as EMI);
+
+        const totalInterest = emis.reduce((sum, emi) => sum + emi.interest, 0);
         const totalAmountToBePaid = loan.loanAmount + totalInterest;
+        const areAllEmisPaid = emis.every(emi => emi.status === 'Paid');
+        
+        const paidPrincipal = emis
+            .filter(emi => emi.status === 'Paid')
+            .reduce((sum, emi) => sum + emi.principal, 0);
+        const outstandingPrincipal = loan.loanAmount - paidPrincipal;
+
 
         return {
           ...loan,
           totalInterest,
           totalAmountToBePaid,
+          areAllEmisPaid,
+          outstandingPrincipal,
         };
       });
 
@@ -75,20 +107,57 @@ export default function ManageLoanPage() {
     router.push(`/loan/${loanId}`);
   };
   
-  const handleCloseLoan = async (e: React.MouseEvent, loan: Loan) => {
+  const handleOpenClosureDialog = (e: React.MouseEvent, loan: LoanWithDetails) => {
     e.stopPropagation();
-    try {
-        await updateDoc(doc(db, 'loans', loan.id), {
-            status: 'Closed',
-            endDate: format(new Date(), 'yyyy-MM-dd'),
-        });
-        toast({ title: 'Success', description: `Loan ${loan.accountNo} has been closed.` });
-        fetchData();
-    } catch(error) {
-        console.error("Error closing loan:", error);
-        toast({ title: 'Error', description: 'Failed to close the loan.', variant: 'destructive' });
+    setLoanToClose(loan);
+    setFinalInterest(0);
+    setOtherCharges(0);
+    // If all EMIs are paid, the AlertDialog will open via its trigger.
+    // If not, we open the pre-closure Dialog here.
+    if (!loan.areAllEmisPaid) {
+      setIsPreClosureDialogOpen(true);
     }
   };
+
+  const handleConfirmSimpleClosure = async () => {
+    if (!loanToClose) return;
+    try {
+      await updateDoc(doc(db, 'loans', loanToClose.id), {
+        status: 'Closed',
+        endDate: format(new Date(), 'yyyy-MM-dd'),
+      });
+      toast({ title: 'Success', description: `Loan ${loanToClose.accountNo} has been closed.` });
+      fetchData();
+    } catch (error) {
+      console.error("Error closing loan:", error);
+      toast({ title: 'Error', description: 'Failed to close the loan.', variant: 'destructive' });
+    }
+  };
+  
+  const handleConfirmPreClosure = async () => {
+      if (!loanToClose) return;
+      setIsClosing(true);
+      try {
+          // In a real app, you would process the payment here.
+          // For now, we'll just update the loan status.
+          await updateDoc(doc(db, 'loans', loanToClose.id), {
+              status: 'Closed',
+              endDate: format(new Date(), 'yyyy-MM-dd'),
+              totalPaid: loanToClose.totalPaid + loanToClose.outstandingPrincipal + finalInterest + otherCharges,
+              finalInterestOnClosure: finalInterest,
+              otherChargesOnClosure: otherCharges,
+          });
+           toast({ title: 'Success', description: `Loan ${loanToClose.accountNo} has been pre-closed.` });
+           fetchData();
+           setIsPreClosureDialogOpen(false);
+      } catch (error) {
+          console.error("Error during pre-closure:", error);
+          toast({ title: 'Error', description: 'Failed to pre-close the loan.', variant: 'destructive' });
+      } finally {
+          setIsClosing(false);
+      }
+  };
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
@@ -104,6 +173,7 @@ export default function ManageLoanPage() {
   };
 
   return (
+    <>
     <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -171,25 +241,31 @@ export default function ManageLoanPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         {loan.status === 'Active' && (
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
-                                        <XCircle className="mr-2 h-4 w-4" /> Close
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you sure you want to close this loan?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. This action cannot be undone easily.
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={(e) => handleCloseLoan(e, loan)}>Confirm Close</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
+                            loan.areAllEmisPaid ? (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" size="sm" onClick={(e) => handleOpenClosureDialog(e, loan)}>
+                                            <XCircle className="mr-2 h-4 w-4" /> Close
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you sure you want to close this loan?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. This action cannot be undone easily.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleConfirmSimpleClosure(); }}>Confirm Closure</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            ) : (
+                                <Button variant="outline" size="sm" onClick={(e) => handleOpenClosureDialog(e, loan)}>
+                                    <XCircle className="mr-2 h-4 w-4" /> Close
+                                </Button>
+                            )
                         )}
                       </TableCell>
                     </TableRow>
@@ -205,5 +281,47 @@ export default function ManageLoanPage() {
         </CardContent>
       </Card>
     </div>
+
+    {loanToClose && (
+        <Dialog open={isPreClosureDialogOpen} onOpenChange={setIsPreClosureDialogOpen}>
+            <RegularDialogContent>
+                <RegularDialogHeader>
+                    <RegularDialogTitle>Pre-closure for Loan: {loanToClose.accountNo}</RegularDialogTitle>
+                    <RegularDialogDescription>
+                        Confirm the final amounts to close this loan before all EMIs are paid.
+                    </RegularDialogDescription>
+                </RegularDialogHeader>
+                <div className="py-4 space-y-4">
+                    <div>
+                        <Label>Outstanding Principal</Label>
+                        <Input value={formatCurrency(loanToClose.outstandingPrincipal)} readOnly />
+                    </div>
+                     <div>
+                        <Label htmlFor="finalInterest">Final Interest Amount</Label>
+                        <Input id="finalInterest" type="number" value={finalInterest} onChange={(e) => setFinalInterest(Number(e.target.value))} />
+                    </div>
+                     <div>
+                        <Label htmlFor="otherCharges">Pre-closure / Other Charges</Label>
+                        <Input id="otherCharges" type="number" value={otherCharges} onChange={(e) => setOtherCharges(Number(e.target.value))} />
+                    </div>
+                    <div className="font-bold text-lg border-t pt-4 mt-4">
+                        Total Payable: {formatCurrency(loanToClose.outstandingPrincipal + finalInterest + otherCharges)}
+                    </div>
+                    <div>
+                        <Label>Please upload the final statement and No Objection Certificate (NOC) after payment.</Label>
+                        {/* Future: Add file upload component here */}
+                    </div>
+                </div>
+                <RegularDialogFooter>
+                    <RegularDialogClose asChild><Button variant="outline">Cancel</Button></RegularDialogClose>
+                    <Button onClick={handleConfirmPreClosure} disabled={isClosing}>
+                        {isClosing && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                        Confirm & Close Loan
+                    </Button>
+                </RegularDialogFooter>
+            </RegularDialogContent>
+        </Dialog>
+    )}
+    </>
   );
 }
