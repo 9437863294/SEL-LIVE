@@ -181,7 +181,7 @@ export default function ManageLoanPage() {
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Are you sure you want to close this loan?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            This will mark the loan as "Closed" and set today's date as the end date. Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. This action cannot be undone easily.
+                                            Make the final payment: The lender will provide the total outstanding amount, which includes the principal, applicable interest, and any pre-payment charges. This action cannot be undone easily.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
