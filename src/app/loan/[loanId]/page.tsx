@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -33,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -602,13 +602,26 @@ export default function LoanDetailsPage() {
                                </DropdownMenuTrigger>
                                <DropdownMenuContent align="end">
                                   <DropdownMenuItem onSelect={() => handleViewDetailsClick(emi)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => handleEditEmiClick(emi)} disabled={!!emi.expenseRequestNo}>
-                                    <Edit className="mr-2 h-4 w-4" />Edit Payment
-                                  </DropdownMenuItem>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="w-full">
+                                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={!!emi.expenseRequestNo}>
+                                                    <Edit className="mr-2 h-4 w-4" />Edit Payment
+                                                </DropdownMenuItem>
+                                            </div>
+                                        </TooltipTrigger>
+                                        {!!emi.expenseRequestNo && (
+                                            <TooltipContent>
+                                                <p>Cannot edit. Expense request has been generated.</p>
+                                            </TooltipContent>
+                                        )}
+                                    </Tooltip>
+                                  </TooltipProvider>
                                   <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
                                     <FilePlus className="mr-2 h-4 w-4" /> Create Expense
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id} className="text-destructive">
+                                  <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={isUpdatingEmi === emi.id || !!emi.expenseRequestNo} className="text-destructive">
                                     <RotateCcw className="mr-2 h-4 w-4" />Mark as Unpaid
                                   </DropdownMenuItem>
                                </DropdownMenuContent>
