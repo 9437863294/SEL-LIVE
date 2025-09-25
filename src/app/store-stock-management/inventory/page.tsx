@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -48,8 +49,8 @@ export default function InventoryPage() {
     const [sites, setSites] = useState<Record<string, Site[]>>({});
     const [isSaving, setIsSaving] = useState(false);
 
-    const stockInForm = useForm({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), quantity: 1 } });
-    const stockOutForm = useForm({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), quantity: 1 } });
+    const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), quantity: 1, vehicleNo: '' } });
+    const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), quantity: 1, siteId: '' } });
     
     const watchedStockOutProjectId = stockOutForm.watch('projectId');
 
@@ -111,7 +112,7 @@ export default function InventoryPage() {
         try {
             await addDoc(collection(db, 'inventory_logs'), logEntry);
             toast({ title: 'Success', description: 'Stock-in recorded successfully.' });
-            stockInForm.reset();
+            stockInForm.reset({ date: new Date(), quantity: 1, vehicleNo: '' });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to record stock-in.', variant: 'destructive' });
         } finally {
@@ -142,7 +143,7 @@ export default function InventoryPage() {
         try {
             await addDoc(collection(db, 'inventory_logs'), logEntry);
             toast({ title: 'Success', description: 'Stock-out recorded successfully.' });
-            stockOutForm.reset();
+            stockOutForm.reset({ date: new Date(), quantity: 1, siteId: '' });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to record stock-out.', variant: 'destructive' });
         } finally {
@@ -161,7 +162,7 @@ export default function InventoryPage() {
                         render={({ field }) => (
                            <FormItem>
                                <FormLabel>Item Type</FormLabel>
-                               <Select onValueChange={field.onChange} defaultValue={field.value}>
+                               <Select onValueChange={field.onChange} value={field.value || ''}>
                                     <FormControl><SelectTrigger><SelectValue placeholder="Select Type"/></SelectTrigger></FormControl>
                                     <SelectContent><SelectItem value="Main">Main Item</SelectItem><SelectItem value="Sub">Sub-Item</SelectItem></SelectContent>
                                </Select>
@@ -175,7 +176,7 @@ export default function InventoryPage() {
                         render={({ field }) => (
                            <FormItem>
                                <FormLabel>Item Name</FormLabel>
-                               <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!stockInForm.watch('itemType')}>
+                               <Select onValueChange={field.onChange} value={field.value || ''} disabled={!stockInForm.watch('itemType')}>
                                     <FormControl><SelectTrigger><SelectValue placeholder="Select Item"/></SelectTrigger></FormControl>
                                     <SelectContent>
                                         {(stockInForm.watch('itemType') === 'Main' ? mainItems : subItems).map(item => (
@@ -187,9 +188,9 @@ export default function InventoryPage() {
                            </FormItem>
                         )}
                     />
-                    <FormField control={stockInForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage/></FormItem>} />
+                    <FormField control={stockInForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
                     <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
-                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No. (Optional)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>} />
+                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No. (Optional)</FormLabel><FormControl><Input {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
                 </div>
                  <Button type="submit" disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
@@ -203,12 +204,12 @@ export default function InventoryPage() {
          <Form {...stockOutForm}>
             <form onSubmit={stockOutForm.handleSubmit(handleStockOutSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <FormField control={stockOutForm.control} name="itemType" render={({ field }) => ( <FormItem> <FormLabel>Item Type</FormLabel> <Select onValueChange={field.onChange} defaultValue={field.value}> <FormControl><SelectTrigger><SelectValue placeholder="Select Type"/></SelectTrigger></FormControl> <SelectContent><SelectItem value="Main">Main Item</SelectItem><SelectItem value="Sub">Sub-Item</SelectItem></SelectContent> </Select> <FormMessage /> </FormItem> )} />
-                     <FormField control={stockOutForm.control} name="itemId" render={({ field }) => ( <FormItem> <FormLabel>Item Name</FormLabel> <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!stockOutForm.watch('itemType')}> <FormControl><SelectTrigger><SelectValue placeholder="Select Item"/></SelectTrigger></FormControl> <SelectContent> {(stockOutForm.watch('itemType') === 'Main' ? mainItems : subItems).map(item => ( <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem> ))} </SelectContent> </Select> <FormMessage /> </FormItem> )} />
-                    <FormField control={stockOutForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage/></FormItem>} />
+                     <FormField control={stockOutForm.control} name="itemType" render={({ field }) => ( <FormItem> <FormLabel>Item Type</FormLabel> <Select onValueChange={field.onChange} value={field.value || ''}> <FormControl><SelectTrigger><SelectValue placeholder="Select Type"/></SelectTrigger></FormControl> <SelectContent><SelectItem value="Main">Main Item</SelectItem><SelectItem value="Sub">Sub-Item</SelectItem></SelectContent> </Select> <FormMessage /> </FormItem> )} />
+                     <FormField control={stockOutForm.control} name="itemId" render={({ field }) => ( <FormItem> <FormLabel>Item Name</FormLabel> <Select onValueChange={field.onChange} value={field.value || ''} disabled={!stockOutForm.watch('itemType')}> <FormControl><SelectTrigger><SelectValue placeholder="Select Item"/></SelectTrigger></FormControl> <SelectContent> {(stockOutForm.watch('itemType') === 'Main' ? mainItems : subItems).map(item => ( <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem> ))} </SelectContent> </Select> <FormMessage /> </FormItem> )} />
+                    <FormField control={stockOutForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
                     <FormField control={stockOutForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
-                    <FormField control={stockOutForm.control} name="projectId" render={({field}) => <FormItem><FormLabel>Project</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
-                    <FormField control={stockOutForm.control} name="siteId" render={({field}) => <FormItem><FormLabel>Site (Optional)</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value} disabled={!watchedStockOutProjectId}><FormControl><SelectTrigger><SelectValue placeholder="Select Site"/></SelectTrigger></FormControl><SelectContent>{(sites[watchedStockOutProjectId] || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
+                    <FormField control={stockOutForm.control} name="projectId" render={({field}) => <FormItem><FormLabel>Project</FormLabel><Select onValueChange={field.onChange} value={field.value || ''}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
+                    <FormField control={stockOutForm.control} name="siteId" render={({field}) => <FormItem><FormLabel>Site (Optional)</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={!watchedStockOutProjectId}><FormControl><SelectTrigger><SelectValue placeholder="Select Site"/></SelectTrigger></FormControl><SelectContent>{(sites[watchedStockOutProjectId] || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
                 </div>
                  <Button type="submit" disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
