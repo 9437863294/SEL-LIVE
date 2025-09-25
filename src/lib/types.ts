@@ -133,6 +133,9 @@ export const permissionModules = {
     'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
   },
+  'Store Stock Management': {
+    'View Module': [],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
