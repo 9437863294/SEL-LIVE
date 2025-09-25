@@ -135,6 +135,7 @@ export const permissionModules = {
   },
   'Store Stock Management': {
     'View Module': [],
+    'Item Master': ['View', 'Add', 'Edit', 'Delete'],
   },
   'Settings': {
     'View Module': [],
@@ -193,16 +194,22 @@ export type Site = {
     location: string;
 }
 
+export type BomItem = {
+    subItemId: string;
+    quantity: number;
+}
+
 export type MainItem = {
     id: string;
     name: string;
-    bom?: { subItemId: string; quantity: number }[];
+    bom?: BomItem[];
 }
 
 export type SubItem = {
     id: string;
     name: string;
-    currentStock: number;
+    unit: string;
+    // currentStock to be added later
 }
 
 export type AccountHead = {
