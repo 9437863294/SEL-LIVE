@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, Timestamp, runTransaction, doc, getDoc } from 'firebase/firestore';
-import type { MainItem, SubItem, Project, Site, InventoryLog } from '@/lib/types';
+import type { MainItem, SubItem, Project, Site, InventoryLog, ItemWithStock } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -41,8 +41,6 @@ const stockOutSchema = z.object({
     projectId: z.string().min(1),
     siteId: z.string().optional(),
 });
-
-type ItemWithStock = (MainItem | SubItem) & { type: 'Main' | 'Sub', stock: number };
 
 
 export default function InventoryPage() {
