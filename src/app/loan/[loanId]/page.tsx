@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw, MoreHorizontal } from 'lucide-react';
@@ -35,7 +34,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function LoanDetailsPage({ params }: { params: { loanId: string } }) {
-  const { loanId } = params;
+  const { loanId } = use(params);
   const { toast } = useToast();
   const router = useRouter();
   const { user, users } = useAuth();
