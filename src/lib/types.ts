@@ -1,4 +1,5 @@
 
+
 import { z } from 'zod';
 
 export type Email = {
@@ -132,7 +133,7 @@ export const permissionModules = {
     'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
   },
-  'Store Stock Management': {
+  'Store & Stock Management': {
     'View Module': [],
     'Item Master': ['View', 'Add', 'Edit', 'Delete'],
     'Inventory': ['View', 'Stock In', 'Stock Out'],
@@ -203,13 +204,14 @@ export type MainItem = {
     id: string;
     name: string;
     bom?: BomItem[];
+    stock?: number;
 }
 
 export type SubItem = {
     id: string;
     name: string;
     unit: string;
-    // currentStock to be added later
+    stock?: number;
 }
 
 export type InventoryLog = {

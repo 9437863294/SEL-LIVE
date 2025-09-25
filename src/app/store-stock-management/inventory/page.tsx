@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +23,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon, Loader2, Save } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const stockInSchema = z.object({
     itemId: z.string().min(1),
@@ -41,13 +42,18 @@ const stockOutSchema = z.object({
     siteId: z.string().optional(),
 });
 
+type ItemWithStock = (MainItem | SubItem) & { type: 'Main' | 'Sub', stock: number };
+
+
 export default function InventoryPage() {
     const { toast } = useToast();
     const [mainItems, setMainItems] = useState<MainItem[]>([]);
     const [subItems, setSubItems] = useState<SubItem[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [sites, setSites] = useState<Record<string, Site[]>>({});
+    const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), quantity: 1, vehicleNo: '' } });
     const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), quantity: 1, siteId: '' } });
@@ -56,17 +62,22 @@ export default function InventoryPage() {
 
     useEffect(() => {
         const fetchData = async () => {
+            setIsLoading(true);
             try {
-                const [mainItemsSnap, subItemsSnap, projectsSnap] = await Promise.all([
+                const [mainItemsSnap, subItemsSnap, projectsSnap, logsSnap] = await Promise.all([
                     getDocs(collection(db, 'main_items')),
                     getDocs(collection(db, 'sub_items')),
                     getDocs(collection(db, 'projects')),
+                    getDocs(collection(db, 'inventory_logs')),
                 ]);
                 setMainItems(mainItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MainItem)));
                 setSubItems(subItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubItem)));
                 setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+                setInventoryLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog)));
             } catch (error) {
                 toast({ title: "Error", description: "Failed to load initial data.", variant: "destructive" });
+            } finally {
+                setIsLoading(false);
             }
         };
         fetchData();
@@ -89,6 +100,31 @@ export default function InventoryPage() {
         ...mainItems.map(i => ({ ...i, type: 'Main' as const })),
         ...subItems.map(i => ({ ...i, type: 'Sub' as const }))
     ], [mainItems, subItems]);
+    
+    const currentStock = useMemo(() => {
+        const stockMap = new Map<string, ItemWithStock>();
+        
+        allItems.forEach(item => {
+            stockMap.set(`${item.id}-${item.type}`, { ...item, stock: 0 });
+        });
+
+        inventoryLogs.forEach(log => {
+            const key = `${log.itemId}-${log.itemType}`;
+            if (stockMap.has(key)) {
+                const currentItem = stockMap.get(key)!;
+                if (log.transactionType === 'Stock In') {
+                    currentItem.stock += log.quantity;
+                } else if (log.transactionType === 'Stock Out') {
+                    currentItem.stock -= log.quantity;
+                }
+                stockMap.set(key, currentItem);
+            }
+        });
+        
+        return Array.from(stockMap.values());
+
+    }, [allItems, inventoryLogs]);
+
 
     const handleStockInSubmit = async (values: z.infer<typeof stockInSchema>) => {
         setIsSaving(true);
@@ -110,7 +146,8 @@ export default function InventoryPage() {
         };
 
         try {
-            await addDoc(collection(db, 'inventory_logs'), logEntry);
+            const newLogDoc = await addDoc(collection(db, 'inventory_logs'), logEntry);
+            setInventoryLogs(prev => [...prev, {id: newLogDoc.id, ...logEntry}]);
             toast({ title: 'Success', description: 'Stock-in recorded successfully.' });
             stockInForm.reset({ date: new Date(), quantity: 1, vehicleNo: '' });
         } catch (error) {
@@ -128,6 +165,13 @@ export default function InventoryPage() {
             setIsSaving(false);
             return;
         }
+        
+        const currentItemStock = currentStock.find(item => item.id === values.itemId && item.type === values.itemType)?.stock || 0;
+        if(values.quantity > currentItemStock) {
+            toast({ title: 'Insufficient Stock', description: `Cannot stock out ${values.quantity}. Only ${currentItemStock} available.`, variant: 'destructive' });
+            setIsSaving(false);
+            return;
+        }
 
         const logEntry: Omit<InventoryLog, 'id'> = {
             date: Timestamp.fromDate(values.date),
@@ -141,7 +185,8 @@ export default function InventoryPage() {
         };
 
         try {
-            await addDoc(collection(db, 'inventory_logs'), logEntry);
+            const newLogDoc = await addDoc(collection(db, 'inventory_logs'), logEntry);
+            setInventoryLogs(prev => [...prev, {id: newLogDoc.id, ...logEntry}]);
             toast({ title: 'Success', description: 'Stock-out recorded successfully.' });
             stockOutForm.reset({ date: new Date(), quantity: 1, siteId: '' });
         } catch (error) {
@@ -218,6 +263,43 @@ export default function InventoryPage() {
             </form>
         </Form>
     );
+    
+    const renderCurrentStock = () => (
+      <Card>
+        <CardHeader>
+          <CardTitle>Current Stock Levels</CardTitle>
+          <CardDescription>An overview of your current inventory.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item Name</TableHead>
+                <TableHead>Item Type</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead className="text-right">Current Stock</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={4} className="h-24 text-center">Loading...</TableCell></TableRow>
+              ) : currentStock.length > 0 ? (
+                currentStock.map(item => (
+                  <TableRow key={`${item.id}-${item.type}`}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell>{item.type}</TableCell>
+                    <TableCell>{item.unit || 'N/A'}</TableCell>
+                    <TableCell className="text-right font-medium">{item.stock}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow><TableCell colSpan={4} className="h-24 text-center">No items in inventory.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    );
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -251,7 +333,7 @@ export default function InventoryPage() {
                 </Card>
             </TabsContent>
              <TabsContent value="current-stock">
-                <Card><CardHeader><CardTitle>Current Stock</CardTitle></CardHeader><CardContent><p>Current stock view will be implemented here.</p></CardContent></Card>
+                {renderCurrentStock()}
             </TabsContent>
              <TabsContent value="logs">
                  <Card><CardHeader><CardTitle>Inventory Logs</CardTitle></CardHeader><CardContent><p>Inventory logs will be displayed here.</p></CardContent></Card>
