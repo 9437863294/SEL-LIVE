@@ -138,26 +138,16 @@ export default function InventoryPage() {
                 setIsSaving(false);
                 return;
             }
-            
-            if (item.itemType === 'Main') {
-                const bom = selectedItem.bom || [];
-                for (const bomItem of bom) {
-                    const subItemStock = currentStock.find(s => s.id === bomItem.subItemId && s.type === 'Sub')?.stock || 0;
-                    const requiredQty = bomItem.quantity * item.quantity;
-                    if (subItemStock < requiredQty) {
-                        const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
-                        toast({ title: 'Insufficient Stock', description: `Not enough ${subItemDetails?.name || 'sub-item'}. Required: ${requiredQty}, Available: ${subItemStock}.`, variant: 'destructive'});
-                        setIsSaving(false);
-                        return;
-                    }
-                    const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
-                    if(subItemDetails) {
-                        logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: bomItem.subItemId, itemName: subItemDetails.name, itemType: 'Sub', transactionType: 'Stock Out', quantity: requiredQty, description: `Consumed for Main Item: ${selectedItem.name}`, vehicleNo: values.vehicleNo });
-                    }
-                }
-            }
 
-            logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: item.itemId, itemName: selectedItem.name, itemType: item.itemType, transactionType: 'Stock In', quantity: item.quantity, vehicleNo: values.vehicleNo });
+            logsBatch.push({
+                date: Timestamp.fromDate(values.date),
+                itemId: item.itemId,
+                itemName: selectedItem.name,
+                itemType: item.itemType,
+                transactionType: 'Stock In',
+                quantity: item.quantity,
+                vehicleNo: values.vehicleNo
+            });
         }
 
         try {
@@ -233,7 +223,7 @@ export default function InventoryPage() {
                             <TableRow key={field.id}>
                                 <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemType`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="Sub">Sub</SelectItem></SelectContent></Select>} /></TableCell>
                                 <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value} disabled={!stockInForm.watch(`items.${index}.itemType`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(stockInForm.watch(`items.${index}.itemType`) === 'Main' ? mainItems : subItems).map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
-                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} value={field.value || ''} />} /></TableCell>
+                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} />} /></TableCell>
                                 <TableCell><Button variant="ghost" size="icon" onClick={() => removeStockIn(index)}><Trash2 className="h-4 w-4 text-destructive"/></Button></TableCell>
                             </TableRow>
                         ))}
@@ -265,7 +255,7 @@ export default function InventoryPage() {
                             <TableRow key={field.id}>
                                 <TableCell><FormField control={stockOutForm.control} name={`items.${index}.itemType`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="Sub">Sub</SelectItem></SelectContent></Select>} /></TableCell>
                                 <TableCell><FormField control={stockOutForm.control} name={`items.${index}.itemId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value} disabled={!stockOutForm.watch(`items.${index}.itemType`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(stockOutForm.watch(`items.${index}.itemType`) === 'Main' ? mainItems : subItems).map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
-                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} value={field.value || ''} />} /></TableCell>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} />} /></TableCell>
                                 <TableCell><Button variant="ghost" size="icon" onClick={() => removeStockOut(index)}><Trash2 className="h-4 w-4 text-destructive"/></Button></TableCell>
                             </TableRow>
                         ))}
@@ -360,3 +350,5 @@ export default function InventoryPage() {
     </div>
   );
 }
+
+    
