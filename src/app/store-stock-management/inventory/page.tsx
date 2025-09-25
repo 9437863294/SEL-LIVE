@@ -28,11 +28,11 @@ const stockInItemSchema = z.object({
     itemId: z.string().min(1, 'Item is required.'),
     itemType: z.enum(['Main', 'Sub'], { required_error: 'Item type is required.'}),
     quantity: z.coerce.number().min(1, 'Quantity must be at least 1.'),
-    vehicleNo: z.string().optional(),
 });
 
 const stockInSchema = z.object({
     date: z.date(),
+    vehicleNo: z.string().optional(),
     items: z.array(stockInItemSchema).min(1, "Please add at least one item."),
 });
 
@@ -60,7 +60,7 @@ export default function InventoryPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''}] } });
+    const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), vehicleNo: '', items: [{ itemId: '', itemType: undefined, quantity: 1}] } });
     const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, projectId: '', siteId: '' }] } });
     
     const { fields: stockInFields, append: appendStockIn, remove: removeStockIn } = useFieldArray({ control: stockInForm.control, name: 'items' });
@@ -141,12 +141,12 @@ export default function InventoryPage() {
                     }
                     const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
                     if(subItemDetails) {
-                        logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: bomItem.subItemId, itemName: subItemDetails.name, itemType: 'Sub', transactionType: 'Stock Out', quantity: requiredQty, description: `Consumed for Main Item: ${selectedItem.name}` });
+                        logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: bomItem.subItemId, itemName: subItemDetails.name, itemType: 'Sub', transactionType: 'Stock Out', quantity: requiredQty, description: `Consumed for Main Item: ${selectedItem.name}`, vehicleNo: values.vehicleNo });
                     }
                 }
             }
 
-            logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: item.itemId, itemName: selectedItem.name, itemType: item.itemType, transactionType: 'Stock In', quantity: item.quantity, vehicleNo: item.vehicleNo });
+            logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: item.itemId, itemName: selectedItem.name, itemType: item.itemType, transactionType: 'Stock In', quantity: item.quantity, vehicleNo: values.vehicleNo });
         }
 
         try {
@@ -159,7 +159,7 @@ export default function InventoryPage() {
 
             await fetchData();
             toast({ title: 'Success', description: 'Stock transactions recorded successfully.' });
-            stockInForm.reset({ date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''}] });
+            stockInForm.reset({ date: new Date(), vehicleNo: '', items: [{ itemId: '', itemType: undefined, quantity: 1}] });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to record stock transaction.', variant: 'destructive' });
         } finally {
@@ -210,24 +210,26 @@ export default function InventoryPage() {
     const renderStockInForm = () => (
         <Form {...stockInForm}>
             <form onSubmit={stockInForm.handleSubmit(handleStockInSubmit)} className="space-y-6">
-                 <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col max-w-sm"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
+                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No.</FormLabel><FormControl><Input placeholder="e.g. OD02AB1234" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
+                 </div>
                 
                 <Table>
-                    <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Item</TableHead><TableHead>Quantity</TableHead><TableHead>Vehicle No.</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Item</TableHead><TableHead>Quantity</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
                     <TableBody>
                         {stockInFields.map((field, index) => (
                             <TableRow key={field.id}>
                                 <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemType`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="Sub">Sub</SelectItem></SelectContent></Select>} /></TableCell>
                                 <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value} disabled={!stockInForm.watch(`items.${index}.itemType`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(stockInForm.watch(`items.${index}.itemType`) === 'Main' ? mainItems : subItems).map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
                                 <TableCell><FormField control={stockInForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} value={field.value || ''} />} /></TableCell>
-                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.vehicleNo`} render={({field}) => <Input {...field} value={field.value || ''} />} /></TableCell>
                                 <TableCell><Button variant="ghost" size="icon" onClick={() => removeStockIn(index)}><Trash2 className="h-4 w-4 text-destructive"/></Button></TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
                 </Table>
                 <div className="flex justify-between">
-                    <Button type="button" variant="outline" onClick={() => appendStockIn({ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''})}><Plus className="mr-2 h-4 w-4" />Add Row</Button>
+                    <Button type="button" variant="outline" onClick={() => appendStockIn({ itemId: '', itemType: undefined, quantity: 1})}><Plus className="mr-2 h-4 w-4" />Add Row</Button>
                     <Button type="submit" disabled={isSaving}>
                         {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                         Record Stock In
