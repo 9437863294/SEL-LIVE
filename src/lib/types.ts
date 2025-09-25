@@ -1,5 +1,4 @@
 
-
 import { z } from 'zod';
 
 export type Email = {
@@ -136,6 +135,7 @@ export const permissionModules = {
   'Store Stock Management': {
     'View Module': [],
     'Item Master': ['View', 'Add', 'Edit', 'Delete'],
+    'Inventory': ['View', 'Stock In', 'Stock Out'],
   },
   'Settings': {
     'View Module': [],
@@ -210,6 +210,20 @@ export type SubItem = {
     name: string;
     unit: string;
     // currentStock to be added later
+}
+
+export type InventoryLog = {
+    id: string;
+    date: any; // Firestore Timestamp
+    itemId: string;
+    itemName: string;
+    itemType: 'Main' | 'Sub';
+    transactionType: 'Stock In' | 'Stock Out' | 'Utilization' | 'Conversion';
+    quantity: number;
+    projectId?: string;
+    siteId?: string;
+    vehicleNo?: string;
+    buildTask?: string; // For utilization
 }
 
 export type AccountHead = {

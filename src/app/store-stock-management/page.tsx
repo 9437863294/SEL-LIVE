@@ -35,7 +35,7 @@ const managementItems = [
     icon: Warehouse, 
     title: 'Inventory', 
     description: 'View current stock levels, track movements, and manage inventory logs.', 
-    href: '#' 
+    href: '/store-stock-management/inventory' 
   },
 ];
 
