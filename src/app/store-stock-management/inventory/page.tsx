@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -108,9 +109,13 @@ export default function InventoryPage() {
     
     const currentStock = useMemo(() => {
         const stockMap = new Map<string, ItemWithStock>();
+
+        // 1. Initialize all items with 0 stock
         allItems.forEach(item => {
             stockMap.set(`${item.id}-${item.type}`, { ...item, stock: 0 });
         });
+        
+        // 2. Calculate initial stock from logs
         inventoryLogs.forEach(log => {
             const key = `${log.itemId}-${log.itemType}`;
             if (stockMap.has(key)) {
@@ -123,46 +128,57 @@ export default function InventoryPage() {
                 stockMap.set(key, currentItem);
             }
         });
+
+        // 3. Deduct sub-items based on main item stock
+        const mainItemsInStock = Array.from(stockMap.values()).filter(item => item.type === 'Main' && item.stock > 0);
+
+        mainItemsInStock.forEach(mainItem => {
+            if (mainItem.bom && mainItem.stock > 0) {
+                mainItem.bom.forEach(bomItem => {
+                    const subItemKey = `${bomItem.subItemId}-Sub`;
+                    if (stockMap.has(subItemKey)) {
+                        const subItem = stockMap.get(subItemKey)!;
+                        const quantityToDeduct = bomItem.quantity * mainItem.stock;
+                        subItem.stock -= quantityToDeduct;
+                        stockMap.set(subItemKey, subItem);
+                    }
+                });
+            }
+        });
+
         return Array.from(stockMap.values());
     }, [allItems, inventoryLogs]);
 
 
     const handleStockInSubmit = async (values: z.infer<typeof stockInSchema>) => {
         setIsSaving(true);
-        const logsBatch: Omit<InventoryLog, 'id'>[] = [];
-
-        for (const item of values.items) {
-            const selectedItem = allItems.find(i => i.id === item.itemId && i.type === item.itemType);
-            if (!selectedItem) {
-                toast({ title: 'Error', description: `Item with ID ${item.itemId} not found.`, variant: 'destructive'});
-                setIsSaving(false);
-                return;
-            }
-
-            logsBatch.push({
-                date: Timestamp.fromDate(values.date),
-                itemId: item.itemId,
-                itemName: selectedItem.name,
-                itemType: item.itemType,
-                transactionType: 'Stock In',
-                quantity: item.quantity,
-                vehicleNo: values.vehicleNo
-            });
-        }
-
         try {
             const batch = writeBatch(db);
-            logsBatch.forEach(logEntry => {
+            
+            for (const item of values.items) {
+                const selectedItem = allItems.find(i => i.id === item.itemId && i.type === item.itemType);
+                if (!selectedItem) throw new Error(`Item with ID ${item.itemId} not found.`);
+
+                const logEntry: Omit<InventoryLog, 'id'> = {
+                    date: Timestamp.fromDate(values.date),
+                    itemId: item.itemId,
+                    itemName: selectedItem.name,
+                    itemType: item.itemType,
+                    transactionType: 'Stock In',
+                    quantity: item.quantity,
+                    vehicleNo: values.vehicleNo,
+                };
                 const newLogRef = doc(collection(db, 'inventory_logs'));
                 batch.set(newLogRef, logEntry);
-            });
+            }
+
             await batch.commit();
 
             await fetchData();
             toast({ title: 'Success', description: 'Stock transactions recorded successfully.' });
             stockInForm.reset({ date: new Date(), vehicleNo: '', items: [{ itemId: '', itemType: undefined, quantity: 1}] });
-        } catch (error) {
-            toast({ title: 'Error', description: 'Failed to record stock transaction.', variant: 'destructive' });
+        } catch (error: any) {
+            toast({ title: 'Error', description: error.message || 'Failed to record stock transaction.', variant: 'destructive' });
         } finally {
             setIsSaving(false);
         }
@@ -350,5 +366,3 @@ export default function InventoryPage() {
     </div>
   );
 }
-
-    
