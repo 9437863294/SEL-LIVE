@@ -3,18 +3,29 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, doc, updateDoc } from 'firebase/firestore';
 import type { Loan, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface LoanWithDetails extends Loan {
   totalInterest: number;
@@ -27,39 +38,55 @@ export default function ManageLoanPage() {
   const [loansWithDetails, setLoansWithDetails] = useState<LoanWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const loansSnapshot = await getDocs(query(collection(db, 'loans'), orderBy('createdAt', 'desc')));
+      const loansData = loansSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Loan));
+      
+      const enhancedLoansPromises = loansData.map(async loan => {
+        const emisSnapshot = await getDocs(collection(db, 'loans', loan.id, 'emis'));
+        const totalInterest = emisSnapshot.docs.reduce((sum, doc) => sum + (doc.data() as EMI).interest, 0);
+        const totalAmountToBePaid = loan.loanAmount + totalInterest;
+
+        return {
+          ...loan,
+          totalInterest,
+          totalAmountToBePaid,
+        };
+      });
+
+      const enhancedLoans = await Promise.all(enhancedLoansPromises);
+      setLoansWithDetails(enhancedLoans);
+
+    } catch (error) {
+      console.error("Error fetching loan data:", error);
+      toast({ title: "Error", description: "Failed to fetch loan data.", variant: "destructive" });
+    }
+    setIsLoading(false);
+  };
+  
   useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const loansSnapshot = await getDocs(query(collection(db, 'loans'), orderBy('createdAt', 'desc')));
-        const loansData = loansSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Loan));
-        
-        const enhancedLoansPromises = loansData.map(async loan => {
-          const emisSnapshot = await getDocs(collection(db, 'loans', loan.id, 'emis'));
-          const totalInterest = emisSnapshot.docs.reduce((sum, doc) => sum + (doc.data() as EMI).interest, 0);
-          const totalAmountToBePaid = loan.loanAmount + totalInterest;
-
-          return {
-            ...loan,
-            totalInterest,
-            totalAmountToBePaid,
-          };
-        });
-
-        const enhancedLoans = await Promise.all(enhancedLoansPromises);
-        setLoansWithDetails(enhancedLoans);
-
-      } catch (error) {
-        console.error("Error fetching loan data:", error);
-        toast({ title: "Error", description: "Failed to fetch loan data.", variant: "destructive" });
-      }
-      setIsLoading(false);
-    };
     fetchData();
   }, [toast]);
   
   const handleRowClick = (loanId: string) => {
     router.push(`/loan/${loanId}`);
+  };
+  
+  const handleCloseLoan = async (e: React.MouseEvent, loan: Loan) => {
+    e.stopPropagation();
+    try {
+        await updateDoc(doc(db, 'loans', loan.id), {
+            status: 'Closed',
+            endDate: format(new Date(), 'yyyy-MM-dd'),
+        });
+        toast({ title: 'Success', description: `Loan ${loan.accountNo} has been closed.` });
+        fetchData();
+    } catch(error) {
+        console.error("Error closing loan:", error);
+        toast({ title: 'Error', description: 'Failed to close the loan.', variant: 'destructive' });
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -111,13 +138,14 @@ export default function ManageLoanPage() {
                   <TableHead className="text-center">Total Payable</TableHead>
                   <TableHead className="text-center">Paid</TableHead>
                   <TableHead className="text-center">status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={13}><Skeleton className="h-8" /></TableCell>
+                      <TableCell colSpan={14}><Skeleton className="h-8" /></TableCell>
                     </TableRow>
                   ))
                 ) : loansWithDetails.length > 0 ? (
@@ -140,11 +168,32 @@ export default function ManageLoanPage() {
                             {loan.status}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-right">
+                        {loan.status === 'Active' && (
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                                        <XCircle className="mr-2 h-4 w-4" /> Close
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you sure you want to close this loan?</AlertDialogTitle>
+                                        <AlertDialogDescription>This will mark the loan as "Closed" and set today's date as the end date. This action cannot be undone easily.</AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={(e) => handleCloseLoan(e, loan)}>Confirm Close</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center h-24">No loans found.</TableCell>
+                    <TableCell colSpan={14} className="text-center h-24">No loans found.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
