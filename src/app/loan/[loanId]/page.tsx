@@ -32,6 +32,7 @@ import { createExpenseRequest } from '@/ai';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 
 export default function LoanDetailsPage() {
   const { loanId } = useParams() as { loanId: string };
@@ -603,6 +604,9 @@ export default function LoanDetailsPage() {
                                   <DropdownMenuItem onSelect={() => handleViewDetailsClick(emi)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => handleEditEmiClick(emi)} disabled={!!emi.expenseRequestNo}>
                                     <Edit className="mr-2 h-4 w-4" />Edit Payment
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
+                                    <FilePlus className="mr-2 h-4 w-4" /> Create Expense
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={!!emi.expenseRequestNo || isUpdatingEmi === emi.id} className="text-destructive">
                                     <RotateCcw className="mr-2 h-4 w-4" />Mark as Unpaid
