@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, History } from 'lucide-react';
+import { ArrowLeft, Plus, History, Save, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,7 +11,7 @@ import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, addDoc, Timestamp, runTransaction, doc, getDoc, writeBatch } from 'firebase/firestore';
 import type { MainItem, SubItem, Project, Site, InventoryLog, ItemWithStock, BomItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -20,26 +19,34 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Loader2, Save } from 'lucide-react';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-const stockInSchema = z.object({
-    itemId: z.string().min(1),
-    itemType: z.enum(['Main', 'Sub']),
-    quantity: z.coerce.number().min(1),
-    date: z.date(),
+const stockInItemSchema = z.object({
+    itemId: z.string().min(1, 'Item is required.'),
+    itemType: z.enum(['Main', 'Sub'], { required_error: 'Item type is required.'}),
+    quantity: z.coerce.number().min(1, 'Quantity must be at least 1.'),
     vehicleNo: z.string().optional(),
 });
 
-const stockOutSchema = z.object({
-    itemId: z.string().min(1),
-    itemType: z.enum(['Main', 'Sub']),
-    quantity: z.coerce.number().min(1),
+const stockInSchema = z.object({
     date: z.date(),
-    projectId: z.string().min(1),
+    items: z.array(stockInItemSchema).min(1, "Please add at least one item."),
+});
+
+const stockOutItemSchema = z.object({
+    itemId: z.string().min(1, 'Item is required.'),
+    itemType: z.enum(['Main', 'Sub'], { required_error: 'Item type is required.'}),
+    quantity: z.coerce.number().min(1, 'Quantity must be at least 1.'),
+    projectId: z.string().min(1, 'Project is required.'),
     siteId: z.string().optional(),
+});
+
+const stockOutSchema = z.object({
+    date: z.date(),
+    items: z.array(stockOutItemSchema).min(1, "Please add at least one item."),
 });
 
 
@@ -53,10 +60,11 @@ export default function InventoryPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), quantity: 1, vehicleNo: '' } });
-    const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), quantity: 1, siteId: '' } });
+    const stockInForm = useForm<z.infer<typeof stockInSchema>>({ resolver: zodResolver(stockInSchema), defaultValues: { date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''}] } });
+    const stockOutForm = useForm<z.infer<typeof stockOutSchema>>({ resolver: zodResolver(stockOutSchema), defaultValues: { date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, projectId: '', siteId: '' }] } });
     
-    const watchedStockOutProjectId = stockOutForm.watch('projectId');
+    const { fields: stockInFields, append: appendStockIn, remove: removeStockIn } = useFieldArray({ control: stockInForm.control, name: 'items' });
+    const { fields: stockOutFields, append: appendStockOut, remove: removeStockOut } = useFieldArray({ control: stockOutForm.control, name: 'items' });
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -82,19 +90,6 @@ export default function InventoryPage() {
         fetchData();
     }, [toast]);
     
-    useEffect(() => {
-        const fetchSites = async () => {
-            if (watchedStockOutProjectId && !sites[watchedStockOutProjectId]) {
-                const sitesSnap = await getDocs(collection(db, 'projects', watchedStockOutProjectId, 'sites'));
-                setSites(prev => ({
-                    ...prev,
-                    [watchedStockOutProjectId]: sitesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Site))
-                }));
-            }
-        };
-        fetchSites();
-    }, [watchedStockOutProjectId, sites]);
-
     const allItems = useMemo(() => [
         ...mainItems.map(i => ({ ...i, type: 'Main' as const })),
         ...subItems.map(i => ({ ...i, type: 'Sub' as const }))
@@ -102,11 +97,9 @@ export default function InventoryPage() {
     
     const currentStock = useMemo(() => {
         const stockMap = new Map<string, ItemWithStock>();
-        
         allItems.forEach(item => {
             stockMap.set(`${item.id}-${item.type}`, { ...item, stock: 0 });
         });
-
         inventoryLogs.forEach(log => {
             const key = `${log.itemId}-${log.itemType}`;
             if (stockMap.has(key)) {
@@ -119,73 +112,42 @@ export default function InventoryPage() {
                 stockMap.set(key, currentItem);
             }
         });
-        
         return Array.from(stockMap.values());
-
     }, [allItems, inventoryLogs]);
 
 
     const handleStockInSubmit = async (values: z.infer<typeof stockInSchema>) => {
         setIsSaving(true);
-        const selectedItem = allItems.find(item => item.id === values.itemId && item.type === values.itemType);
-        if(!selectedItem) {
-            toast({ title: 'Error', description: 'Selected item not found', variant: 'destructive'});
-            setIsSaving(false);
-            return;
-        }
-        
         const logsBatch: Omit<InventoryLog, 'id'>[] = [];
 
-        // If it's a main item, handle BOM conversion
-        if (values.itemType === 'Main') {
-            const bom = selectedItem.bom || [];
-            if (bom.length === 0) {
-                 toast({ title: 'Warning', description: 'This main item has no Bill of Materials. Stocking in as a single unit.', variant: 'default'});
+        for (const item of values.items) {
+            const selectedItem = allItems.find(i => i.id === item.itemId && i.type === item.itemType);
+            if (!selectedItem) {
+                toast({ title: 'Error', description: `Item with ID ${item.itemId} not found.`, variant: 'destructive'});
+                setIsSaving(false);
+                return;
             }
             
-            // Check if there's enough stock for all sub-items
-            for (const bomItem of bom) {
-                const subItemStock = currentStock.find(s => s.id === bomItem.subItemId && s.type === 'Sub')?.stock || 0;
-                const requiredQty = bomItem.quantity * values.quantity;
-                if (subItemStock < requiredQty) {
+            if (item.itemType === 'Main') {
+                const bom = selectedItem.bom || [];
+                for (const bomItem of bom) {
+                    const subItemStock = currentStock.find(s => s.id === bomItem.subItemId && s.type === 'Sub')?.stock || 0;
+                    const requiredQty = bomItem.quantity * item.quantity;
+                    if (subItemStock < requiredQty) {
+                        const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
+                        toast({ title: 'Insufficient Stock', description: `Not enough ${subItemDetails?.name || 'sub-item'}. Required: ${requiredQty}, Available: ${subItemStock}.`, variant: 'destructive'});
+                        setIsSaving(false);
+                        return;
+                    }
                     const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
-                    toast({
-                        title: 'Insufficient Sub-Item Stock',
-                        description: `Not enough ${subItemDetails?.name || 'sub-item'}. Required: ${requiredQty}, Available: ${subItemStock}.`,
-                        variant: 'destructive',
-                    });
-                    setIsSaving(false);
-                    return;
+                    if(subItemDetails) {
+                        logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: bomItem.subItemId, itemName: subItemDetails.name, itemType: 'Sub', transactionType: 'Stock Out', quantity: requiredQty, description: `Consumed for Main Item: ${selectedItem.name}` });
+                    }
                 }
             }
 
-            // Create stock-out logs for sub-items
-            bom.forEach(bomItem => {
-                const subItemDetails = subItems.find(s => s.id === bomItem.subItemId);
-                if (subItemDetails) {
-                    logsBatch.push({
-                        date: Timestamp.fromDate(values.date),
-                        itemId: bomItem.subItemId,
-                        itemName: subItemDetails.name,
-                        itemType: 'Sub',
-                        transactionType: 'Stock Out',
-                        quantity: bomItem.quantity * values.quantity,
-                        description: `Consumed for Main Item: ${selectedItem.name}`
-                    });
-                }
-            });
+            logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: item.itemId, itemName: selectedItem.name, itemType: item.itemType, transactionType: 'Stock In', quantity: item.quantity, vehicleNo: item.vehicleNo });
         }
-        
-        // Add the stock-in log for the main item or sub-item
-        logsBatch.push({
-            date: Timestamp.fromDate(values.date),
-            itemId: values.itemId,
-            itemName: selectedItem.name,
-            itemType: values.itemType,
-            transactionType: 'Stock In',
-            quantity: values.quantity,
-            vehicleNo: values.vehicleNo,
-        });
 
         try {
             const batch = writeBatch(db);
@@ -195,9 +157,9 @@ export default function InventoryPage() {
             });
             await batch.commit();
 
-            await fetchData(); // Refetch all data to update stock correctly
-            toast({ title: 'Success', description: 'Stock transaction recorded successfully.' });
-            stockInForm.reset({ date: new Date(), quantity: 1, vehicleNo: '' });
+            await fetchData();
+            toast({ title: 'Success', description: 'Stock transactions recorded successfully.' });
+            stockInForm.reset({ date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''}] });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to record stock transaction.', variant: 'destructive' });
         } finally {
@@ -207,36 +169,36 @@ export default function InventoryPage() {
     
     const handleStockOutSubmit = async (values: z.infer<typeof stockOutSchema>) => {
         setIsSaving(true);
-        const selectedItem = allItems.find(item => item.id === values.itemId && item.type === values.itemType);
-        if(!selectedItem) {
-            toast({ title: 'Error', description: 'Selected item not found', variant: 'destructive'});
-            setIsSaving(false);
-            return;
-        }
-        
-        const currentItemStock = currentStock.find(item => item.id === values.itemId && item.type === values.itemType)?.stock || 0;
-        if(values.quantity > currentItemStock) {
-            toast({ title: 'Insufficient Stock', description: `Cannot stock out ${values.quantity}. Only ${currentItemStock} available.`, variant: 'destructive' });
-            setIsSaving(false);
-            return;
-        }
+        const logsBatch: Omit<InventoryLog, 'id'>[] = [];
 
-        const logEntry: Omit<InventoryLog, 'id'> = {
-            date: Timestamp.fromDate(values.date),
-            itemId: values.itemId,
-            itemName: selectedItem.name,
-            itemType: values.itemType,
-            transactionType: 'Stock Out',
-            quantity: values.quantity,
-            projectId: values.projectId,
-            siteId: values.siteId,
-        };
+        for (const item of values.items) {
+             const selectedItem = allItems.find(i => i.id === item.itemId && i.type === item.itemType);
+            if (!selectedItem) {
+                toast({ title: 'Error', description: 'Selected item not found', variant: 'destructive'});
+                setIsSaving(false);
+                return;
+            }
+            
+            const currentItemStock = currentStock.find(s => s.id === item.itemId && s.type === item.itemType)?.stock || 0;
+            if(item.quantity > currentItemStock) {
+                toast({ title: 'Insufficient Stock', description: `Cannot stock out ${item.quantity} of ${selectedItem.name}. Only ${currentItemStock} available.`, variant: 'destructive' });
+                setIsSaving(false);
+                return;
+            }
+            logsBatch.push({ date: Timestamp.fromDate(values.date), itemId: item.itemId, itemName: selectedItem.name, itemType: item.itemType, transactionType: 'Stock Out', quantity: item.quantity, projectId: item.projectId, siteId: item.siteId });
+        }
 
         try {
-            const newLogDoc = await addDoc(collection(db, 'inventory_logs'), logEntry);
-            setInventoryLogs(prev => [...prev, {id: newLogDoc.id, ...logEntry}]);
+            const batch = writeBatch(db);
+            logsBatch.forEach(logEntry => {
+                const newLogRef = doc(collection(db, 'inventory_logs'));
+                batch.set(newLogRef, logEntry);
+            });
+            await batch.commit();
+
+            await fetchData();
             toast({ title: 'Success', description: 'Stock-out recorded successfully.' });
-            stockOutForm.reset({ date: new Date(), quantity: 1, siteId: '' });
+            stockOutForm.reset({ date: new Date(), items: [{ itemId: '', itemType: undefined, quantity: 1, projectId: '', siteId: '' }] });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to record stock-out.', variant: 'destructive' });
         } finally {
@@ -248,47 +210,29 @@ export default function InventoryPage() {
     const renderStockInForm = () => (
         <Form {...stockInForm}>
             <form onSubmit={stockInForm.handleSubmit(handleStockInSubmit)} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <FormField
-                        control={stockInForm.control}
-                        name="itemType"
-                        render={({ field }) => (
-                           <FormItem>
-                               <FormLabel>Item Type</FormLabel>
-                               <Select onValueChange={field.onChange} value={field.value || ''}>
-                                    <FormControl><SelectTrigger><SelectValue placeholder="Select Type"/></SelectTrigger></FormControl>
-                                    <SelectContent><SelectItem value="Main">Main Item</SelectItem><SelectItem value="Sub">Sub-Item</SelectItem></SelectContent>
-                               </Select>
-                               <FormMessage />
-                           </FormItem>
-                        )}
-                    />
-                     <FormField
-                        control={stockInForm.control}
-                        name="itemId"
-                        render={({ field }) => (
-                           <FormItem>
-                               <FormLabel>Item Name</FormLabel>
-                               <Select onValueChange={field.onChange} value={field.value || ''} disabled={!stockInForm.watch('itemType')}>
-                                    <FormControl><SelectTrigger><SelectValue placeholder="Select Item"/></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                        {(stockInForm.watch('itemType') === 'Main' ? mainItems : subItems).map(item => (
-                                            <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                               </Select>
-                               <FormMessage />
-                           </FormItem>
-                        )}
-                    />
-                    <FormField control={stockInForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
-                    <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
-                    <FormField control={stockInForm.control} name="vehicleNo" render={({field}) => <FormItem><FormLabel>Vehicle No. (Optional)</FormLabel><FormControl><Input {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
+                 <FormField control={stockInForm.control} name="date" render={({field}) => <FormItem className="flex flex-col max-w-sm"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
+                
+                <Table>
+                    <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Item</TableHead><TableHead>Quantity</TableHead><TableHead>Vehicle No.</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
+                    <TableBody>
+                        {stockInFields.map((field, index) => (
+                            <TableRow key={field.id}>
+                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemType`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="Sub">Sub</SelectItem></SelectContent></Select>} /></TableCell>
+                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.itemId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value} disabled={!stockInForm.watch(`items.${index}.itemType`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(stockInForm.watch(`items.${index}.itemType`) === 'Main' ? mainItems : subItems).map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
+                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} value={field.value || ''} />} /></TableCell>
+                                <TableCell><FormField control={stockInForm.control} name={`items.${index}.vehicleNo`} render={({field}) => <Input {...field} value={field.value || ''} />} /></TableCell>
+                                <TableCell><Button variant="ghost" size="icon" onClick={() => removeStockIn(index)}><Trash2 className="h-4 w-4 text-destructive"/></Button></TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+                <div className="flex justify-between">
+                    <Button type="button" variant="outline" onClick={() => appendStockIn({ itemId: '', itemType: undefined, quantity: 1, vehicleNo: ''})}><Plus className="mr-2 h-4 w-4" />Add Row</Button>
+                    <Button type="submit" disabled={isSaving}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                        Record Stock In
+                    </Button>
                 </div>
-                 <Button type="submit" disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                    Record Stock In
-                </Button>
             </form>
         </Form>
     );
@@ -296,18 +240,30 @@ export default function InventoryPage() {
     const renderStockOutForm = () => (
          <Form {...stockOutForm}>
             <form onSubmit={stockOutForm.handleSubmit(handleStockOutSubmit)} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <FormField control={stockOutForm.control} name="itemType" render={({ field }) => ( <FormItem> <FormLabel>Item Type</FormLabel> <Select onValueChange={field.onChange} value={field.value || ''}> <FormControl><SelectTrigger><SelectValue placeholder="Select Type"/></SelectTrigger></FormControl> <SelectContent><SelectItem value="Main">Main Item</SelectItem><SelectItem value="Sub">Sub-Item</SelectItem></SelectContent> </Select> <FormMessage /> </FormItem> )} />
-                     <FormField control={stockOutForm.control} name="itemId" render={({ field }) => ( <FormItem> <FormLabel>Item Name</FormLabel> <Select onValueChange={field.onChange} value={field.value || ''} disabled={!stockOutForm.watch('itemType')}> <FormControl><SelectTrigger><SelectValue placeholder="Select Item"/></SelectTrigger></FormControl> <SelectContent> {(stockOutForm.watch('itemType') === 'Main' ? mainItems : subItems).map(item => ( <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem> ))} </SelectContent> </Select> <FormMessage /> </FormItem> )} />
-                    <FormField control={stockOutForm.control} name="quantity" render={({field}) => <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage/></FormItem>} />
-                    <FormField control={stockOutForm.control} name="date" render={({field}) => <FormItem className="flex flex-col"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
-                    <FormField control={stockOutForm.control} name="projectId" render={({field}) => <FormItem><FormLabel>Project</FormLabel><Select onValueChange={field.onChange} value={field.value || ''}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
-                    <FormField control={stockOutForm.control} name="siteId" render={({field}) => <FormItem><FormLabel>Site (Optional)</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={!watchedStockOutProjectId}><FormControl><SelectTrigger><SelectValue placeholder="Select Site"/></SelectTrigger></FormControl><SelectContent>{(sites[watchedStockOutProjectId] || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>} />
+                <FormField control={stockOutForm.control} name="date" render={({field}) => <FormItem className="flex flex-col max-w-sm"><FormLabel>Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn(!field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4"/>{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage/></FormItem>} />
+
+                 <Table>
+                    <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Item</TableHead><TableHead>Quantity</TableHead><TableHead>Project</TableHead><TableHead>Site</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
+                    <TableBody>
+                        {stockOutFields.map((field, index) => (
+                            <TableRow key={field.id}>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.itemType`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="Sub">Sub</SelectItem></SelectContent></Select>} /></TableCell>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.itemId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value} disabled={!stockOutForm.watch(`items.${index}.itemType`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(stockOutForm.watch(`items.${index}.itemType`) === 'Main' ? mainItems : subItems).map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.quantity`} render={({field}) => <Input type="number" {...field} value={field.value || ''} />} /></TableCell>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.projectId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent></Select>} /></TableCell>
+                                <TableCell><FormField control={stockOutForm.control} name={`items.${index}.siteId`} render={({field}) => <Select onValueChange={field.onChange} value={field.value || ''} disabled={!stockOutForm.watch(`items.${index}.projectId`)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{(sites[stockOutForm.watch(`items.${index}.projectId`)] || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select>} /></TableCell>
+                                <TableCell><Button variant="ghost" size="icon" onClick={() => removeStockOut(index)}><Trash2 className="h-4 w-4 text-destructive"/></Button></TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+                <div className="flex justify-between">
+                    <Button type="button" variant="outline" onClick={() => appendStockOut({ itemId: '', itemType: undefined, quantity: 1, projectId: '', siteId: ''})}><Plus className="mr-2 h-4 w-4" />Add Row</Button>
+                    <Button type="submit" disabled={isSaving}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                        Record Stock Out
+                    </Button>
                 </div>
-                 <Button type="submit" disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                    Record Stock Out
-                </Button>
             </form>
         </Form>
     );
