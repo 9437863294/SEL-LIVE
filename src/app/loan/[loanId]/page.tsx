@@ -34,7 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-export default function LoanDetailsPage({ params: { loanId } }: { params: { loanId: string } }) {
+export default function LoanDetailsPage({ params }: { params: { loanId: string } }) {
+  const { loanId } = params;
   const { toast } = useToast();
   const router = useRouter();
   const { user, users } = useAuth();
