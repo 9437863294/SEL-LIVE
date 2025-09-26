@@ -43,7 +43,7 @@ export default function ModuleForm() {
   
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: "tags"
+    name: "tags" as 'tags',
   });
 
   const handleSuggestTags = useCallback(async () => {
