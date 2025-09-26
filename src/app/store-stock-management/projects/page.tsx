@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -206,7 +205,7 @@ export default function ManageProjectsAndSitesPage() {
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">Manage Projects & Sites</h1>
+          <h1 className="text-xl font-bold">Manage Projects &amp; Sites</h1>
         </div>
         <Button onClick={() => openProjectDialog('add')}>
             <Plus className="mr-2 h-4 w-4" /> Add Project
