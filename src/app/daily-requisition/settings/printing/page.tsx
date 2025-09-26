@@ -19,6 +19,7 @@ export default function PrintingSetupPage() {
     const [paperSize, setPaperSize] = useState('a4');
     const [orientation, setOrientation] = useState('portrait');
     const [margins, setMargins] = useState({ top: '20', bottom: '20', left: '20', right: '20' });
+    const [marginUnit, setMarginUnit] = useState('mm');
     const [headerText, setHeaderText] = useState('SIDDHARTHA ENGINEERING LIMITED');
 
     const handleMarginChange = (side: keyof typeof margins, value: string) => {
@@ -27,7 +28,7 @@ export default function PrintingSetupPage() {
 
     const handleSave = () => {
         // In a real app, this would save the settings to a database
-        console.log({ paperSize, orientation, margins, headerText });
+        console.log({ paperSize, orientation, margins, marginUnit, headerText });
         toast({
             title: 'Settings Saved',
             description: 'Your printing preferences have been updated.',
@@ -89,7 +90,21 @@ export default function PrintingSetupPage() {
                 <Card>
                     <CardHeader>
                         <CardTitle>Margin Setup</CardTitle>
-                        <CardDescription>Set the margins for the printed page (in millimeters).</CardDescription>
+                         <div className="flex items-end justify-between">
+                            <CardDescription>Set the margins for the printed page.</CardDescription>
+                            <div className="w-28">
+                                <Select value={marginUnit} onValueChange={setMarginUnit}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="mm">mm</SelectItem>
+                                        <SelectItem value="cm">cm</SelectItem>
+                                        <SelectItem value="in">in</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="space-y-2">
