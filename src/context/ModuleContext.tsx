@@ -25,7 +25,7 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
     try {
       const item = window.localStorage.getItem('modules');
       if (item) {
-        setModules(JSON.parse(item));
+        setModules(JSON.parse(item) as Module[]);
       }
     } catch (error) {
       console.error('Failed to load modules from local storage', error);
