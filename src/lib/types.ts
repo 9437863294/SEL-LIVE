@@ -52,8 +52,8 @@ export type BillItem = {
     boqSlNo: string;
     description: string;
     unit: string;
-    rate: string;
-    executedQty: string; // The original executed quantity from JMC
+    rate: number;
+    executedQty: number; // The original executed quantity from JMC
     billedQty: string; // The quantity being billed in this specific bill
     totalAmount: string;
 }

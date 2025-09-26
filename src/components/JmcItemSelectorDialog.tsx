@@ -144,8 +144,8 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
         boqSlNo: item.boqSlNo,
         description: item.description,
         unit: item.unit,
-        rate: String(item.rate),
-        executedQty: String(item.availableQty), // Available qty for billing
+        rate: item.rate,
+        executedQty: item.availableQty, // Available qty for billing
         billedQty: '', // User will fill this
         totalAmount: ''
     }));
