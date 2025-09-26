@@ -98,7 +98,10 @@
 @media print {
   body {
     visibility: hidden;
-    background-color: white; /* Ensure background is white for printing */
+    background-color: white !important;
+    -webkit-print-color-adjust: exact;
+    margin: 0;
+    padding: 0;
   }
   .printable-area, .printable-area * {
     visibility: visible;
@@ -112,9 +115,9 @@
     overflow: visible !important;
     max-height: none !important;
     margin: 0;
-    padding: 20mm;
+    padding: 15mm;
     box-sizing: border-box;
-    font-size: 10pt; /* Adjust font size for print */
+    font-size: 10pt;
   }
   .no-print, .no-print * {
     display: none !important;
@@ -127,4 +130,3 @@
     overflow: visible !important;
   }
 }
-
