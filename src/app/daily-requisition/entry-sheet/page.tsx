@@ -978,7 +978,7 @@ export default function EntrySheetPage() {
         />
       )}
       
-      <div className="hidden">
+      <div className="hidden print-only">
         <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
       </div>
     </>

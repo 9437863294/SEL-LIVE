@@ -96,7 +96,7 @@
 }
 
 @media print {
-  body * {
+  body.printing, body.printing * {
     visibility: hidden;
   }
   .printable-area, .printable-area * {
@@ -111,7 +111,5 @@
   .no-print, .no-print * {
     display: none !important;
   }
-  .print-only {
-    display: block !important;
-  }
 }
+
