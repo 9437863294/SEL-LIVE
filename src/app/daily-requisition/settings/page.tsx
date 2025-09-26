@@ -20,9 +20,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface SettingsCardProps {
   item: {
     icon: LucideIcon;
-    text: string;
-    href: string;
+    title: string;
     description: string;
+    href: string;
     disabled?: boolean;
   };
 }
@@ -64,7 +64,7 @@ function SettingsCard({ item }: SettingsCardProps) {
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardTitle className="text-base font-bold">{item.title}</CardTitle>
                     <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -135,7 +135,7 @@ export default function DailyRequisitionSettingsPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {authorizedSettingsItems.map((item) => (
-          <SettingsCard key={item.text} item={item} />
+          <SettingsCard key={item.title} item={item} />
         ))}
       </div>
     </div>
