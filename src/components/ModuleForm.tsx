@@ -22,7 +22,7 @@ const formSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters long.'),
   content: z.string().min(10, 'Content must be at least 10 characters long.'),
   icon: z.string().min(1, 'Icon name is required.'),
-  tags: z.array(z.string()).default([]),
+  tags: z.array(z.object({ value: z.string() })).default([]),
 });
 
 export default function ModuleForm() {
@@ -43,7 +43,7 @@ export default function ModuleForm() {
   
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: 'tags',
+    name: "tags",
   });
 
   const handleSuggestTags = useCallback(async () => {
@@ -95,16 +95,20 @@ export default function ModuleForm() {
 
   const toggleTag = useCallback((tag: string) => {
     const currentTags = form.getValues('tags');
-    const tagIndex = currentTags.findIndex(t => t === tag);
+    const tagIndex = currentTags.findIndex(t => t.value === tag);
     if (tagIndex > -1) {
       remove(tagIndex);
     } else {
-      append(tag);
+      append({ value: tag });
     }
   }, [form, append, remove]);
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    addModule(values);
+    const finalValues = {
+        ...values,
+        tags: values.tags.map(t => t.value),
+    };
+    addModule(finalValues);
     toast({
       title: 'Module Created!',
       description: `"${values.title}" has been added to your hub.`,
@@ -159,7 +163,7 @@ export default function ModuleForm() {
                   <div className="flex flex-wrap gap-2 mb-4 min-h-[24px]">
                       {fields.map((field, index) => (
                           <Badge key={field.id} variant="secondary" className="flex items-center gap-1">
-                              {form.getValues(`tags.${index}`)}
+                              {form.getValues(`tags.${index}`).value}
                               <button type="button" onClick={() => remove(index)} className="rounded-full outline-none ring-offset-background focus:ring-1 focus:ring-ring">
                                   <X className="h-3 w-3 text-muted-foreground hover:text-foreground"/>
                               </button>
@@ -175,7 +179,7 @@ export default function ModuleForm() {
                           <p className="text-sm font-medium text-muted-foreground">AI Suggestions (click to add):</p>
                           <div className="flex flex-wrap gap-2">
                               {suggestedTags.map(tag => (
-                                <Badge key={tag} variant={form.getValues('tags').includes(tag) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleTag(tag)}>
+                                <Badge key={tag} variant={form.getValues('tags').some(t => t.value === tag) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleTag(tag)}>
                                     {tag}
                                 </Badge>
                               ))}
