@@ -15,6 +15,7 @@ import { useReactToPrint } from 'react-to-print';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 
 const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
@@ -165,10 +166,14 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                 <Button onClick={handlePrint} disabled={isLoading || !entry} variant="outline">
+                 <button
+                    onClick={handlePrint}
+                    disabled={isLoading || !entry}
+                    className={cn(buttonVariants({ variant: 'outline' }))}
+                >
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                     Print / Download PDF
-                </Button>
+                </button>
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (
