@@ -11,13 +11,14 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Separator } from './ui/separator';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
+import { cn } from '@/lib/utils';
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -122,6 +123,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
 
   const handlePrint = useReactToPrint({
       content: () => componentRef.current,
+      documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
   });
 
   if (!entry) return null;
@@ -141,10 +143,13 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </div>
 
         <DialogFooter>
-            <Button variant="outline" onClick={handlePrint}>
+             <button
+              onClick={handlePrint}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
               <Printer className="mr-2 h-4 w-4" />
               Print / Download PDF
-            </Button>
+            </button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
