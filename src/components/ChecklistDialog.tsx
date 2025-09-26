@@ -141,9 +141,11 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </div>
 
         <DialogFooter>
-            <Button variant="outline" onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print / Download PDF
+            <Button variant="outline" onClick={handlePrint} asChild>
+              <div>
+                <Printer className="mr-2 h-4 w-4" />
+                Print / Download PDF
+              </div>
             </Button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
