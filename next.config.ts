@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    // This allows the Next.js dev server to accept requests from any origin.
+    // This is required for security reasons in recent versions of Next.js.
+    // READ MORE: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+    allowedDevOrigins: ["**"],
+  },
   images: {
     remotePatterns: [
       {
