@@ -17,7 +17,6 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types
 import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
-import { useReactToPrint } from 'react-to-print';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from './ui/button';
 
@@ -38,7 +37,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-6 bg-white text-black">
+        <div ref={ref} className="p-6 bg-white text-black printable-area">
              <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -120,16 +119,16 @@ PrintableContent.displayName = 'PrintableContent';
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
   const componentRef = useRef<HTMLDivElement>(null);
-  const handlePrint = useReactToPrint({
-      content: () => componentRef.current,
-      documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
-  });
+
+  const handlePrint = () => {
+    window.print();
+  }
 
   if (!entry) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl no-print">
         <DialogHeader>
           <DialogTitle>Check List for Payment</DialogTitle>
           <DialogDescription>

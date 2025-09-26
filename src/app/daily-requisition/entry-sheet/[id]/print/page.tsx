@@ -11,25 +11,23 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types
 import { Printer } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { format } from 'date-fns';
-import { useReactToPrint } from 'react-to-print';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 
-export default function PrintChecklistPage() {
-    const { id } = useParams() as { id: string };
+export default function PrintChecklistPage({ params }: { params: { id: string } }) {
+    const { id } = params;
     const router = useRouter();
-    const componentRef = useRef<HTMLDivElement>(null);
     const [entry, setEntry] = useState<DailyRequisitionEntry | null>(null);
     const [project, setProject] = useState<Project | null>(null);
     const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const { user } = useAuth();
 
-    const handlePrint = useReactToPrint({
-        content: () => componentRef.current,
-        documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
-    });
+    const handlePrint = () => {
+        window.print();
+    };
     
     useEffect(() => {
         if (!id) return;
@@ -81,18 +79,22 @@ export default function PrintChecklistPage() {
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                 <Button onClick={handlePrint} disabled={isLoading || !entry} variant="outline">
+                 <button
+                    onClick={handlePrint}
+                    disabled={isLoading || !entry}
+                    className={cn(buttonVariants({ variant: 'outline' }))}
+                >
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                     Print / Download PDF
-                </Button>
+                </button>
             </div>
-            <div className="bg-white border rounded-lg max-w-4xl mx-auto">
+            <div className="bg-white border rounded-lg max-w-4xl mx-auto printable-area">
                  {isLoading ? (
                     <div className="p-8">
                         <Skeleton className="h-96 w-full" />
                     </div>
                 ) : entry && (
-                    <div ref={componentRef} className="p-8 bg-white text-black font-sans">
+                    <div className="p-8 bg-white text-black font-sans">
                         <div className="text-center mb-4">
                             <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                             <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
