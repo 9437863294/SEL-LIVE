@@ -105,12 +105,10 @@ PrintableContent.displayName = 'PrintableContent';
 
 function PrintButton({ onPrint, disabled }: { onPrint: () => void, disabled: boolean }) {
     return (
-      <div onClick={onPrint} className={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
-        <Button variant="outline" disabled={disabled}>
+        <Button variant="outline" onClick={onPrint} disabled={disabled}>
             {disabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Print / Download PDF
         </Button>
-      </div>
     );
 }
 
