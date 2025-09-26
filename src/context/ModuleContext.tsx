@@ -8,7 +8,7 @@ import type { Module } from '@/lib/types';
 interface ModuleContextType {
   modules: Module[];
   setModules: React.Dispatch<React.SetStateAction<Module[]>>;
-  addModule: (module: Omit<Module, 'id'>) => void;
+  addModule: (module: Omit<Module, 'id' | 'tags'> & { tags?: string[] }) => void;
   deleteModule: (id: string) => void;
   updateModule: (id: string, updatedModule: Module) => void;
   updateModuleOrder: (modules: Module[]) => void;
@@ -43,10 +43,11 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
     }
   }, [modules, isLoading]);
 
-  const addModule = useCallback((moduleData: Omit<Module, 'id'>) => {
+  const addModule = useCallback((moduleData: Omit<Module, 'id' | 'tags'> & { tags?: string[] }) => {
     const newModule: Module = {
       ...moduleData,
       id: Date.now().toString(),
+      tags: moduleData.tags || [],
     };
     setModules((prev) => [...prev, newModule]);
   }, []);
