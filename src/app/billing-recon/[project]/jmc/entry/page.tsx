@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -29,9 +30,9 @@ const initialItem = {
     boqSlNo: '',
     description: '',
     unit: '',
-    rate: '',
-    executedQty: '',
-    totalAmount: '',
+    rate: 0,
+    executedQty: 0,
+    totalAmount: 0,
 };
 
 type JmcItem = typeof initialItem;
@@ -93,12 +94,12 @@ export default function JmcEntryPage() {
     const updatedItem = { ...item, [name]: value };
 
     if (name === 'executedQty' || name === 'rate') {
-        const qty = parseFloat(updatedItem.executedQty);
-        const rate = parseFloat(updatedItem.rate);
+        const qty = parseFloat(String(updatedItem.executedQty));
+        const rate = parseFloat(String(updatedItem.rate));
         if (!isNaN(qty) && !isNaN(rate)) {
-            updatedItem.totalAmount = (qty * rate).toFixed(2);
+            updatedItem.totalAmount = qty * rate;
         } else {
-            updatedItem.totalAmount = '';
+            updatedItem.totalAmount = 0;
         }
     }
 
@@ -115,13 +116,13 @@ export default function JmcEntryPage() {
         itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
         itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
         itemToUpdate.unit = boqItem['UNITS'] || '';
-        itemToUpdate.rate = String(boqItem[rateKey] || '0');
+        itemToUpdate.rate = Number(boqItem[rateKey] || '0');
         
         if (itemToUpdate.executedQty) {
-            const qty = parseFloat(itemToUpdate.executedQty);
-            const rate = parseFloat(itemToUpdate.rate);
+            const qty = itemToUpdate.executedQty;
+            const rate = itemToUpdate.rate;
              if (!isNaN(qty) && !isNaN(rate)) {
-                itemToUpdate.totalAmount = (qty * rate).toFixed(2);
+                itemToUpdate.totalAmount = qty * rate;
             }
         }
     } else {
@@ -138,9 +139,9 @@ export default function JmcEntryPage() {
               boqSlNo: boqItem['SL. No.'] || '',
               description: boqItem['DESCRIPTION OF ITEMS'] || '',
               unit: boqItem['UNITS'] || '',
-              rate: String(boqItem[rateKey] || '0'),
-              executedQty: '',
-              totalAmount: '',
+              rate: Number(boqItem[rateKey] || '0'),
+              executedQty: 0,
+              totalAmount: 0,
           };
       });
 
@@ -218,6 +219,11 @@ export default function JmcEntryPage() {
         setIsSaving(false);
     }
   };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
+
 
   return (
     <>
@@ -303,7 +309,7 @@ export default function JmcEntryPage() {
                                 <TableCell>
                                     <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
                                 </TableCell>
-                                <TableCell>{item.totalAmount}</TableCell>
+                                <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                                 <TableCell>
                                     <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
                                         <Trash2 className="h-4 w-4 text-destructive" />

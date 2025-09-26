@@ -31,9 +31,9 @@ export type JmcItem = {
   boqSlNo: string;
   description: string;
   unit: string;
-  rate: string;
-  executedQty: string;
-  totalAmount: string;
+  rate: number;
+  executedQty: number;
+  totalAmount: number;
 };
 
 export type JmcEntry = {

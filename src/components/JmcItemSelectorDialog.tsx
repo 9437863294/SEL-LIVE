@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -35,7 +36,6 @@ interface JmcItemWithDetails extends JmcItem {
     id: string; // Unique ID for each JMC item
     jmcEntryId: string;
     jmcNo: string;
-    executedQty: number;
     billedQty: number;
     availableQty: number;
 }
@@ -78,7 +78,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
             allJmcEntries.forEach(entry => {
                 entry.items.forEach((item, index) => {
                     const jmcItemId = `${entry.id}-${index}`; // Create a unique ID for each JMC item
-                    const executedQty = parseFloat(item.executedQty);
+                    const executedQty = item.executedQty;
                     const billedQty = billedQuantities[jmcItemId] || 0;
                     const availableQty = executedQty - billedQty;
 
@@ -88,7 +88,6 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
                             id: jmcItemId,
                             jmcEntryId: entry.id,
                             jmcNo: entry.jmcNo,
-                            executedQty,
                             billedQty,
                             availableQty,
                         });
@@ -145,7 +144,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
         boqSlNo: item.boqSlNo,
         description: item.description,
         unit: item.unit,
-        rate: item.rate,
+        rate: String(item.rate),
         executedQty: String(item.availableQty), // Available qty for billing
         billedQty: '', // User will fill this
         totalAmount: ''
@@ -156,10 +155,8 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
     setSearchTerm('');
   };
   
-  const formatCurrency = (amount: string) => {
-    const num = parseFloat(amount);
-    if(isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
 
   return (

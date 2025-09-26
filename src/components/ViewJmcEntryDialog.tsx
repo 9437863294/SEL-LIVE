@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -19,10 +20,8 @@ interface ViewJmcEntryDialogProps {
 export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry }: ViewJmcEntryDialogProps) {
   if (!jmcEntry) return null;
   
-  const formatCurrency = (amount: string) => {
-    const num = parseFloat(amount);
-    if(isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
 
   return (
