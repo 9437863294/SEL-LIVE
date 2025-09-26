@@ -18,6 +18,8 @@ import { Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
+import { buttonVariants } from './ui/button';
+import { cn } from '@/lib/utils';
 
 interface ChecklistDialogProps {
   isOpen: boolean;
@@ -142,10 +144,13 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </div>
 
         <DialogFooter>
-             <Button onClick={handlePrint} variant="outline">
+             <button
+              onClick={handlePrint}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
               <Printer className="mr-2 h-4 w-4" />
               Print / Download PDF
-            </Button>
+            </button>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>

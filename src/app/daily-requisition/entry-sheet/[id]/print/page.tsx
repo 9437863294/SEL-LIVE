@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { useReactToPrint } from 'react-to-print';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
@@ -103,15 +104,6 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
-function PrintButton({ onPrint, disabled }: { onPrint: () => void, disabled: boolean }) {
-    return (
-        <Button variant="outline" onClick={onPrint} disabled={disabled}>
-            {disabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-            Print / Download PDF
-        </Button>
-    );
-}
-
 export default function PrintChecklistPage({ params }: { params: { id: string } }) {
     const { id } = params;
     const router = useRouter();
@@ -173,7 +165,10 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                <PrintButton onPrint={handlePrint} disabled={isLoading || !entry} />
+                 <Button onClick={handlePrint} disabled={isLoading || !entry} variant="outline">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                    Print / Download PDF
+                </Button>
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (
