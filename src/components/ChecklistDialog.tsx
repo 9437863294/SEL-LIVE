@@ -36,7 +36,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, Omit<ChecklistDialogPr
         : String(entry.date);
 
     return (
-        <div ref={ref}>
+        <div ref={ref} className="print-content">
             <div className="p-6 bg-white text-black">
                 <div className="text-center mb-4">
                     <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
@@ -141,12 +141,12 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </div>
 
         <DialogFooter>
-            <Button variant="outline" onClick={handlePrint} asChild>
-              <div>
-                <Printer className="mr-2 h-4 w-4" />
-                Print / Download PDF
-              </div>
-            </Button>
+            <div onClick={handlePrint}>
+                <Button variant="outline">
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print / Download PDF
+                </Button>
+            </div>
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
