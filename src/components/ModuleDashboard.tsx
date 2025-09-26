@@ -56,7 +56,7 @@ export default function ModuleDashboard() {
       id: String(index + 1),
       title: moduleName,
       content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
-      tags: [],
+      tags: [] as string[],
       icon: moduleIcons[moduleName] || 'FileText',
     }));
     
