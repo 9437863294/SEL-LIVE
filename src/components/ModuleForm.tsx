@@ -43,7 +43,7 @@ export default function ModuleForm() {
   
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: "tags" as 'tags',
+    name: "tags",
   });
 
   const handleSuggestTags = useCallback(async () => {
@@ -95,7 +95,7 @@ export default function ModuleForm() {
 
   const toggleTag = useCallback((tag: string) => {
     const currentTags = form.getValues('tags');
-    const tagIndex = currentTags.indexOf(tag);
+    const tagIndex = currentTags.findIndex(t => t === tag);
     if (tagIndex > -1) {
       remove(tagIndex);
     } else {
@@ -159,7 +159,7 @@ export default function ModuleForm() {
                   <div className="flex flex-wrap gap-2 mb-4 min-h-[24px]">
                       {fields.map((field, index) => (
                           <Badge key={field.id} variant="secondary" className="flex items-center gap-1">
-                              {field.value}
+                              {form.getValues(`tags.${index}`)}
                               <button type="button" onClick={() => remove(index)} className="rounded-full outline-none ring-offset-background focus:ring-1 focus:ring-ring">
                                   <X className="h-3 w-3 text-muted-foreground hover:text-foreground"/>
                               </button>
@@ -175,7 +175,7 @@ export default function ModuleForm() {
                           <p className="text-sm font-medium text-muted-foreground">AI Suggestions (click to add):</p>
                           <div className="flex flex-wrap gap-2">
                               {suggestedTags.map(tag => (
-                                <Badge key={tag} variant={fields.some(f => f.value === tag) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleTag(tag)}>
+                                <Badge key={tag} variant={form.getValues('tags').includes(tag) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleTag(tag)}>
                                     {tag}
                                 </Badge>
                               ))}
