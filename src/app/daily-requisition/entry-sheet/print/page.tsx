@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
@@ -104,6 +103,15 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
+function PrintButton({ onPrint, disabled }: { onPrint: () => void, disabled: boolean }) {
+    return (
+        <Button variant="outline" onClick={onPrint} disabled={disabled}>
+            {disabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Print / Download PDF
+        </Button>
+    );
+}
+
 export default function PrintChecklistPage() {
     const { id } = useParams() as { id: string };
     const router = useRouter();
@@ -128,7 +136,6 @@ export default function PrintChecklistPage() {
                 const entryDocSnap = await getDoc(entryDocRef);
 
                 if (!entryDocSnap.exists()) {
-                    // Handle not found
                     router.push('/daily-requisition/entry-sheet');
                     return;
                 }
@@ -163,31 +170,20 @@ export default function PrintChecklistPage() {
     }, [id, router]);
 
 
-    if (isLoading) {
-        return (
-            <div className="p-8">
-                <div className="flex justify-end gap-2 mb-4">
-                    <Skeleton className="h-10 w-24" />
-                </div>
-                <div className="border rounded-lg p-8">
-                    <Skeleton className="h-96 w-full" />
-                </div>
-            </div>
-        )
-    }
-
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                <Button variant="outline" onClick={handlePrint}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                    Print / Download PDF
-                </Button>
+                <PrintButton onPrint={handlePrint} disabled={isLoading || !entry} />
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
-                <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
+                 {isLoading ? (
+                    <div className="p-8">
+                        <Skeleton className="h-96 w-full" />
+                    </div>
+                ) : (
+                    <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
+                )}
             </div>
         </div>
     );
 }
-
