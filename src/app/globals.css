@@ -107,9 +107,11 @@
     left: 0;
     top: 0;
     width: 100%;
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
   .no-print, .no-print * {
     display: none !important;
   }
 }
-

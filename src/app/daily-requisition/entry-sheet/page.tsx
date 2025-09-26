@@ -507,7 +507,10 @@ export default function EntrySheetPage() {
   }
   
   const handlePrintSelected = () => {
+    const body = document.body;
+    body.classList.add('printing');
     window.print();
+    body.classList.remove('printing');
     setIsSelectionMode(false);
     setSelectedIds(new Set());
   }
@@ -978,7 +981,7 @@ export default function EntrySheetPage() {
         />
       )}
       
-      <div className="hidden print-only">
+      <div className="hidden">
         <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
       </div>
     </>
