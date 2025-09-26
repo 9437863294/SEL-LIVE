@@ -96,7 +96,7 @@
 }
 
 @media print {
-  body.printing, body.printing * {
+  body, html {
     visibility: hidden;
   }
   .printable-area, .printable-area * {
@@ -110,6 +110,8 @@
     height: auto !important;
     overflow: visible !important;
     max-height: none !important;
+    margin: 20mm;
+    box-sizing: border-box;
   }
   .no-print, .no-print * {
     display: none !important;

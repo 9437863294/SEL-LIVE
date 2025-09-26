@@ -118,7 +118,7 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
 
                         <div className="space-y-2 text-sm mb-8">
                             <p className="font-medium">Description:</p>
-                            <p className="pl-4 min-h-[50px] border-l-2 border-gray-200">{entry.description}</p>
+                            <p className="pl-4 min-h-[50px]">{entry.description}</p>
                         </div>
                         
                         <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
@@ -507,10 +507,17 @@ export default function EntrySheetPage() {
   }
   
   const handlePrintSelected = () => {
-    const body = document.body;
-    body.classList.add('printing');
-    window.print();
-    body.classList.remove('printing');
+    if (printComponentRef.current) {
+      const printWindow = window.open('', '', 'height=800,width=800');
+      printWindow?.document.write('<html><head><title>Print Checklists</title>');
+      printWindow?.document.write('<style>@media print { body { -webkit-print-color-adjust: exact; } .no-print { display: none; } .printable-area { margin: 20mm; } .break-after-page { page-break-after: always; } }</style>');
+      printWindow?.document.write('</head><body>');
+      printWindow?.document.write(printComponentRef.current.innerHTML);
+      printWindow?.document.write('</body></html>');
+      printWindow?.document.close();
+      printWindow?.focus();
+      printWindow?.print();
+    }
     setIsSelectionMode(false);
     setSelectedIds(new Set());
   }
@@ -750,7 +757,7 @@ export default function EntrySheetPage() {
                 <TableBody>
                   <TooltipProvider>
                   {paginatedEntries.map((entry) => (
-                    <TableRow key={entry.id} data-state={selectedIds.has(entry.id) && "selected"}>
+                    <TableRow key={entry.id} data-state={selectedIds.has(entry.id) ? "selected" : ""}>
                       {isSelectionMode && (
                         <TableCell>
                           <Checkbox
@@ -982,7 +989,9 @@ export default function EntrySheetPage() {
       )}
       
       <div className="hidden">
-        <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
+        <div ref={printComponentRef}>
+          <PrintableChecklists entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
+        </div>
       </div>
     </>
   );

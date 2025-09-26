@@ -37,7 +37,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-6 bg-white text-black printable-area">
+        <div ref={ref} className="p-6 bg-white text-black font-sans printable-area">
              <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -121,8 +121,19 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
   const componentRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
-    window.print();
-  }
+    const printableArea = componentRef.current;
+    if (printableArea) {
+      const printWindow = window.open('', '', 'height=800,width=800');
+      printWindow?.document.write('<html><head><title>Print</title>');
+      printWindow?.document.write('<style>@media print { body { -webkit-print-color-adjust: exact; } .printable-area { margin: 20mm; } .no-print { display: none; } }</style>');
+      printWindow?.document.write('</head><body>');
+      printWindow?.document.write(printableArea.innerHTML);
+      printWindow?.document.write('</body></html>');
+      printWindow?.document.close();
+      printWindow?.focus();
+      printWindow?.print();
+    }
+  };
 
   if (!entry) return null;
 
