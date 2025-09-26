@@ -37,7 +37,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-6 bg-white text-black printable-area">
+        <div ref={ref} className="p-6 bg-white text-black">
              <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -128,19 +128,19 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl no-print">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader className="no-print">
           <DialogTitle>Check List for Payment</DialogTitle>
           <DialogDescription>
             This is a preview of the checklist for Reception No. {entry.receptionNo}.
           </DialogDescription>
         </DialogHeader>
         
-        <div className="max-h-[70vh] overflow-y-auto p-1" >
+        <div className="max-h-[70vh] overflow-y-auto p-1 printable-area" >
              <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="no-print">
              <button
               onClick={handlePrint}
               className={cn(buttonVariants({ variant: 'outline' }))}
