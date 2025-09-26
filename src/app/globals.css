@@ -96,8 +96,9 @@
 }
 
 @media print {
-  body, html {
+  body {
     visibility: hidden;
+    background-color: white; /* Ensure background is white for printing */
   }
   .printable-area, .printable-area * {
     visibility: visible;
@@ -110,10 +111,20 @@
     height: auto !important;
     overflow: visible !important;
     max-height: none !important;
-    margin: 20mm;
+    margin: 0;
+    padding: 20mm;
     box-sizing: border-box;
+    font-size: 10pt; /* Adjust font size for print */
   }
   .no-print, .no-print * {
     display: none !important;
   }
+  /* Ensure no scrollbars appear on the printable area when printing */
+  .max-h-\[70vh\] {
+    max-height: none !important;
+  }
+  .overflow-y-auto {
+    overflow: visible !important;
+  }
 }
+

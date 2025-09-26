@@ -11,7 +11,6 @@ import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types
 import { Printer } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { format } from 'date-fns';
-import { useReactToPrint } from 'react-to-print';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +26,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 
     return (
         <div ref={ref} className="p-8 bg-white text-black font-sans printable-area">
-            <div className="text-center mb-4">
+             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
             </div>
@@ -52,36 +51,37 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                 </div>
             </div>
 
-            <Separator className="my-4 bg-gray-400" />
+            <Separator className="my-2 bg-gray-400" />
 
             <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
-                <div className="flex">
+                <div className="flex col-span-2">
                     <span className="font-medium w-32 shrink-0">Name of the party:</span>
                     <span className="font-semibold">{entry.partyName}</span>
                 </div>
-                 <div className="flex gap-x-4">
-                    <div className="flex"><span className="font-medium w-24 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span></div>
-                    <div className="flex"><span className="font-medium w-24 shrink-0">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span></div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
-                <div className="flex">
+                 <div className="flex col-span-2">
                     <span className="font-medium w-32 shrink-0">Head of A/c:</span>
                     <span>{expenseRequest?.headOfAccount || 'N/A'}</span>
                 </div>
-                 <div className="flex">
+                 <div className="flex col-span-2">
                     <span className="font-medium w-32 shrink-0">Sub-Head of A/c:</span>
                     <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
                 </div>
             </div>
+            <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
+                 <div className="flex">
+                    <span className="font-medium w-32 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span>
+                 </div>
+                 <div className="flex">
+                     <span className="font-medium w-32 shrink-0">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span>
+                 </div>
+            </div>
 
-            <div className="space-y-2 text-sm mb-8">
+            <div className="space-y-1 text-sm my-4">
                 <p className="font-medium">Description:</p>
-                <p className="pl-4 min-h-[50px]">{entry.description}</p>
+                <p className="pl-4 min-h-[50px] border border-black p-2">{entry.description}</p>
             </div>
             
-            <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
+            <div className="mt-12 grid grid-cols-2 gap-x-24 gap-y-12 text-sm">
                 <div className="border-t border-black pt-1">Prepared by</div>
                 <div className="border-t border-black pt-1">Authorised by</div>
                 <div className="border-t border-black pt-1">Checked by</div>
@@ -90,7 +90,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                 <div className="border-t border-black pt-1">A/c Dept</div>
             </div>
 
-            <div className="mt-24 flex justify-between text-xs text-gray-500">
+            <div className="mt-12 flex justify-between text-sm pt-4">
                 <div>
                     <span className="font-medium">Printed By:</span>
                     <span> {user?.name || 'N/A'}</span>
