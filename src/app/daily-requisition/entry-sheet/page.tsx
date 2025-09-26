@@ -33,6 +33,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useReactToPrint } from 'react-to-print';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { Separator } from '@/components/ui/separator';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
@@ -58,12 +59,15 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
     if (!entries || entries.length === 0) return null;
     
     return (
-        <div ref={ref}>
+        <div ref={ref} className="printable-area">
             {entries.map((entry, index) => {
                 const project = projects.find(p => p.id === entry.projectId);
                 const expenseRequest = expenses.find(e => e.requestNo === entry.depNo);
+                const entryDate = entry.date && (entry.date as any).toDate 
+                    ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
+                    : String(entry.date);
                 return (
-                    <div key={entry.id} className="p-6 border rounded-lg break-after-page" style={{ pageBreakAfter: index < entries.length - 1 ? 'always' : 'auto' }}>
+                    <div key={entry.id} className="p-6 border rounded-lg break-after-page bg-white text-black" style={{ pageBreakAfter: index < entries.length - 1 ? 'always' : 'auto' }}>
                         <div className="text-center mb-4">
                             <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                             <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -77,7 +81,7 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
                             </div>
                              <div className="flex">
                                 <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                                <span>{entry.date}</span>
+                                <span>{entryDate}</span>
                             </div>
                             <div className="flex">
                                 <span className="font-medium w-32 shrink-0">DEP No:</span>
@@ -89,7 +93,7 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
                             </div>
                         </div>
 
-                        <div className="my-4 border-b border-black"></div>
+                        <Separator className="my-4 bg-gray-400" />
 
                         <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
                             <div className="flex">
@@ -115,10 +119,10 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
 
                         <div className="space-y-2 text-sm mb-8">
                             <p className="font-medium">Description:</p>
-                            <p className="pl-4 min-h-[50px]">{entry.description}</p>
+                            <p className="pl-4 min-h-[50px] border-l-2 border-gray-200">{entry.description}</p>
                         </div>
                         
-                        <div className="mt-16 grid grid-cols-2 gap-x-24 gap-y-12 text-sm">
+                        <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
                             <div className="border-t border-black pt-1">Prepared by</div>
                             <div className="border-t border-black pt-1">Authorised by</div>
                             <div className="border-t border-black pt-1">Checked by</div>
@@ -127,7 +131,7 @@ const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: Enriched
                             <div className="border-t border-black pt-1">A/c Dept</div>
                         </div>
 
-                        <div className="mt-16 flex justify-between text-sm">
+                        <div className="mt-24 flex justify-between text-xs text-gray-500">
                             <div>
                                 <span className="font-medium">Printed By:</span>
                                 <span> {user?.name || 'N/A'}</span>
@@ -503,13 +507,11 @@ export default function EntrySheetPage() {
       setIsChecklistOpen(true);
   }
   
-  const handlePrintSelected = useReactToPrint({
-    content: () => printComponentRef.current,
-    onAfterPrint: () => {
-        setIsSelectionMode(false);
-        setSelectedIds(new Set());
-    }
-  });
+  const handlePrintSelected = () => {
+    window.print();
+    setIsSelectionMode(false);
+    setSelectedIds(new Set());
+  }
 
   const selectedEntriesToPrint = useMemo(() => {
     return entries.filter(entry => selectedIds.has(entry.id));
@@ -651,7 +653,7 @@ export default function EntrySheetPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 no-print">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/daily-requisition">
@@ -978,7 +980,9 @@ export default function EntrySheetPage() {
       )}
       
       <div className="hidden">
-        <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
+        <div className="print-only">
+          <PrintableChecklists ref={printComponentRef} entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
+        </div>
       </div>
     </>
   );

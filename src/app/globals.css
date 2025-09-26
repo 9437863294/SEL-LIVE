@@ -96,22 +96,22 @@
 }
 
 @media print {
-  @page {
-    size: A4;
-    margin: 1rem;
+  body * {
+    visibility: hidden;
   }
-  
-  body {
-    background-color: white !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+  .printable-area, .printable-area * {
+    visibility: visible;
   }
-
-  .no-print, .no-print * {
-      display: none !important;
-  }
-
   .printable-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .no-print, .no-print * {
+    display: none !important;
+  }
+  .print-only {
     display: block !important;
   }
 }
