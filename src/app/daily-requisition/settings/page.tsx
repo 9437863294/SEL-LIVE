@@ -8,6 +8,7 @@ import {
   Hash,
   ArrowLeft,
   ShieldAlert,
+  Printer,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -19,14 +20,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface SettingsCardProps {
   item: {
     icon: LucideIcon;
-    title: string;
-    description: string;
+    text: string;
     href: string;
+    description: string;
     disabled?: boolean;
   };
 }
 
-const settingsItems = [
+const settingsItemsBase = [
   { 
     icon: Hash, 
     title: 'Serial No. Configuration', 
@@ -41,6 +42,13 @@ const settingsItems = [
     href: '#',
     permission: 'Edit User Rights'
   },
+  {
+    icon: Printer,
+    title: 'Printing Setup',
+    description: 'Manage page size, margins, and header for printing.',
+    href: '/daily-requisition/settings/printing',
+    permission: 'View' // Assuming view permission is enough to see the link
+  }
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {
@@ -48,7 +56,7 @@ function SettingsCard({ item }: SettingsCardProps) {
          <Card
             className={cn(
                 "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
             <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
@@ -56,7 +64,7 @@ function SettingsCard({ item }: SettingsCardProps) {
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.title}</CardTitle>
+                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
                     <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -78,7 +86,7 @@ export default function DailyRequisitionSettingsPage() {
     const { can, isLoading: isAuthLoading } = useAuthorization();
     const canViewPage = can('View', 'Daily Requisition.Settings');
 
-    const authorizedSettingsItems = settingsItems.map(item => ({
+    const authorizedSettingsItems = settingsItemsBase.map(item => ({
         ...item,
         disabled: !can(item.permission, 'Daily Requisition.Settings'),
     }));
@@ -127,7 +135,7 @@ export default function DailyRequisitionSettingsPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {authorizedSettingsItems.map((item) => (
-          <SettingsCard key={item.title} item={item} />
+          <SettingsCard key={item.text} item={item} />
         ))}
       </div>
     </div>
