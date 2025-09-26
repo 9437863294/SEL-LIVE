@@ -16,6 +16,14 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
+interface PrintingSettings {
+  paperSize: string;
+  orientation: 'portrait' | 'landscape';
+  margins: { top: string; bottom: string; left: string; right: string; };
+  marginUnit: 'mm' | 'cm' | 'in';
+  headerText: string;
+}
+
 const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
@@ -25,38 +33,36 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-8 bg-white text-black font-sans printable-area text-sm">
+        <div ref={ref} className="bg-white text-black font-sans text-sm">
              <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
             </div>
             <h3 className="text-lg font-semibold text-center mb-4 underline">Check List for Payment</h3>
             
-            <div className="flex justify-between mb-2">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-4">
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception No:</span>
                     <span>{entry.receptionNo}</span>
                 </div>
                  <div className="flex">
-                    <span className="font-medium w-32 shrink-0 text-right mr-2">Reception Date:</span>
+                    <span className="font-medium w-32 shrink-0">Reception Date:</span>
                     <span>{entry.date ? format(new Date(entry.date as string), 'MMMM do, yyyy') : 'N/A'}</span>
                 </div>
-            </div>
-             <div className="flex justify-between mb-4">
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
                     <span>{entry.depNo}</span>
                 </div>
-                 <div className="flex">
-                    <span className="font-medium w-32 shrink-0 text-right mr-2">Project Name:</span>
+                <div className="flex">
+                    <span className="font-medium w-32 shrink-0">Project Name:</span>
                     <span>{project?.projectName || 'N/A'}</span>
                 </div>
             </div>
 
             <Separator className="my-2 bg-gray-400" />
 
-            <div className="space-y-1 mb-2">
-                <div className="flex">
+            <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
+                <div className="col-span-2 flex">
                     <span className="font-medium w-32 shrink-0">Name of the party:</span>
                     <span className="font-semibold">{entry.partyName}</span>
                 </div>
@@ -69,12 +75,12 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                     <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
                 </div>
             </div>
-            <div className="flex justify-between mb-4">
+             <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span>
                  </div>
-                 <div className="flex">
-                     <span className="font-medium w-32 shrink-0 text-right mr-2">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span>
+                 <div className="flex justify-end">
+                     <span className="font-medium w-32 shrink-0 text-left">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span>
                  </div>
             </div>
 
@@ -115,6 +121,7 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
     const [project, setProject] = useState<Project | null>(null);
     const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [printSettings, setPrintSettings] = useState<PrintingSettings | null>(null);
 
     const handlePrint = () => {
       window.print();
@@ -126,6 +133,12 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
         const fetchData = async () => {
             setIsLoading(true);
             try {
+                const settingsDocRef = doc(db, 'settings', 'printing');
+                const settingsDocSnap = await getDoc(settingsDocRef);
+                if (settingsDocSnap.exists()) {
+                    setPrintSettings(settingsDocSnap.data() as PrintingSettings);
+                }
+
                 const entryDocRef = doc(db, 'dailyRequisitions', id);
                 const entryDocSnap = await getDoc(entryDocRef);
 
@@ -165,7 +178,7 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
 
 
     return (
-        <div className="p-4 md:p-8">
+        <div className="p-4 md:p-8 bg-gray-100">
             <div className="flex justify-end gap-2 mb-4 no-print">
                  <button
                     onClick={handlePrint}
@@ -176,7 +189,15 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
                     Print / Download PDF
                 </button>
             </div>
-            <div className="bg-white border rounded-lg max-w-4xl mx-auto">
+            <div 
+                className="bg-white border rounded-lg max-w-4xl mx-auto printable-area"
+                style={printSettings ? {
+                    paddingTop: `${printSettings.margins.top}${printSettings.marginUnit}`,
+                    paddingBottom: `${printSettings.margins.bottom}${printSettings.marginUnit}`,
+                    paddingLeft: `${printSettings.margins.left}${printSettings.marginUnit}`,
+                    paddingRight: `${printSettings.margins.right}${printSettings.marginUnit}`,
+                } : {}}
+            >
                  {isLoading ? (
                     <div className="p-8">
                         <Skeleton className="h-96 w-full" />

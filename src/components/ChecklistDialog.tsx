@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,16 @@ import { useAuth } from './auth/AuthProvider';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from './ui/button';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+
+interface PrintingSettings {
+  paperSize: string;
+  orientation: 'portrait' | 'landscape';
+  margins: { top: string; bottom: string; left: string; right: string; };
+  marginUnit: 'mm' | 'cm' | 'in';
+  headerText: string;
+}
 
 const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
@@ -29,38 +39,36 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
         : String(entry.date);
 
     return (
-        <div ref={ref} className="p-8 bg-white text-black font-sans printable-area text-sm">
+        <div ref={ref} className="bg-white text-black font-sans text-sm">
              <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
             </div>
             <h3 className="text-lg font-semibold text-center mb-4 underline">Check List for Payment</h3>
             
-            <div className="flex justify-between mb-2">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-4">
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception No:</span>
                     <span>{entry.receptionNo}</span>
                 </div>
                  <div className="flex">
-                    <span className="font-medium w-32 shrink-0 text-right mr-2">Reception Date:</span>
+                    <span className="font-medium w-32 shrink-0">Reception Date:</span>
                     <span>{entryDate}</span>
                 </div>
-            </div>
-             <div className="flex justify-between mb-4">
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
                     <span>{entry.depNo}</span>
                 </div>
-                 <div className="flex">
-                    <span className="font-medium w-32 shrink-0 text-right mr-2">Project Name:</span>
+                <div className="flex">
+                    <span className="font-medium w-32 shrink-0">Project Name:</span>
                     <span>{project?.projectName || 'N/A'}</span>
                 </div>
             </div>
 
             <Separator className="my-2 bg-gray-400" />
 
-            <div className="space-y-1 mb-2">
-                <div className="flex">
+            <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
+                <div className="col-span-2 flex">
                     <span className="font-medium w-32 shrink-0">Name of the party:</span>
                     <span className="font-semibold">{entry.partyName}</span>
                 </div>
@@ -73,12 +81,12 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                     <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
                 </div>
             </div>
-            <div className="flex justify-between mb-4">
+             <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span>
                  </div>
-                 <div className="flex">
-                     <span className="font-medium w-32 shrink-0 text-right mr-2">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span>
+                 <div className="flex justify-end">
+                     <span className="font-medium w-32 shrink-0 text-left">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span>
                  </div>
             </div>
 
@@ -111,9 +119,30 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
+interface ChecklistDialogProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  entry: DailyRequisitionEntry;
+  expenseRequest?: ExpenseRequest | null;
+  project?: Project;
+}
 
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
   const componentRef = useRef<HTMLDivElement>(null);
+  const [printSettings, setPrintSettings] = useState<PrintingSettings | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+        const fetchSettings = async () => {
+            const settingsDocRef = doc(db, 'settings', 'printing');
+            const settingsDocSnap = await getDoc(settingsDocRef);
+            if (settingsDocSnap.exists()) {
+                setPrintSettings(settingsDocSnap.data() as PrintingSettings);
+            }
+        };
+        fetchSettings();
+    }
+  }, [isOpen]);
 
   const handlePrint = () => {
     window.print();
@@ -131,7 +160,15 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
           </DialogDescription>
         </DialogHeader>
         
-        <div className="max-h-[70vh] overflow-y-auto p-1" >
+        <div 
+            className="max-h-[70vh] overflow-y-auto p-1 printable-area"
+            style={printSettings ? {
+                paddingTop: `${printSettings.margins.top}${printSettings.marginUnit}`,
+                paddingBottom: `${printSettings.margins.bottom}${printSettings.marginUnit}`,
+                paddingLeft: `${printSettings.margins.left}${printSettings.marginUnit}`,
+                paddingRight: `${printSettings.margins.right}${printSettings.marginUnit}`,
+            } : {}}
+        >
              <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
         </div>
 
