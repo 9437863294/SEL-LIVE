@@ -103,15 +103,6 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
-function PrintButton({ onPrint, disabled }: { onPrint: () => void, disabled: boolean }) {
-    return (
-        <Button variant="outline" onClick={onPrint} disabled={disabled}>
-            {disabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-            Print / Download PDF
-        </Button>
-    );
-}
-
 export default function PrintChecklistPage({ params }: { params: { id: string } }) {
     const { id } = params;
     const router = useRouter();
@@ -121,9 +112,17 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
     const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    const PrintTrigger = () => (
+      <Button variant="outline" disabled={isLoading || !entry}>
+        {isLoading || !entry ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+        Print / Download PDF
+      </Button>
+    );
+
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
         documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
+        trigger: () => <PrintTrigger />,
     });
     
     useEffect(() => {
@@ -173,7 +172,7 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                <PrintButton onPrint={handlePrint} disabled={isLoading || !entry} />
+                {handlePrint}
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (

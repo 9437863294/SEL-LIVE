@@ -120,8 +120,16 @@ PrintableContent.displayName = 'PrintableContent';
 export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, project }: ChecklistDialogProps) {
   const componentRef = useRef<HTMLDivElement>(null);
 
+  const PrintTrigger = () => (
+    <Button variant="outline">
+      <Printer className="mr-2 h-4 w-4" />
+      Print / Download PDF
+    </Button>
+  );
+
   const handlePrint = useReactToPrint({
       content: () => componentRef.current,
+      trigger: () => <PrintTrigger />,
   });
 
   if (!entry) return null;
@@ -141,10 +149,7 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
         </div>
 
         <DialogFooter>
-            <Button variant="outline" onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print / Download PDF
-            </Button>
+            {handlePrint}
             <DialogClose asChild>
                 <Button type="button">Close</Button>
             </DialogClose>
