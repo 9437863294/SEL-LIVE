@@ -112,12 +112,11 @@
     visibility: visible;
   }
   .printable-area {
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 100%;
-    height: auto !important;
-    overflow: visible !important;
-    max-height: none !important;
-    font-size: 10pt;
-    position: static;
+    height: auto;
   }
   .no-print, .no-print * {
     display: none !important;

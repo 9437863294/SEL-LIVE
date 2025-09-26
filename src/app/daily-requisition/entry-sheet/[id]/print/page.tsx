@@ -178,19 +178,19 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
 
 
     return (
-        <div className="p-4 md:p-8 bg-gray-100">
-            <div className="flex justify-end gap-2 mb-4 no-print">
+        <>
+            <div className="fixed top-4 right-4 no-print">
                  <button
                     onClick={handlePrint}
                     disabled={isLoading || !entry}
-                    className={cn(buttonVariants({ variant: 'outline' }))}
+                    className={cn(buttonVariants({ variant: 'outline' }), "bg-white")}
                 >
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                     Print / Download PDF
                 </button>
             </div>
             <div 
-                className="bg-white border rounded-lg max-w-4xl mx-auto printable-area"
+                className="printable-area"
                 style={printSettings ? {
                     paddingTop: `${printSettings.margins.top}${printSettings.marginUnit}`,
                     paddingBottom: `${printSettings.margins.bottom}${printSettings.marginUnit}`,
@@ -206,6 +206,6 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
                     <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
                 )}
             </div>
-        </div>
+        </>
     );
 }
