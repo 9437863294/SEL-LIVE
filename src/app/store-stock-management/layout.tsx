@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Warehouse,
@@ -18,23 +18,25 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-const navItems = [
-  { href: '/store-stock-management', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/store-stock-management/inventory', icon: Warehouse, label: 'Inventory' },
-  { href: '/store-stock-management/transactions', icon: ArrowRightLeft, label: 'Transactions' },
-  { href: '/store-stock-management/conversions', icon: GitCommit, label: 'Conversions' },
-  { href: '/store-stock-management/assembly', icon: Component, label: 'Assembly' },
-  { href: '/store-stock-management/reports', icon: BarChart3, label: 'Reports' },
-  { href: '/store-stock-management/ai-forecast', icon: BrainCircuit, label: 'AI Forecast' },
-  { href: '/store-stock-management/settings', icon: Settings, label: 'Settings' },
-];
-
 export default function StoreStockLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const params = useParams();
+  const projectSlug = params.project as string;
+
+  const navItems = [
+    { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
+    { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory' },
+    { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions' },
+    { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
+    { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'Assembly' },
+    { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
+    { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
+    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings' }, // Settings might be global
+  ];
 
   return (
     <div className="flex h-screen bg-background">
@@ -42,6 +44,7 @@ export default function StoreStockLayout({
         <div className="flex h-full flex-col">
           <div className="p-4 border-b">
             <h2 className="text-xl font-semibold">Stock Management</h2>
+             {projectSlug && <p className="text-sm text-muted-foreground capitalize">{projectSlug.replace(/-/g, ' ')}</p>}
           </div>
           <ScrollArea className="flex-1">
             <nav className="p-2">

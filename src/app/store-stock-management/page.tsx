@@ -102,13 +102,13 @@ export default function StoreStockDashboard() {
     .map(project => ({
       icon: Folder,
       text: project.projectName,
-      href: `/store-stock-management/inventory?project=${slugify(project.projectName)}`,
+      href: `/store-stock-management/${slugify(project.projectName)}`,
       description: `Manage stock for ${project.projectName}.`
   }));
   
   if (isAuthLoading || (isLoading && canViewModule)) {
       return (
-        <div className="w-full">
+        <div className="w-full p-6">
           <Skeleton className="h-8 w-64 mb-6" />
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -121,7 +121,7 @@ export default function StoreStockDashboard() {
 
   if (!canViewModule) {
       return (
-        <div className="w-full">
+        <div className="w-full p-6">
              <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
             <Card>
                 <CardHeader>
@@ -138,7 +138,7 @@ export default function StoreStockDashboard() {
 
 
   return (
-    <div>
+    <div className="p-6">
       <h1 className="text-3xl font-bold mb-6">Select a Project</h1>
        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {projectItems.map((item) => (

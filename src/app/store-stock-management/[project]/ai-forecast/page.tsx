@@ -9,7 +9,7 @@ export default function AiForecastPage() {
       <h1 className="text-3xl font-bold mb-6">AI Forecast</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Demand &amp; Stock Forecasting</CardTitle>
+          <CardTitle>Demand & Stock Forecasting</CardTitle>
         </CardHeader>
         <CardContent>
           <p>AI-powered forecasting tools will be available here.</p>
