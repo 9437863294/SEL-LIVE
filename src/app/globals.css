@@ -25,14 +25,9 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-background: 220 15% 96%;
+    --sidebar-foreground: 222.2 84% 4.9%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
@@ -98,32 +93,29 @@
 @media print {
   @page {
     size: A4;
-    margin: 0;
   }
-
-  body, html {
+  body,
+  html {
     background-color: white !important;
     -webkit-print-color-adjust: exact;
-    margin: 0;
-    padding: 0;
   }
-
   .printable-area, .printable-area * {
     visibility: visible;
   }
-  
   .printable-area {
     display: block !important;
     width: 100%;
     height: auto;
+    position: absolute;
+    left: 0;
+    top: 0;
     overflow: visible !important;
     float: none !important;
   }
-
-  .no-print, .no-print * {
+  .no-print,
+  .no-print * {
     display: none !important;
   }
-  
   .max-h-\[70vh\] {
     max-height: none !important;
   }
