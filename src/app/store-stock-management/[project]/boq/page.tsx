@@ -16,15 +16,19 @@ export default function BoqPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Item Code</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Quantity</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Site</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Sl No</TableHead>
+                <TableHead>DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT &amp; MATERIALS (As per Technical Specification)</TableHead>
+                <TableHead>UNIT</TableHead>
+                <TableHead>BOQ QTY</TableHead>
+                <TableHead>UNIT PRICE</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow>
-                <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                   BOQ items will be displayed here.
                 </TableCell>
               </TableRow>
