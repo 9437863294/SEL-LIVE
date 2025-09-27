@@ -79,7 +79,7 @@ const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
     return null;
   }
 
-  return <Droppable {...props} isDropDisabled={false}>{children}</Droppable>;
+  return <Droppable {...props}>{children}</Droppable>;
 };
 
 export default function ViewBoqPage() {
@@ -102,7 +102,7 @@ export default function ViewBoqPage() {
   // Column Customization State
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h, i) => ({ ...acc, [h]: i < 4 }), {}) // Default to showing first 4
+    baseTableHeaders.reduce((acc, h, i) => ({ ...acc, [h]: i < 7 || h === 'UNIT PRICE' }), {})
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => {
@@ -116,14 +116,15 @@ export default function ViewBoqPage() {
   );
 
   useEffect(() => {
-    const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
-    const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
-    const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
+    if (typeof window !== 'undefined') {
+        const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
+        const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
+        const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
 
-    if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
-    if (savedVisibility) setColumnVisibility(JSON.parse(savedVisibility));
-    if (savedNames) setColumnNames(JSON.parse(savedNames));
-
+        if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
+        if (savedVisibility) setColumnVisibility(JSON.parse(savedVisibility));
+        if (savedNames) setColumnNames(JSON.parse(savedNames));
+    }
   }, [projectSlug]);
   
   const saveColumnPrefs = () => {
@@ -271,6 +272,14 @@ export default function ViewBoqPage() {
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? item[fallbackKey] : '';
   };
+
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const keys = Object.keys(item);
+    const specificKey = 'UNIT PRICE';
+    if(keys.includes(specificKey)) return specificKey;
+    
+    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+  };
   
   const filteredItems = useMemo(() => {
     return boqItems.filter(item => {
@@ -396,10 +405,16 @@ export default function ViewBoqPage() {
                                           />
                                       </TableCell>
                                       {visibleHeaders.map(header => {
-                                          let cellData = item[header];
-                                           if (header === 'Description') {
+                                          let cellData;
+                                          if (header === 'Description') {
                                                 cellData = getItemDescription(item);
-                                            }
+                                          } else if (header === 'UNIT PRICE') {
+                                            const priceKey = findBasicPriceKey(item);
+                                            cellData = priceKey ? item[priceKey] : 'N/A';
+                                          }
+                                          else {
+                                              cellData = item[header];
+                                          }
                                           const formattedData = formatNumber(cellData);
                                           const numeric = isNumeric(cellData);
                                           return (
