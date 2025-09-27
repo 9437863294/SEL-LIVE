@@ -49,10 +49,14 @@ type BoqItem = {
 };
 
 const baseTableHeaders = [
+    'Project',
+    'Site',
+    'Scope',
     'Sl No',
-    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)',
+    'Description',
     'UNIT',
     'BOQ QTY',
+    'UNIT PRICE',
 ];
 
 export default function ViewBoqPage() {
@@ -230,18 +234,17 @@ export default function ViewBoqPage() {
     setIsDeleting(false);
   };
   
-  const getItemDescription = (item: BoqItem) => {
+ const getItemDescription = (item: BoqItem) => {
     const descriptionKeys = [
-        'Description',
-        'DESCRIPTION OF ITEMS',
-        'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
     ];
     for (const key of descriptionKeys) {
-        if (item[key]) {
-            return item[key];
-        }
+      if (item[key]) {
+        return item[key];
+      }
     }
-    // As a last resort, find any key that contains "description"
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? item[fallbackKey] : '';
   };
@@ -376,9 +379,9 @@ export default function ViewBoqPage() {
                                       </TableCell>
                                       {visibleHeaders.map(header => {
                                           let cellData = item[header];
-                                          if (header.startsWith('DESCRIPTION OF ITEMS')) {
-                                            cellData = getItemDescription(item);
-                                          }
+                                           if (header === 'Description') {
+                                                cellData = getItemDescription(item);
+                                            }
                                           const formattedData = formatNumber(cellData);
                                           const numeric = isNumeric(cellData);
                                           return (
