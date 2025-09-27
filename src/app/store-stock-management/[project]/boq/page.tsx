@@ -20,7 +20,7 @@ export default function BoqPage() {
                 <TableHead>Site</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead>Sl No</TableHead>
-                <TableHead>DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT &amp; MATERIALS (As per Technical Specification)</TableHead>
+                <TableHead>Description</TableHead>
                 <TableHead>UNIT</TableHead>
                 <TableHead>BOQ QTY</TableHead>
                 <TableHead>UNIT PRICE</TableHead>
