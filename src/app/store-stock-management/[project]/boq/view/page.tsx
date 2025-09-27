@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -51,21 +51,10 @@ type BoqItem = {
 };
 
 const baseTableHeaders = [
-    'ITEMS SPECS',
-    'SL. No.',
-    'Amended SL No',
-    'Activity Description',
+    'Sl No',
     'Description',
-    'UNITS',
-    'Total Qty',
-    'JMC Executed Qty',
-    'Billed Qty',
-    'Balance Qty',
-    'BASIC PRICE',
-    'TOTAL AMOUNT',
-    'GST @ 18% PER UNIT',
-    'TOTAL PRICE PER UNIT ( In Rs)',
-    'TOTAL PRICE FOR THE TENDER QUANTITY'
+    'UNIT',
+    'BOQ QTY',
 ];
 
 
@@ -83,6 +72,7 @@ export default function ViewBoqPage() {
   
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     // Initialize state from localStorage or default to all visible
@@ -99,14 +89,10 @@ export default function ViewBoqPage() {
     }
     // Default value if nothing is in localStorage or if it fails
     const defaults: Record<string, boolean> = {
-        'SL. No.': true,
+        'Sl No': true,
         'Description': true,
-        'UNITS': true,
-        'Total Qty': true,
-        'JMC Executed Qty': true,
-        'Billed Qty': true,
-        'Balance Qty': true,
-        'BASIC PRICE': true
+        'UNIT': true,
+        'BOQ QTY': true,
     };
     return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] ?? false }), {});
   });
@@ -325,8 +311,6 @@ export default function ViewBoqPage() {
   const isNumeric = (value: any) => {
     return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
   }
-
-  const visibleHeaders = headers;
   
   const handleSelectAll = (checked: boolean) => {
       setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
@@ -335,7 +319,15 @@ export default function ViewBoqPage() {
   const handleSelectRow = (id: string, checked: boolean) => {
       setSelectedItemIds(prev => checked ? [...prev, id] : prev.filter(itemId => itemId !== id));
   };
+  
+  const filteredItems = useMemo(() => {
+    return boqItems.filter(item => 
+        (item['Sl No']?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [boqItems, searchTerm]);
 
+  const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
 
   return (
     <>
@@ -389,7 +381,7 @@ export default function ViewBoqPage() {
                               <TableHead className="w-[50px]">
                                   <Checkbox 
                                       checked={selectedItemIds.length === filteredItems.length && filteredItems.length > 0}
-                                      onCheckedChange={handleSelectAll}
+                                      onCheckedChange={(checked) => handleSelectAll(!!checked)}
                                   />
                               </TableHead>
                               {visibleHeaders.map((header) => (
@@ -423,7 +415,7 @@ export default function ViewBoqPage() {
                                       </TableCell>
                                       {visibleHeaders.map(header => {
                                           let cellData = item[header];
-                                          if(header === 'BASIC PRICE') {
+                                          if(header === 'UNIT PRICE') {
                                             const priceKey = findBasicPriceKey(item);
                                             cellData = priceKey ? item[priceKey] : 'N/A';
                                           }
