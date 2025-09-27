@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,24 +23,22 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu"
-import { cn } from '@/lib/utils';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { JmcEntry, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
+import { cn } from '@/lib/utils';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 type BoqItem = {
     id: string;
@@ -57,7 +55,6 @@ const baseTableHeaders = [
     'BOQ QTY',
 ];
 
-
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -68,97 +65,57 @@ export default function ViewBoqPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
-    // Initialize state from localStorage or default to all visible
-    if (typeof window === 'undefined') {
-        return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
-    }
-    try {
-      const saved = window.localStorage.getItem('boqColumnVisibility');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (error) {
-      console.error("Failed to parse column visibility from localStorage", error);
-    }
-    // Default value if nothing is in localStorage or if it fails
-    const defaults: Record<string, boolean> = {
-        'Sl No': true,
-        'Description': true,
-        'UNIT': true,
-        'BOQ QTY': true,
-    };
-    return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] ?? false }), {});
-  });
   
-  // Save to localStorage whenever column visibility changes
+  const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
+
+  // Column Customization State
+  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
+  );
+  const [columnNames, setColumnNames] = useState<Record<string, string>>(
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
+  );
+
   useEffect(() => {
-    try {
-      window.localStorage.setItem('boqColumnVisibility', JSON.stringify(columnVisibility));
-    } catch (error) {
-      console.error("Failed to save column visibility to localStorage", error);
-    }
-  }, [columnVisibility]);
+    const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
+    const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
+    const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
 
+    if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
+    if (savedVisibility) setColumnVisibility(JSON.parse(savedVisibility));
+    if (savedNames) setColumnNames(JSON.parse(savedNames));
 
+  }, [projectSlug]);
+  
+  const saveColumnPrefs = () => {
+    localStorage.setItem(`boqColumnOrder_${projectSlug}`, JSON.stringify(columnOrder));
+    localStorage.setItem(`boqColumnVisibility_${projectSlug}`, JSON.stringify(columnVisibility));
+    localStorage.setItem(`boqColumnNames_${projectSlug}`, JSON.stringify(columnNames));
+    toast({ title: 'Success', description: 'Column preferences saved.' });
+  };
+
+  const onDragEnd = (result: any) => {
+    if (!result.destination) return;
+    const items = Array.from(columnOrder);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+    setColumnOrder(items);
+  };
+  
   const fetchBoqItems = async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
       const boqItemsRef = collection(db, 'boqItems');
-      const jmcEntriesRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-      const billsRef = collection(db, 'projects', projectSlug, 'bills');
+      const q = query(boqItemsRef, where('projectSlug', '==', projectSlug));
+      const boqSnapshot = await getDocs(q);
 
-      const [boqSnapshot, jmcSnapshot, billsSnapshot] = await Promise.all([
-        getDocs(query(boqItemsRef, where('projectSlug', '==', projectSlug))),
-        getDocs(jmcEntriesRef),
-        getDocs(billsRef),
-      ]);
-
-      const fetchedJmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
-      setJmcEntries(fetchedJmcEntries);
-      const fetchedBills = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
-      setBills(fetchedBills);
-
-      const jmcQuantities: Record<string, number> = {};
-      fetchedJmcEntries.forEach(entry => {
-        entry.items.forEach(item => {
-            if (item.boqSlNo) {
-                jmcQuantities[item.boqSlNo] = (jmcQuantities[item.boqSlNo] || 0) + parseFloat(item.executedQty || '0');
-            }
-        });
-      });
-
-      const billedQuantities: Record<string, number> = {};
-      fetchedBills.forEach(bill => {
-        bill.items.forEach(item => {
-            if (item.boqSlNo) {
-                billedQuantities[item.boqSlNo] = (billedQuantities[item.boqSlNo] || 0) + item.billedQty;
-            }
-        });
-      });
-
-      const items = boqSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const slNo = data['Sl No'];
-        const boqQty = parseFloat(data['BOQ QTY'] || '0');
-        const jmcQty = jmcQuantities[slNo] || 0;
-        const billedQty = billedQuantities[slNo] || 0;
-
-        return { 
-            id: doc.id, 
-            ...data,
-            'JMC Executed Qty': jmcQty,
-            'Billed Qty': billedQty,
-            'Balance Qty': boqQty - jmcQty,
-        } as BoqItem;
-      });
+      const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
       
       const sortedItems = items.sort((a, b) => {
         const slNoA = Number(a['Sl No']);
@@ -201,7 +158,8 @@ export default function ViewBoqPage() {
     setIsDeleting(true);
     try {
         const boqItemsRef = collection(db, 'boqItems');
-        const querySnapshot = await getDocs(query(boqItemsRef, where('projectSlug', '==', projectSlug)));
+        const q = query(boqItemsRef, where('projectSlug', '==', projectSlug));
+        const querySnapshot = await getDocs(q);
         if (querySnapshot.empty) {
             toast({ title: 'No data to clear', description: 'The BOQ is already empty.' });
             setIsDeleting(false);
@@ -225,14 +183,10 @@ export default function ViewBoqPage() {
             title: 'BOQ Cleared',
             description: 'All items have been successfully deleted.',
         });
-        fetchBoqItems(); // Refresh the table
+        fetchBoqItems();
     } catch (error) {
         console.error("Error clearing BOQ: ", error);
-        toast({
-            title: 'Error',
-            description: 'Failed to clear BOQ.',
-            variant: 'destructive',
-        });
+        toast({ title: 'Error', description: 'Failed to clear BOQ.', variant: 'destructive' });
     } finally {
         setIsDeleting(false);
     }
@@ -269,30 +223,6 @@ export default function ViewBoqPage() {
     setIsDeleting(false);
   };
   
-  const handleDeleteSingle = async (id: string) => {
-    if (!user) return;
-    setIsDeleting(true);
-    try {
-        await deleteDoc(doc(db, 'boqItems', id));
-
-        await logUserActivity({
-            userId: user.id,
-            action: 'Delete BOQ Item (Stock)',
-            details: { project: projectSlug, itemId: id }
-        });
-
-        toast({
-            title: 'Success',
-            description: 'Item deleted successfully.',
-        });
-        fetchBoqItems();
-    } catch (error) {
-        console.error("Error deleting item:", error);
-        toast({ title: 'Error', description: 'Failed to delete item.', variant: 'destructive' });
-    }
-    setIsDeleting(false);
-  };
-
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
     return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
@@ -323,19 +253,17 @@ export default function ViewBoqPage() {
   const filteredItems = useMemo(() => {
     return boqItems.filter(item => {
         const description1 = item['Description'] || '';
-        const description2 = item['DESCRIPTION OF ITEMS'] || '';
-        const description3 = item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '';
-
+        const description2 = getItemDescription(item);
+        
         return (
             (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
             (String(description1).toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (String(description2).toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (String(description3).toLowerCase().includes(searchTerm.toLowerCase()))
+            (String(description2).toLowerCase().includes(searchTerm.toLowerCase()))
         );
     });
   }, [boqItems, searchTerm]);
 
-  const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
+  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
 
   const getItemDescription = (item: BoqItem) => {
     return item['Description'] 
@@ -343,7 +271,6 @@ export default function ViewBoqPage() {
         || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] 
         || '';
   };
-
 
   return (
     <>
@@ -386,6 +313,9 @@ export default function ViewBoqPage() {
                       </AlertDialogContent>
                   </AlertDialog>
               )}
+               <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
+                    <Settings className="mr-2 h-4 w-4" /> Columns
+                </Button>
           </div>
         </div>
         <Card>
@@ -401,7 +331,7 @@ export default function ViewBoqPage() {
                                   />
                               </TableHead>
                               {visibleHeaders.map((header) => (
-                                  <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                                  <TableHead key={header} className="whitespace-nowrap px-4">{columnNames[header] || header}</TableHead>
                               ))}
                           </TableRow>
                       </TableHeader>
@@ -430,13 +360,8 @@ export default function ViewBoqPage() {
                                           />
                                       </TableCell>
                                       {visibleHeaders.map(header => {
-                                          let cellData;
-                                          if (header === 'Description') {
-                                              cellData = getItemDescription(item);
-                                          } else if (header === 'UNIT PRICE') {
-                                              const priceKey = findBasicPriceKey(item);
-                                              cellData = priceKey ? item[priceKey] : 'N/A';
-                                          } else {
+                                          let cellData = getItemDescription(item);
+                                          if (header !== 'Description') {
                                               cellData = item[header];
                                           }
                                           const formattedData = formatNumber(cellData);
@@ -462,6 +387,57 @@ export default function ViewBoqPage() {
           </CardContent>
         </Card>
       </div>
+
+        <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+            <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>Customize Columns</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
+                <ScrollArea className="h-96 pr-4">
+                    <DragDropContext onDragEnd={onDragEnd}>
+                        <Droppable droppableId="columns">
+                            {(provided) => (
+                                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                    {columnOrder.map((header, index) => (
+                                        <Draggable key={header} draggableId={header} index={index}>
+                                            {(provided) => (
+                                                <div
+                                                    ref={provided.innerRef}
+                                                    {...provided.draggableProps}
+                                                    {...provided.dragHandleProps}
+                                                    className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                                >
+                                                    <Checkbox
+                                                        checked={columnVisibility[header]}
+                                                        onCheckedChange={(checked) =>
+                                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                                        }
+                                                    />
+                                                    <Input
+                                                        value={columnNames[header] || header}
+                                                        onChange={(e) =>
+                                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </Draggable>
+                                    ))}
+                                    {provided.placeholder}
+                                </div>
+                            )}
+                        </Droppable>
+                    </DragDropContext>
+                </ScrollArea>
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
+                    <Button onClick={() => { saveColumnPrefs(); setIsColumnEditorOpen(false); }}>Save Preferences</Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+
+
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
@@ -472,3 +448,107 @@ export default function ViewBoqPage() {
     </>
   );
 }
+```,
+  <change>
+    <file>tailwind.config.ts</file>
+    <content><![CDATA[import type {Config} from 'tailwindcss';
+
+export default {
+  darkMode: ['class'],
+  content: [
+    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        body: ['var(--font-body)', 'sans-serif'],
+        inter: ['var(--font-inter)', 'sans-serif'],
+        roboto: ['var(--font-roboto)', 'sans-serif'],
+        headline: ['var(--font-inter)', 'sans-serif'],
+        code: ['monospace'],
+      },
+      colors: {
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+      keyframes: {
+        'accordion-down': {
+          from: {
+            height: '0',
+          },
+          to: {
+            height: 'var(--radix-accordion-content-height)',
+          },
+        },
+        'accordion-up': {
+          from: {
+            height: 'var(--radix-accordion-content-height)',
+          },
+          to: {
+            height: '0',
+          },
+        },
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
+      },
+    },
+  },
+  plugins: [require('tailwindcss-animate'), require('react-beautiful-dnd')],
+} satisfies Config;
