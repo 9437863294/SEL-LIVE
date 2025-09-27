@@ -38,7 +38,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided, DroppableProvided } from 'react-beautiful-dnd';
 
 type BoqItem = {
     id: string;
@@ -99,7 +99,7 @@ export default function ViewBoqPage() {
     toast({ title: 'Success', description: 'Column preferences saved.' });
   };
 
-  const onDragEnd = (result: any) => {
+  const onDragEnd: OnDragEndResponder = (result) => {
     if (!result.destination) return;
     const items = Array.from(columnOrder);
     const [reorderedItem] = items.splice(result.source.index, 1);
@@ -146,7 +146,7 @@ export default function ViewBoqPage() {
 
   useEffect(() => {
     fetchBoqItems();
-  }, [projectSlug]);
+  }, [projectSlug, toast]);
 
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
@@ -250,27 +250,25 @@ export default function ViewBoqPage() {
       setSelectedItemIds(prev => checked ? [...prev, id] : prev.filter(itemId => itemId !== id));
   };
   
-  const filteredItems = useMemo(() => {
-    return boqItems.filter(item => {
-        const description1 = item['Description'] || '';
-        const description2 = getItemDescription(item);
-        
-        return (
-            (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (String(description1).toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (String(description2).toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-    });
-  }, [boqItems, searchTerm]);
-
-  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
-
   const getItemDescription = (item: BoqItem) => {
     return item['Description'] 
         || item['DESCRIPTION OF ITEMS'] 
         || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] 
         || '';
   };
+  
+  const filteredItems = useMemo(() => {
+    return boqItems.filter(item => {
+        const description1 = getItemDescription(item);
+        
+        return (
+            (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (String(description1).toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+    });
+  }, [boqItems, searchTerm]);
+
+  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
 
   return (
     <>
@@ -397,11 +395,11 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                     <DragDropContext onDragEnd={onDragEnd}>
                         <Droppable droppableId="columns">
-                            {(provided) => (
+                            {(provided: DroppableProvided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
                                         <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided) => (
+                                            {(provided: DraggableProvided) => (
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
@@ -448,107 +446,3 @@ export default function ViewBoqPage() {
     </>
   );
 }
-```,
-  <change>
-    <file>tailwind.config.ts</file>
-    <content><![CDATA[import type {Config} from 'tailwindcss';
-
-export default {
-  darkMode: ['class'],
-  content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
-  theme: {
-    extend: {
-      fontFamily: {
-        body: ['var(--font-body)', 'sans-serif'],
-        inter: ['var(--font-inter)', 'sans-serif'],
-        roboto: ['var(--font-roboto)', 'sans-serif'],
-        headline: ['var(--font-inter)', 'sans-serif'],
-        code: ['monospace'],
-      },
-      colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        chart: {
-          '1': 'hsl(var(--chart-1))',
-          '2': 'hsl(var(--chart-2))',
-          '3': 'hsl(var(--chart-3))',
-          '4': 'hsl(var(--chart-4))',
-          '5': 'hsl(var(--chart-5))',
-        },
-        sidebar: {
-          DEFAULT: 'hsl(var(--sidebar-background))',
-          foreground: 'hsl(var(--sidebar-foreground))',
-          primary: 'hsl(var(--sidebar-primary))',
-          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-          accent: 'hsl(var(--sidebar-accent))',
-          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-          border: 'hsl(var(--sidebar-border))',
-          ring: 'hsl(var(--sidebar-ring))',
-        },
-      },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-      },
-      keyframes: {
-        'accordion-down': {
-          from: {
-            height: '0',
-          },
-          to: {
-            height: 'var(--radix-accordion-content-height)',
-          },
-        },
-        'accordion-up': {
-          from: {
-            height: 'var(--radix-accordion-content-height)',
-          },
-          to: {
-            height: '0',
-          },
-        },
-      },
-      animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-      },
-    },
-  },
-  plugins: [require('tailwindcss-animate'), require('react-beautiful-dnd')],
-} satisfies Config;
