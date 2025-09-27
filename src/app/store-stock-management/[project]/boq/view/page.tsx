@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,7 @@ type BoqItem = {
 
 const baseTableHeaders = [
     'Sl No',
-    'Description',
+    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)',
     'UNIT',
     'BOQ QTY',
 ];
@@ -75,10 +75,17 @@ export default function ViewBoqPage() {
   // Column Customization State
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
+    baseTableHeaders.reduce((acc, h, i) => ({ ...acc, [h]: i < 4 }), {}) // Default to showing first 4
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
-    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
+    baseTableHeaders.reduce((acc, h) => {
+        if(h.startsWith('DESCRIPTION OF ITEMS')) {
+            acc[h] = 'Description';
+        } else {
+            acc[h] = h;
+        }
+        return acc;
+    }, {} as Record<string, string>)
   );
 
   useEffect(() => {
@@ -223,33 +230,6 @@ export default function ViewBoqPage() {
     setIsDeleting(false);
   };
   
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    return keys.find(key => String(key).toLowerCase().includes('price') && !String(key).toLowerCase().includes('total'));
-  };
-
-  const formatNumber = (value: any) => {
-    if (typeof value === 'number') {
-      return new Intl.NumberFormat('en-IN', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(value);
-    }
-    return value;
-  };
-  
-  const isNumeric = (value: any) => {
-    return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
-  }
-  
-  const handleSelectAll = (checked: boolean) => {
-      setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
-  };
-  
-  const handleSelectRow = (id: string, checked: boolean) => {
-      setSelectedItemIds(prev => checked ? [...prev, id] : prev.filter(itemId => itemId !== id));
-  };
-  
   const getItemDescription = (item: BoqItem) => {
     const descriptionKeys = [
         'Description',
@@ -277,6 +257,33 @@ export default function ViewBoqPage() {
         );
     });
   }, [boqItems, searchTerm]);
+  
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const keys = Object.keys(item);
+    return keys.find(key => String(key).toLowerCase().includes('price') && !String(key).toLowerCase().includes('total'));
+  };
+
+  const formatNumber = (value: any) => {
+    if (typeof value === 'number') {
+      return new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
+    }
+    return value;
+  };
+  
+  const isNumeric = (value: any) => {
+    return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
+  }
+  
+  const handleSelectAll = (checked: boolean) => {
+      setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
+  };
+  
+  const handleSelectRow = (id: string, checked: boolean) => {
+      setSelectedItemIds(prev => checked ? [...prev, id] : prev.filter(itemId => itemId !== id));
+  };
 
   const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
 
@@ -369,8 +376,8 @@ export default function ViewBoqPage() {
                                       </TableCell>
                                       {visibleHeaders.map(header => {
                                           let cellData = item[header];
-                                          if (header === 'Description') {
-                                              cellData = getItemDescription(item);
+                                          if (header.startsWith('DESCRIPTION OF ITEMS')) {
+                                            cellData = getItemDescription(item);
                                           }
                                           const formattedData = formatNumber(cellData);
                                           const numeric = isNumeric(cellData);
