@@ -323,16 +323,27 @@ export default function ViewBoqPage() {
   const filteredItems = useMemo(() => {
     return boqItems.filter(item => {
         const description1 = item['Description'] || '';
-        const description2 = item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '';
+        const description2 = item['DESCRIPTION OF ITEMS'] || '';
+        const description3 = item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '';
+
         return (
             (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (description1.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (description2.toLowerCase().includes(searchTerm.toLowerCase()))
+            (String(description1).toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (String(description2).toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (String(description3).toLowerCase().includes(searchTerm.toLowerCase()))
         );
     });
   }, [boqItems, searchTerm]);
 
   const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
+
+  const getItemDescription = (item: BoqItem) => {
+    return item['Description'] 
+        || item['DESCRIPTION OF ITEMS'] 
+        || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] 
+        || '';
+  };
+
 
   return (
     <>
@@ -385,7 +396,7 @@ export default function ViewBoqPage() {
                           <TableRow>
                               <TableHead className="w-[50px]">
                                   <Checkbox 
-                                      checked={selectedItemIds.length === filteredItems.length && filteredItems.length > 0}
+                                      checked={selectedItemIds.length > 0 && selectedItemIds.length === filteredItems.length}
                                       onCheckedChange={(checked) => handleSelectAll(!!checked)}
                                   />
                               </TableHead>
@@ -419,13 +430,14 @@ export default function ViewBoqPage() {
                                           />
                                       </TableCell>
                                       {visibleHeaders.map(header => {
-                                          let cellData = item[header];
+                                          let cellData;
                                           if (header === 'Description') {
-                                              cellData = item['Description'] || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
-                                          }
-                                          if(header === 'UNIT PRICE') {
-                                            const priceKey = findBasicPriceKey(item);
-                                            cellData = priceKey ? item[priceKey] : 'N/A';
+                                              cellData = getItemDescription(item);
+                                          } else if (header === 'UNIT PRICE') {
+                                              const priceKey = findBasicPriceKey(item);
+                                              cellData = priceKey ? item[priceKey] : 'N/A';
+                                          } else {
+                                              cellData = item[header];
                                           }
                                           const formattedData = formatNumber(cellData);
                                           const numeric = isNumeric(cellData);
