@@ -35,7 +35,6 @@ export default function StoreStockLayout({
     { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'Assembly' },
     { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
     { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
-    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings' }, // Settings might be global
   ];
 
   return (
