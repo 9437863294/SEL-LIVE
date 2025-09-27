@@ -322,7 +322,7 @@ export default function ViewBoqPage() {
   
   const filteredItems = useMemo(() => {
     return boqItems.filter(item => 
-        (item['Sl No']?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [boqItems, searchTerm]);
