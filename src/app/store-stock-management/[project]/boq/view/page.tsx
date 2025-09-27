@@ -225,7 +225,7 @@ export default function ViewBoqPage() {
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+    return keys.find(key => String(key).toLowerCase().includes('price') && !String(key).toLowerCase().includes('total'));
   };
 
   const formatNumber = (value: any) => {
@@ -251,19 +251,29 @@ export default function ViewBoqPage() {
   };
   
   const getItemDescription = (item: BoqItem) => {
-    return item['Description'] 
-        || item['DESCRIPTION OF ITEMS'] 
-        || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] 
-        || '';
+    const descriptionKeys = [
+        'Description',
+        'DESCRIPTION OF ITEMS',
+        'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    ];
+    for (const key of descriptionKeys) {
+        if (item[key]) {
+            return item[key];
+        }
+    }
+    // As a last resort, find any key that contains "description"
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? item[fallbackKey] : '';
   };
   
   const filteredItems = useMemo(() => {
     return boqItems.filter(item => {
-        const description1 = getItemDescription(item);
+        const description = getItemDescription(item);
+        const slNo = String(item['Sl No'] || '');
         
         return (
-            (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (String(description1).toLowerCase().includes(searchTerm.toLowerCase()))
+            slNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(description).toLowerCase().includes(searchTerm.toLowerCase())
         );
     });
   }, [boqItems, searchTerm]);
@@ -358,9 +368,9 @@ export default function ViewBoqPage() {
                                           />
                                       </TableCell>
                                       {visibleHeaders.map(header => {
-                                          let cellData = getItemDescription(item);
-                                          if (header !== 'Description') {
-                                              cellData = item[header];
+                                          let cellData = item[header];
+                                          if (header === 'Description') {
+                                              cellData = getItemDescription(item);
                                           }
                                           const formattedData = formatNumber(cellData);
                                           const numeric = isNumeric(cellData);
