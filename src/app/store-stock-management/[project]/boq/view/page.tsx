@@ -38,7 +38,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided, DroppableProvided } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided, DroppableProvided, DroppableProps } from 'react-beautiful-dnd';
+import { Label } from '@/components/ui/label';
 
 type BoqItem = {
     id: string;
@@ -57,7 +58,28 @@ const baseTableHeaders = [
     'UNIT',
     'BOQ QTY',
     'UNIT PRICE',
+    'TOTAL PRICE FOR THE TENDER QUANTITY',
+    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
 ];
+
+// Custom Droppable component to fix strict mode issue with react-beautiful-dnd
+const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const animation = requestAnimationFrame(() => setEnabled(true));
+    return () => {
+      cancelAnimationFrame(animation);
+      setEnabled(false);
+    };
+  }, []);
+
+  if (!enabled) {
+    return null;
+  }
+
+  return <Droppable {...props}>{children}</Droppable>;
+};
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
@@ -83,7 +105,7 @@ export default function ViewBoqPage() {
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => {
-        if(h.startsWith('DESCRIPTION OF ITEMS')) {
+        if(h === 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)') {
             acc[h] = 'Description';
         } else {
             acc[h] = h;
@@ -414,12 +436,12 @@ export default function ViewBoqPage() {
                 <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
                 <ScrollArea className="h-96 pr-4">
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
-                            {(provided: DroppableProvided) => (
+                        <StrictModeDroppable droppableId="columns">
+                            {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
                                         <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided: DraggableProvided) => (
+                                            {(provided) => (
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
@@ -445,7 +467,7 @@ export default function ViewBoqPage() {
                                     {provided.placeholder}
                                 </div>
                             )}
-                        </Droppable>
+                        </StrictModeDroppable>
                     </DragDropContext>
                 </ScrollArea>
                 <div className="flex justify-end gap-2">
@@ -466,3 +488,4 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
