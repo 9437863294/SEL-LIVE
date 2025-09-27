@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -78,7 +79,7 @@ const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
     return null;
   }
 
-  return <Droppable {...props}>{children}</Droppable>;
+  return <Droppable {...props} isDropDisabled={false}>{children}</Droppable>;
 };
 
 export default function ViewBoqPage() {
@@ -256,7 +257,7 @@ export default function ViewBoqPage() {
     setIsDeleting(false);
   };
   
- const getItemDescription = (item: BoqItem) => {
+  const getItemDescription = (item: BoqItem) => {
     const descriptionKeys = [
       'Description',
       'DESCRIPTION OF ITEMS',
@@ -283,11 +284,6 @@ export default function ViewBoqPage() {
     });
   }, [boqItems, searchTerm]);
   
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    return keys.find(key => String(key).toLowerCase().includes('price') && !String(key).toLowerCase().includes('total'));
-  };
-
   const formatNumber = (value: any) => {
     if (typeof value === 'number') {
       return new Intl.NumberFormat('en-IN', {
@@ -488,4 +484,3 @@ export default function ViewBoqPage() {
     </>
   );
 }
-
