@@ -20,7 +20,7 @@ const initialBoqItem = {
     'SL. No.': '',
     'Amended SL No': '',
     'Activity Description': '',
-    'DESCRIPTION OF ITEMS': '',
+    'Description': '',
     'UNITS': '',
     'Total Qty': '',
     'BASIC PRICE': '',
@@ -50,10 +50,10 @@ export default function AddBoqItemPage() {
     }
     setIsSaving(true);
     // Basic validation
-    if (!boqItem['SL. No.'] || !boqItem['DESCRIPTION OF ITEMS']) {
+    if (!boqItem['SL. No.'] || !boqItem['Description']) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please fill in at least "SL. No." and "DESCRIPTION OF ITEMS".',
+            description: 'Please fill in at least "SL. No." and "Description".',
             variant: 'destructive',
         });
         setIsSaving(false);
@@ -69,7 +69,7 @@ export default function AddBoqItemPage() {
             details: {
                 project: projectSlug,
                 itemSlNo: boqItem['SL. No.'],
-                itemDescription: boqItem['DESCRIPTION OF ITEMS'],
+                itemDescription: boqItem['Description'],
             }
         });
 

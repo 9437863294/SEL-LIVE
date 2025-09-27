@@ -54,7 +54,7 @@ const baseTableHeaders = [
     'SL. No.',
     'Amended SL No',
     'Activity Description',
-    'DESCRIPTION OF ITEMS',
+    'Description',
     'UNITS',
     'Total Qty',
     'JMC Executed Qty',
@@ -99,7 +99,7 @@ export default function ViewBoqPage() {
     // Default value if nothing is in localStorage or if it fails
     const defaults: Record<string, boolean> = {
         'SL. No.': true,
-        'DESCRIPTION OF ITEMS': true,
+        'Description': true,
         'UNITS': true,
         'Total Qty': true,
         'JMC Executed Qty': true,
