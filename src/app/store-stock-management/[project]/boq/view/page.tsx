@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -39,7 +38,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided, DroppableProvided, DroppableProps } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided } from 'react-beautiful-dnd';
 import { Label } from '@/components/ui/label';
 
 type BoqItem = {
@@ -64,7 +63,7 @@ const baseTableHeaders = [
 ];
 
 // Custom Droppable component to fix strict mode issue with react-beautiful-dnd
-const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
+const StrictModeDroppable = ({ children, ...props }: any) => {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
@@ -448,11 +447,11 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                     <DragDropContext onDragEnd={onDragEnd}>
                         <StrictModeDroppable droppableId="columns">
-                            {(provided) => (
+                            {(provided: any) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
                                         <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided) => (
+                                            {(provided: any) => (
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
