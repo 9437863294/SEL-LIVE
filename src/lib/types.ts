@@ -1,3 +1,4 @@
+
 'use client';
 
 import { z } from 'zod';
@@ -137,6 +138,7 @@ export const permissionModules = {
     'View Module': [],
     'Item Master': ['View', 'Add', 'Edit', 'Delete'],
     'Inventory': ['View', 'Stock In', 'Stock Out'],
+    'Projects & Sites': ['View', 'Add', 'Edit', 'Delete', 'Toggle Status'],
   },
   'Settings': {
     'View Module': [],
@@ -187,6 +189,7 @@ export type Project = {
   siteInCharge: string;
   status: 'Active' | 'Inactive';
   billingRequired?: boolean;
+  stockManagementRequired?: boolean;
 };
 
 export type Site = {
