@@ -415,6 +415,9 @@ export default function ViewBoqPage() {
                                       </TableCell>
                                       {visibleHeaders.map(header => {
                                           let cellData = item[header];
+                                          if (header === 'Description') {
+                                              cellData = item['Description'] || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+                                          }
                                           if(header === 'UNIT PRICE') {
                                             const priceKey = findBasicPriceKey(item);
                                             cellData = priceKey ? item[priceKey] : 'N/A';
