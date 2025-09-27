@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-export default function StoreStockLayout({
+export default function ProjectLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -63,7 +63,7 @@ export default function StoreStockLayout({
           <div className="p-4 mt-auto border-t">
             <div className="flex items-center gap-3">
               <Avatar className="h-9 w-9">
-                <AvatarFallback>N</AvatarFallback>
+                <AvatarFallback>U</AvatarFallback>
               </Avatar>
               <div className="text-sm">
                 <p className="font-semibold">User</p>
