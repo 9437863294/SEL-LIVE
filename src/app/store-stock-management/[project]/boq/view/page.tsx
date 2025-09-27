@@ -321,10 +321,15 @@ export default function ViewBoqPage() {
   };
   
   const filteredItems = useMemo(() => {
-    return boqItems.filter(item => 
-        (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    return boqItems.filter(item => {
+        const description1 = item['Description'] || '';
+        const description2 = item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '';
+        return (
+            (String(item['Sl No'] || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (description1.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (description2.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+    });
   }, [boqItems, searchTerm]);
 
   const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
