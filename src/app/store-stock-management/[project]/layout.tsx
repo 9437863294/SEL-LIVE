@@ -12,6 +12,7 @@ import {
   BarChart3,
   BrainCircuit,
   Settings,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ export default function ProjectLayout({
     { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions' },
     { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
     { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'Assembly' },
+    { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ' },
     { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
     { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
   ];
