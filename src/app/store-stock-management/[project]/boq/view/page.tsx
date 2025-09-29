@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -38,7 +39,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DraggableProvided } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder, type DraggableProvided, type DroppableProvided, type DroppableProps } from 'react-beautiful-dnd';
 import { Label } from '@/components/ui/label';
 
 type BoqItem = {
@@ -62,24 +63,21 @@ const baseTableHeaders = [
     'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
 ];
 
-// Custom Droppable component to fix strict mode issue with react-beautiful-dnd
-const StrictModeDroppable = ({ children, ...props }: any) => {
-  const [enabled, setEnabled] = useState(false);
-
-  useEffect(() => {
-    const animation = requestAnimationFrame(() => setEnabled(true));
-    return () => {
-      cancelAnimationFrame(animation);
-      setEnabled(false);
-    };
-  }, []);
-
-  if (!enabled) {
-    return null;
-  }
-
-  return <Droppable {...props}>{children}</Droppable>;
+const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
+    const [enabled, setEnabled] = useState(false);
+    useEffect(() => {
+        const animation = requestAnimationFrame(() => setEnabled(true));
+        return () => {
+            cancelAnimationFrame(animation);
+            setEnabled(false);
+        };
+    }, []);
+    if (!enabled) {
+        return null;
+    }
+    return <Droppable {...props}>{children}</Droppable>;
 };
+
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
@@ -257,7 +255,7 @@ export default function ViewBoqPage() {
     setIsDeleting(false);
   };
   
-  const getItemDescription = (item: BoqItem) => {
+ const getItemDescription = (item: BoqItem) => {
     const descriptionKeys = [
       'Description',
       'DESCRIPTION OF ITEMS',
@@ -447,11 +445,11 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                     <DragDropContext onDragEnd={onDragEnd}>
                         <StrictModeDroppable droppableId="columns">
-                            {(provided: any) => (
+                            {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
                                         <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided: any) => (
+                                            {(provided) => (
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
