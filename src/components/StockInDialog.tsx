@@ -107,18 +107,18 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
     ];
     for (const key of descriptionKeys) {
       if (item[key]) {
-        return item[key];
+        return item[key] as string;
       }
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? item[fallbackKey] : '';
+    return fallbackKey ? item[fallbackKey] as string : '';
   };
   
   const handleItemSelect = (index: number, item: BoqItem | null) => {
       if(item) {
         handleItemChange(index, 'itemId', item.id);
         const description = getItemDescription(item);
-        handleItemChange(index, 'itemName', typeof description === 'string' ? description : '');
+        handleItemChange(index, 'itemName', description);
         const unit = item['UNIT'] || item['UNITS'] || '';
         handleItemChange(index, 'itemUnit', unit);
         handleItemChange(index, 'receiveUnit', unit); // Set receive unit same as BOQ unit initially
