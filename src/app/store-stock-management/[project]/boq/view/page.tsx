@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect, useMemo, Fragment, use } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -82,7 +81,7 @@ const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const params = use(useParams()) as { project: string };
+  const params = useParams() as { project: string };
   const { project: projectSlug } = params;
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
@@ -498,3 +497,4 @@ export default function ViewBoqPage() {
   );
 }
 
+    
