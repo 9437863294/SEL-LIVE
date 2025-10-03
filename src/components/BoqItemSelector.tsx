@@ -82,7 +82,7 @@ export function BoqItemSelector({
                 const item = boqItems.find(i => i.id === value);
                 if (!item) return 0;
 
-                const slNo = (item['Sl No'] || item['SL. No.'])?.toLowerCase() || '';
+                const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
                 const desc = getItemDescription(item).toLowerCase() || '';
                 const searchTerm = search.toLowerCase();
                 
