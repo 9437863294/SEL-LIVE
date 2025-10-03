@@ -30,6 +30,7 @@ import {
   Edit,
   Trash2,
   Loader2,
+  DropdownMenuSeparator,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
@@ -55,7 +56,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -171,9 +171,7 @@ export default function TransactionsPage() {
         toast({ title: "Cannot Edit", description: "This GRN cannot be edited because some items have already been issued. Please reverse the relevant Goods Issue transactions first.", variant: "destructive" });
         return;
       }
-      // Future: Navigate to an edit page for GRN
-      // router.push(`/store-stock-management/${projectSlug}/transactions/stock-in/${summary.id}/edit`);
-      toast({ title: "Info", description: "Editing for non-issued GRNs will be implemented soon." });
+      router.push(`/store-stock-management/${projectSlug}/transactions/stock-in/${summary.id}/edit`);
     }
   };
 
