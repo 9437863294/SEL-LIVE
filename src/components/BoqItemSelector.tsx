@@ -36,7 +36,7 @@ export function BoqItemSelector({
 }: BoqItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
   
-  const getItemDescription = (item: BoqItem) => {
+  const getItemDescription = (item: BoqItem): string => {
     const descriptionKeys = [
       'Description',
       'DESCRIPTION OF ITEMS',
@@ -44,11 +44,11 @@ export function BoqItemSelector({
     ];
     for (const key of descriptionKeys) {
       if (item[key]) {
-        return item[key];
+        return String(item[key]);
       }
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? item[fallbackKey] : '';
+    return fallbackKey ? String(item[fallbackKey]) : '';
   };
   
   const selectedItem = boqItems.find((item) => (item['Sl No'] || item['SL. No.']) === selectedSlNo);
@@ -83,7 +83,7 @@ export function BoqItemSelector({
                 if (!item) return 0;
 
                 const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
-                const desc = String(getItemDescription(item) || '').toLowerCase();
+                const desc = String(getItemDescription(item)).toLowerCase() || '';
                 const searchTerm = search.toLowerCase();
                 
                 return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
