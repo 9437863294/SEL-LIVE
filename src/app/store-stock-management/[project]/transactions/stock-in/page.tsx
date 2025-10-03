@@ -75,10 +75,19 @@ export default function StockInPage() {
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
     defaultValues: {
+      grnNo: '',
       grnDate: new Date(),
+      supplier: '',
+      poNumber: '',
       poDate: undefined,
+      invoiceNumber: '',
       invoiceDate: undefined,
+      invoiceAmount: 0,
+      vehicleNo: '',
+      waybillNo: '',
+      lrNo: '',
       lrDate: undefined,
+      notes: '',
       items: [{ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', batchNo: '', unitCost: 0 }],
     },
   });
@@ -276,7 +285,7 @@ export default function StockInPage() {
                 <Card>
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
-                        <div className="hidden md:grid grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 text-xs font-medium text-muted-foreground">
+                        <div className="hidden md:grid md:grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 text-xs font-medium text-muted-foreground">
                             <Label>BOQ Item</Label>
                             <Label>Quantity</Label>
                             <Label>Receive Unit</Label>
@@ -293,7 +302,7 @@ export default function StockInPage() {
                                         <FormItem>
                                             <Label className="text-xs md:hidden">BOQ Item</Label>
                                             <BoqItemSelector
-                                                key={field.id} 
+                                                key={field.id}
                                                 boqItems={boqItems}
                                                 selectedSlNo={getSelectedSlNo(index)}
                                                 onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
@@ -303,10 +312,10 @@ export default function StockInPage() {
                                         </FormItem>
                                     )}
                                 />
-                                <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem>{index === 0 && <FormLabel className="text-xs md:hidden">Quantity</FormLabel>}<FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem>{index === 0 && <FormLabel className="text-xs md:hidden">Receive Unit</FormLabel>}<FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem>{index === 0 && <FormLabel className="text-xs md:hidden">Batch No.</FormLabel>}<FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem>{index === 0 && <FormLabel className="text-xs md:hidden">Unit Cost</FormLabel>}<FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <div className="space-y-1"><Label className="text-xs md:hidden">Quantity</Label><FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} /></div>
+                                <div className="space-y-1"><Label className="text-xs md:hidden">Receive Unit</Label><FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} /></div>
+                                <div className="space-y-1"><Label className="text-xs md:hidden">Batch No.</Label><FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} /></div>
+                                <div className="space-y-1"><Label className="text-xs md:hidden">Unit Cost</Label><FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} /></div>
                                <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         ))}
