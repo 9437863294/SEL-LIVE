@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -22,10 +23,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -76,6 +77,7 @@ export default function StockInPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
   const invoiceFileRef = useRef<HTMLInputElement>(null);
   const transporterFileRef = useRef<HTMLInputElement>(null);
 
@@ -107,8 +109,27 @@ export default function StockInPage() {
   });
 
    useEffect(() => {
-    const grn = `GRN-${projectSlug.substring(0, 4).toUpperCase()}-${format(new Date(), 'yyyyMMdd')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
-    form.setValue('grnNo', grn);
+    const generatePreviewId = async () => {
+        try {
+            const configRef = doc(db, 'serialNumberConfigs', 'store-stock-grn');
+            const configDoc = await getDoc(configRef);
+            if (configDoc.exists()) {
+                const configData = configDoc.data() as SerialNumberConfig;
+                const newIndex = configData.startingIndex;
+                const datePart = format(new Date(), (configData.format || 'yyyyMMdd').replace(/y/g, 'y').replace(/m/g, 'M').replace(/d/g, 'd'));
+                const formattedIndex = String(newIndex).padStart(4, '0');
+                const grnNo = `${configData.prefix || ''}${datePart}${formattedIndex}${configData.suffix || ''}`;
+                setPreviewGrnNo(grnNo);
+                form.setValue('grnNo', grnNo);
+            } else {
+                 setPreviewGrnNo('Config not found');
+            }
+        } catch (error) {
+            setPreviewGrnNo('Error generating ID');
+        }
+    };
+
+    generatePreviewId();
     if(fields.length === 0){
         append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
     }
@@ -170,11 +191,26 @@ export default function StockInPage() {
     setIsSaving(true);
     try {
         
+        const configRef = doc(db, 'serialNumberConfigs', 'store-stock-grn');
+        const newGrnNo = await runTransaction(db, async (transaction) => {
+            const configDoc = await transaction.get(configRef);
+            if (!configDoc.exists()) throw new Error("Serial number configuration for GRN not found!");
+            
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            const datePart = format(new Date(), (configData.format || 'yyyyMMdd').replace(/y/g, 'y').replace(/m/g, 'M').replace(/d/g, 'd'));
+            const formattedIndex = String(newIndex).padStart(4, '0');
+            const grnNo = `${configData.prefix || ''}${datePart}${formattedIndex}${configData.suffix || ''}`;
+            
+            transaction.update(configRef, { startingIndex: newIndex + 1 });
+            return grnNo;
+        });
+
       const uploadFiles = async (files: File[], type: string): Promise<{ name: string; url: string }[]> => {
         if (!files || files.length === 0) return [];
         const urls: { name: string; url: string }[] = [];
         for (const file of files) {
-          const storagePath = `grn-documents/${data.grnNo}/${type}/${file.name}`;
+          const storagePath = `grn-documents/${newGrnNo}/${type}/${file.name}`;
           const storageRef = ref(storage, storagePath);
           await uploadBytes(storageRef, file);
           const downloadURL = await getDownloadURL(storageRef);
@@ -202,6 +238,7 @@ export default function StockInPage() {
           cost: item.unitCost,
           batch: '',
           details: { 
+            grnNo: newGrnNo,
             supplier: data.supplier, 
             poNumber: data.poNumber, 
             poDate: data.poDate ? format(data.poDate, 'yyyy-MM-dd') : null,
@@ -288,7 +325,7 @@ export default function StockInPage() {
                 <Card>
                     <CardHeader><CardTitle>GRN Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
+                        <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly value={previewGrnNo}/></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="grnDate" label="GRN Date" />
                         <FormField control={form.control} name="supplier" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Supplier Name</FormLabel><FormControl><Input placeholder="e.g., ACME Corp" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <FormField control={form.control} name="poNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>P.O. Number</FormLabel><FormControl><Input placeholder="e.g., PO-12345" {...field} /></FormControl><FormMessage /></FormItem>)}/>
@@ -393,7 +430,7 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[3fr,0.8fr,1fr,1fr] gap-4 items-center">
+                            <div className="grid grid-cols-[3fr,0.5fr,0.8fr,0.8fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
@@ -402,7 +439,7 @@ export default function StockInPage() {
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.8fr,1fr,1fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.5fr,0.8fr,0.8fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}

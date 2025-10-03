@@ -22,6 +22,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 const modules = [
     { id: 'site-fund-requisition', name: 'Site Fund Requisition' },
     { id: 'daily-requisition', name: 'Daily Requisition' },
+    { id: 'store-stock-grn', name: 'Store Stock GRN' },
 ];
 
 const initialConfigState: SerialNumberConfig = {
@@ -59,9 +60,14 @@ export default function SerialNoConfigurationPage() {
                 if (docSnap.exists()) {
                     setConfig(docSnap.data() as SerialNumberConfig);
                 } else {
-                    const defaultConfig = selectedModule === 'site-fund-requisition' 
-                        ? { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 10 }
-                        : { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 };
+                    let defaultConfig = { ...initialConfigState };
+                    if (selectedModule === 'site-fund-requisition') {
+                        defaultConfig = { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 10 };
+                    } else if (selectedModule === 'daily-requisition') {
+                        defaultConfig = { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 };
+                    } else if (selectedModule === 'store-stock-grn') {
+                        defaultConfig = { prefix: 'GRN-', format: 'yyyyMMdd-', suffix: '', startingIndex: 1 };
+                    }
                     setConfig(defaultConfig);
                 }
             } catch (error) {
