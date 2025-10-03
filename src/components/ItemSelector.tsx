@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -57,6 +58,7 @@ export function ItemSelector({
         <Command
             filter={(value, search) => {
                 const [id, name, type] = value.split('__');
+                if (!name) return 0; // Prevent error if name is undefined
                 const lowercasedSearch = search.toLowerCase();
                 return name.toLowerCase().includes(lowercasedSearch) ? 1 : 0;
             }}
