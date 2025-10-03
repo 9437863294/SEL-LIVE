@@ -17,12 +17,13 @@ import {
   Upload,
   File as FileIcon,
   X,
+  Library,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem, SerialNumberConfig } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc } from 'firebase/firestore';
@@ -34,6 +35,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 
 
 const itemSchema = z.object({
@@ -80,6 +82,7 @@ export default function StockInPage() {
   const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
   const invoiceFileRef = useRef<HTMLInputElement>(null);
   const transporterFileRef = useRef<HTMLInputElement>(null);
+  const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -103,7 +106,7 @@ export default function StockInPage() {
     },
   });
 
-  const { fields, append, remove, control } = useFieldArray({
+  const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: 'items',
   });
@@ -165,13 +168,16 @@ export default function StockInPage() {
     }
   };
 
-  const getItemDescription = (item: BoqItem) => {
+  const getItemDescription = (item: BoqItem | FabricationBomItem) => {
     const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
     for (const key of descriptionKeys) {
-      if (item[key]) return String(item[key]);
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section} - ${(item as FabricationBomItem).grade}`;
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String(item[fallbackKey]) : '';
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
   };
   
   const getSlNo = (item: BoqItem): string => {
@@ -192,6 +198,31 @@ export default function StockInPage() {
       form.setValue(`items.${index}.itemId`, '');
       form.setValue(`items.${index}.boqSlNo`, '');
     }
+  };
+  
+  const handleAddFromBom = (selectedBoqItems: BoqItem[]) => {
+      const bomItems = selectedBoqItems.flatMap(mainItem => {
+          if (!mainItem.bom || mainItem.bom.length === 0) {
+              toast({ title: "No BOM", description: `Item "${getItemDescription(mainItem)}" does not have a Bill of Materials defined.`, variant: 'destructive'});
+              return [];
+          }
+          return mainItem.bom.map(bomItem => ({
+              id: `item-${Date.now()}-${Math.random()}`,
+              itemId: `bom-${mainItem.id}-${bomItem.markNo}`, // Create a unique-ish ID
+              itemName: getItemDescription(bomItem),
+              itemUnit: 'Kg', // Assuming weight is always in Kg for fabrication
+              boqSlNo: getSlNo(mainItem),
+              quantity: bomItem.totalWtKg || 1,
+              receiveUnit: 'Kg',
+              unitCost: 0,
+          }));
+      });
+
+      if (fields.length === 1 && !fields[0].itemId) {
+        form.reset({ ...form.getValues(), items: bomItems });
+      } else {
+        append(bomItems);
+      }
   };
   
   const watchedItems = form.watch('items');
@@ -315,6 +346,7 @@ export default function StockInPage() {
 
 
   return (
+    <>
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <div className="w-full max-w-6xl mx-auto">
@@ -450,7 +482,14 @@ export default function StockInPage() {
                 </Card>
 
                 <Card>
-                    <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
+                    <CardHeader>
+                        <div className="flex items-center justify-between">
+                            <CardTitle>Items Received</CardTitle>
+                             <Button variant="outline" size="sm" type="button" onClick={() => setIsBoqMultiSelectOpen(true)} className="ml-auto">
+                                <Library className="mr-2 h-4 w-4" /> Add from BOM
+                            </Button>
+                        </div>
+                    </CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
                             <div className="grid grid-cols-[3fr,0.5fr,0.8fr,0.8fr,1fr] gap-4 items-center">
@@ -502,5 +541,12 @@ export default function StockInPage() {
         </div>
       </form>
     </Form>
+    <BoqMultiSelectDialog
+        isOpen={isBoqMultiSelectOpen}
+        onOpenChange={setIsBoqMultiSelectOpen}
+        boqItems={boqItems}
+        onConfirm={handleAddFromBom}
+    />
+    </>
   );
 }
