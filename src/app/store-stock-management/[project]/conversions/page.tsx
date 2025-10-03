@@ -7,11 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save } from 'lucide-react';
-import type { MainItem } from '@/lib/types';
+import type { BoqItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useParams } from 'next/navigation';
 
 interface Conversion {
   fromUnit: string;
@@ -20,31 +21,35 @@ interface Conversion {
   toQty: number;
 }
 
-interface ItemWithConversion extends MainItem {
+interface ItemWithConversion extends BoqItem {
   conversion?: Conversion;
 }
 
 export default function ConversionsPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [items, setItems] = useState<ItemWithConversion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchItems = async () => {
+      if (!projectSlug) return;
       setIsLoading(true);
       try {
-        const itemsSnapshot = await getDocs(collection(db, 'mainItems'));
+        const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const itemsSnapshot = await getDocs(q);
         const itemsData = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ItemWithConversion));
         setItems(itemsData);
       } catch (error) {
         console.error("Error fetching items:", error);
-        toast({ title: "Error", description: "Failed to fetch items.", variant: "destructive" });
+        toast({ title: "Error", description: "Failed to fetch BOQ items.", variant: "destructive" });
       }
       setIsLoading(false);
     };
     fetchItems();
-  }, [toast]);
+  }, [projectSlug, toast]);
 
   const handleConversionChange = (itemId: string, field: keyof Conversion, value: string | number) => {
     setItems(prevItems =>
@@ -65,7 +70,6 @@ export default function ConversionsPage() {
       return;
     }
     
-    // Validate that quantities are numbers
     const { fromQty, toQty } = itemToSave.conversion;
     if (isNaN(Number(fromQty)) || isNaN(Number(toQty))) {
         toast({ title: 'Invalid quantity', description: 'Quantities must be numbers.', variant: 'destructive'});
@@ -74,7 +78,7 @@ export default function ConversionsPage() {
 
     setIsSaving(prev => ({ ...prev, [itemId]: true }));
     try {
-      const itemRef = doc(db, 'mainItems', itemId);
+      const itemRef = doc(db, 'boqItems', itemId);
       await updateDoc(itemRef, {
         conversion: {
             ...itemToSave.conversion,
@@ -82,7 +86,7 @@ export default function ConversionsPage() {
             toQty: Number(toQty),
         }
       });
-      toast({ title: 'Success', description: `Conversion for ${itemToSave.name} saved.` });
+      toast({ title: 'Success', description: `Conversion for ${getItemDescription(itemToSave)} saved.` });
     } catch (error) {
       console.error("Error saving conversion:", error);
       toast({ title: 'Error', description: 'Failed to save conversion.', variant: 'destructive' });
@@ -90,6 +94,23 @@ export default function ConversionsPage() {
       setIsSaving(prev => ({ ...prev, [itemId]: false }));
     }
   };
+  
+  const getItemDescription = (item: BoqItem) => {
+    const descriptionKeys = [
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    ];
+    for (const key of descriptionKeys) {
+      if (item[key]) return String(item[key]);
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String(item[fallbackKey]) : '';
+  };
+  
+  const getUnit = (item: BoqItem): string => {
+    return String(item['UNIT'] || item['UNITS'] || 'N/A');
+  }
 
   return (
     <div>
@@ -116,8 +137,8 @@ export default function ConversionsPage() {
               ) : items.length > 0 ? (
                 items.map(item => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.unit}</TableCell>
+                    <TableCell className="font-medium">{getItemDescription(item)}</TableCell>
+                    <TableCell>{getUnit(item)}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
@@ -163,7 +184,7 @@ export default function ConversionsPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">No main items found to define conversions.</TableCell>
+                  <TableCell colSpan={6} className="text-center h-24">No BOQ items found to define conversions.</TableCell>
                 </TableRow>
               )}
             </TableBody>
