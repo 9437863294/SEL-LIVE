@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PlusCircle, Search } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,6 +28,7 @@ export default function AssemblyPage() {
   const [selectedItem, setSelectedItem] = useState<BoqItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterColumn, setFilterColumn] = useState('all');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const fetchBoqItems = async () => {
     setIsLoading(true);
@@ -54,6 +55,18 @@ export default function AssemblyPage() {
     setIsDialogOpen(true);
   };
   
+  const toggleRowExpansion = (itemId: string) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
     const specificKey = 'UNIT PRICE';
@@ -150,6 +163,7 @@ export default function AssemblyPage() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
+                    <TableHead className="w-12"></TableHead>
                     <TableHead>BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>BOQ Qty</TableHead>
@@ -162,32 +176,80 @@ export default function AssemblyPage() {
                   {isLoading ? (
                     Array.from({ length: 10 }).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
+                        <TableCell colSpan={7}><Skeleton className="h-6 w-full" /></TableCell>
                       </TableRow>
                     ))
                   ) : filteredBoqItems.length > 0 ? (
                     filteredBoqItems.map(item => {
                         const rateKey = findBasicPriceKey(item);
                         const rate = rateKey ? item[rateKey] : '0';
+                        const hasBom = item.bom && item.bom.length > 0;
+                        const isExpanded = expandedRows.has(item.id);
                         return (
-                          <TableRow key={item.id}>
-                            <TableCell>{getSlNo(item)}</TableCell>
-                            <TableCell>{getItemDescription(item)}</TableCell>
-                            <TableCell>{getBoqQty(item)}</TableCell>
-                            <TableCell>{getUnit(item)}</TableCell>
-                            <TableCell>{formatCurrency(rate)}</TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="outline" size="sm" onClick={() => handleOpenDialog(item)}>
-                                <PlusCircle className="mr-2 h-4 w-4" />
-                                {item.bom && item.bom.length > 0 ? 'Edit' : 'Add'} BOM
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                          <Fragment key={item.id}>
+                            <TableRow>
+                              <TableCell>
+                                {hasBom && (
+                                  <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
+                                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell>{getSlNo(item)}</TableCell>
+                              <TableCell>{getItemDescription(item)}</TableCell>
+                              <TableCell>{getBoqQty(item)}</TableCell>
+                              <TableCell>{getUnit(item)}</TableCell>
+                              <TableCell>{formatCurrency(rate)}</TableCell>
+                              <TableCell className="text-right">
+                                <Button variant="outline" size="sm" onClick={() => handleOpenDialog(item)}>
+                                  <PlusCircle className="mr-2 h-4 w-4" />
+                                  {hasBom ? 'Edit' : 'Add'} BOM
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && hasBom && (
+                               <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                    <TableCell colSpan={7} className="p-0">
+                                      <div className="p-4">
+                                        <h4 className="font-semibold mb-2 ml-2">Bill of Materials</h4>
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>Mark No.</TableHead>
+                                              <TableHead>Section</TableHead>
+                                              <TableHead>Grade</TableHead>
+                                              <TableHead>Length</TableHead>
+                                              <TableHead>Wt/Pc (KG)</TableHead>
+                                              <TableHead>Total Wt/Set</TableHead>
+                                              <TableHead>Qty/Set</TableHead>
+                                              <TableHead>Total Wt (KG)</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {item.bom!.map((bomItem, index) => (
+                                              <TableRow key={index}>
+                                                <TableCell>{bomItem.markNo}</TableCell>
+                                                <TableCell>{bomItem.section}</TableCell>
+                                                <TableCell>{bomItem.grade}</TableCell>
+                                                <TableCell>{bomItem.length}</TableCell>
+                                                <TableCell>{bomItem.wtPerPc?.toFixed(3)}</TableCell>
+                                                <TableCell>{bomItem.totalWtPerSet?.toFixed(3)}</TableCell>
+                                                <TableCell>{bomItem.qtyPerSet}</TableCell>
+                                                <TableCell>{bomItem.totalWtKg?.toFixed(3)}</TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    </TableCell>
+                               </TableRow>
+                            )}
+                          </Fragment>
                         )
                     })
                   ) : (
                      <TableRow>
-                        <TableCell colSpan={6} className="text-center h-24">No BOQ Items found for this project.</TableCell>
+                        <TableCell colSpan={7} className="text-center h-24">No BOQ Items found for this project.</TableCell>
                      </TableRow>
                   )}
                 </TableBody>
