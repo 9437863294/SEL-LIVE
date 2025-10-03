@@ -19,14 +19,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { MainItem, SubItem, BoqItem } from '@/lib/types';
+import type { MainItem, SubItem, BoqItem, InventoryLog } from '@/lib/types';
 import { ScrollArea } from './ui/scroll-area';
 
 interface ItemSelectorProps {
-  mainItems: BoqItem[];
-  subItems: BoqItem[];
+  mainItems: BoqItem[]; // Kept for potential future use, but not rendered
+  subItems: InventoryLog[];
   selectedItemId: string | null;
-  onSelect: (item: BoqItem | null, type: 'Main' | 'Sub') => void;
+  onSelect: (item: InventoryLog | null, type: 'Main' | 'Sub') => void;
   isLoading: boolean;
 }
 
@@ -38,27 +38,11 @@ export function ItemSelector({
   isLoading,
 }: ItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
-  const allItems = [...mainItems, ...subItems];
-  const selectedItem = allItems.find((item) => item.id === selectedItemId);
+  const selectedItem = subItems.find((item) => item.itemId === selectedItemId);
 
-  const getItemDescription = (item: BoqItem): string => {
-    const descriptionKeys = [
-      'Description',
-      'DESCRIPTION OF ITEMS',
-      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
-    ];
-    for (const key of descriptionKeys) {
-      if (item[key]) {
-        return String(item[key]);
-      }
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String(item[fallbackKey]) : '';
+  const getItemDescription = (item: InventoryLog): string => {
+    return item.itemName || 'No Description';
   };
-  
-  const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
-  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -76,7 +60,7 @@ export function ItemSelector({
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command
             filter={(value, search) => {
-                const item = allItems.find(i => i.id === value);
+                const item = subItems.find(i => i.itemId === value);
                 if (!item) return 0;
                 
                 const name = getItemDescription(item).toLowerCase();
@@ -90,26 +74,29 @@ export function ItemSelector({
             <CommandEmpty>
               {isLoading ? 'Loading...' : 'No item found.'}
             </CommandEmpty>
-            <ScrollArea className="h-72">
-              <CommandGroup heading="Sub-Items">
+            <CommandGroup>
+              <ScrollArea className="h-72">
                 {subItems.map((item) => (
                     <CommandItem
-                      key={item.id}
-                      value={item.id}
+                      key={item.itemId}
+                      value={item.itemId}
                       onSelect={() => {
-                        onSelect(item, 'Sub');
+                        onSelect(item, 'Sub'); // Treat all items as selectable 'Sub' items for now
                         setOpen(false);
                       }}
                     >
-                      <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.id ? 'opacity-100' : 'opacity-0')} />
+                      <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.itemId ? 'opacity-100' : 'opacity-0')} />
                        <div className="flex justify-between items-center w-full">
-                         <span>{getItemDescription(item)}</span>
-                         <span className="text-xs text-muted-foreground">{item['UNIT'] || item['UNITS']}</span>
+                         <div className="flex-1 pr-2">
+                             <p className="text-sm font-medium truncate">{getItemDescription(item)}</p>
+                             <p className="text-xs text-muted-foreground">Available: {item.availableQuantity}</p>
+                         </div>
+                         <span className="text-xs text-muted-foreground">{item.unit}</span>
                        </div>
                     </CommandItem>
                 ))}
-              </CommandGroup>
-            </ScrollArea>
+              </ScrollArea>
+            </CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>
