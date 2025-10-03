@@ -19,7 +19,7 @@ import type { InventoryLog, BoqItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const initialItemState = {
@@ -127,13 +127,9 @@ export default function StockInPage() {
               receiveUnit: unit,
             };
           } else {
-            // Reset if selection is cleared
             return {
-              ...item,
-              itemId: '',
-              itemName: '',
-              itemUnit: '',
-              receiveUnit: '',
+              ...initialItemState,
+              id: item.id, // Keep the unique ID
             };
           }
         }
@@ -249,6 +245,7 @@ export default function StockInPage() {
                            <div className="space-y-1">
                              {index === 0 && <Label className="text-xs">BOQ Item</Label>}
                              <BoqItemSelector
+                                key={item.id} 
                                 boqItems={boqItems}
                                 selectedSlNo={getSelectedSlNo(item)}
                                 onSelect={(selectedBoqItem) => handleItemSelect(item.id, selectedBoqItem)}
