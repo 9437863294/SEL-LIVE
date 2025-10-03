@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Component } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -162,6 +162,11 @@ export default function ManageItemsPage() {
             </Link>
             <h1 className="text-xl font-bold">Item Master</h1>
           </div>
+           <Link href="/store-stock-management/items/bom">
+                <Button variant="outline">
+                    <Component className="mr-2 h-4 w-4" /> Manage BOM
+                </Button>
+            </Link>
         </div>
 
         <Tabs defaultValue="main-items">
