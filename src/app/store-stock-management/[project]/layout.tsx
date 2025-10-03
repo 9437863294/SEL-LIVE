@@ -13,8 +13,55 @@ import {
   BarChart3,
   BrainCircuit,
   ClipboardList,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { SidebarProvider, Sidebar, SidebarTrigger, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from '@/components/ui/sidebar';
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarTrigger,
+  SidebarHeader,
+  SidebarContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarFooter
+} from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
+import { useSidebar } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
+
+
+function CustomSidebarFooter() {
+    const { state, toggleSidebar } = useSidebar();
+    const isExpanded = state === 'expanded';
+
+    return (
+        <SidebarFooter>
+            <div className="flex w-full items-center justify-center data-[state=expanded]:justify-end">
+                <Button
+                    variant="ghost"
+                    className={cn(
+                        'w-full justify-start',
+                        !isExpanded && 'h-10 w-10 p-0 justify-center'
+                    )}
+                    onClick={toggleSidebar}
+                >
+                    {isExpanded ? (
+                        <>
+                            <ChevronLeft className="h-5 w-5 mr-3" />
+                            <span>Collapse</span>
+                        </>
+                    ) : (
+                        <ChevronRight className="h-5 w-5" />
+                    )}
+                    <span className="sr-only">Toggle Sidebar</span>
+                </Button>
+            </div>
+        </SidebarFooter>
+    );
+}
+
 
 export default function ProjectLayout({
   children,
@@ -22,8 +69,8 @@ export default function ProjectLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const params = useParams() as { project: string };
-  const projectSlug = params.project;
+  const params = useParams();
+  const projectSlug = params.project as string;
 
   const navItems = [
     { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
@@ -60,11 +107,7 @@ export default function ProjectLayout({
                     ))}
                 </SidebarMenu>
             </SidebarContent>
-            <SidebarFooter>
-              <div className="flex w-full items-center justify-center data-[state=expanded]:justify-end">
-                <SidebarTrigger />
-              </div>
-            </SidebarFooter>
+            <CustomSidebarFooter/>
         </Sidebar>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
     </SidebarProvider>
