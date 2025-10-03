@@ -51,7 +51,7 @@ export function BoqItemSelector({
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
   
-  const selectedItem = boqItems.find((item) => (item['Sl No'] || item['SL. No.']) === selectedSlNo);
+  const selectedItem = boqItems.find((item) => String(item['Sl No'] || item['SL. No.']) === selectedSlNo);
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
@@ -81,9 +81,9 @@ export function BoqItemSelector({
             filter={(value, search) => {
                 const item = boqItems.find(i => String(i['Sl No'] || i['SL. No.']) === value);
                 if (!item) return 0;
-
+                
                 const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
-                const desc = String(getItemDescription(item)).toLowerCase() || '';
+                const desc = String(getItemDescription(item) || '').toLowerCase();
                 const searchTerm = search.toLowerCase();
                 
                 return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
@@ -99,12 +99,12 @@ export function BoqItemSelector({
                 {boqItems.map((item) => {
                   const rateKey = findBasicPriceKey(item);
                   const rate = rateKey ? item[rateKey] : 'N/A';
-                  const slNo = item['Sl No'] || item['SL. No.'];
+                  const slNo = String(item['Sl No'] || item['SL. No.']);
                   const description = getItemDescription(item);
                   return (
                     <CommandItem
                       key={item.id}
-                      value={String(slNo)}
+                      value={slNo}
                       onSelect={() => {
                         onSelect(item);
                         setOpen(false);
@@ -118,7 +118,7 @@ export function BoqItemSelector({
                             : 'opacity-0'
                         )}
                       />
-                      <div className="flex-1">
+                       <div className="flex-1">
                         <div className="flex justify-between items-start">
                           <span className="font-medium text-sm">{slNo}</span>
                           <span className="text-xs text-right">
@@ -126,7 +126,7 @@ export function BoqItemSelector({
                           </span>
                         </div>
                          <div className="flex justify-between items-end mt-1">
-                            <p className="text-xs text-muted-foreground flex-1 pr-2">{description}</p>
+                            <p className="text-xs text-muted-foreground flex-1 pr-2 truncate">{description}</p>
                             <span className="text-xs text-muted-foreground text-right">
                                 <strong>Unit:</strong> {item['UNIT'] || item['UNITS'] || 'N/A'}
                             </span>
