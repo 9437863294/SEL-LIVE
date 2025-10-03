@@ -44,7 +44,7 @@ const itemSchema = z.object({
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
   receiveUnit: z.string().min(1, ''),
   unitCost: z.coerce.number().optional(),
-  batchNo: z.string().optional(),
+  batchNo: z.string().optional().default(''),
 });
 
 const grnSchema = z.object({
@@ -56,7 +56,7 @@ const grnSchema = z.object({
     invoiceNumber: z.string().min(1, "Invoice number is required."),
     invoiceDate: z.date().optional(),
     invoiceAmount: z.coerce.number().nullable().optional(),
-    invoiceFiles: z.custom<File[]>().optional(),
+    invoiceFiles: z.array(z.custom<File>()).optional().default([]),
     vehicleNo: z.string().optional().default(''),
     waybillNo: z.string().optional().default(''),
     lrNo: z.string().optional().default(''),
@@ -294,19 +294,30 @@ export default function StockInPage() {
                         <FormField
                             control={form.control}
                             name="invoiceFiles"
-                            render={({ field: { onChange, value, ...rest } }) => (
+                            render={({ field }) => (
                             <FormItem className="md:col-span-3">
-                                <FormLabel>Invoice Document</FormLabel>
+                                <FormLabel>Invoice Document(s)</FormLabel>
                                 <FormControl>
-                                <Input type="file" {...rest} multiple onChange={(e) => onChange(e.target.files ? Array.from(e.target.files) : [])} />
+                                <Input type="file" multiple onChange={(e) => {
+                                  const currentFiles = field.value || [];
+                                  const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                                  field.onChange([...currentFiles, ...newFiles]);
+                                }} />
                                 </FormControl>
                                 <FormMessage />
-                                {value && value.length > 0 && (
-                                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                                    {value.map((file, i) => (
-                                      <div key={i} className="flex items-center gap-2">
-                                        <FileIcon className="h-3 w-3"/>
-                                        <span>{file.name}</span>
+                                {field.value && field.value.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    <p className="text-sm font-medium">Selected files:</p>
+                                    {field.value.map((file, i) => (
+                                      <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md">
+                                          <div className="flex items-center gap-2 text-xs">
+                                              <FileIcon className="h-3 w-3"/>
+                                              <span className="truncate max-w-xs">{file.name}</span>
+                                          </div>
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                                              const newFiles = field.value.filter((_, index) => index !== i);
+                                              field.onChange(newFiles);
+                                          }}><X className="h-3 w-3"/></Button>
                                       </div>
                                     ))}
                                   </div>
@@ -331,7 +342,7 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[2.5fr,0.8fr,0.8fr,1fr] gap-4 items-center">
+                            <div className="grid grid-cols-[2.5fr,0.5fr,0.8fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
@@ -340,7 +351,7 @@ export default function StockInPage() {
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[2.5fr,0.8fr,0.8fr,1fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[2.5fr,0.5fr,0.8fr,1fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
@@ -380,4 +391,3 @@ export default function StockInPage() {
     </Form>
   );
 }
-
