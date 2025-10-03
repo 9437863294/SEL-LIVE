@@ -21,7 +21,7 @@ import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem } fr
 import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Skeleton } from '@/components/ui/skeleton';
 
