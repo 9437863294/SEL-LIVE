@@ -81,11 +81,11 @@ export default function StockOutPage() {
       try {
         const q = query(
           collection(db, 'inventoryLogs'),
-          where('projectId', '==', projectSlug),
-          where('availableQuantity', '>', 0)
+          where('projectId', '==', projectSlug)
         );
         const snapshot = await getDocs(q);
-        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog));
+        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog))
+          .filter(item => item.availableQuantity > 0);
         setAvailableItems(itemsData);
       } catch (error) {
         console.error('Error fetching inventory:', error);
@@ -231,18 +231,16 @@ export default function StockOutPage() {
                                     <FormLabel>Issue Date</FormLabel>
                                     <Popover>
                                         <PopoverTrigger asChild>
-                                            <FormControl>
-                                                <Button
-                                                    variant={"outline"}
-                                                    className={cn(
-                                                        "w-full justify-start text-left font-normal",
-                                                        !field.value && "text-muted-foreground"
-                                                    )}
-                                                >
-                                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                                    {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                                </Button>
-                                            </FormControl>
+                                            <Button
+                                                variant={"outline"}
+                                                className={cn(
+                                                    "w-full justify-start text-left font-normal",
+                                                    !field.value && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                            </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0">
                                             <Calendar
