@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -174,15 +174,10 @@ export default function StockOutPage() {
           const itemsToIssue = item.isComponentIssue && item.bomItems 
             ? item.bomItems.map(bi => ({ 
                 ...bi, 
-                // We need to find the inventory log entry corresponding to this BOM component
-                // This is a simplification; a real system would have unique IDs for BOM components in inventory.
-                // For now, we assume the BOM component's 'section' or 'markNo' can identify it.
-                // A better approach would be to have a proper product catalog.
-                // Let's create a placeholder itemId for the sub-item log.
                 itemId: `sub-${item.itemId}-${bi.markNo}`,
                 itemName: `${item.itemName} - ${bi.section}`,
-                itemUnit: 'Kg', // Assuming BOM items are in Kg
-                availableQty: 99999, // Placeholder; real validation is complex
+                itemUnit: 'Kg', 
+                availableQty: 99999,
               }))
             : [item];
           
@@ -190,27 +185,29 @@ export default function StockOutPage() {
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
                 where('projectId', '==', projectSlug),
-                where('itemId', '==', issueItem.itemId),
-                where('availableQuantity', '>', 0),
-                orderBy('date', 'asc')
+                where('itemId', '==', issueItem.itemId)
             );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             
+            const logsWithStock = logsToUpdateSnap.docs
+                .map(doc => ({ ...doc.data(), id: doc.id } as InventoryLog))
+                .filter(log => log.availableQuantity > 0)
+                .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+
             let quantityToIssue = issueItem.quantity;
-            let totalAvailableForThisItem = logsToUpdateSnap.docs.reduce((sum, doc) => sum + (doc.data() as InventoryLog).availableQuantity, 0);
+            let totalAvailableForThisItem = logsWithStock.reduce((sum, doc) => sum + doc.availableQuantity, 0);
 
             if (quantityToIssue > totalAvailableForThisItem) {
               throw new Error(`Not enough stock for ${issueItem.itemName}. Required: ${quantityToIssue}, Available: ${totalAvailableForThisItem}.`);
             }
 
-            for (const logDoc of logsToUpdateSnap.docs) {
+            for (const logDoc of logsWithStock) {
                 if (quantityToIssue <= 0) break;
                 
-                const logData = logDoc.data() as InventoryLog;
-                const available = logData.availableQuantity;
+                const available = logDoc.availableQuantity;
                 const quantityToDeduct = Math.min(quantityToIssue, available);
 
-                batch.update(logDoc.ref, {
+                batch.update(doc(db, 'inventoryLogs', logDoc.id), {
                     availableQuantity: available - quantityToDeduct
                 });
 
@@ -221,18 +218,18 @@ export default function StockOutPage() {
                     date: data.issueDate,
                     itemId: issueItem.itemId,
                     itemName: issueItem.itemName,
-                    itemType: logData.itemType,
+                    itemType: logDoc.itemType,
                     transactionType: 'Goods Issue',
                     quantity: quantityToDeduct,
                     availableQuantity: 0, 
                     unit: issueItem.itemUnit,
-                    cost: logData.cost, 
+                    cost: logDoc.cost, 
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
                     details: {
                       issuedTo: data.issuedTo,
                       notes: data.notes,
-                      sourceGrn: logData.details?.grnNo
+                      sourceGrn: logDoc.details?.grnNo
                     }
                 });
             }
@@ -285,13 +282,15 @@ export default function StockOutPage() {
                                     <FormLabel>Issue Date</FormLabel>
                                     <Popover>
                                         <PopoverTrigger asChild>
-                                            <Button
-                                                variant={"outline"}
-                                                className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
-                                            >
-                                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                            </Button>
+                                            <FormControl>
+                                                <Button
+                                                    variant={"outline"}
+                                                    className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
+                                                >
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                                </Button>
+                                            </FormControl>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0">
                                             <Calendar
