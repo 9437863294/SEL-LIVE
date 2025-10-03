@@ -19,14 +19,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { MainItem, SubItem } from '@/lib/types';
+import type { MainItem, SubItem, BoqItem } from '@/lib/types';
 import { ScrollArea } from './ui/scroll-area';
 
 interface ItemSelectorProps {
-  mainItems: MainItem[];
-  subItems: SubItem[];
+  mainItems: BoqItem[];
+  subItems: BoqItem[];
   selectedItemId: string | null;
-  onSelect: (item: MainItem | SubItem | null, type: 'Main' | 'Sub') => void;
+  onSelect: (item: BoqItem | null, type: 'Main' | 'Sub') => void;
   isLoading: boolean;
 }
 
@@ -41,6 +41,25 @@ export function ItemSelector({
   const allItems = [...mainItems, ...subItems];
   const selectedItem = allItems.find((item) => item.id === selectedItemId);
 
+  const getItemDescription = (item: BoqItem): string => {
+    const descriptionKeys = [
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    ];
+    for (const key of descriptionKeys) {
+      if (item[key]) {
+        return String(item[key]);
+      }
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String(item[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -50,17 +69,20 @@ export function ItemSelector({
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {selectedItem ? selectedItem.name : 'Select an item...'}
+          {selectedItem ? getItemDescription(selectedItem) : 'Select an item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command
             filter={(value, search) => {
-                const [id, name, type] = value.split('__');
-                if (!name) return 0; // Prevent error if name is undefined
-                const lowercasedSearch = search.toLowerCase();
-                return name.toLowerCase().includes(lowercasedSearch) ? 1 : 0;
+                const item = allItems.find(i => i.id === value);
+                if (!item) return 0;
+                
+                const name = getItemDescription(item).toLowerCase();
+                const searchTerm = search.toLowerCase();
+                
+                return name.includes(searchTerm) ? 1 : 0;
             }}
         >
           <CommandInput placeholder="Search items..." />
@@ -69,27 +91,11 @@ export function ItemSelector({
               {isLoading ? 'Loading...' : 'No item found.'}
             </CommandEmpty>
             <ScrollArea className="h-72">
-              <CommandGroup heading="Main Items">
-                {mainItems.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={`${item.id}__${item.name}__Main`}
-                      onSelect={() => {
-                        onSelect(item, 'Main');
-                        setOpen(false);
-                      }}
-                    >
-                      <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.id ? 'opacity-100' : 'opacity-0')} />
-                      <span>{item.name}</span>
-                    </CommandItem>
-                ))}
-              </CommandGroup>
-              <CommandSeparator />
-               <CommandGroup heading="Sub-Items">
+              <CommandGroup heading="Sub-Items">
                 {subItems.map((item) => (
                     <CommandItem
                       key={item.id}
-                      value={`${item.id}__${item.name}__Sub`}
+                      value={item.id}
                       onSelect={() => {
                         onSelect(item, 'Sub');
                         setOpen(false);
@@ -97,8 +103,8 @@ export function ItemSelector({
                     >
                       <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.id ? 'opacity-100' : 'opacity-0')} />
                        <div className="flex justify-between items-center w-full">
-                         <span>{item.name}</span>
-                         <span className="text-xs text-muted-foreground">{item.unit}</span>
+                         <span>{getItemDescription(item)}</span>
+                         <span className="text-xs text-muted-foreground">{item['UNIT'] || item['UNITS']}</span>
                        </div>
                     </CommandItem>
                 ))}
