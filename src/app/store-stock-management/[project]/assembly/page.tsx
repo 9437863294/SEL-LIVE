@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -78,6 +79,10 @@ export default function AssemblyPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
+  const getBoqQty = (item: BoqItem): string => {
+    return String(item['BOQ QTY'] || item['Total Qty'] || '0');
+  }
+
   return (
     <>
       <div>
@@ -92,6 +97,7 @@ export default function AssemblyPage() {
                 <TableRow>
                   <TableHead>BOQ Sl. No.</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>BOQ Qty</TableHead>
                   <TableHead>Unit Price</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -100,7 +106,7 @@ export default function AssemblyPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={4}><Skeleton className="h-6 w-full" /></TableCell>
+                      <TableCell colSpan={5}><Skeleton className="h-6 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : boqItems.length > 0 ? (
@@ -111,6 +117,7 @@ export default function AssemblyPage() {
                         <TableRow key={item.id}>
                           <TableCell>{getSlNo(item)}</TableCell>
                           <TableCell>{getItemDescription(item)}</TableCell>
+                          <TableCell>{getBoqQty(item)}</TableCell>
                           <TableCell>{formatCurrency(rate)}</TableCell>
                           <TableCell className="text-right">
                             <Button variant="outline" size="sm" onClick={() => handleOpenDialog(item)}>
@@ -123,7 +130,7 @@ export default function AssemblyPage() {
                   })
                 ) : (
                    <TableRow>
-                      <TableCell colSpan={4} className="text-center h-24">No BOQ Items found for this project.</TableCell>
+                      <TableCell colSpan={5} className="text-center h-24">No BOQ Items found for this project.</TableCell>
                    </TableRow>
                 )}
               </TableBody>
