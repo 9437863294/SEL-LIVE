@@ -90,7 +90,7 @@ export default function TransactionsPage() {
         (doc) => ({ ...doc.data(), id: doc.id } as InventoryLog)
       );
       data.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        (a, b) => b.date.toDate().getTime() - a.date.toDate().getTime()
       );
       setTransactions(data);
     } catch (e) {
@@ -121,11 +121,14 @@ export default function TransactionsPage() {
                   grnNo: grnNo,
                   date: t.date.toDate(),
                   transactionType: t.transactionType,
-                  grnAmount: t.details?.invoiceAmount || 0,
+                  grnAmount: 0, // Initialize amount
                   items: []
               };
           }
           groupedByGrn[grnNo].items.push(t);
+          // Aggregate the cost from each item
+          const itemCost = (t.quantity || 0) * (t.cost || 0);
+          groupedByGrn[grnNo].grnAmount += itemCost;
       });
       
       return Object.values(groupedByGrn).filter(summary => 
