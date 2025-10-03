@@ -410,7 +410,6 @@ export default function StockInPage() {
                         <FormField control={form.control} name="invoiceNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice No.</FormLabel><FormControl><Input placeholder="e.g., INV-67890" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="invoiceDate" label="Invoice Date" />
                         <FormField control={form.control} name="invoiceAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice Amount</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)}/>
-                        <FormField control={form.control} name="invoiceFiles" render={({ field }) => ( <FormItem className="md:col-span-3"> <FormLabel>Invoice Document(s)</FormLabel> <FormControl> <Input type="file" multiple onChange={(e) => { const currentFiles = field.value || []; const newFiles = e.target.files ? Array.from(e.target.files) : []; field.onChange([...currentFiles, ...newFiles]); if (invoiceFileRef.current) { invoiceFileRef.current.value = ''; } }} ref={invoiceFileRef} /> </FormControl> <FormMessage /> {field.value && field.value.length > 0 && ( <div className="mt-2 space-y-1"> <p className="text-sm font-medium">Selected files:</p> {field.value.map((file, i) => ( <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md"> <div className="flex items-center gap-2 text-xs"> <FileIcon className="h-3 w-3"/> <span className="truncate max-w-xs">{file.name}</span> </div> <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { const newFiles = field.value.filter((_, index) => index !== i); field.onChange(newFiles); }}><X className="h-3 w-3"/></Button> </div> ))} </div> )} </FormItem> )}/>
                     </CardContent>
                 </Card>
 
@@ -421,7 +420,6 @@ export default function StockInPage() {
                         <FormField control={form.control} name="waybillNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Waybill No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <FormField control={form.control} name="lrNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>LR No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="lrDate" label="LR Date" />
-                         <FormField control={form.control} name="transporterDocs" render={({ field }) => ( <FormItem className="md:col-span-3"> <FormLabel>LR / Waybill Document(s)</FormLabel> <FormControl> <Input type="file" multiple onChange={(e) => { const currentFiles = field.value || []; const newFiles = e.target.files ? Array.from(e.target.files) : []; field.onChange([...currentFiles, ...newFiles]); if (transporterFileRef.current) { transporterFileRef.current.value = ''; } }} ref={transporterFileRef} /> </FormControl> <FormMessage /> {field.value && field.value.length > 0 && ( <div className="mt-2 space-y-1"> <p className="text-sm font-medium">Selected files:</p> {field.value.map((file, i) => ( <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md"> <div className="flex items-center gap-2 text-xs"> <FileIcon className="h-3 w-3"/> <span className="truncate max-w-xs">{file.name}</span> </div> <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { const newFiles = field.value.filter((_, index) => index !== i); field.onChange(newFiles); }}><X className="h-3 w-3"/></Button> </div> ))} </div> )} </FormItem> )}/>
                     </CardContent>
                 </Card>
 
@@ -499,5 +497,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
