@@ -12,7 +12,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from '@/components/ui/command';
 import {
   Popover,
@@ -36,7 +35,12 @@ export function BoqItemSelector({
   isLoading,
 }: BoqItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
-  
+  const [currentValue, setCurrentValue] = React.useState(selectedSlNo || "");
+
+  React.useEffect(() => {
+    setCurrentValue(selectedSlNo || "");
+  }, [selectedSlNo]);
+
   const getItemDescription = (item: BoqItem): string => {
     const descriptionKeys = [
       'Description',
@@ -45,7 +49,7 @@ export function BoqItemSelector({
     ];
     for (const key of descriptionKeys) {
       if (item[key]) {
-        return String(item[key]); // Ensure it's a string
+        return String(item[key]);
       }
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
@@ -56,7 +60,7 @@ export function BoqItemSelector({
     return String(item['Sl No'] || item['SL. No.'] || '');
   }
 
-  const selectedItem = boqItems.find((item) => getSlNo(item) === selectedSlNo);
+  const selectedItem = boqItems.find((item) => getSlNo(item) === currentValue);
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
@@ -91,7 +95,10 @@ export function BoqItemSelector({
                 const desc = getItemDescription(item).toLowerCase();
                 const searchTerm = search.toLowerCase();
                 
-                return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
+                if (slNo.includes(searchTerm) || desc.includes(searchTerm)) {
+                  return 1;
+                }
+                return 0;
             }}
         >
           <CommandInput placeholder="Search by Sl. No. or Description..." />
@@ -110,15 +117,17 @@ export function BoqItemSelector({
                     <CommandItem
                       key={item.id}
                       value={slNo}
-                      onSelect={() => {
-                        onSelect(item);
+                      onSelect={(currentValue) => {
+                        const selected = boqItems.find(i => getSlNo(i).toLowerCase() === currentValue.toLowerCase());
+                        onSelect(selected || null);
+                        setCurrentValue(selected ? getSlNo(selected) : "");
                         setOpen(false);
                       }}
                     >
                       <Check
                         className={cn(
                           'mr-2 h-4 w-4',
-                          selectedSlNo === slNo
+                          currentValue === slNo
                             ? 'opacity-100'
                             : 'opacity-0'
                         )}
