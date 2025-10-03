@@ -74,16 +74,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    setItems([...items, { 
-      id: Date.now(),
-      itemId: '',
-      itemName: '',
-      itemUnit: '',
-      quantity: 1,
-      receiveUnit: '',
-      batchNo: '',
-      unitCost: 0,
-     } ]);
+    setItems(prevItems => [...prevItems, { ...initialItemState, id: Date.now() }]);
   };
 
   const handleRemoveItem = (index: number) => {
