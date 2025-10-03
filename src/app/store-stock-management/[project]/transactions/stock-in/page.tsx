@@ -173,6 +173,7 @@ export default function StockInPage() {
   };
 
   const selectedSlNo = (item: GrnItem) => {
+    if (!item.itemId) return '';
     const boqItem = boqItems.find((bi) => bi.id === item.itemId);
     return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
   };
