@@ -26,17 +26,36 @@ import {
   PlusCircle,
   MinusCircle,
   Search,
-  Columns3,
   Eye,
+  Edit,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { useParams } from 'next/navigation';
+import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
+import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ViewTransactionDialog from '@/components/ViewTransactionDialog';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 
 export interface TransactionSummary {
@@ -57,22 +76,16 @@ export interface EnrichedLogItem extends InventoryLog {
 
 export default function TransactionsPage() {
   const params = useParams();
+  const router = useRouter();
   const projectSlug = params.project as string;
   const [transactions, setTransactions] = useState<InventoryLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Filter and visibility state
   const [searchTerm, setSearchTerm] = useState('');
-  const [columnVisibility, setColumnVisibility] = useState<
-    Record<string, boolean>
-  >({
-    Cost: true,
-    Details: true,
-    Notes: true,
-  });
-
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -106,6 +119,57 @@ export default function TransactionsPage() {
     setIsViewOpen(true);
   };
   
+  const handleDeleteTransaction = async (summary: TransactionSummary) => {
+    setIsDeleting(true);
+    try {
+        if (summary.transactionType === 'Goods Receipt') {
+            // Deleting a GRN
+            const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
+            if (hasBeenIssued) {
+                toast({ title: "Delete Error", description: "Cannot delete GRN. Some items have already been issued.", variant: "destructive" });
+                setIsDeleting(false);
+                return;
+            }
+            
+            const batch = writeBatch(db);
+            summary.items.forEach(item => {
+                const docRef = doc(db, 'inventoryLogs', item.id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            toast({ title: "Success", description: "GRN and all its items have been deleted." });
+
+        } else if (summary.transactionType === 'Goods Issue') {
+            // Deleting a Goods Issue (reversing it)
+            const batch = writeBatch(db);
+
+            for (const issueItem of summary.items) {
+                if (issueItem.details?.sourceGrn) {
+                    const grnItemsQuery = query(collection(db, 'inventoryLogs'), where('details.grnNo', '==', issueItem.details.sourceGrn));
+                    const grnItemsSnap = await getDocs(grnItemsQuery);
+
+                    grnItemsSnap.forEach(doc => {
+                        const grnItem = doc.data() as InventoryLog;
+                        if (grnItem.itemId === issueItem.itemId) {
+                            batch.update(doc.ref, { availableQuantity: grnItem.availableQuantity + issueItem.quantity });
+                        }
+                    });
+                }
+                // Delete the goods issue log itself
+                batch.delete(doc(db, 'inventoryLogs', issueItem.id));
+            }
+            await batch.commit();
+            toast({ title: "Success", description: "Goods issue has been reversed." });
+        }
+        fetchData();
+    } catch (error) {
+        console.error("Error deleting transaction:", error);
+        toast({ title: "Delete Failed", description: "An error occurred while deleting.", variant: "destructive" });
+    }
+    setIsDeleting(false);
+  };
+
+  
   const transactionSummaries = useMemo(() => {
     const goodsReceipts = transactions.filter(t => t.transactionType === 'Goods Receipt');
     const goodsIssues = transactions.filter(t => t.transactionType === 'Goods Issue');
@@ -128,7 +192,7 @@ export default function TransactionsPage() {
         }
         
         const issuedQty = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnItem.id)
+            .filter(issue => issue.details?.sourceGrn === grnItem.details?.grnNo && issue.itemId === grnItem.itemId)
             .reduce((sum, issue) => sum + issue.quantity, 0);
             
         const enrichedItem: EnrichedLogItem = {
@@ -163,7 +227,7 @@ export default function TransactionsPage() {
         
         const enrichedItem: EnrichedLogItem = {
           ...issueItem,
-          originalQuantity: 0, // Not applicable for issue summary
+          originalQuantity: 0, 
           issuedQuantity: issueItem.quantity,
           balanceQuantity: 0,
         };
@@ -184,13 +248,9 @@ export default function TransactionsPage() {
   const getBadgeVariant = (type: string) => {
     switch (type) {
       case 'Goods Receipt':
-      case 'Return':
         return 'default';
       case 'Goods Issue':
         return 'destructive';
-      case 'Conversion':
-      case 'Transfer':
-      case 'Adjustment':
       default:
         return 'secondary';
     }
@@ -242,7 +302,7 @@ export default function TransactionsPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Total Amount</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -256,7 +316,7 @@ export default function TransactionsPage() {
                   ))
                 ) : transactionSummaries.length > 0 ? (
                   transactionSummaries.map((summary) => (
-                    <TableRow key={summary.id} onClick={() => handleViewDetails(summary)} className="cursor-pointer">
+                    <TableRow key={summary.id}>
                       <TableCell>{summary.id}</TableCell>
                       <TableCell className="text-sm">
                         {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
@@ -269,10 +329,43 @@ export default function TransactionsPage() {
                       <TableCell>
                         {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
                       </TableCell>
-                      <TableCell>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleViewDetails(summary); }}>
-                            <Eye className="h-4 w-4"/>
-                          </Button>
+                      <TableCell className="text-right">
+                        <AlertDialog>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                               <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                               <DropdownMenuItem onSelect={() => handleViewDetails(summary)}>
+                                  <Eye className="mr-2 h-4 w-4" /> View
+                               </DropdownMenuItem>
+                               <DropdownMenuItem onSelect={() => toast({title: "Coming Soon!", description: "Editing transactions will be available in a future update."})}>
+                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                               </DropdownMenuItem>
+                               <DropdownMenuSeparator />
+                               <AlertDialogTrigger asChild>
+                                 <DropdownMenuItem className="text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                 </DropdownMenuItem>
+                               </AlertDialogTrigger>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This action is irreversible. Deleting a transaction will permanently alter your inventory records. Are you sure you want to continue?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteTransaction(summary)} disabled={isDeleting}>
+                                    {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                                    Delete
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))
