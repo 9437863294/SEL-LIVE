@@ -34,6 +34,7 @@ const initialItemState = {
     itemName: '',
     itemUnit: '',
     quantity: 1,
+    receiveUnit: '',
     batchNo: '',
     unitCost: 0,
 };
@@ -116,12 +117,16 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
   const handleItemSelect = (index: number, item: BoqItem | null) => {
       if(item) {
         handleItemChange(index, 'itemId', item.id);
-        handleItemChange(index, 'itemName', getItemDescription(item));
-        handleItemChange(index, 'itemUnit', item['UNIT'] || item['UNITS'] || '');
+        const description = getItemDescription(item);
+        handleItemChange(index, 'itemName', typeof description === 'string' ? description : '');
+        const unit = item['UNIT'] || item['UNITS'] || '';
+        handleItemChange(index, 'itemUnit', unit);
+        handleItemChange(index, 'receiveUnit', unit); // Set receive unit same as BOQ unit initially
       } else {
         handleItemChange(index, 'itemId', '');
         handleItemChange(index, 'itemName', '');
         handleItemChange(index, 'itemUnit', '');
+        handleItemChange(index, 'receiveUnit', '');
       }
   }
 
@@ -142,6 +147,7 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
                 itemType: 'Sub', // Assuming all BOQ items are treated as Sub-items for stock purposes
                 transactionType: 'Goods Receipt',
                 quantity: item.quantity,
+                unit: item.receiveUnit,
                 projectId: projectSlug,
                 description: `GRN from ${supplier}. PO: ${poNumber}, Inv: ${invoiceNumber}. ${notes}`,
                 cost: item.unitCost,
@@ -172,7 +178,7 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>Stock In (GRN)</DialogTitle>
           <DialogDescription>Record a new goods receipt. Add items and quantities received.</DialogDescription>
@@ -196,7 +202,7 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
                 <Label>Items</Label>
                 <div className="space-y-2">
                     {items.map((item, index) => (
-                        <div key={index} className="grid grid-cols-[1fr,100px,120px,120px,auto] gap-2 items-end p-2 border rounded-md">
+                        <div key={index} className="grid grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 border rounded-md">
                            <div className="space-y-1">
                              {index === 0 && <Label className="text-xs">BOQ Item</Label>}
                              <BoqItemSelector
@@ -209,6 +215,10 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
                            <div className="space-y-1">
                               {index === 0 && <Label className="text-xs">Quantity</Label>}
                               <Input type="number" placeholder="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))}/>
+                           </div>
+                            <div className="space-y-1">
+                              {index === 0 && <Label className="text-xs">Receive Unit</Label>}
+                              <Input placeholder="e.g. Box" value={item.receiveUnit} onChange={e => handleItemChange(index, 'receiveUnit', e.target.value)} />
                            </div>
                            <div className="space-y-1">
                                {index === 0 && <Label className="text-xs">Batch No.</Label>}
