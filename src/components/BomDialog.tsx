@@ -23,7 +23,7 @@ import { Plus, Trash2, Loader2 } from 'lucide-react';
 
 const initialBomItemState: Omit<FabricationBomItem, 'id'> = {
     markNo: '',
-    inOne: '',
+    qtyPerPiece: '',
     section: '',
     grade: '',
     length: 0,
@@ -70,8 +70,8 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
     if (field === 'unitWt' || field === 'length') {
         item.wtPerPc = (item.unitWt || 0) * (item.length || 0) / 1000;
     }
-    if (field === 'wtPerPc' || field === 'inOne') {
-        item.totalWtPerSet = (item.wtPerPc || 0) * (parseFloat(String(item.inOne)) || 0);
+    if (field === 'wtPerPc' || field === 'qtyPerPiece') {
+        item.totalWtPerSet = (item.wtPerPc || 0) * (parseFloat(String(item.qtyPerPiece)) || 0);
     }
     if (field === 'totalWtPerSet' || field === 'qtyPerSet') {
         item.totalWtKg = (item.totalWtPerSet || 0) * (item.qtyPerSet || 0);
@@ -131,7 +131,7 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
                 <TableHeader>
                     <TableRow>
                         <TableHead>Mark No.</TableHead>
-                        <TableHead>In One</TableHead>
+                        <TableHead>Qty/Pc</TableHead>
                         <TableHead>Section (MM)</TableHead>
                         <TableHead>Grade</TableHead>
                         <TableHead>Length</TableHead>
@@ -148,7 +148,7 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
                     {bomItems.map((item, index) => (
                         <TableRow key={item.id}>
                             <TableCell><Input value={item.markNo} onChange={(e) => handleItemChange(index, 'markNo', e.target.value)} /></TableCell>
-                            <TableCell><Input value={item.inOne} onChange={(e) => handleItemChange(index, 'inOne', e.target.value)} /></TableCell>
+                            <TableCell><Input value={item.qtyPerPiece} onChange={(e) => handleItemChange(index, 'qtyPerPiece', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.section} onChange={(e) => handleItemChange(index, 'section', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.grade} onChange={(e) => handleItemChange(index, 'grade', e.target.value)} /></TableCell>
                             <TableCell><Input type="number" value={item.length} onChange={(e) => handleItemChange(index, 'length', e.target.valueAsNumber)} /></TableCell>

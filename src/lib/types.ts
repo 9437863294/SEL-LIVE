@@ -689,10 +689,30 @@ export interface EMI {
   expenseRequestNo?: string;
 }
 
+export interface Loan {
+  id: string;
+  accountNo: string;
+  lenderName: string;
+  loanAmount: number;
+  tenure: number;
+  interestRate: number;
+  emiAmount: number;
+  startDate: string;
+  endDate: string;
+  linkedBank: string;
+  loanType: 'Loan' | 'Investment';
+  totalPaid: number;
+  status: 'Active' | 'Closed' | 'Pre-closure Pending';
+  createdAt: Timestamp;
+  finalInterestOnClosure?: number;
+  otherChargesOnClosure?: number;
+}
+
+
 export interface FabricationBomItem {
     id: string;
     markNo: string;
-    inOne: string; // Can be a fraction like "1/2"
+    qtyPerPiece: string;
     section: string;
     grade: string;
     length: number;
@@ -747,5 +767,3 @@ export interface InventoryLog {
       destinationProjectId?: string;
     };
 }
-
-    
