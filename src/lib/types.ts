@@ -37,10 +37,19 @@ export type FabricationBomItem = {
     totalWtKg: number;
 };
 
+export interface Conversion {
+  id: string;
+  fromUnit: string;
+  fromQty: number;
+  toUnit: string;
+  toQty: number;
+}
+
 export type BoqItem = {
     id: string;
     [key: string]: any;
     bom?: Omit<FabricationBomItem, 'id'>[];
+    conversions?: Omit<Conversion, 'id'>[];
 };
 
 export type JmcItem = {
@@ -234,8 +243,8 @@ export type InventoryLog = {
     date: any; // Firestore Timestamp
     itemId: string;
     itemName: string;
-    itemType: 'Main' | 'Sub';
-    transactionType: 'Stock In' | 'Stock Out' | 'Build' | 'Utilization' | 'Conversion';
+    itemType: 'Sub';
+    transactionType: 'Goods Receipt' | 'Stock Out' | 'Build' | 'Utilization' | 'Conversion';
     quantity: number;
     unit: string;
     projectId?: string;

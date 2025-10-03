@@ -1,0 +1,154 @@
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import type { BoqItem, Conversion } from '@/lib/types';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
+
+const initialConversionState: Omit<Conversion, 'id'> = {
+  fromUnit: '',
+  fromQty: 1,
+  toUnit: '',
+  toQty: 1,
+};
+
+interface ConversionDialogProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  item: BoqItem;
+  onSaveSuccess: () => void;
+}
+
+export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: ConversionDialogProps) {
+  const { toast } = useToast();
+  const [conversions, setConversions] = useState<(Conversion)[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      const existingConversions = item.conversions?.map(c => ({ id: crypto.randomUUID(), ...c })) || [];
+      if (existingConversions.length === 0) {
+        setConversions([{ id: crypto.randomUUID(), ...initialConversionState }]);
+      } else {
+        setConversions(existingConversions);
+      }
+    }
+  }, [isOpen, item.conversions]);
+
+  const handleItemChange = (id: string, field: keyof Omit<Conversion, 'id'>, value: string | number) => {
+    setConversions(prev =>
+      prev.map(conv => (conv.id === id ? { ...conv, [field]: value } : conv))
+    );
+  };
+  
+  const handleAddItem = () => {
+    setConversions(prev => [...prev, { id: crypto.randomUUID(), ...initialConversionState }]);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    if (conversions.length > 1) {
+      setConversions(prev => prev.filter(item => item.id !== id));
+    } else {
+      setConversions([{ id: crypto.randomUUID(), ...initialConversionState }]);
+    }
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const conversionsToSave = conversions.map(({ id, ...rest }) => ({
+          ...rest,
+          fromQty: Number(rest.fromQty),
+          toQty: Number(rest.toQty)
+      }));
+
+      // Validate all fields are filled
+      if (conversionsToSave.some(c => !c.fromUnit || !c.toUnit || isNaN(c.fromQty) || isNaN(c.toQty) || c.fromQty <= 0 || c.toQty <= 0)) {
+        toast({ title: 'Validation Error', description: 'All fields must be filled and quantities must be positive numbers.', variant: 'destructive'});
+        setIsSaving(false);
+        return;
+      }
+      
+      await updateDoc(doc(db, 'boqItems', item.id), { conversions: conversionsToSave });
+      toast({ title: 'Success', description: 'Conversions saved successfully.' });
+      onSaveSuccess();
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Error saving conversions:", error);
+      toast({ title: 'Error', description: 'Failed to save conversions.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Unit Conversions for: {item.Description}</DialogTitle>
+          <DialogDescription>
+            Define multiple conversion rules for this item. E.g., 1 Box = 10 Pcs.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="h-[60vh] border rounded-md">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>From Qty</TableHead>
+                        <TableHead>From Unit</TableHead>
+                        <TableHead className="w-10 text-center">=</TableHead>
+                        <TableHead>To Qty</TableHead>
+                        <TableHead>To Unit</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {conversions.map((conv) => (
+                        <TableRow key={conv.id}>
+                            <TableCell><Input type="number" value={conv.fromQty} onChange={(e) => handleItemChange(conv.id, 'fromQty', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input value={conv.fromUnit} onChange={(e) => handleItemChange(conv.id, 'fromUnit', e.target.value)} /></TableCell>
+                            <TableCell className="text-center font-bold">=</TableCell>
+                            <TableCell><Input type="number" value={conv.toQty} onChange={(e) => handleItemChange(conv.id, 'toQty', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input value={conv.toUnit} onChange={(e) => handleItemChange(conv.id, 'toUnit', e.target.value)} /></TableCell>
+                            <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(conv.id)}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </ScrollArea>
+        <div className="flex justify-start">
+            <Button variant="outline" size="sm" onClick={handleAddItem}>
+                <Plus className="mr-2 h-4 w-4" /> Add Rule
+            </Button>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Conversions
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
