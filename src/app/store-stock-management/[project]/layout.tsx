@@ -22,7 +22,7 @@ export default function ProjectLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const params = React.use(useParams()) as { project: string };
+  const params = useParams() as { project: string };
   const projectSlug = params.project;
 
   const navItems = [
