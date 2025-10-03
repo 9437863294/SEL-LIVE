@@ -56,6 +56,7 @@ const grnSchema = z.object({
     invoiceDate: z.date().optional(),
     invoiceAmount: z.coerce.number().nullable().optional(),
     invoiceFiles: z.array(z.custom<File>()).optional().default([]),
+    transporterDocs: z.array(z.custom<File>()).optional().default([]),
     vehicleNo: z.string().optional().default(''),
     waybillNo: z.string().optional().default(''),
     lrNo: z.string().optional().default(''),
@@ -76,6 +77,7 @@ export default function StockInPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const invoiceFileRef = useRef<HTMLInputElement>(null);
+  const transporterFileRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -95,6 +97,7 @@ export default function StockInPage() {
       lrDate: undefined,
       items: [],
       invoiceFiles: [],
+      transporterDocs: [],
     },
   });
 
@@ -167,16 +170,23 @@ export default function StockInPage() {
     setIsSaving(true);
     try {
         
-      let invoiceFileUrls: { name: string; url: string }[] = [];
-      if (data.invoiceFiles && data.invoiceFiles.length > 0) {
-        for (const file of data.invoiceFiles) {
-          const storagePath = `grn-invoices/${data.grnNo}/${file.name}`;
+      const uploadFiles = async (files: File[], type: string): Promise<{ name: string; url: string }[]> => {
+        if (!files || files.length === 0) return [];
+        const urls: { name: string; url: string }[] = [];
+        for (const file of files) {
+          const storagePath = `grn-documents/${data.grnNo}/${type}/${file.name}`;
           const storageRef = ref(storage, storagePath);
           await uploadBytes(storageRef, file);
           const downloadURL = await getDownloadURL(storageRef);
-          invoiceFileUrls.push({ name: file.name, url: downloadURL });
+          urls.push({ name: file.name, url: downloadURL });
         }
-      }
+        return urls;
+      };
+
+      const [invoiceFileUrls, transporterDocUrls] = await Promise.all([
+          uploadFiles(data.invoiceFiles || [], 'invoices'),
+          uploadFiles(data.transporterDocs || [], 'transporter')
+      ]);
 
       const writePromises = data.items.map((item) => {
         const logEntry: Omit<InventoryLog, 'id'> = {
@@ -199,6 +209,7 @@ export default function StockInPage() {
             invoiceDate: data.invoiceDate ? format(data.invoiceDate, 'yyyy-MM-dd') : null,
             invoiceAmount: data.invoiceAmount || null,
             invoiceFileUrls: invoiceFileUrls,
+            transporterDocUrls: transporterDocUrls,
             vehicleNo: data.vehicleNo,
             waybillNo: data.waybillNo,
             lrNo: data.lrNo,
@@ -333,11 +344,48 @@ export default function StockInPage() {
 
                  <Card>
                     <CardHeader><CardTitle>Transporter Details</CardTitle></CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <FormField control={form.control} name="vehicleNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Vehicle No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <FormField control={form.control} name="waybillNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Waybill No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <FormField control={form.control} name="lrNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>LR No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="lrDate" label="LR Date" />
+                         <FormField
+                            control={form.control}
+                            name="transporterDocs"
+                            render={({ field }) => (
+                            <FormItem className="md:col-span-3">
+                                <FormLabel>LR / Waybill Document(s)</FormLabel>
+                                <FormControl>
+                                <Input type="file" multiple onChange={(e) => {
+                                  const currentFiles = field.value || [];
+                                  const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                                  field.onChange([...currentFiles, ...newFiles]);
+                                  if (transporterFileRef.current) {
+                                    transporterFileRef.current.value = '';
+                                  }
+                                }} ref={transporterFileRef} />
+                                </FormControl>
+                                <FormMessage />
+                                {field.value && field.value.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    <p className="text-sm font-medium">Selected files:</p>
+                                    {field.value.map((file, i) => (
+                                      <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md">
+                                          <div className="flex items-center gap-2 text-xs">
+                                              <FileIcon className="h-3 w-3"/>
+                                              <span className="truncate max-w-xs">{file.name}</span>
+                                          </div>
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                                              const newFiles = field.value.filter((_, index) => index !== i);
+                                              field.onChange(newFiles);
+                                          }}><X className="h-3 w-3"/></Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                            </FormItem>
+                            )}
+                        />
                     </CardContent>
                 </Card>
 
@@ -345,7 +393,7 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[3fr,0.5fr,0.8fr,1fr] gap-4 items-center">
+                            <div className="grid grid-cols-[3fr,0.8fr,1fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
@@ -354,7 +402,7 @@ export default function StockInPage() {
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.5fr,0.8fr,1fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.8fr,1fr,1fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
