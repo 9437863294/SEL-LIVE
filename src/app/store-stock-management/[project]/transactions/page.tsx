@@ -50,12 +50,13 @@ import ViewTransactionDialog from '@/components/ViewTransactionDialog';
 
 const allColumns = ['Cost', 'Details', 'Notes'];
 
-interface GrnSummary {
+export interface GrnSummary {
     grnNo: string;
     date: Date;
     transactionType: string;
     grnAmount: number;
     items: InventoryLog[];
+    details?: InventoryLog['details'];
 }
 
 export default function TransactionsPage() {
@@ -74,7 +75,7 @@ export default function TransactionsPage() {
     Notes: true,
   });
 
-  const [selectedTransaction, setSelectedTransaction] = useState<InventoryLog | null>(null);
+  const [selectedGrn, setSelectedGrn] = useState<GrnSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
   const fetchData = async () => {
@@ -104,8 +105,8 @@ export default function TransactionsPage() {
     fetchData();
   }, [projectSlug]);
   
-  const handleViewDetails = (transaction: InventoryLog) => {
-    setSelectedTransaction(transaction);
+  const handleViewDetails = (grnSummary: GrnSummary) => {
+    setSelectedGrn(grnSummary);
     setIsViewOpen(true);
   };
   
@@ -121,12 +122,12 @@ export default function TransactionsPage() {
                   grnNo: grnNo,
                   date: t.date.toDate(),
                   transactionType: t.transactionType,
-                  grnAmount: 0, // Initialize amount
-                  items: []
+                  grnAmount: 0, 
+                  items: [],
+                  details: t.details,
               };
           }
           groupedByGrn[grnNo].items.push(t);
-          // Aggregate the cost from each item
           const itemCost = (t.quantity || 0) * (t.cost || 0);
           groupedByGrn[grnNo].grnAmount += itemCost;
       });
@@ -209,7 +210,7 @@ export default function TransactionsPage() {
                   ))
                 ) : grnSummaries.length > 0 ? (
                   grnSummaries.map((summary) => (
-                    <TableRow key={summary.grnNo} onClick={() => handleViewDetails(summary.items[0])} className="cursor-pointer">
+                    <TableRow key={summary.grnNo} onClick={() => handleViewDetails(summary)} className="cursor-pointer">
                       <TableCell>{summary.grnNo}</TableCell>
                       <TableCell className="text-sm">
                         {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
@@ -223,7 +224,7 @@ export default function TransactionsPage() {
                         {summary.grnAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.grnAmount) : 'N/A'}
                       </TableCell>
                       <TableCell>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleViewDetails(summary.items[0]); }}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleViewDetails(summary); }}>
                             <Eye className="h-4 w-4"/>
                           </Button>
                       </TableCell>
@@ -244,7 +245,7 @@ export default function TransactionsPage() {
       <ViewTransactionDialog 
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        transaction={selectedTransaction}
+        grnSummary={selectedGrn}
       />
     </>
   );

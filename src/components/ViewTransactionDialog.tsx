@@ -16,17 +16,19 @@ import { Separator } from '@/components/ui/separator';
 import type { InventoryLog } from '@/lib/types';
 import { format } from 'date-fns';
 import DocumentLink from './DocumentLink';
+import type { GrnSummary } from '@/app/store-stock-management/[project]/transactions/page';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface ViewTransactionDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  transaction: InventoryLog | null;
+  grnSummary: GrnSummary | null;
 }
 
-export default function ViewTransactionDialog({ isOpen, onOpenChange, transaction }: ViewTransactionDialogProps) {
-  if (!transaction) return null;
+export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary }: ViewTransactionDialogProps) {
+  if (!grnSummary) return null;
 
-  const details = transaction.details;
+  const details = grnSummary.details;
   
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
@@ -44,16 +46,42 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, transactio
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>GRN Details: {details?.grnNo}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto p-4 space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div><Label>Type</Label><p className="font-medium">{transaction.transactionType}</p></div>
-            <div><Label>Date</Label><p className="font-medium">{format(transaction.date.toDate(), 'dd MMM, yyyy HH:mm')}</p></div>
-            <div><Label>Item Name</Label><p className="font-medium">{transaction.itemName}</p></div>
-            <div><Label>Quantity</Label><p className="font-medium">{transaction.quantity} {transaction.unit}</p></div>
+          
+          <div className="space-y-4">
+            <h4 className="font-semibold text-lg">Items Received</h4>
+            <div className="border rounded-md">
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item Name</TableHead>
+                    <TableHead>BOQ Sl. No</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit Cost</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {grnSummary.items.map(item => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.itemName}</TableCell>
+                      <TableCell>{item.details?.boqSlNo || 'N/A'}</TableCell>
+                      <TableCell>{item.quantity} {item.unit}</TableCell>
+                      <TableCell>{formatCurrency(item.cost)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                    </TableRow>
+                  ))}
+                   <TableRow className="font-bold bg-muted">
+                      <TableCell colSpan={4} className="text-right">GRN Total</TableCell>
+                      <TableCell className="text-right">{formatCurrency(grnSummary.grnAmount)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {details && (
