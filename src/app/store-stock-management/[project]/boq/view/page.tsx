@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment, use } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,14 +75,15 @@ const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
     if (!enabled) {
         return null;
     }
-    return <Droppable {...props}>{children}</Droppable>;
+    return <Droppable {...props} isDropDisabled={false}>{children}</Droppable>;
 };
 
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { project: projectSlug } = useParams() as { project: string };
+  const params = use(useParams()) as { project: string };
+  const { project: projectSlug } = params;
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -366,7 +367,7 @@ export default function ViewBoqPage() {
                   <Table>
                       <TableHeader className="sticky top-0 bg-background z-10">
                           <TableRow>
-                              <TableHead className="w-[50px]">
+                              <TableHead className="w-[50px] sticky left-0 bg-background z-20">
                                   <Checkbox 
                                       checked={selectedItemIds.length > 0 && selectedItemIds.length === filteredItems.length}
                                       onCheckedChange={(checked) => handleSelectAll(!!checked)}
@@ -381,7 +382,7 @@ export default function ViewBoqPage() {
                           {isLoading ? (
                               Array.from({ length: 5 }).map((_, i) => (
                               <TableRow key={i}>
-                                  <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                  <TableCell className="sticky left-0 bg-background z-20"><Skeleton className="h-5 w-5" /></TableCell>
                                   {visibleHeaders.map((header, j) => (
                                       <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
                                   ))}
@@ -395,7 +396,7 @@ export default function ViewBoqPage() {
                                     onClick={() => handleRowClick(item)}
                                     className="cursor-pointer"
                                   >
-                                      <TableCell onClick={(e) => e.stopPropagation()}>
+                                      <TableCell onClick={(e) => e.stopPropagation()} className="sticky left-0 bg-background z-20">
                                           <Checkbox 
                                               checked={selectedItemIds.includes(item.id)}
                                               onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
@@ -496,3 +497,4 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
