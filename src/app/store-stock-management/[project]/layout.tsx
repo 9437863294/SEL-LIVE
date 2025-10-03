@@ -61,9 +61,7 @@ export default function ProjectLayout({
                 </SidebarMenu>
             </SidebarContent>
             <SidebarFooter>
-                <div className="flex w-full items-center justify-end">
-                    <SidebarTrigger/>
-                </div>
+                <SidebarTrigger/>
             </SidebarFooter>
         </Sidebar>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
