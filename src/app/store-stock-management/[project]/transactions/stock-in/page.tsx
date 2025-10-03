@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -103,7 +102,7 @@ export default function StockInPage() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, control } = useFieldArray({
     control: form.control,
     name: 'items',
   });
@@ -186,6 +185,12 @@ export default function StockInPage() {
       form.setValue(`items.${index}.itemId`, '');
     }
   };
+  
+  const watchedItems = form.watch('items');
+  const totalGrnValue = watchedItems.reduce((sum, item) => {
+      const itemTotal = (item.quantity || 0) * (item.unitCost || 0);
+      return sum + itemTotal;
+  }, 0);
 
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);
@@ -315,10 +320,18 @@ export default function StockInPage() {
                         <p className="text-muted-foreground">Record a new goods receipt. Add items and quantities received.</p>
                     </div>
                 </div>
-                <Button type="submit" disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                    Save Transaction
-                </Button>
+                <div className="flex items-center gap-4">
+                    <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Total GRN Value</p>
+                        <p className="text-2xl font-bold">
+                            {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalGrnValue)}
+                        </p>
+                    </div>
+                    <Button type="submit" disabled={isSaving}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                        Save Transaction
+                    </Button>
+                </div>
             </div>
 
             <div className="space-y-6">
@@ -430,16 +443,17 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[3fr,0.5fr,0.8fr,0.8fr] gap-4 items-center">
+                            <div className="grid grid-cols-[3fr,0.5fr,0.8fr,0.8fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
                                <Label>Unit Cost</Label>
+                               <Label className="text-right">Total Cost</Label>
                             </div>
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.5fr,0.8fr,0.8fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.5fr,0.8fr,0.8fr,1fr] gap-4 items-center">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
@@ -460,6 +474,7 @@ export default function StockInPage() {
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Quantity</Label><FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Receive Unit</Label><FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Unit Cost</Label><FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
+                                    <div className="space-y-1"><Label className="text-xs md:hidden">Total Cost</Label><p className="font-semibold text-right">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((watchedItems[index]?.quantity || 0) * (watchedItems[index]?.unitCost || 0))}</p></div>
                                 </div>
                                 <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
