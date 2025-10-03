@@ -13,12 +13,7 @@ import { MoreHorizontal, PlusCircle, MinusCircle, Search, Columns3 } from 'lucid
 import { cn } from '@/lib/utils';
 
 // Mock data - replace with actual data fetching
-const mockTransactions = [
-  { id: '4', date: '2023-11-01T11:00:00', type: 'Goods Issue', sku: 'LC-003', quantity: -30, cost: null, details: 'Order: CUST-C-101', notes: '' },
-  { id: '5', date: '2023-10-31T10:00:00', type: 'Goods Receipt', sku: 'HG-001', quantity: 40, cost: 195.00, details: 'Supplier: Heavy Duty Inc.\nPO: PO-125\nInvoice: INV-003\nBatch: B003', notes: '' },
-  { id: '6', date: '2023-10-30T13:20:00', type: 'Return', sku: 'SW-042', quantity: 5, cost: null, details: null, notes: 'Customer return' },
-  { id: '7', date: '2023-10-29T08:00:00', type: 'Goods Issue', sku: 'PG-001', quantity: -15, cost: null, details: 'Order: CUST-B-92', notes: '' },
-];
+const mockTransactions: any[] = [];
 
 const allColumns = ['Cost', 'Details', 'Notes'];
 
