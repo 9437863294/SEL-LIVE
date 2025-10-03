@@ -23,7 +23,6 @@ import { db, storage } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const initialItemState = {
-  id: Date.now(),
   itemId: '',
   itemName: '',
   itemUnit: '',
@@ -33,7 +32,7 @@ const initialItemState = {
   unitCost: 0,
 };
 
-type GrnItem = typeof initialItemState;
+type GrnItem = typeof initialItemState & { id: number };
 
 export default function StockInPage() {
   const { toast } = useToast();
@@ -186,10 +185,10 @@ export default function StockInPage() {
       setIsSaving(false);
     }
   };
-
+  
   const getSelectedSlNo = (item: GrnItem) => {
     if (!item.itemId) return '';
-    const boqItem = boqItems.find((bi) => bi.id === item.itemId);
+    const boqItem = boqItems.find(bi => bi.id === item.itemId);
     return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
   };
 
