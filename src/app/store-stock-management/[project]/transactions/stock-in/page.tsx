@@ -172,7 +172,7 @@ export default function StockInPage() {
           projectId: projectSlug,
           description: `GRN from ${data.supplier}. PO: ${data.poNumber}, Inv: ${data.invoiceNumber}.`,
           cost: item.unitCost,
-          batch: item.batchNo,
+          batch: item.batchNo || '',
           details: { 
             supplier: data.supplier, 
             poNumber: data.poNumber, 
@@ -289,16 +289,17 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[1fr,80px,100px,120px] gap-2 items-center">
+                            <div className="grid grid-cols-[2fr,1fr,1fr,1fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
                                <Label>Unit Cost</Label>
+                               <Label>Batch No.</Label>
                             </div>
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[2fr,1fr,1fr,1fr,1fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
@@ -319,6 +320,7 @@ export default function StockInPage() {
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Quantity</Label><FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Receive Unit</Label><FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                     <div className="space-y-1"><Label className="text-xs md:hidden">Unit Cost</Label><FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
+                                    <div className="space-y-1"><Label className="text-xs md:hidden">Batch No.</Label><FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                 </div>
                                 <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
@@ -339,4 +341,3 @@ export default function StockInPage() {
   );
 }
 
-    
