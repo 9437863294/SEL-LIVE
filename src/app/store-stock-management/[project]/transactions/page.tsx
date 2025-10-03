@@ -34,7 +34,7 @@ import {
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
-import type { InventoryLog } from '@/lib/types';
+import type { InventoryLog, EnrichedLogItem } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ViewTransactionDialog from '@/components/ViewTransactionDialog';
@@ -55,6 +55,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 
 
@@ -66,13 +67,6 @@ export interface TransactionSummary {
     items: EnrichedLogItem[];
     details?: InventoryLog['details'];
 }
-
-export interface EnrichedLogItem extends InventoryLog {
-  originalQuantity: number;
-  issuedQuantity: number;
-  balanceQuantity: number;
-}
-
 
 export default function TransactionsPage() {
   const params = useParams();
