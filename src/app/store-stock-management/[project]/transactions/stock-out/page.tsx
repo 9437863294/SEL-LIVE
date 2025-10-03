@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { ArrowLeft, Plus, Trash2, Save, Loader2, Calendar as CalendarIcon, Search } from 'lucide-react';
@@ -16,6 +16,7 @@ import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -182,16 +183,17 @@ export default function StockOutPage() {
             : [item];
           
           for (const issueItem of itemsToIssue) {
+            // Simplified query
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
                 where('projectId', '==', projectSlug),
-                where('itemId', '==', issueItem.itemId),
-                where('availableQuantity', '>', 0)
+                where('itemId', '==', issueItem.itemId)
             );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             
             const logsWithStock = logsToUpdateSnap.docs
                 .map(doc => ({ ...doc.data(), id: doc.id } as InventoryLog))
+                .filter(log => log.availableQuantity > 0) // Filter in code
                 .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
             let quantityToIssue = issueItem.quantity;
@@ -282,6 +284,7 @@ export default function StockOutPage() {
                                     <FormLabel>Issue Date</FormLabel>
                                     <Popover>
                                         <PopoverTrigger asChild>
+                                            <FormControl>
                                             <Button
                                                 variant={"outline"}
                                                 className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
@@ -289,6 +292,7 @@ export default function StockOutPage() {
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                                 {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                                             </Button>
+                                            </FormControl>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0">
                                             <Calendar
@@ -360,5 +364,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
