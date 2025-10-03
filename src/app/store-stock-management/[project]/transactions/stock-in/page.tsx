@@ -23,10 +23,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -221,9 +221,9 @@ export default function StockInPage() {
   };
   
   const handleAddFromBom = (selectedBoqItems: BoqItem[]) => {
-      const mainItemsWithBom = selectedBoqItems.map(mainItem => {
+      const newJmcItems = selectedBoqItems.map(mainItem => {
           if (!mainItem.bom || mainItem.bom.length === 0) {
-              toast({ title: "No BOM", description: `Item "${getItemDescription(mainItem)}" does not have a Bill of Materials defined.`, variant: 'destructive'});
+              toast({ title: "No BOM", description: `Item "${getItemDescription(mainItem)}" does not have a Bill of Materials defined.`, variant: "destructive"});
               return null;
           }
           return {
@@ -246,9 +246,9 @@ export default function StockInPage() {
       }).filter(Boolean) as GrnFormValues['items'];
 
       if (fields.length === 1 && !fields[0].itemId) {
-        form.setValue('items', mainItemsWithBom);
+        form.setValue('items', newJmcItems);
       } else {
-        append(mainItemsWithBom);
+        append(newJmcItems);
       }
   };
   
@@ -265,41 +265,77 @@ export default function StockInPage() {
 
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);
-    // ... GRN generation logic ...
-    // ... File upload logic ...
-
+    
     try {
-        // ... (GRN No generation and file upload logic as before) ...
-        const newGrnNo = previewGrnNo; // Simplified for brevity
+        const configRef = doc(db, 'serialNumberConfigs', 'store-stock-grn');
+        const grnNo = await runTransaction(db, async (transaction) => {
+            const configDoc = await transaction.get(configRef);
+            if (!configDoc.exists()) throw new Error("GRN serial number configuration not found!");
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            const datePart = format(new Date(), (configData.format || 'yyyyMMdd').replace(/y/g, 'y').replace(/m/g, 'M').replace(/d/g, 'd'));
+            const formattedIndex = String(newIndex).padStart(4, '0');
+            const newGrnNo = `${configData.prefix || ''}${datePart}${formattedIndex}${configData.suffix || ''}`;
+            transaction.update(configRef, { startingIndex: newIndex + 1 });
+            return newGrnNo;
+        });
 
-        const writePromises = data.items.flatMap((item) => {
-          const baseDetails = {
-              grnNo: newGrnNo,
-              boqSlNo: item.boqSlNo,
-              supplier: data.supplier, 
-              poNumber: data.poNumber, 
-              // ... other details
+        const uploadFile = async (file: File) => {
+            const storagePath = `grn-documents/${grnNo}/${file.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, file);
+            return getDownloadURL(storageRef);
+        };
+        const invoiceFileUrls = await Promise.all((data.invoiceFiles || []).map(uploadFile));
+        const transporterDocUrls = await Promise.all((data.transporterDocs || []).map(uploadFile));
+
+        const batch = writeBatch(db);
+
+        const baseDetails = {
+          grnNo,
+          supplier: data.supplier,
+          poNumber: data.poNumber,
+          poDate: data.poDate ? format(data.poDate, 'yyyy-MM-dd') : null,
+          invoiceNumber: data.invoiceNumber,
+          invoiceDate: data.invoiceDate ? format(data.invoiceDate, 'yyyy-MM-dd') : null,
+          invoiceAmount: data.invoiceAmount,
+          invoiceFileUrls: invoiceFileUrls.map((url, i) => ({ name: data.invoiceFiles?.[i].name || 'file', url })),
+          transporterDocUrls: transporterDocUrls.map((url, i) => ({ name: data.transporterDocs?.[i].name || 'file', url })),
+          vehicleNo: data.vehicleNo,
+          waybillNo: data.waybillNo,
+          lrNo: data.lrNo,
+          lrDate: data.lrDate ? format(data.lrDate, 'yyyy-MM-dd') : null,
+          notes: data.notes,
+      };
+
+      data.items.forEach((item) => {
+          const itemDetails = {
+            ...baseDetails,
+            boqSlNo: item.boqSlNo,
           };
 
           if (item.isBomGrn && item.bomItems) {
-              return item.bomItems.map(bomItem => {
-                  const logEntry: Omit<InventoryLog, 'id'> = {
-                      date: data.grnDate,
-                      itemId: bomItem.id, // Use unique BOM item ID
-                      itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
-                      itemType: 'Sub',
-                      transactionType: 'Goods Receipt',
-                      quantity: bomItem.quantity,
-                      availableQuantity: bomItem.quantity,
-                      unit: 'Kg', // Assuming BOM items are in Kg
-                      projectId: projectSlug,
-                      description: `GRN for Assembly: ${item.itemName}`,
-                      cost: bomItem.unitCost,
-                      details: baseDetails,
-                  };
-                  return addDoc(collection(db, 'inventoryLogs'), logEntry);
+              item.bomItems.forEach(bomItem => {
+                  if (bomItem.quantity > 0) {
+                      const logRef = doc(collection(db, 'inventoryLogs'));
+                      const logEntry: Omit<InventoryLog, 'id'> = {
+                          date: data.grnDate,
+                          itemId: bomItem.id,
+                          itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                          itemType: 'Sub',
+                          transactionType: 'Goods Receipt',
+                          quantity: bomItem.quantity,
+                          availableQuantity: bomItem.quantity,
+                          unit: 'Kg',
+                          projectId: projectSlug,
+                          cost: bomItem.unitCost,
+                          details: itemDetails,
+                      };
+                      batch.set(logRef, logEntry);
+                  }
               });
           } else {
+              const logRef = doc(collection(db, 'inventoryLogs'));
               const logEntry: Omit<InventoryLog, 'id'> = {
                   date: data.grnDate,
                   itemId: item.itemId,
@@ -311,12 +347,13 @@ export default function StockInPage() {
                   unit: item.receiveUnit,
                   projectId: projectSlug,
                   cost: item.unitCost,
-                  details: baseDetails,
+                  details: itemDetails,
               };
-              return [addDoc(collection(db, 'inventoryLogs'), logEntry)];
+              batch.set(logRef, logEntry);
           }
       });
-      await Promise.all(writePromises);
+      await batch.commit();
+
       toast({ title: 'Success', description: 'Goods receipt recorded successfully.' });
       router.push(`/store-stock-management/${projectSlug}/transactions`);
     } catch (e) {
@@ -369,7 +406,7 @@ export default function StockInPage() {
             <FormLabel>{label}</FormLabel>
             <div className="flex items-center gap-2">
                <FormControl>
-                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(e.target.files)} />
+                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(Array.from(e.target.files || []))} />
                </FormControl>
                 <Label htmlFor={name} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
                     {files.length > 0 ? `${files.length} file(s) selected` : 'No file selected'}
@@ -412,7 +449,7 @@ export default function StockInPage() {
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link href={`/store-stock-management/${projectSlug}/transactions`}>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" type="button">
                             <ArrowLeft className="h-6 w-6" />
                         </Button>
                     </Link>
@@ -505,7 +542,7 @@ export default function StockInPage() {
                                                           id={`isBomGrn-${index}`}
                                                         />
                                                       </FormControl>
-                                                      <FormLabel htmlFor={`isBomGrn-${index}`}>GRN as BOM</FormLabel>
+                                                      <FormLabel htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</FormLabel>
                                                     </FormItem>
                                                   )}
                                                 />
@@ -561,3 +598,5 @@ export default function StockInPage() {
     </>
   );
 }
+
+    
