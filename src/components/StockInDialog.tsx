@@ -17,7 +17,6 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem } from '@/lib/types';
 import { Plus, Trash2, Save, Loader2 } from 'lucide-react';
-import { ItemSelector } from './ItemSelector';
 import { BoqItemSelector } from './BoqItemSelector';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, runTransaction, updateDoc, query, where } from 'firebase/firestore';
@@ -99,11 +98,26 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
     setItems(newItems);
   };
   
+   const getItemDescription = (item: BoqItem) => {
+    const descriptionKeys = [
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    ];
+    for (const key of descriptionKeys) {
+      if (item[key]) {
+        return item[key];
+      }
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? item[fallbackKey] : '';
+  };
+  
   const handleItemSelect = (index: number, item: BoqItem | null) => {
       if(item) {
         handleItemChange(index, 'itemId', item.id);
-        handleItemChange(index, 'itemName', item['Description'] || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '');
-        handleItemChange(index, 'itemUnit', item['UNIT'] || '');
+        handleItemChange(index, 'itemName', getItemDescription(item));
+        handleItemChange(index, 'itemUnit', item['UNIT'] || item['UNITS'] || '');
       } else {
         handleItemChange(index, 'itemId', '');
         handleItemChange(index, 'itemName', '');
@@ -150,6 +164,11 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
         setIsSaving(false);
     }
   };
+  
+  const selectedSlNo = (item: GrnItem) => {
+    const boqItem = boqItems.find(bi => bi.id === item.itemId);
+    return boqItem ? (boqItem['Sl No'] || boqItem['SL. No.']) : null;
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -182,7 +201,7 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialog
                              {index === 0 && <Label className="text-xs">BOQ Item</Label>}
                              <BoqItemSelector
                                 boqItems={boqItems}
-                                selectedSlNo={item.itemName}
+                                selectedSlNo={selectedSlNo(item)}
                                 onSelect={(selectedItem) => handleItemSelect(index, selectedItem)}
                                 isLoading={isLoadingItems}
                               />

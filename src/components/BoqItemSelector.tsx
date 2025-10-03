@@ -35,10 +35,29 @@ export function BoqItemSelector({
   isLoading,
 }: BoqItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
-  const selectedItem = boqItems.find((item) => item['SL. No.'] === selectedSlNo);
+  
+  const getItemDescription = (item: BoqItem) => {
+    const descriptionKeys = [
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    ];
+    for (const key of descriptionKeys) {
+      if (item[key]) {
+        return item[key];
+      }
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? item[fallbackKey] : '';
+  };
+  
+  const selectedItem = boqItems.find((item) => (item['Sl No'] || item['SL. No.']) === selectedSlNo);
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
+    const specificKey = 'UNIT PRICE';
+    if(keys.includes(specificKey)) return specificKey;
+    
     return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
   };
 
@@ -52,7 +71,7 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {selectedItem
-            ? selectedItem['SL. No.']
+            ? `${selectedItem['Sl No'] || selectedItem['SL. No.']}: ${getItemDescription(selectedItem).substring(0, 20)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -60,11 +79,11 @@ export function BoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-                const item = boqItems.find(i => `${i['SL. No.'] || ''} - ${i['DESCRIPTION OF ITEMS'] || ''}` === value);
+                const item = boqItems.find(i => i.id === value);
                 if (!item) return 0;
 
-                const slNo = item['SL. No.']?.toLowerCase() || '';
-                const desc = item['DESCRIPTION OF ITEMS']?.toLowerCase() || '';
+                const slNo = (item['Sl No'] || item['SL. No.'])?.toLowerCase() || '';
+                const desc = getItemDescription(item).toLowerCase() || '';
                 const searchTerm = search.toLowerCase();
                 
                 return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
@@ -80,10 +99,12 @@ export function BoqItemSelector({
                 {boqItems.map((item) => {
                   const rateKey = findBasicPriceKey(item);
                   const rate = rateKey ? item[rateKey] : 'N/A';
+                  const slNo = item['Sl No'] || item['SL. No.'];
+                  const description = getItemDescription(item);
                   return (
                     <CommandItem
                       key={item.id}
-                      value={`${item['SL. No.'] || ''} - ${item['DESCRIPTION OF ITEMS'] || ''}`}
+                      value={item.id}
                       onSelect={() => {
                         onSelect(item);
                         setOpen(false);
@@ -92,22 +113,22 @@ export function BoqItemSelector({
                       <Check
                         className={cn(
                           'mr-2 h-4 w-4',
-                          selectedSlNo === item['SL. No.']
+                          selectedSlNo === slNo
                             ? 'opacity-100'
                             : 'opacity-0'
                         )}
                       />
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
-                          <span className="font-medium text-sm">{item['SL. No.']}</span>
+                          <span className="font-medium text-sm">{slNo}</span>
                           <span className="text-xs text-right">
                               <strong>Rate:</strong> {rate}
                           </span>
                         </div>
                          <div className="flex justify-between items-end mt-1">
-                            <p className="text-xs text-muted-foreground flex-1 pr-2">{item['DESCRIPTION OF ITEMS']}</p>
+                            <p className="text-xs text-muted-foreground flex-1 pr-2">{description}</p>
                             <span className="text-xs text-muted-foreground text-right">
-                                <strong>Unit:</strong> {item['UNITS'] || 'N/A'}
+                                <strong>Unit:</strong> {item['UNIT'] || item['UNITS'] || 'N/A'}
                             </span>
                          </div>
                       </div>
