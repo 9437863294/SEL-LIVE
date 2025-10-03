@@ -12,6 +12,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from '@/components/ui/command';
 import {
   Popover,
@@ -44,14 +45,18 @@ export function BoqItemSelector({
     ];
     for (const key of descriptionKeys) {
       if (item[key]) {
-        return String(item[key]);
+        return String(item[key]); // Ensure it's a string
       }
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
   
-  const selectedItem = boqItems.find((item) => String(item['Sl No'] || item['SL. No.']) === selectedSlNo);
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
+
+  const selectedItem = boqItems.find((item) => getSlNo(item) === selectedSlNo);
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
@@ -71,7 +76,7 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {selectedItem
-            ? `${selectedItem['Sl No'] || selectedItem['SL. No.']}: ${getItemDescription(selectedItem).substring(0, 20)}...`
+            ? `${getSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 20)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -79,17 +84,14 @@ export function BoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-              const item = boqItems.find(i => (String(i['Sl No']) || String(i['SL. No.'])) === value);
-              if (!item) return 0;
-              
-              const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
-              const desc = String(getItemDescription(item) || '').toLowerCase();
-              const searchTerm = search.toLowerCase();
-              
-              if (slNo.includes(searchTerm) || desc.includes(searchTerm)) {
-                return 1;
-              }
-              return 0;
+                const item = boqItems.find(i => getSlNo(i) === value);
+                if (!item) return 0;
+                
+                const slNo = getSlNo(item).toLowerCase();
+                const desc = getItemDescription(item).toLowerCase();
+                const searchTerm = search.toLowerCase();
+                
+                return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
             }}
         >
           <CommandInput placeholder="Search by Sl. No. or Description..." />
@@ -102,7 +104,7 @@ export function BoqItemSelector({
                 {boqItems.map((item) => {
                   const rateKey = findBasicPriceKey(item);
                   const rate = rateKey ? item[rateKey] : 'N/A';
-                  const slNo = String(item['Sl No'] || item['SL. No.']);
+                  const slNo = getSlNo(item);
                   const description = getItemDescription(item);
                   return (
                     <CommandItem
