@@ -18,9 +18,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-
-// Using the correct, fully-featured sidebar component
 import {
   SidebarProvider,
   Sidebar,
@@ -30,8 +27,8 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarFooter,
-  SidebarTrigger, // Import the trigger
-  useSidebar
+  SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 
 function SidebarContentWrapper() {
@@ -80,21 +77,19 @@ function SidebarContentWrapper() {
   )
 }
 
-
 export default function ProjectLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-
   return (
-    <div className="flex h-screen">
-      <SidebarProvider>
+    <SidebarProvider>
+      <div className="flex h-screen">
         <Sidebar>
           <SidebarContentWrapper />
         </Sidebar>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </SidebarProvider>
-    </div>
+      </div>
+    </SidebarProvider>
   );
 }
