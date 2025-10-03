@@ -83,9 +83,15 @@ export default function ViewBoqPage() {
 
   // Column Customization State
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h, i) => ({ ...acc, [h]: i < 7 || h === 'UNIT PRICE' }), {})
-  );
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
+    const defaults: Record<string, boolean> = {
+        'Scope': true,
+        'Sl No': true,
+        'Description': true,
+        'UNIT': true,
+    };
+    return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] || false }), {});
+  });
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => {
         if(h === 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)') {
@@ -99,21 +105,40 @@ export default function ViewBoqPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-        const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
-        const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
-        const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
+        try {
+            const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
+            const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
+            const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
 
-        if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
-        if (savedVisibility) setColumnVisibility(JSON.parse(savedVisibility));
-        if (savedNames) setColumnNames(JSON.parse(savedNames));
+            if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
+            if (savedVisibility) {
+                setColumnVisibility(JSON.parse(savedVisibility));
+            } else {
+                 const defaults: Record<string, boolean> = {
+                    'Scope': true,
+                    'Sl No': true,
+                    'Description': true,
+                    'UNIT': true,
+                };
+                setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] || false }), {}));
+            }
+            if (savedNames) setColumnNames(JSON.parse(savedNames));
+        } catch (error) {
+            console.error("Failed to parse column preferences from localStorage", error);
+        }
     }
   }, [projectSlug]);
   
   const saveColumnPrefs = () => {
-    localStorage.setItem(`boqColumnOrder_${projectSlug}`, JSON.stringify(columnOrder));
-    localStorage.setItem(`boqColumnVisibility_${projectSlug}`, JSON.stringify(columnVisibility));
-    localStorage.setItem(`boqColumnNames_${projectSlug}`, JSON.stringify(columnNames));
-    toast({ title: 'Success', description: 'Column preferences saved.' });
+    try {
+        localStorage.setItem(`boqColumnOrder_${projectSlug}`, JSON.stringify(columnOrder));
+        localStorage.setItem(`boqColumnVisibility_${projectSlug}`, JSON.stringify(columnVisibility));
+        localStorage.setItem(`boqColumnNames_${projectSlug}`, JSON.stringify(columnNames));
+        toast({ title: 'Success', description: 'Column preferences saved.' });
+    } catch (error) {
+        console.error("Failed to save preferences to localStorage", error);
+        toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
+    }
   };
 
   const onDragEnd: OnDragEndResponder = (result) => {
