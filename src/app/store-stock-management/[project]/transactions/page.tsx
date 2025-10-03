@@ -57,6 +57,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 export interface TransactionSummary {
@@ -163,7 +164,20 @@ export default function TransactionsPage() {
     setIsDeleting(false);
   };
 
-  
+  const handleEditTransaction = (summary: TransactionSummary) => {
+    if (summary.transactionType === 'Goods Receipt') {
+      const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
+      if (hasBeenIssued) {
+        toast({ title: "Cannot Edit", description: "This GRN cannot be edited because some items have already been issued. Please reverse the relevant Goods Issue transactions first.", variant: "destructive" });
+        return;
+      }
+      // Future: Navigate to an edit page for GRN
+      // router.push(`/store-stock-management/${projectSlug}/transactions/stock-in/${summary.id}/edit`);
+      toast({ title: "Info", description: "Editing for non-issued GRNs will be implemented soon." });
+    }
+  };
+
+
   const transactionSummaries = useMemo(() => {
     const goodsReceipts = transactions.filter(t => t.transactionType === 'Goods Receipt');
     const goodsIssues = transactions.filter(t => t.transactionType === 'Goods Issue');
@@ -205,8 +219,9 @@ export default function TransactionsPage() {
         const issueTo = issueItem.details?.issuedTo;
         if (!issueTo) return;
         
-        const issueDate = format(issueItem.date.toDate(), 'yyyy-MM-dd');
-        const groupId = `ISSUE-${issueDate}-${issueTo}`;
+        const issueDate = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm-ss');
+        const groupId = `ISSUE-${issueDate}-${issueTo}-${Math.random().toString(36).substring(2, 9)}`;
+
 
         if (!issueSummaries[groupId]) {
             issueSummaries[groupId] = {
@@ -333,9 +348,26 @@ export default function TransactionsPage() {
                                <DropdownMenuItem onSelect={() => handleViewDetails(summary)}>
                                   <Eye className="mr-2 h-4 w-4" /> View
                                </DropdownMenuItem>
-                               <DropdownMenuItem onSelect={() => toast({title: "Coming Soon!", description: "Editing transactions will be available in a future update."})}>
-                                  <Edit className="mr-2 h-4 w-4" /> Edit
-                               </DropdownMenuItem>
+                               <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div>
+                                            <DropdownMenuItem
+                                                onSelect={() => handleEditTransaction(summary)}
+                                                disabled={summary.transactionType === 'Goods Issue'}
+                                            >
+                                                <Edit className="mr-2 h-4 w-4" /> Edit
+                                            </DropdownMenuItem>
+                                        </div>
+                                    </TooltipTrigger>
+                                    {summary.transactionType === 'Goods Issue' && (
+                                        <TooltipContent>
+                                            <p>Delete and create a new issue to make changes.</p>
+                                        </TooltipContent>
+                                    )}
+                                </Tooltip>
+                               </TooltipProvider>
+
                                <DropdownMenuSeparator />
                                <AlertDialogTrigger asChild>
                                  <DropdownMenuItem className="text-destructive">
