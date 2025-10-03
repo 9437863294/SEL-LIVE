@@ -14,6 +14,9 @@ import {
   Save,
   Loader2,
   Calendar as CalendarIcon,
+  Upload,
+  File as FileIcon,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +27,7 @@ import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -34,13 +38,12 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 const itemSchema = z.object({
   id: z.string(),
-  itemId: z.string().min(1, ''),
+  itemId: z.string(),
   itemName: z.string(),
   itemUnit: z.string(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
-  receiveUnit: z.string().min(1, ''),
+  receiveUnit: z.string(),
   unitCost: z.coerce.number().optional(),
-  batchNo: z.string().optional().default(''),
 });
 
 const grnSchema = z.object({
@@ -52,11 +55,12 @@ const grnSchema = z.object({
     invoiceNumber: z.string().min(1, "Invoice number is required."),
     invoiceDate: z.date().optional(),
     invoiceAmount: z.coerce.number().optional().nullable(),
-    vehicleNo: z.string().optional(),
-    waybillNo: z.string().optional(),
-    lrNo: z.string().optional(),
+    invoiceFile: z.custom<File | null>().optional(),
+    vehicleNo: z.string().optional().default(''),
+    waybillNo: z.string().optional().default(''),
+    lrNo: z.string().optional().default(''),
     lrDate: z.date().optional(),
-    notes: z.string().optional(),
+    notes: z.string().optional().default(''),
     items: z.array(itemSchema).min(1, { message: 'At least one item is required.' }),
 });
 
@@ -89,6 +93,7 @@ export default function StockInPage() {
       invoiceAmount: null,
       lrDate: undefined,
       items: [],
+      invoiceFile: null,
     },
   });
 
@@ -101,7 +106,7 @@ export default function StockInPage() {
     const grn = `GRN-${projectSlug.substring(0, 4).toUpperCase()}-${format(new Date(), 'yyyyMMdd')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
     form.setValue('grnNo', grn);
     if(fields.length === 0){
-        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0, batchNo: '' });
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
     }
   }, [projectSlug, form, fields, append]);
 
@@ -124,7 +129,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0, batchNo: '' });
+    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -160,6 +165,16 @@ export default function StockInPage() {
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);
     try {
+        
+      let invoiceFileUrl: string | undefined;
+      if (data.invoiceFile) {
+        const file = data.invoiceFile;
+        const storagePath = `grn-invoices/${data.grnNo}/${file.name}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file);
+        invoiceFileUrl = await getDownloadURL(storageRef);
+      }
+
       const writePromises = data.items.map((item) => {
         const logEntry: Omit<InventoryLog, 'id'> = {
           date: data.grnDate,
@@ -172,7 +187,7 @@ export default function StockInPage() {
           projectId: projectSlug,
           description: `GRN from ${data.supplier}. PO: ${data.poNumber}, Inv: ${data.invoiceNumber}.`,
           cost: item.unitCost,
-          batch: item.batchNo || '',
+          batch: '',
           details: { 
             supplier: data.supplier, 
             poNumber: data.poNumber, 
@@ -180,6 +195,7 @@ export default function StockInPage() {
             invoiceNumber: data.invoiceNumber,
             invoiceDate: data.invoiceDate ? format(data.invoiceDate, 'yyyy-MM-dd') : null,
             invoiceAmount: data.invoiceAmount || null,
+            invoiceFileUrl: invoiceFileUrl,
             vehicleNo: data.vehicleNo,
             waybillNo: data.waybillNo,
             lrNo: data.lrNo,
@@ -272,6 +288,19 @@ export default function StockInPage() {
                         <FormField control={form.control} name="invoiceNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice No.</FormLabel><FormControl><Input placeholder="e.g., INV-67890" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="invoiceDate" label="Invoice Date" />
                         <FormField control={form.control} name="invoiceAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice Amount</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)}/>
+                        <FormField
+                            control={form.control}
+                            name="invoiceFile"
+                            render={({ field: { onChange, value, ...rest } }) => (
+                            <FormItem className="md:col-span-3">
+                                <FormLabel>Invoice Document</FormLabel>
+                                <FormControl>
+                                <Input type="file" {...rest} onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                            )}
+                        />
                     </CardContent>
                 </Card>
 
@@ -289,7 +318,7 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[3fr,0.8fr,0.8fr,1fr] gap-4 items-center">
+                            <div className="grid grid-cols-[3.5fr,0.8fr,0.8fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
@@ -298,7 +327,7 @@ export default function StockInPage() {
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.8fr,0.8fr,1fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3.5fr,0.8fr,0.8fr,1fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
@@ -312,7 +341,7 @@ export default function StockInPage() {
                                                     onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
                                                     isLoading={isLoadingItems}
                                                 />
-                                                <FormMessage className="text-xs" />
+                                                <FormMessage />
                                             </FormItem>
                                         )}
                                     />
