@@ -15,6 +15,7 @@ import {
   ClipboardList,
   ChevronLeft,
   ChevronRight,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +41,7 @@ export default function ProjectLayout({
 
   const navItems = [
     { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
+    { href: `/store-stock-management/${projectSlug}/items`, icon: Package, label: 'Item Master' },
     { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory' },
     { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions' },
     { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
@@ -67,7 +69,7 @@ export default function ProjectLayout({
                     <TooltipTrigger asChild>
                        <Link href={item.href}>
                          <Button
-                            variant={pathname === item.href ? 'secondary' : 'ghost'}
+                            variant={pathname.startsWith(item.href) && (item.href !== `/store-stock-management/${projectSlug}` || pathname === item.href) ? 'secondary' : 'ghost'}
                             className={cn(
                                 "w-full justify-start",
                                 !isExpanded && "h-10 w-10 p-0"

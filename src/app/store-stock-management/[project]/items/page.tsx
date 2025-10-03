@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -25,12 +24,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BomDialog } from '@/components/BomDialog';
+import { useParams } from 'next/navigation';
 
 const initialMainItemState = { name: '' };
 const initialSubItemState = { name: '', unit: '' };
 
 export default function ManageItemsPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [mainItems, setMainItems] = useState<MainItem[]>([]);
   const [subItems, setSubItems] = useState<SubItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,14 +157,14 @@ export default function ManageItemsPage() {
       <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/store-stock-management">
+            <Link href={`/store-stock-management/${projectSlug}`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
             </Link>
             <h1 className="text-xl font-bold">Item Master</h1>
           </div>
-           <Link href="/store-stock-management/items/bom">
+           <Link href={`/store-stock-management/${projectSlug}/items/bom`}>
                 <Button variant="outline">
                     <Component className="mr-2 h-4 w-4" /> Manage BOM
                 </Button>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,9 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { useParams } from 'next/navigation';
 
 export default function BomPage() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [mainItems, setMainItems] = useState<MainItem[]>([]);
   const [subItems, setSubItems] = useState<SubItem[]>([]);
   const [selectedMainItemId, setSelectedMainItemId] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export default function BomPage() {
     <div className="w-full max-w-4xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/store-stock-management/items">
+          <Link href={`/store-stock-management/${projectSlug}/items`}>
             <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
           </Link>
           <h1 className="text-xl font-bold">Bill of Materials (BOM)</h1>
