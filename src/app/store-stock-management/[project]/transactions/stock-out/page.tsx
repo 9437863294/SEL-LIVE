@@ -119,7 +119,7 @@ export default function StockOutPage() {
     }
   };
 
-  const handleItemSelect = (index: number, selectedItem: any | null) => {
+  const handleItemSelect = (index: number, selectedItem: InventoryLog | null) => {
     if (selectedItem) {
       update(index, {
         ...form.getValues(`items.${index}`),
@@ -268,7 +268,7 @@ export default function StockOutPage() {
                         {fields.map((field, index) => (
                             <div key={field.id} className="p-4 border rounded-md grid grid-cols-12 gap-4 items-end">
                                <div className="col-span-12 md:col-span-6">
-                                   <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} mainItems={[]} subItems={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
+                                   <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
                                </div>
                                 <div className="col-span-6 md:col-span-2">
                                      <Label>Available</Label>

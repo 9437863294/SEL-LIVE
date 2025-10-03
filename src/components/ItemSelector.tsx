@@ -12,33 +12,30 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from '@/components/ui/command';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { MainItem, SubItem, BoqItem, InventoryLog } from '@/lib/types';
+import type { InventoryLog } from '@/lib/types';
 import { ScrollArea } from './ui/scroll-area';
 
 interface ItemSelectorProps {
-  mainItems: BoqItem[]; // Kept for potential future use, but not rendered
-  subItems: InventoryLog[];
+  items: InventoryLog[];
   selectedItemId: string | null;
-  onSelect: (item: InventoryLog | null, type: 'Main' | 'Sub') => void;
+  onSelect: (item: InventoryLog | null) => void;
   isLoading: boolean;
 }
 
 export function ItemSelector({
-  mainItems,
-  subItems,
+  items,
   selectedItemId,
   onSelect,
   isLoading,
 }: ItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
-  const selectedItem = subItems.find((item) => item.itemId === selectedItemId);
+  const selectedItem = items.find((item) => item.itemId === selectedItemId);
 
   const getItemDescription = (item: InventoryLog): string => {
     return item.itemName || 'No Description';
@@ -60,7 +57,7 @@ export function ItemSelector({
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command
             filter={(value, search) => {
-                const item = subItems.find(i => i.itemId === value);
+                const item = items.find(i => i.itemId === value);
                 if (!item) return 0;
                 
                 const name = getItemDescription(item).toLowerCase();
@@ -76,12 +73,12 @@ export function ItemSelector({
             </CommandEmpty>
             <CommandGroup>
               <ScrollArea className="h-72">
-                {subItems.map((item) => (
+                {items.map((item) => (
                     <CommandItem
                       key={item.itemId}
                       value={item.itemId}
                       onSelect={() => {
-                        onSelect(item, 'Sub'); // Treat all items as selectable 'Sub' items for now
+                        onSelect(item);
                         setOpen(false);
                       }}
                     >
