@@ -41,6 +41,7 @@ const itemSchema = z.object({
   itemId: z.string().min(1, { message: "" }),
   itemName: z.string(),
   itemUnit: z.string(),
+  boqSlNo: z.string().optional(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
   receiveUnit: z.string().min(1, ''),
   unitCost: z.coerce.number().optional(),
@@ -130,7 +131,7 @@ export default function StockInPage() {
 
     generatePreviewId();
     if(fields.length === 0){
-        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', boqSlNo: '', quantity: 1, receiveUnit: '', unitCost: 0 });
     }
   }, [projectSlug, form, fields, append]);
 
@@ -153,7 +154,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
+    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', boqSlNo: '', quantity: 1, receiveUnit: '', unitCost: 0 });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -172,17 +173,24 @@ export default function StockInPage() {
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
 
   const handleItemSelect = (index: number, selectedBoqItem: BoqItem | null) => {
     if (selectedBoqItem) {
       const description = getItemDescription(selectedBoqItem);
       const unit = selectedBoqItem['UNIT'] || selectedBoqItem['UNITS'] || '';
+      const slNo = getSlNo(selectedBoqItem);
       form.setValue(`items.${index}.itemId`, selectedBoqItem.id);
       form.setValue(`items.${index}.itemName`, description);
       form.setValue(`items.${index}.itemUnit`, unit);
       form.setValue(`items.${index}.receiveUnit`, unit);
+      form.setValue(`items.${index}.boqSlNo`, slNo);
     } else {
       form.setValue(`items.${index}.itemId`, '');
+      form.setValue(`items.${index}.boqSlNo`, '');
     }
   };
   
@@ -244,6 +252,7 @@ export default function StockInPage() {
           batch: '',
           details: { 
             grnNo: newGrnNo,
+            boqSlNo: item.boqSlNo,
             supplier: data.supplier, 
             poNumber: data.poNumber, 
             poDate: data.poDate ? format(data.poDate, 'yyyy-MM-dd') : null,
