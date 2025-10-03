@@ -80,9 +80,9 @@ export default function ProjectLayout({
           </SidebarContent>
           <SidebarFooter>
              <SidebarTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start">
+                <Button variant="ghost" className="w-full justify-center">
                     <ChevronLeft className="h-5 w-5 group-data-[state=expanded]:rotate-0 group-data-[state=collapsed]:rotate-180 transition-transform" />
-                    <span className="group-data-[state=collapsed]:hidden">Collapse</span>
+                    <span className="sr-only">Toggle Sidebar</span>
                 </Button>
             </SidebarTrigger>
           </SidebarFooter>
