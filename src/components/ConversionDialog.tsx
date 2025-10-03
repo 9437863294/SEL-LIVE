@@ -17,9 +17,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import type { BoqItem, Conversion } from '@/lib/types';
+import { doc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import type { BoqItem, Conversion, Site } from '@/lib/types'; // Assuming Site can be a UOM type for now
 import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 
 const initialConversionState: Omit<Conversion, 'id'> = {
   fromUnit: '',
@@ -39,6 +40,19 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
   const { toast } = useToast();
   const [conversions, setConversions] = useState<(Conversion)[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [units, setUnits] = useState<Site[]>([]);
+
+  useEffect(() => {
+    const fetchUnits = async () => {
+        try {
+            const unitsSnapshot = await getDocs(collection(db, 'units'));
+            setUnits(unitsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Site)));
+        } catch (error) {
+            console.error("Failed to fetch units:", error);
+        }
+    };
+    fetchUnits();
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -97,11 +111,19 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
     }
   };
 
+  const getItemDescription = (item: BoqItem): string => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS'];
+    for (const key of descriptionKeys) {
+      if (item[key]) return String(item[key]);
+    }
+    return 'No Description';
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Unit Conversions for: {item.Description}</DialogTitle>
+          <DialogTitle>Unit Conversions for: {getItemDescription(item)}</DialogTitle>
           <DialogDescription>
             Define multiple conversion rules for this item. E.g., 1 Box = 10 Pcs.
           </DialogDescription>
@@ -122,10 +144,24 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
                     {conversions.map((conv) => (
                         <TableRow key={conv.id}>
                             <TableCell><Input type="number" value={conv.fromQty} onChange={(e) => handleItemChange(conv.id, 'fromQty', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input value={conv.fromUnit} onChange={(e) => handleItemChange(conv.id, 'fromUnit', e.target.value)} /></TableCell>
+                            <TableCell>
+                                <Select value={conv.fromUnit} onValueChange={(value) => handleItemChange(conv.id, 'fromUnit', value)}>
+                                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                                    <SelectContent>
+                                        {units.map(u => <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </TableCell>
                             <TableCell className="text-center font-bold">=</TableCell>
                             <TableCell><Input type="number" value={conv.toQty} onChange={(e) => handleItemChange(conv.id, 'toQty', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input value={conv.toUnit} onChange={(e) => handleItemChange(conv.id, 'toUnit', e.target.value)} /></TableCell>
+                            <TableCell>
+                                <Select value={conv.toUnit} onValueChange={(value) => handleItemChange(conv.id, 'toUnit', value)}>
+                                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                                    <SelectContent>
+                                        {units.map(u => <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </TableCell>
                             <TableCell className="text-right">
                                 <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(conv.id)}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
