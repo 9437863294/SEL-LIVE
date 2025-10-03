@@ -23,6 +23,8 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarFooter,
+  SidebarTrigger,
+  SidebarInset,
 } from '@/components/ui/sidebar';
 
 function SidebarContentWrapper() {
@@ -64,7 +66,8 @@ function SidebarContentWrapper() {
           ))}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter>
+       <SidebarFooter>
+        <SidebarTrigger />
       </SidebarFooter>
     </>
   )
@@ -77,12 +80,10 @@ export default function ProjectLayout({
 }) {
   return (
     <SidebarProvider>
-      <div className="flex h-screen">
-        <Sidebar>
-          <SidebarContentWrapper />
-        </Sidebar>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </div>
+      <Sidebar>
+        <SidebarContentWrapper />
+      </Sidebar>
+      <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
   );
 }
