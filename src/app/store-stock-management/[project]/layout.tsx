@@ -1,6 +1,7 @@
 
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
@@ -21,8 +22,8 @@ export default function ProjectLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const params = useParams();
-  const projectSlug = params.project as string;
+  const params = React.use(useParams()) as { project: string };
+  const projectSlug = params.project;
 
   const navItems = [
     { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
