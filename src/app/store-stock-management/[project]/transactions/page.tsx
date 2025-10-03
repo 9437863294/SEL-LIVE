@@ -22,15 +22,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuCheckboxItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
-import {
   MoreHorizontal,
   PlusCircle,
   MinusCircle,
@@ -50,11 +41,11 @@ import ViewTransactionDialog from '@/components/ViewTransactionDialog';
 
 const allColumns = ['Cost', 'Details', 'Notes'];
 
-export interface GrnSummary {
-    grnNo: string;
+export interface TransactionSummary {
+    id: string; // GRN No or a generated Issue ID
     date: Date;
     transactionType: string;
-    grnAmount: number;
+    totalAmount: number;
     items: InventoryLog[];
     details?: InventoryLog['details'];
 }
@@ -75,7 +66,7 @@ export default function TransactionsPage() {
     Notes: true,
   });
 
-  const [selectedGrn, setSelectedGrn] = useState<GrnSummary | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
   const fetchData = async () => {
@@ -105,38 +96,52 @@ export default function TransactionsPage() {
     fetchData();
   }, [projectSlug]);
   
-  const handleViewDetails = (grnSummary: GrnSummary) => {
-    setSelectedGrn(grnSummary);
+  const handleViewDetails = (transactionSummary: TransactionSummary) => {
+    setSelectedTransaction(transactionSummary);
     setIsViewOpen(true);
   };
   
-  const grnSummaries = useMemo(() => {
-      const groupedByGrn: Record<string, GrnSummary> = {};
-
-      transactions.forEach(t => {
-          const grnNo = t.details?.grnNo;
-          if (!grnNo) return;
-
-          if (!groupedByGrn[grnNo]) {
-              groupedByGrn[grnNo] = {
-                  grnNo: grnNo,
-                  date: t.date.toDate(),
-                  transactionType: t.transactionType,
-                  grnAmount: 0, 
-                  items: [],
-                  details: t.details,
-              };
-          }
-          groupedByGrn[grnNo].items.push(t);
-          const itemCost = (t.quantity || 0) * (t.cost || 0);
-          groupedByGrn[grnNo].grnAmount += itemCost;
-      });
-      
-      return Object.values(groupedByGrn).filter(summary => 
-          summary.grnNo.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+  const transactionSummaries = useMemo(() => {
+    const groupedTransactions: Record<string, TransactionSummary> = {};
+  
+    transactions.forEach(t => {
+      let groupId: string;
+      let transactionType: string;
+  
+      if (t.transactionType === 'Goods Receipt' && t.details?.grnNo) {
+        groupId = t.details.grnNo;
+        transactionType = 'Goods Receipt';
+      } else if (t.transactionType === 'Goods Issue' && t.details?.issuedTo) {
+        const issueDate = format(t.date.toDate(), 'yyyy-MM-dd');
+        groupId = `ISSUE-${issueDate}-${t.details.issuedTo}`;
+        transactionType = 'Goods Issue';
+      } else {
+        // Fallback for other types or transactions missing key info
+        groupId = t.id; // Group by individual log entry
+        transactionType = t.transactionType;
+      }
+  
+      if (!groupedTransactions[groupId]) {
+        groupedTransactions[groupId] = {
+          id: groupId,
+          date: t.date.toDate(),
+          transactionType: transactionType,
+          totalAmount: 0,
+          items: [],
+          details: t.details,
+        };
+      }
+  
+      groupedTransactions[groupId].items.push(t);
+      const itemCost = (t.quantity || 0) * (t.cost || 0);
+      groupedTransactions[groupId].totalAmount += itemCost;
+    });
+  
+    return Object.values(groupedTransactions).filter(summary =>
+      summary.id.toLowerCase().includes(searchTerm.toLowerCase())
+    );
   }, [transactions, searchTerm]);
-
+  
   const getBadgeVariant = (type: string) => {
     switch (type) {
       case 'Goods Receipt':
@@ -182,7 +187,7 @@ export default function TransactionsPage() {
               <div className="relative flex-grow">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Filter by GRN No..."
+                  placeholder="Filter by GRN or Issue ID..."
                   className="pl-8"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -194,10 +199,10 @@ export default function TransactionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>GRN No</TableHead>
+                  <TableHead>Transaction ID</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>GRN Amount</TableHead>
+                  <TableHead>Total Amount</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -210,10 +215,10 @@ export default function TransactionsPage() {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : grnSummaries.length > 0 ? (
-                  grnSummaries.map((summary) => (
-                    <TableRow key={summary.grnNo} onClick={() => handleViewDetails(summary)} className="cursor-pointer">
-                      <TableCell>{summary.grnNo}</TableCell>
+                ) : transactionSummaries.length > 0 ? (
+                  transactionSummaries.map((summary) => (
+                    <TableRow key={summary.id} onClick={() => handleViewDetails(summary)} className="cursor-pointer">
+                      <TableCell>{summary.id}</TableCell>
                       <TableCell className="text-sm">
                         {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
                       </TableCell>
@@ -223,7 +228,7 @@ export default function TransactionsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {summary.grnAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.grnAmount) : 'N/A'}
+                        {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
                       </TableCell>
                       <TableCell>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleViewDetails(summary); }}>
@@ -247,7 +252,7 @@ export default function TransactionsPage() {
       <ViewTransactionDialog 
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        grnSummary={selectedGrn}
+        grnSummary={selectedTransaction}
       />
     </>
   );

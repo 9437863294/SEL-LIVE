@@ -16,19 +16,20 @@ import { Separator } from '@/components/ui/separator';
 import type { InventoryLog } from '@/lib/types';
 import { format } from 'date-fns';
 import DocumentLink from './DocumentLink';
-import type { GrnSummary } from '@/app/store-stock-management/[project]/transactions/page';
+import type { TransactionSummary } from '@/app/store-stock-management/[project]/transactions/page';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface ViewTransactionDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  grnSummary: GrnSummary | null;
+  grnSummary: TransactionSummary | null;
 }
 
 export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary }: ViewTransactionDialogProps) {
   if (!grnSummary) return null;
 
   const details = grnSummary.details;
+  const isGrn = grnSummary.transactionType === 'Goods Receipt';
   
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
@@ -48,11 +49,11 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>GRN Details: {details?.grnNo}</DialogTitle>
+          <DialogTitle>Transaction Details: {grnSummary.id}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto p-4 space-y-4">
           
-          {details && (
+          {details && isGrn && (
             <>
               <div className="space-y-4">
                 <h4 className="font-semibold text-lg">GRN Details</h4>
@@ -96,8 +97,15 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
             </>
           )}
 
+          {!isGrn && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div><Label>Issued To</Label><p className="font-medium">{details?.issuedTo || 'N/A'}</p></div>
+              <div><Label>Notes</Label><p className="font-medium">{details?.notes || 'N/A'}</p></div>
+            </div>
+          )}
+
           <div className="space-y-4">
-            <h4 className="font-semibold text-lg">Items Received</h4>
+            <h4 className="font-semibold text-lg">{isGrn ? 'Items Received' : 'Items Issued'}</h4>
             <div className="border rounded-md">
                <Table>
                 <TableHeader>
@@ -120,8 +128,8 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
                     </TableRow>
                   ))}
                    <TableRow className="font-bold bg-muted">
-                      <TableCell colSpan={4} className="text-right">GRN Total</TableCell>
-                      <TableCell className="text-right">{formatCurrency(grnSummary.grnAmount)}</TableCell>
+                      <TableCell colSpan={4} className="text-right">Total</TableCell>
+                      <TableCell className="text-right">{formatCurrency(grnSummary.totalAmount)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
