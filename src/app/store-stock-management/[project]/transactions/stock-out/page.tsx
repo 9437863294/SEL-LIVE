@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog } from '@/lib/types';
+import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -23,7 +23,24 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { ItemSelector } from '@/components/ItemSelector';
+import { Switch } from '@/components/ui/switch';
 
+
+const bomItemSchema = z.object({
+  id: z.string(),
+  markNo: z.string(),
+  section: z.string(),
+  grade: z.string(),
+  length: z.number(),
+  width: z.number(),
+  unitWt: z.number(),
+  wtPerPc: z.number(),
+  totalWtPerSet: z.number(),
+  qtyPerSet: z.number(),
+  totalWtKg: z.number(),
+  // Issue specific fields
+  quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
+});
 
 const itemSchema = z.object({
   id: z.string(),
@@ -32,6 +49,8 @@ const itemSchema = z.object({
   itemUnit: z.string(),
   availableQty: z.number(),
   quantity: z.coerce.number().min(1, 'Qty must be > 0').max(Number.MAX_SAFE_INTEGER, 'Qty too large'),
+  isComponentIssue: z.boolean().default(false),
+  bomItems: z.array(bomItemSchema).optional(),
 });
 
 const stockOutSchema = z.object({
@@ -51,6 +70,7 @@ export default function StockOutPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
 
   const form = useForm<StockOutFormValues>({
@@ -70,31 +90,41 @@ export default function StockOutPage() {
   
   useEffect(() => {
     if(fields.length === 0){
-        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', availableQty: 0, quantity: 1 });
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', availableQty: 0, quantity: 1, isComponentIssue: false, bomItems: [] });
     }
   }, [fields, append]);
 
   useEffect(() => {
-    const fetchInventory = async () => {
+    const fetchInventoryAndBoq = async () => {
       if (!projectSlug) return;
       setIsLoadingItems(true);
       try {
-        const q = query(
+        const inventoryQuery = query(
           collection(db, 'inventoryLogs'),
           where('projectId', '==', projectSlug)
         );
-        const snapshot = await getDocs(q);
-        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog))
+        const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+
+        const [inventorySnapshot, boqSnapshot] = await Promise.all([
+          getDocs(inventoryQuery),
+          getDocs(boqQuery),
+        ]);
+
+        const itemsData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog))
           .filter(item => item.availableQuantity > 0);
         setAvailableItems(itemsData);
+
+        const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+        setBoqItems(boqData);
+        
       } catch (error) {
-        console.error('Error fetching inventory:', error);
+        console.error('Error fetching data:', error);
       }
       setIsLoadingItems(false);
     };
-    fetchInventory();
+    fetchInventoryAndBoq();
   }, [projectSlug]);
-
+  
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
     availableItems.forEach(item => {
@@ -110,7 +140,7 @@ export default function StockOutPage() {
 
 
   const handleAddItem = () => {
-    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', availableQty: 0, quantity: 1 });
+    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', availableQty: 0, quantity: 1, isComponentIssue: false, bomItems: [] });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -119,14 +149,18 @@ export default function StockOutPage() {
     }
   };
 
-  const handleItemSelect = (index: number, selectedItem: InventoryLog | null) => {
-    if (selectedItem) {
+  const handleItemSelect = (index: number, selectedInventoryItem: InventoryLog | null) => {
+    if (selectedInventoryItem) {
+      const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
+      const bom = relatedBoqItem?.bom || [];
+      
       update(index, {
         ...form.getValues(`items.${index}`),
-        itemId: selectedItem.itemId,
-        itemName: selectedItem.itemName,
-        itemUnit: selectedItem.unit,
-        availableQty: selectedItem.availableQuantity,
+        itemId: selectedInventoryItem.itemId,
+        itemName: selectedInventoryItem.itemName,
+        itemUnit: selectedInventoryItem.unit,
+        availableQty: selectedInventoryItem.availableQuantity,
+        bomItems: bom.map(b => ({ ...b, id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, quantity: 0 })),
       });
     }
   };
@@ -137,16 +171,37 @@ export default function StockOutPage() {
 
     try {
         for (const item of data.items) {
+          const itemsToIssue = item.isComponentIssue && item.bomItems 
+            ? item.bomItems.map(bi => ({ 
+                ...bi, 
+                // We need to find the inventory log entry corresponding to this BOM component
+                // This is a simplification; a real system would have unique IDs for BOM components in inventory.
+                // For now, we assume the BOM component's 'section' or 'markNo' can identify it.
+                // A better approach would be to have a proper product catalog.
+                // Let's create a placeholder itemId for the sub-item log.
+                itemId: `sub-${item.itemId}-${bi.markNo}`,
+                itemName: `${item.itemName} - ${bi.section}`,
+                itemUnit: 'Kg', // Assuming BOM items are in Kg
+                availableQty: 99999, // Placeholder; real validation is complex
+              }))
+            : [item];
+          
+          for (const issueItem of itemsToIssue) {
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
                 where('projectId', '==', projectSlug),
-                where('itemId', '==', item.itemId),
+                where('itemId', '==', issueItem.itemId),
                 where('availableQuantity', '>', 0),
                 orderBy('date', 'asc')
             );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             
-            let quantityToIssue = item.quantity;
+            let quantityToIssue = issueItem.quantity;
+            let totalAvailableForThisItem = logsToUpdateSnap.docs.reduce((sum, doc) => sum + (doc.data() as InventoryLog).availableQuantity, 0);
+
+            if (quantityToIssue > totalAvailableForThisItem) {
+              throw new Error(`Not enough stock for ${issueItem.itemName}. Required: ${quantityToIssue}, Available: ${totalAvailableForThisItem}.`);
+            }
 
             for (const logDoc of logsToUpdateSnap.docs) {
                 if (quantityToIssue <= 0) break;
@@ -161,17 +216,16 @@ export default function StockOutPage() {
 
                 quantityToIssue -= quantityToDeduct;
 
-                // Create new Goods Issue log entry
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 batch.set(newIssueLogRef, {
                     date: data.issueDate,
-                    itemId: item.itemId,
-                    itemName: item.itemName,
+                    itemId: issueItem.itemId,
+                    itemName: issueItem.itemName,
                     itemType: logData.itemType,
                     transactionType: 'Goods Issue',
                     quantity: quantityToDeduct,
                     availableQuantity: 0, 
-                    unit: item.itemUnit,
+                    unit: issueItem.itemUnit,
                     cost: logData.cost, 
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
@@ -182,9 +236,7 @@ export default function StockOutPage() {
                     }
                 });
             }
-            if(quantityToIssue > 0) {
-              throw new Error(`Not enough stock for ${item.itemName}. Tried to issue ${item.quantity}, but only ${item.availableQty} available.`);
-            }
+          }
         }
         await batch.commit();
         toast({ title: 'Success', description: 'Stock out transaction recorded successfully.' });
@@ -196,6 +248,8 @@ export default function StockOutPage() {
         setIsSaving(false);
     }
   };
+
+  const watchedItems = form.watch('items');
 
   return (
     <Form {...form}>
@@ -233,10 +287,7 @@ export default function StockOutPage() {
                                         <PopoverTrigger asChild>
                                             <Button
                                                 variant={"outline"}
-                                                className={cn(
-                                                    "w-full justify-start text-left font-normal",
-                                                    !field.value && "text-muted-foreground"
-                                                )}
+                                                className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                                 {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
@@ -265,24 +316,44 @@ export default function StockOutPage() {
                 <Card>
                     <CardHeader><CardTitle>Items to Issue</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
-                        {fields.map((field, index) => (
-                            <div key={field.id} className="p-4 border rounded-md grid grid-cols-12 gap-4 items-end">
-                               <div className="col-span-12 md:col-span-6">
-                                   <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
-                               </div>
-                                <div className="col-span-6 md:col-span-2">
-                                     <Label>Available</Label>
-                                     <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
+                        {fields.map((field, index) => {
+                          const hasBom = (watchedItems[index]?.bomItems?.length ?? 0) > 0;
+                          const isComponentIssue = watchedItems[index]?.isComponentIssue;
+                          return (
+                            <div key={field.id} className="p-4 border rounded-md space-y-4">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
+                                        {hasBom && (
+                                            <div className="flex items-end pb-1">
+                                                <FormField control={form.control} name={`items.${index}.isComponentIssue`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isComponentIssue-${index}`} /></FormControl> <FormLabel htmlFor={`isComponentIssue-${index}`}>Issue Components</FormLabel> </FormItem> )} />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
-                                <div className="col-span-6 md:col-span-3">
-                                  <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; if (val > form.getValues(`items.${index}.availableQty`)) { toast({title: "Quantity Exceeded", description: "Issue quantity cannot be greater than available quantity.", variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
-                                  </FormControl> <FormMessage /> </FormItem> )}/>
-                                </div>
-                                <div className="col-span-12 md:col-span-1 text-right">
-                                    <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
-                                </div>
+                                {isComponentIssue && hasBom ? (
+                                    <div className="pl-4 border-l-2 space-y-2">
+                                       <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
+                                       {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
+                                          <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
+                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade}`}</Label>
+                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field }) => ( <FormItem> <FormControl><Input type="number" placeholder="Issue Qty" {...field} /></FormControl> </FormItem>)}/>
+                                          </div>
+                                       ))}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                                      <div>
+                                          <Label>Available Qty</Label>
+                                          <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
+                                      </div>
+                                      <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; if (val > form.getValues(`items.${index}.availableQty`)) { toast({title: "Quantity Exceeded", description: "Issue quantity cannot be greater than available quantity.", variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
+                                      </FormControl> <FormMessage /> </FormItem> )}/>
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                        )})}
                         <Button variant="outline" size="sm" type="button" onClick={handleAddItem} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Item</Button>
                     </CardContent>
                 </Card>
