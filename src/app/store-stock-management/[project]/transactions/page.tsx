@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useParams } from 'next/navigation';
-import type { InventoryLog, MainItem, SubItem } from '@/lib/types';
+import type { InventoryLog } from '@/lib/types';
 import { StockInDialog } from '@/components/StockInDialog';
 import { format } from 'date-fns';
 
@@ -25,9 +25,6 @@ export default function TransactionsPage() {
   const projectSlug = params.project as string;
   const [transactions, setTransactions] = useState<InventoryLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [mainItems, setMainItems] = useState<MainItem[]>([]);
-  const [subItems, setSubItems] = useState<SubItem[]>([]);
-  const [isLoadingItems, setIsLoadingItems] = useState(true);
 
   // Dialog state
   const [isStockInOpen, setIsStockInOpen] = useState(false);
@@ -42,27 +39,20 @@ export default function TransactionsPage() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    setIsLoadingItems(true);
     try {
         const q = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug));
-        const [transactionsSnap, mainItemsSnap, subItemsSnap] = await Promise.all([
+        const [transactionsSnap] = await Promise.all([
             getDocs(q),
-            getDocs(collection(db, 'main_items')),
-            getDocs(collection(db, 'sub_items'))
         ]);
         
         const data = transactionsSnap.docs.map(doc => ({...doc.data(), id: doc.id} as InventoryLog));
         data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setTransactions(data);
 
-        setMainItems(mainItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MainItem)));
-        setSubItems(subItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubItem)));
-
     } catch (e) {
         console.error(e);
     } finally {
         setIsLoading(false);
-        setIsLoadingItems(false);
     }
   };
 
@@ -206,9 +196,6 @@ export default function TransactionsPage() {
         isOpen={isStockInOpen}
         onOpenChange={setIsStockInOpen}
         onConfirm={fetchData}
-        mainItems={mainItems}
-        subItems={subItems}
-        isLoadingItems={isLoadingItems}
       />
     </>
   );

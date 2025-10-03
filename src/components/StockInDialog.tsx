@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,11 +15,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { MainItem, SubItem, InventoryLog } from '@/lib/types';
+import type { InventoryLog, BoqItem } from '@/lib/types';
 import { Plus, Trash2, Save, Loader2 } from 'lucide-react';
 import { ItemSelector } from './ItemSelector';
+import { BoqItemSelector } from './BoqItemSelector';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, doc, runTransaction, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, runTransaction, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useParams } from 'next/navigation';
 
@@ -26,14 +28,12 @@ interface StockInDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: () => void;
-  mainItems: MainItem[];
-  subItems: SubItem[];
-  isLoadingItems: boolean;
 }
 
 const initialItemState = {
     itemId: '',
-    itemType: 'Sub' as 'Main' | 'Sub',
+    itemName: '',
+    itemUnit: '',
     quantity: 1,
     batchNo: '',
     unitCost: 0,
@@ -41,7 +41,7 @@ const initialItemState = {
 
 type GrnItem = typeof initialItemState;
 
-export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subItems, isLoadingItems }: StockInDialogProps) {
+export function StockInDialog({ isOpen, onOpenChange, onConfirm }: StockInDialogProps) {
   const { toast } = useToast();
   const params = useParams() as { project: string };
   const projectSlug = params.project;
@@ -52,6 +52,28 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subI
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<GrnItem[]>([initialItemState]);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+        const fetchBoq = async () => {
+            if (!projectSlug) return;
+            setIsLoadingItems(true);
+            try {
+                const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+                const boqSnapshot = await getDocs(q);
+                const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+                setBoqItems(boqData);
+            } catch (error) {
+                console.error("Error fetching BOQ:", error);
+            }
+            setIsLoadingItems(false);
+        };
+        fetchBoq();
+    }
+  }, [isOpen, projectSlug]);
 
   const resetForm = () => {
     setSupplier('');
@@ -77,10 +99,15 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subI
     setItems(newItems);
   };
   
-  const handleItemSelect = (index: number, item: MainItem | SubItem | null, type: 'Main' | 'Sub') => {
+  const handleItemSelect = (index: number, item: BoqItem | null) => {
       if(item) {
         handleItemChange(index, 'itemId', item.id);
-        handleItemChange(index, 'itemType', type);
+        handleItemChange(index, 'itemName', item['Description'] || item['DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'] || '');
+        handleItemChange(index, 'itemUnit', item['UNIT'] || '');
+      } else {
+        handleItemChange(index, 'itemId', '');
+        handleItemChange(index, 'itemName', '');
+        handleItemChange(index, 'itemUnit', '');
       }
   }
 
@@ -94,14 +121,11 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subI
     try {
         const batchId = `GRN-${Date.now()}`;
         const writePromises = items.map(item => {
-            const allItems = [...mainItems, ...subItems];
-            const fullItem = allItems.find(i => i.id === item.itemId);
-
             const logEntry: Omit<InventoryLog, 'id'> = {
                 date: new Date(),
                 itemId: item.itemId,
-                itemName: fullItem?.name || 'Unknown',
-                itemType: item.itemType,
+                itemName: item.itemName,
+                itemType: 'Sub', // Assuming all BOQ items are treated as Sub-items for stock purposes
                 transactionType: 'Goods Receipt',
                 quantity: item.quantity,
                 projectId: projectSlug,
@@ -126,12 +150,6 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subI
         setIsSaving(false);
     }
   };
-  
-  const getItemName = (item: GrnItem) => {
-      const allItems = [...mainItems, ...subItems];
-      return allItems.find(i => i.id === item.itemId)?.name || '';
-  }
-
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -161,12 +179,11 @@ export function StockInDialog({ isOpen, onOpenChange, onConfirm, mainItems, subI
                     {items.map((item, index) => (
                         <div key={index} className="grid grid-cols-[1fr,100px,120px,120px,auto] gap-2 items-end p-2 border rounded-md">
                            <div className="space-y-1">
-                             {index === 0 && <Label className="text-xs">Item</Label>}
-                             <ItemSelector
-                                mainItems={mainItems}
-                                subItems={subItems}
-                                selectedItemId={item.itemId}
-                                onSelect={(selectedItem, type) => handleItemSelect(index, selectedItem, type)}
+                             {index === 0 && <Label className="text-xs">BOQ Item</Label>}
+                             <BoqItemSelector
+                                boqItems={boqItems}
+                                selectedSlNo={item.itemName}
+                                onSelect={(selectedItem) => handleItemSelect(index, selectedItem)}
                                 isLoading={isLoadingItems}
                               />
                            </div>
