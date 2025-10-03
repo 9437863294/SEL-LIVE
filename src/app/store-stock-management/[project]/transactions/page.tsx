@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import {
   Card,
   CardHeader,
@@ -171,9 +171,11 @@ export default function TransactionsPage() {
                         <PlusCircle className="mr-2 h-4 w-4" /> Stock In
                     </Button>
                 </Link>
-                <Button variant="outline">
-                  <MinusCircle className="mr-2 h-4 w-4" /> Stock Out
-                </Button>
+                <Link href={`/store-stock-management/${projectSlug}/transactions/stock-out`}>
+                  <Button variant="outline">
+                    <MinusCircle className="mr-2 h-4 w-4" /> Stock Out
+                  </Button>
+                </Link>
               </div>
             </div>
             <div className="mt-4 flex items-center gap-2">
