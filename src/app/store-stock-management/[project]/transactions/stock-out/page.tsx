@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -223,7 +223,7 @@ export default function StockOutPage() {
                 <Card>
                     <CardHeader><CardTitle>Issue Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormField control={form.control} name="issueDate" render={({ field }) => ( <FormItem className="space-y-2 flex flex-col"> <FormLabel>Issue Date</FormLabel> <Popover> <PopoverTrigger asChild> <FormControl> <Button variant="outline" className={cn('justify-start text-left font-normal', !field.value && 'text-muted-foreground')}> <CalendarIcon className="mr-2 h-4 w-4" /> {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>} </Button> </FormControl> </PopoverTrigger> <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent> </Popover> <FormMessage /> </FormItem> )}/>
+                        <FormField control={form.control} name="issueDate" render={({ field }) => ( <FormItem className="space-y-2 flex flex-col"> <FormLabel>Issue Date</FormLabel> <Popover> <PopoverTrigger asChild> <Button variant="outline" className={cn('justify-start text-left font-normal', !field.value && 'text-muted-foreground')}> <CalendarIcon className="mr-2 h-4 w-4" /> {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>} </Button> </PopoverTrigger> <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent> </Popover> <FormMessage /> </FormItem> )}/>
                         <FormField control={form.control} name="issuedTo" render={({ field }) => ( <FormItem className="space-y-2"> <FormLabel>Issued To</FormLabel> <FormControl><Input placeholder="e.g., Subcontractor Name / Site Location" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                         <div className="md:col-span-2">
                             <FormField control={form.control} name="notes" render={({ field }) => ( <FormItem className="space-y-2"> <FormLabel>Notes</FormLabel> <FormControl><Textarea placeholder="Add any relevant notes for this transaction..." {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
