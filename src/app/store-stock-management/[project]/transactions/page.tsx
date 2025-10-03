@@ -14,14 +14,10 @@ import { cn } from '@/lib/utils';
 
 // Mock data - replace with actual data fetching
 const mockTransactions = [
-  { id: '1', date: '2025-09-26T19:46:00', type: 'Conversion', sku: 'PG-001-EA', quantity: 10, cost: null, details: null, notes: 'Converted from 1 Box' },
-  { id: '2', date: '2025-09-26T19:46:00', type: 'Conversion', sku: 'PG-001', quantity: -1, cost: null, details: null, notes: 'Converted to 10 Each' },
-  { id: '3', date: '2023-11-01T15:00:00', type: 'Transfer', sku: 'DD-305', quantity: -15, cost: null, details: null, notes: 'Transfer to Site B' },
   { id: '4', date: '2023-11-01T11:00:00', type: 'Goods Issue', sku: 'LC-003', quantity: -30, cost: null, details: 'Order: CUST-C-101', notes: '' },
   { id: '5', date: '2023-10-31T10:00:00', type: 'Goods Receipt', sku: 'HG-001', quantity: 40, cost: 195.00, details: 'Supplier: Heavy Duty Inc.\nPO: PO-125\nInvoice: INV-003\nBatch: B003', notes: '' },
   { id: '6', date: '2023-10-30T13:20:00', type: 'Return', sku: 'SW-042', quantity: 5, cost: null, details: null, notes: 'Customer return' },
   { id: '7', date: '2023-10-29T08:00:00', type: 'Goods Issue', sku: 'PG-001', quantity: -15, cost: null, details: 'Order: CUST-B-92', notes: '' },
-  { id: '8', date: '2023-10-28T16:45:00', type: 'Adjustment', sku: 'CW-007', quantity: -2, cost: null, details: null, notes: 'Stock count correction' },
 ];
 
 const allColumns = ['Cost', 'Details', 'Notes'];
