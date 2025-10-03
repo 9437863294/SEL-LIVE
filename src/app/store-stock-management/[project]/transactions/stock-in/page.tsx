@@ -23,7 +23,7 @@ import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const initialItemState = {
-  id: Date.now(), // Add a unique id
+  id: Date.now(),
   itemId: '',
   itemName: '',
   itemUnit: '',
@@ -74,7 +74,16 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    setItems([...items, { ...initialItemState, id: Date.now() }]);
+    setItems([...items, { 
+      id: Date.now(),
+      itemId: '',
+      itemName: '',
+      itemUnit: '',
+      quantity: 1,
+      receiveUnit: '',
+      batchNo: '',
+      unitCost: 0,
+     } ]);
   };
 
   const handleRemoveItem = (index: number) => {
