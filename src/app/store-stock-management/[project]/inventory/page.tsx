@@ -11,6 +11,14 @@ import type { BoqItem, InventoryLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Calendar as CalendarIcon, Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { DateRange } from 'react-day-picker';
+import { format } from 'date-fns';
 
 interface InventoryItem {
     id: string;
@@ -31,6 +39,10 @@ export default function InventoryPage() {
     const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
     const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    
+    // Filter states
+    const [searchTerm, setSearchTerm] = useState('');
+    const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
     useEffect(() => {
         if (!projectSlug) return;
@@ -62,10 +74,17 @@ export default function InventoryPage() {
 
     const inventoryData = useMemo((): InventoryItem[] => {
         if (isLoading) return [];
+        
+        const filteredLogs = dateRange?.from && dateRange?.to
+            ? inventoryLogs.filter(log => {
+                const logDate = log.date.toDate();
+                return logDate >= dateRange.from! && logDate <= dateRange.to!;
+            })
+            : inventoryLogs;
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number }>();
 
-        inventoryLogs.forEach(log => {
+        filteredLogs.forEach(log => {
             const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
             if (log.transactionType === 'Goods Receipt') {
                 current.stockIn += log.quantity;
@@ -77,7 +96,7 @@ export default function InventoryPage() {
         
         const boqWithMainItems = boqItems.filter(item => item['Sl No']);
 
-        return boqWithMainItems.map(item => {
+        const calculatedData = boqWithMainItems.map(item => {
             const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0 };
             const subItemMovements = (item.bom || []).reduce((acc, bomItem) => {
                 const subMovements = stockMovements.get(`bom-${item.id}-${bomItem.markNo}`) || { stockIn: 0, stockOut: 0 };
@@ -99,20 +118,92 @@ export default function InventoryPage() {
                 stockOut: stockOut,
                 balance: stockIn - stockOut,
             };
-        }).sort((a,b) => parseFloat(a.slNo) - parseFloat(b.slNo));
+        });
+        
+        const lowercasedFilter = searchTerm.toLowerCase();
+        const finalFilteredData = !searchTerm
+            ? calculatedData
+            : calculatedData.filter(item => 
+                item.slNo.toLowerCase().includes(lowercasedFilter) ||
+                item.description.toLowerCase().includes(lowercasedFilter)
+            );
 
-    }, [boqItems, inventoryLogs, isLoading]);
+        return finalFilteredData.sort((a,b) => parseFloat(a.slNo) - parseFloat(b.slNo));
+
+    }, [boqItems, inventoryLogs, isLoading, searchTerm, dateRange]);
+    
+    const clearFilters = () => {
+        setSearchTerm('');
+        setDateRange(undefined);
+    }
 
     return (
         <div>
             <h1 className="text-3xl font-bold mb-6">Inventory Status</h1>
+
+            <Card className="mb-6">
+                <CardHeader>
+                    <CardTitle>Filters</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+                    <div className="relative w-full sm:w-auto flex-grow">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search by Sl. No. or Description..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-8"
+                        />
+                    </div>
+                    <div className="w-full sm:w-auto">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    id="date"
+                                    variant={"outline"}
+                                    className={cn(
+                                    "w-full sm:w-[300px] justify-start text-left font-normal",
+                                    !dateRange && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange?.from ? (
+                                    dateRange.to ? (
+                                        <>
+                                        {format(dateRange.from, "LLL dd, y")} -{" "}
+                                        {format(dateRange.to, "LLL dd, y")}
+                                        </>
+                                    ) : (
+                                        format(dateRange.from, "LLL dd, y")
+                                    )
+                                    ) : (
+                                    <span>Pick a date range</span>
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                    initialFocus
+                                    mode="range"
+                                    defaultMonth={dateRange?.from}
+                                    selected={dateRange}
+                                    onSelect={setDateRange}
+                                    numberOfMonths={2}
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                     <Button onClick={clearFilters} variant="secondary">Clear</Button>
+                </CardContent>
+            </Card>
+
             <Card>
                 <CardHeader>
                     <CardTitle>Stock Overview</CardTitle>
                     <CardDescription>A summary of your inventory based on BOQ items.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <ScrollArea className="h-[calc(100vh-22rem)]">
+                    <ScrollArea className="h-[calc(100vh-28rem)]">
                         <Table>
                             <TableHeader className="sticky top-0 bg-background z-10">
                                 <TableRow>
@@ -147,7 +238,7 @@ export default function InventoryPage() {
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={7} className="text-center h-24">
-                                            No inventory data to display for this project.
+                                            No inventory data to display for this project or selected filters.
                                         </TableCell>
                                     </TableRow>
                                 )}
