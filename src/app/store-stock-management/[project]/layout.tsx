@@ -81,7 +81,7 @@ export default function ProjectLayout({
           <SidebarFooter>
              <SidebarTrigger asChild>
                 <Button variant="ghost" className="w-full justify-center">
-                  <ChevronLeft className="h-5 w-5" />
+                    <ChevronLeft className="h-5 w-5" />
                 </Button>
              </SidebarTrigger>
           </SidebarFooter>
