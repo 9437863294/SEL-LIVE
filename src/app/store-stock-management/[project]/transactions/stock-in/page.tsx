@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
@@ -38,13 +38,12 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 const itemSchema = z.object({
   id: z.string(),
-  itemId: z.string().min(1, ''),
+  itemId: z.string().min(1, { message: "" }),
   itemName: z.string(),
   itemUnit: z.string(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
   receiveUnit: z.string().min(1, ''),
   unitCost: z.coerce.number().optional(),
-  batchNo: z.string().optional().default(''),
 });
 
 const grnSchema = z.object({
@@ -76,6 +75,7 @@ export default function StockInPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const invoiceFileRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -107,7 +107,7 @@ export default function StockInPage() {
     const grn = `GRN-${projectSlug.substring(0, 4).toUpperCase()}-${format(new Date(), 'yyyyMMdd')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
     form.setValue('grnNo', grn);
     if(fields.length === 0){
-        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0, batchNo: '' });
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
     }
   }, [projectSlug, form, fields, append]);
 
@@ -130,7 +130,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0, batchNo: '' });
+    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -190,7 +190,7 @@ export default function StockInPage() {
           projectId: projectSlug,
           description: `GRN from ${data.supplier}. PO: ${data.poNumber}, Inv: ${data.invoiceNumber}.`,
           cost: item.unitCost,
-          batch: item.batchNo || '',
+          batch: '',
           details: { 
             supplier: data.supplier, 
             poNumber: data.poNumber, 
@@ -302,7 +302,10 @@ export default function StockInPage() {
                                   const currentFiles = field.value || [];
                                   const newFiles = e.target.files ? Array.from(e.target.files) : [];
                                   field.onChange([...currentFiles, ...newFiles]);
-                                }} />
+                                  if (invoiceFileRef.current) {
+                                    invoiceFileRef.current.value = '';
+                                  }
+                                }} ref={invoiceFileRef} />
                                 </FormControl>
                                 <FormMessage />
                                 {field.value && field.value.length > 0 && (
@@ -342,7 +345,7 @@ export default function StockInPage() {
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                          <div className="hidden md:grid md:grid-cols-1 gap-2 items-end p-2 font-medium text-muted-foreground">
-                            <div className="grid grid-cols-[2.5fr,0.5fr,0.8fr,1fr] gap-4 items-center">
+                            <div className="grid grid-cols-[3fr,0.5fr,0.8fr,1fr] gap-4 items-center">
                                <Label>BOQ Item</Label>
                                <Label>Quantity</Label>
                                <Label>Receive Unit</Label>
@@ -351,7 +354,7 @@ export default function StockInPage() {
                         </div>
                         {fields.map((field, index) => (
                             <div key={field.id} className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 items-start md:items-center p-2 border rounded-md">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[2.5fr,0.5fr,0.8fr,1fr] gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[3fr,0.5fr,0.8fr,1fr] gap-4">
                                      <FormField
                                         control={form.control}
                                         name={`items.${index}.itemId`}
