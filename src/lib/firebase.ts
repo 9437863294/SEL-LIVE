@@ -1,6 +1,7 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, type Firestore } from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
@@ -17,19 +18,8 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-let db: Firestore;
-if (typeof window !== 'undefined') {
-  // Client-side execution
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    }),
-    experimentalForceLongPolling: true,
-  });
-} else {
-  // Server-side execution
-  db = getFirestore(app);
-}
+// Use getFirestore() for robust initialization
+const db: Firestore = getFirestore(app);
 
 const auth = getAuth(app);
 const storage = getStorage(app);
