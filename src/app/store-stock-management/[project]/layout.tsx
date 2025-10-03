@@ -16,31 +16,28 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+// Using the correct, fully-featured sidebar component
 import {
   SidebarProvider,
   Sidebar,
-  SidebarTrigger,
   SidebarHeader,
   SidebarContent,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarFooter
+  SidebarFooter,
+  SidebarTrigger, // Import the trigger
+  useSidebar
 } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
-import { useSidebar } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-
-export default function ProjectLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const pathname = usePathname();
+function SidebarContentWrapper() {
   const params = useParams();
   const projectSlug = params.project as string;
+  const pathname = usePathname();
 
   const navItems = [
     { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
@@ -54,37 +51,47 @@ export default function ProjectLayout({
   ];
 
   return (
+    <>
+      <SidebarHeader>
+        <h2 className="text-lg font-semibold px-2 truncate">Stock Management</h2>
+        {projectSlug && <p className="text-sm text-muted-foreground px-2 truncate capitalize">{projectSlug.replace(/-/g, ' ')}</p>}
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarMenu>
+          {navItems.map((item) => (
+            <SidebarMenuItem key={item.label}>
+              <Link href={item.href}>
+                <SidebarMenuButton
+                  isActive={pathname === item.href}
+                  tooltip={item.label}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </Link>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarContent>
+      <SidebarFooter>
+         <SidebarTrigger />
+      </SidebarFooter>
+    </>
+  )
+}
+
+
+export default function ProjectLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+
+  return (
     <div className="flex h-screen">
       <SidebarProvider>
         <Sidebar>
-          <SidebarHeader>
-            <h2 className="text-lg font-semibold px-2 truncate">Stock Management</h2>
-            {projectSlug && <p className="text-sm text-muted-foreground px-2 truncate capitalize">{projectSlug.replace(/-/g, ' ')}</p>}
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.label}>
-                  <Link href={item.href}>
-                    <SidebarMenuButton
-                      isActive={pathname === item.href}
-                      tooltip={item.label}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarContent>
-          <SidebarFooter>
-             <SidebarTrigger asChild>
-                <Button variant="ghost" className="w-full justify-center">
-                    <ChevronLeft className="h-5 w-5" />
-                </Button>
-             </SidebarTrigger>
-          </SidebarFooter>
+          <SidebarContentWrapper />
         </Sidebar>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </SidebarProvider>
