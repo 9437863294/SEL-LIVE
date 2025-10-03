@@ -24,14 +24,14 @@ import { ScrollArea } from './ui/scroll-area';
 interface BoqItemSelectorProps {
   boqItems: BoqItem[];
   selectedSlNo: string | null;
-  onSelect: (item: BoqItem | null) => void;
+  onSelect?: (item: BoqItem | null) => void;
   isLoading: boolean;
 }
 
 export function BoqItemSelector({
   boqItems,
   selectedSlNo,
-  onSelect,
+  onSelect = () => {},
   isLoading,
 }: BoqItemSelectorProps) {
   const [open, setOpen] = React.useState(false);
