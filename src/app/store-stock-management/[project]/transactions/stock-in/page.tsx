@@ -101,8 +101,6 @@ export default function StockInPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
-  const invoiceFileRef = useRef<HTMLInputElement>(null);
-  const transporterFileRef = useRef<HTMLInputElement>(null);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
   const form = useForm<GrnFormValues>({
@@ -126,7 +124,7 @@ export default function StockInPage() {
       transporterDocs: [],
     },
   });
-
+  
   const { fields, append, remove, update } = useFieldArray({
     control: form.control,
     name: 'items',
@@ -359,6 +357,51 @@ export default function StockInPage() {
       )}
     />
   );
+  
+  const FileUpload = ({ name, label }: { name: keyof GrnFormValues, label: string }) => {
+    const files = form.watch(name as any) as File[] || [];
+    return (
+      <FormField
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <FormItem className="space-y-2">
+            <FormLabel>{label}</FormLabel>
+            <div className="flex items-center gap-2">
+               <FormControl>
+                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(e.target.files)} />
+               </FormControl>
+                <Label htmlFor={name} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                    {files.length > 0 ? `${files.length} file(s) selected` : 'No file selected'}
+                </Label>
+                <Button asChild variant="outline">
+                    <Label htmlFor={name} className="cursor-pointer">
+                        <Upload className="mr-2 h-4 w-4"/> Upload
+                    </Label>
+                </Button>
+            </div>
+             {files.length > 0 && (
+                <div className="mt-2 space-y-1">
+                    {files.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md text-xs">
+                           <span>{file.name}</span>
+                            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" onClick={() => {
+                                const newFiles = [...files];
+                                newFiles.splice(i, 1);
+                                field.onChange(newFiles);
+                            }}>
+                                <X className="h-3 w-3"/>
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+             )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    );
+  };
 
 
   return (
@@ -410,6 +453,9 @@ export default function StockInPage() {
                         <FormField control={form.control} name="invoiceNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice No.</FormLabel><FormControl><Input placeholder="e.g., INV-67890" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="invoiceDate" label="Invoice Date" />
                         <FormField control={form.control} name="invoiceAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice Amount</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)}/>
+                        <div className="md:col-span-3">
+                           <FileUpload name="invoiceFiles" label="Upload Invoice(s)" />
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -420,6 +466,9 @@ export default function StockInPage() {
                         <FormField control={form.control} name="waybillNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Waybill No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <FormField control={form.control} name="lrNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>LR No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                         <DatePickerField name="lrDate" label="LR Date" />
+                         <div className="md:col-span-3">
+                           <FileUpload name="transporterDocs" label="Upload Transporter Doc(s)" />
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -444,7 +493,22 @@ export default function StockInPage() {
                                         <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>BOQ Item</FormLabel> <BoqItemSelector key={field.id} boqItems={boqItems} selectedSlNo={getSelectedSlNo(index)} onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
                                         {hasBom && (
                                             <div className="flex items-end pb-1">
-                                                <FormField control={form.control} name={`items.${index}.isBomGrn`} render={({ field }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl> <Switch checked={field.value} onCheckedChange={field.onChange} /> </FormControl> <FormLabel>GRN as BOM</FormLabel> </FormItem> )} />
+                                                <FormField
+                                                  control={form.control}
+                                                  name={`items.${index}.isBomGrn`}
+                                                  render={({ field: switchField }) => (
+                                                    <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3">
+                                                      <FormControl>
+                                                        <Switch
+                                                          checked={switchField.value}
+                                                          onCheckedChange={switchField.onChange}
+                                                          id={`isBomGrn-${index}`}
+                                                        />
+                                                      </FormControl>
+                                                      <FormLabel htmlFor={`isBomGrn-${index}`}>GRN as BOM</FormLabel>
+                                                    </FormItem>
+                                                  )}
+                                                />
                                             </div>
                                         )}
                                     </div>
