@@ -23,6 +23,7 @@ import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const initialItemState = {
+  id: Date.now(), // Add a unique id
   itemId: '',
   itemName: '',
   itemUnit: '',
@@ -73,7 +74,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    setItems([...items, { ...initialItemState }]);
+    setItems([...items, { ...initialItemState, id: Date.now() }]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -84,7 +85,7 @@ export default function StockInPage() {
 
   const handleItemChange = (
     index: number,
-    field: keyof GrnItem,
+    field: keyof Omit<GrnItem, 'id'>,
     value: any
   ) => {
     const newItems = [...items];
@@ -108,19 +109,22 @@ export default function StockInPage() {
   };
 
   const handleItemSelect = (index: number, item: BoqItem | null) => {
+    const newItems = [...items];
+    const currentItem = newItems[index];
     if (item) {
-      handleItemChange(index, 'itemId', item.id);
+      currentItem.itemId = item.id;
       const description = getItemDescription(item);
-      handleItemChange(index, 'itemName', description);
+      currentItem.itemName = description;
       const unit = item['UNIT'] || item['UNITS'] || '';
-      handleItemChange(index, 'itemUnit', unit);
-      handleItemChange(index, 'receiveUnit', unit);
+      currentItem.itemUnit = unit;
+      currentItem.receiveUnit = unit;
     } else {
-      handleItemChange(index, 'itemId', '');
-      handleItemChange(index, 'itemName', '');
-      handleItemChange(index, 'itemUnit', '');
-      handleItemChange(index, 'receiveUnit', '');
+      currentItem.itemId = '';
+      currentItem.itemName = '';
+      currentItem.itemUnit = '';
+      currentItem.receiveUnit = '';
     }
+    setItems(newItems);
   };
 
   const handleSave = async () => {
@@ -225,7 +229,7 @@ export default function StockInPage() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                     {items.map((item, index) => (
-                        <div key={index} className="grid grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 border rounded-md">
+                        <div key={item.id} className="grid grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 border rounded-md">
                            <div className="space-y-1">
                              {index === 0 && <Label className="text-xs">BOQ Item</Label>}
                              <BoqItemSelector
