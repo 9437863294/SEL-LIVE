@@ -79,7 +79,7 @@ export function BoqItemSelector({
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {selectedItem
+          {currentValue && selectedItem
             ? `${getSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 20)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />

@@ -80,7 +80,7 @@ export default function StockInPage() {
     if (items.length > 1) {
         setItems(items.filter((item) => item.id !== id));
     } else {
-        setItems([{...initialItemState, id: Date.now()}]); // Reset the last item
+        setItems([{...initialItemState, id: Date.now()}]); // Reset the last item with a new ID
     }
   };
 
@@ -186,7 +186,7 @@ export default function StockInPage() {
     }
   };
   
-  const getSelectedSlNo = (item: GrnItem) => {
+  const getSelectedSlNo = (item: GrnItem): string => {
     if (!item.itemId) return '';
     const boqItem = boqItems.find(bi => bi.id === item.itemId);
     return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
