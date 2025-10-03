@@ -71,7 +71,7 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {selectedItem
-            ? `${selectedItem['Sl No'] || selectedItem['SL. No.']}: ${getItemDescription(selectedItem).substring(0, 20)}...`
+            ? `${selectedItem['Sl No'] || selectedItem['SL. No.']}: ${String(getItemDescription(selectedItem)).substring(0, 20)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -83,7 +83,7 @@ export function BoqItemSelector({
                 if (!item) return 0;
 
                 const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
-                const desc = getItemDescription(item).toLowerCase() || '';
+                const desc = String(getItemDescription(item) || '').toLowerCase();
                 const searchTerm = search.toLowerCase();
                 
                 return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
