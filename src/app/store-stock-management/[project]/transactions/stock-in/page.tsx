@@ -245,6 +245,7 @@ export default function StockInPage() {
           itemType: 'Sub',
           transactionType: 'Goods Receipt',
           quantity: item.quantity,
+          availableQuantity: item.quantity,
           unit: item.receiveUnit,
           projectId: projectSlug,
           description: `GRN from ${data.supplier}. PO: ${data.poNumber}, Inv: ${data.invoiceNumber}.`,

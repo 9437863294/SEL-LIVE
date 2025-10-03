@@ -246,6 +246,7 @@ export type InventoryLog = {
     itemType: 'Sub';
     transactionType: 'Goods Receipt' | 'Stock Out' | 'Build' | 'Utilization' | 'Conversion';
     quantity: number;
+    availableQuantity?: number;
     unit: string;
     projectId?: string;
     siteId?: string;
