@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,78 +18,85 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import type { BoqItem } from '@/lib/types';
+import type { BoqItem, FabricationBomItem } from '@/lib/types';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
-import { ItemSelector } from './ItemSelector'; // Assuming this will be adapted for BOQ items
 
-interface BomItemEntry {
-  boqItemId: string;
-  name: string;
-  unit: string;
-  quantity: number;
-}
+const initialBomItemState: Omit<FabricationBomItem, 'id'> = {
+    markNo: '',
+    inOne: '',
+    section: '',
+    grade: '',
+    length: 0,
+    width: 0,
+    unitWt: 0,
+    wtPerPc: 0,
+    totalWtPerSet: 0,
+    qtyPerSet: 0,
+    totalWtKg: 0,
+};
+
 
 interface BomDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   mainItem: BoqItem;
-  allBoqItems: BoqItem[];
   onSaveSuccess: () => void;
 }
 
-export function BomDialog({ isOpen, onOpenChange, mainItem, allBoqItems, onSaveSuccess }: BomDialogProps) {
+export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: BomDialogProps) {
   const { toast } = useToast();
-  const [bomItems, setBomItems] = useState<BomItemEntry[]>([]);
+  const [bomItems, setBomItems] = useState<FabricationBomItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (isOpen && mainItem.bom) {
-      const populatedBom = mainItem.bom.map((bomItem: { boqItemId: string, quantity: number }) => {
-        const fullItem = allBoqItems.find(item => item.id === bomItem.boqItemId);
-        return {
-          boqItemId: bomItem.boqItemId,
-          name: fullItem ? (fullItem['Description'] || fullItem['DESCRIPTION OF ITEMS'] || 'Unknown') : 'Unknown Item',
-          unit: fullItem ? (fullItem['UNIT'] || fullItem['UNITS'] || 'N/A') : 'N/A',
-          quantity: bomItem.quantity,
-        };
-      }).filter(item => item.name !== 'Unknown Item');
-      setBomItems(populatedBom);
-    } else if (isOpen) {
-      setBomItems([]);
+    if (isOpen) {
+      const initialBom = mainItem.bom?.map(item => ({ id: crypto.randomUUID(), ...item })) || [];
+      if(initialBom.length === 0) {
+        setBomItems([{ id: crypto.randomUUID(), ...initialBomItemState }]);
+      } else {
+        setBomItems(initialBom);
+      }
+    } else {
+       setBomItems([]); // Reset on close
     }
-  }, [isOpen, mainItem, allBoqItems]);
+  }, [isOpen, mainItem.bom]);
 
-  const subItemsAvailable = useMemo(() => {
-    const bomItemIds = new Set(bomItems.map(item => item.boqItemId));
-    return allBoqItems.filter(item => item.id !== mainItem.id && !bomItemIds.has(item.id));
-  }, [allBoqItems, mainItem, bomItems]);
-
-  const handleAddItem = (item: BoqItem) => {
-    setBomItems(prev => [...prev, {
-      boqItemId: item.id,
-      name: item['Description'] || item['DESCRIPTION OF ITEMS'],
-      unit: item['UNIT'] || item['UNITS'],
-      quantity: 1
-    }]);
-  };
-
-  const handleQuantityChange = (index: number, quantity: number) => {
+  const handleItemChange = (index: number, field: keyof FabricationBomItem, value: string | number) => {
     const newItems = [...bomItems];
-    newItems[index].quantity = quantity;
+    const item = { ...newItems[index] };
+    (item[field] as any) = value;
+
+    // Auto-calculate
+    if (field === 'unitWt' || field === 'length') {
+        item.wtPerPc = (item.unitWt || 0) * (item.length || 0) / 1000;
+    }
+    if (field === 'wtPerPc' || field === 'inOne') {
+        item.totalWtPerSet = (item.wtPerPc || 0) * (parseFloat(String(item.inOne)) || 0);
+    }
+    if (field === 'totalWtPerSet' || field === 'qtyPerSet') {
+        item.totalWtKg = (item.totalWtPerSet || 0) * (item.qtyPerSet || 0);
+    }
+
+    newItems[index] = item;
     setBomItems(newItems);
   };
+  
+  const handleAddItem = () => {
+    setBomItems(prev => [...prev, { id: crypto.randomUUID(), ...initialBomItemState }]);
+  };
 
-  const handleRemoveItem = (index: number) => {
-    setBomItems(prev => prev.filter((_, i) => i !== index));
+  const handleRemoveItem = (id: string) => {
+    if (bomItems.length > 1) {
+        setBomItems(prev => prev.filter(item => item.id !== id));
+    } else {
+        setBomItems([{ id: crypto.randomUUID(), ...initialBomItemState }]);
+    }
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const bomToSave = bomItems.map(item => ({
-        boqItemId: item.boqItemId,
-        quantity: item.quantity,
-      }));
+      const bomToSave = bomItems.map(({ id, ...rest }) => rest);
       await updateDoc(doc(db, 'boqItems', mainItem.id), { bom: bomToSave });
       toast({ title: 'Success', description: 'Bill of Materials saved successfully.' });
       onSaveSuccess();
@@ -111,59 +119,59 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, allBoqItems, onSaveS
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-w-7xl">
         <DialogHeader>
           <DialogTitle>Bill of Materials for: {getItemDescription(mainItem)}</DialogTitle>
           <DialogDescription>
-            Define the sub-components and quantities required to build this item.
+            Define the raw materials and quantities required for fabrication.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-4">
-          <div className="mb-4">
-            <ItemSelector
-              mainItems={[]} // Not used in this context
-              subItems={subItemsAvailable.map(i => ({...i, name: getItemDescription(i)}))}
-              selectedItemId={null}
-              onSelect={(item, type) => {
-                if (item) handleAddItem(item as BoqItem);
-              }}
-              isLoading={false}
-            />
-          </div>
-
-          <ScrollArea className="h-72 border rounded-md">
+        <ScrollArea className="h-[60vh] border rounded-md">
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Sub-Item Name</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bomItems.map((item, index) => (
-                  <TableRow key={item.boqItemId}>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => handleQuantityChange(index, parseFloat(e.target.value) || 0)}
-                        className="w-24"
-                      />
-                    </TableCell>
-                    <TableCell>{item.unit}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(index)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Mark No.</TableHead>
+                        <TableHead>In One</TableHead>
+                        <TableHead>Section (MM)</TableHead>
+                        <TableHead>Grade</TableHead>
+                        <TableHead>Length</TableHead>
+                        <TableHead>Width (MM)</TableHead>
+                        <TableHead>Unit Wt.</TableHead>
+                        <TableHead>Wt/Pc (KG)</TableHead>
+                        <TableHead>Total Wt./Set</TableHead>
+                        <TableHead>QTY/ PCS</TableHead>
+                        <TableHead>Total Wt./KG</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {bomItems.map((item, index) => (
+                        <TableRow key={item.id}>
+                            <TableCell><Input value={item.markNo} onChange={(e) => handleItemChange(index, 'markNo', e.target.value)} /></TableCell>
+                            <TableCell><Input value={item.inOne} onChange={(e) => handleItemChange(index, 'inOne', e.target.value)} /></TableCell>
+                            <TableCell><Input value={item.section} onChange={(e) => handleItemChange(index, 'section', e.target.value)} /></TableCell>
+                            <TableCell><Input value={item.grade} onChange={(e) => handleItemChange(index, 'grade', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.length} onChange={(e) => handleItemChange(index, 'length', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.width} onChange={(e) => handleItemChange(index, 'width', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.unitWt} onChange={(e) => handleItemChange(index, 'unitWt', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.wtPerPc} onChange={(e) => handleItemChange(index, 'wtPerPc', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.totalWtPerSet} readOnly className="bg-muted" /></TableCell>
+                            <TableCell><Input type="number" value={item.qtyPerSet} onChange={(e) => handleItemChange(index, 'qtyPerSet', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.totalWtKg} readOnly className="bg-muted" /></TableCell>
+                            <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
             </Table>
-          </ScrollArea>
+        </ScrollArea>
+        <div className="flex justify-start">
+            <Button variant="outline" size="sm" onClick={handleAddItem}>
+                <Plus className="mr-2 h-4 w-4" /> Add Row
+            </Button>
         </div>
         <DialogFooter>
           <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>

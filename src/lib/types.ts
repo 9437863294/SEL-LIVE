@@ -22,10 +22,25 @@ export type EmailAuthorization = {
   // likely in a separate, more secure subcollection.
 };
 
+export type FabricationBomItem = {
+    id: string;
+    markNo: string;
+    inOne: string;
+    section: string;
+    grade: string;
+    length: number;
+    width: number;
+    unitWt: number;
+    wtPerPc: number;
+    totalWtPerSet: number;
+    qtyPerSet: number;
+    totalWtKg: number;
+};
 
 export type BoqItem = {
     id: string;
     [key: string]: any;
+    bom?: Omit<FabricationBomItem, 'id'>[];
 };
 
 export type JmcItem = {
@@ -198,15 +213,10 @@ export type Site = {
     location: string;
 }
 
-export type BomItem = {
-    subItemId: string;
-    quantity: number;
-}
-
 export type MainItem = {
     id: string;
     name: string;
-    bom?: BomItem[];
+    bom?: FabricationBomItem[];
     stock?: number;
 }
 
@@ -227,11 +237,31 @@ export type InventoryLog = {
     itemType: 'Main' | 'Sub';
     transactionType: 'Stock In' | 'Stock Out' | 'Build' | 'Utilization' | 'Conversion';
     quantity: number;
+    unit: string;
     projectId?: string;
     siteId?: string;
     vehicleNo?: string;
     buildTask?: string; // For utilization
     description?: string; // For BOM conversion notes
+    cost?: number;
+    batch?: string;
+    details?: {
+      grnNo?: string;
+      boqSlNo?: string;
+      supplier?: string;
+      poNumber?: string;
+      poDate?: string | null;
+      invoiceNumber?: string;
+      invoiceDate?: string | null;
+      invoiceAmount?: number | null;
+      invoiceFileUrls?: Attachment[];
+      transporterDocUrls?: Attachment[];
+      vehicleNo?: string;
+      waybillNo?: string;
+      lrNo?: string;
+      lrDate?: string | null;
+      notes?: string;
+    };
 }
 
 export type AccountHead = {
