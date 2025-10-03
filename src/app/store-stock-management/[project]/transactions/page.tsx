@@ -30,7 +30,6 @@ import {
   Edit,
   Trash2,
   Loader2,
-  DropdownMenuSeparator,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
@@ -56,6 +55,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -172,6 +172,8 @@ export default function TransactionsPage() {
         return;
       }
       router.push(`/store-stock-management/${projectSlug}/transactions/stock-in/${summary.id}/edit`);
+    } else {
+         toast({ title: "Info", description: "Editing Goods Issue is not supported. Please delete and create a new one.", variant: "default" });
     }
   };
 
@@ -352,15 +354,19 @@ export default function TransactionsPage() {
                                         <div>
                                             <DropdownMenuItem
                                                 onSelect={() => handleEditTransaction(summary)}
-                                                disabled={summary.transactionType === 'Goods Issue'}
+                                                disabled={summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
                                             >
                                                 <Edit className="mr-2 h-4 w-4" /> Edit
                                             </DropdownMenuItem>
                                         </div>
                                     </TooltipTrigger>
-                                    {summary.transactionType === 'Goods Issue' && (
+                                    {summary.transactionType === 'Goods Issue' ? (
                                         <TooltipContent>
-                                            <p>Delete and create a new issue to make changes.</p>
+                                            <p>Edit not supported for Goods Issue.</p>
+                                        </TooltipContent>
+                                    ) : (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0)) && (
+                                        <TooltipContent>
+                                            <p>Cannot edit GRN after items have been issued.</p>
                                         </TooltipContent>
                                     )}
                                 </Tooltip>
