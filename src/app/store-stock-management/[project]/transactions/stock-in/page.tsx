@@ -34,13 +34,13 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 const itemSchema = z.object({
   id: z.string(),
-  itemId: z.string().min(1, { message: 'Item is required.' }),
+  itemId: z.string().min(1, { message: ' ' }),
   itemName: z.string(),
   itemUnit: z.string(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
   receiveUnit: z.string().min(1, { message: ' ' }),
-  batchNo: z.string(),
-  unitCost: z.coerce.number().min(0),
+  batchNo: z.string().optional(),
+  unitCost: z.coerce.number().optional(),
 });
 
 const grnSchema = z.object({
@@ -88,7 +88,7 @@ export default function StockInPage() {
       lrNo: '',
       lrDate: undefined,
       notes: '',
-      items: [{ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', batchNo: '', unitCost: 0 }],
+      items: [],
     },
   });
 
@@ -100,7 +100,10 @@ export default function StockInPage() {
    useEffect(() => {
     const grn = `GRN-${projectSlug.substring(0, 4).toUpperCase()}-${format(new Date(), 'yyyyMMdd')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
     form.setValue('grnNo', grn);
-  }, [projectSlug, form]);
+    if(fields.length === 0){
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', batchNo: '', unitCost: 0 });
+    }
+  }, [projectSlug, form, fields, append]);
 
 
   useEffect(() => {
@@ -128,7 +131,7 @@ export default function StockInPage() {
     if (fields.length > 1) {
       remove(index);
     } else {
-      form.resetField(`items.${index}`);
+      toast({ title: "Cannot remove last item", description: "You must have at least one item in the GRN.", variant: "destructive" });
     }
   };
 
@@ -150,7 +153,8 @@ export default function StockInPage() {
       form.setValue(`items.${index}.itemUnit`, unit);
       form.setValue(`items.${index}.receiveUnit`, unit);
     } else {
-      form.resetField(`items.${index}`);
+      // Don't reset the whole field, just the ID to trigger re-validation if needed
+      form.setValue(`items.${index}.itemId`, '');
     }
   };
 
@@ -294,12 +298,12 @@ export default function StockInPage() {
                             <span></span>
                         </div>
                         {fields.map((field, index) => (
-                            <div key={field.id} className="grid md:grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-start md:items-end p-2 border rounded-md">
+                            <div key={field.id} className="grid md:grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-start md:items-center p-2 border rounded-md">
                                 <FormField
                                     control={form.control}
                                     name={`items.${index}.itemId`}
                                     render={() => (
-                                        <FormItem>
+                                        <FormItem className="space-y-1">
                                             <Label className="text-xs md:hidden">BOQ Item</Label>
                                             <BoqItemSelector
                                                 key={field.id}
@@ -308,13 +312,13 @@ export default function StockInPage() {
                                                 onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
                                                 isLoading={isLoadingItems}
                                             />
-                                            <FormMessage />
+                                            <FormMessage className="text-xs" />
                                         </FormItem>
                                     )}
                                 />
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Quantity</Label><FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Receive Unit</Label><FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
-                                <div className="space-y-1"><Label className="text-xs md:hidden">Batch No.</Label><FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
+                                <div className="space-y-1"><Label className="text-xs md-hidden">Batch No.</Label><FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Unit Cost</Label><FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
