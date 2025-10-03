@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BomDialog } from '@/components/BomDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function AssemblyPage() {
   const params = useParams();
@@ -26,6 +27,7 @@ export default function AssemblyPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<BoqItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterColumn, setFilterColumn] = useState('all');
 
   const fetchBoqItems = async () => {
     setIsLoading(true);
@@ -94,9 +96,19 @@ export default function AssemblyPage() {
     return boqItems.filter(item => {
       const description = getItemDescription(item).toLowerCase();
       const slNo = getSlNo(item).toLowerCase();
-      return description.includes(lowercasedFilter) || slNo.includes(lowercasedFilter);
+
+      if (filterColumn === 'all') {
+        return description.includes(lowercasedFilter) || slNo.includes(lowercasedFilter);
+      }
+      if (filterColumn === 'boqSlNo') {
+        return slNo.includes(lowercasedFilter);
+      }
+      if (filterColumn === 'description') {
+        return description.includes(lowercasedFilter);
+      }
+      return true;
     });
-  }, [boqItems, searchTerm]);
+  }, [boqItems, searchTerm, filterColumn]);
 
   return (
     <>
@@ -106,14 +118,26 @@ export default function AssemblyPage() {
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>BOQ Items</CardTitle>
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Filter by Sl. No. or Description..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                />
+              <div className="flex items-center gap-2">
+                <Select value={filterColumn} onValueChange={setFilterColumn}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Columns</SelectItem>
+                    <SelectItem value="boqSlNo">BOQ Sl. No.</SelectItem>
+                    <SelectItem value="description">Description</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative w-full max-w-sm">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
