@@ -1,5 +1,6 @@
 
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -765,5 +766,12 @@ export interface InventoryLog {
       // for issues/transfers
       issuedTo?: string;
       destinationProjectId?: string;
+      sourceGrn?: string;
     };
+}
+
+export interface EnrichedLogItem extends InventoryLog {
+  originalQuantity: number;
+  issuedQuantity: number;
+  balanceQuantity: number;
 }

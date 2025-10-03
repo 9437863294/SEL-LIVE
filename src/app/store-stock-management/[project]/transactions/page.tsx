@@ -39,16 +39,21 @@ import Link from 'next/link';
 import ViewTransactionDialog from '@/components/ViewTransactionDialog';
 
 
-const allColumns = ['Cost', 'Details', 'Notes'];
-
 export interface TransactionSummary {
     id: string; // GRN No or a generated Issue ID
     date: Date;
     transactionType: string;
     totalAmount: number;
-    items: InventoryLog[];
+    items: EnrichedLogItem[];
     details?: InventoryLog['details'];
 }
+
+export interface EnrichedLogItem extends InventoryLog {
+  originalQuantity: number;
+  issuedQuantity: number;
+  balanceQuantity: number;
+}
+
 
 export default function TransactionsPage() {
   const params = useParams();
@@ -102,42 +107,76 @@ export default function TransactionsPage() {
   };
   
   const transactionSummaries = useMemo(() => {
-    const groupedTransactions: Record<string, TransactionSummary> = {};
-  
-    transactions.forEach(t => {
-      let groupId: string;
-      let transactionType: string;
-  
-      if (t.transactionType === 'Goods Receipt' && t.details?.grnNo) {
-        groupId = t.details.grnNo;
-        transactionType = 'Goods Receipt';
-      } else if (t.transactionType === 'Goods Issue' && t.details?.issuedTo) {
-        const issueDate = format(t.date.toDate(), 'yyyy-MM-dd');
-        groupId = `ISSUE-${issueDate}-${t.details.issuedTo}`;
-        transactionType = 'Goods Issue';
-      } else {
-        // Fallback for other types or transactions missing key info
-        groupId = t.id; // Group by individual log entry
-        transactionType = t.transactionType;
-      }
-  
-      if (!groupedTransactions[groupId]) {
-        groupedTransactions[groupId] = {
-          id: groupId,
-          date: t.date.toDate(),
-          transactionType: transactionType,
-          totalAmount: 0,
-          items: [],
-          details: t.details,
+    const goodsReceipts = transactions.filter(t => t.transactionType === 'Goods Receipt');
+    const goodsIssues = transactions.filter(t => t.transactionType === 'Goods Issue');
+
+    const grnSummaries: Record<string, TransactionSummary> = {};
+
+    goodsReceipts.forEach(grnItem => {
+        const grnNo = grnItem.details?.grnNo;
+        if (!grnNo) return;
+
+        if (!grnSummaries[grnNo]) {
+            grnSummaries[grnNo] = {
+                id: grnNo,
+                date: grnItem.date.toDate(),
+                transactionType: 'Goods Receipt',
+                totalAmount: 0,
+                items: [],
+                details: grnItem.details,
+            };
+        }
+        
+        const issuedQty = goodsIssues
+            .filter(issue => issue.details?.sourceGrn === grnItem.id)
+            .reduce((sum, issue) => sum + issue.quantity, 0);
+            
+        const enrichedItem: EnrichedLogItem = {
+          ...grnItem,
+          originalQuantity: grnItem.quantity,
+          issuedQuantity: issuedQty,
+          balanceQuantity: grnItem.quantity - issuedQty,
         };
-      }
-  
-      groupedTransactions[groupId].items.push(t);
-      const itemCost = (t.quantity || 0) * (t.cost || 0);
-      groupedTransactions[groupId].totalAmount += itemCost;
+
+        grnSummaries[grnNo].items.push(enrichedItem);
+        grnSummaries[grnNo].totalAmount += (grnItem.quantity || 0) * (grnItem.cost || 0);
     });
-  
-    return Object.values(groupedTransactions).filter(summary =>
+    
+    const issueSummaries: Record<string, TransactionSummary> = {};
+    goodsIssues.forEach(issueItem => {
+        const issueTo = issueItem.details?.issuedTo;
+        if (!issueTo) return;
+        
+        const issueDate = format(issueItem.date.toDate(), 'yyyy-MM-dd');
+        const groupId = `ISSUE-${issueDate}-${issueTo}`;
+
+        if (!issueSummaries[groupId]) {
+            issueSummaries[groupId] = {
+                id: groupId,
+                date: issueItem.date.toDate(),
+                transactionType: 'Goods Issue',
+                totalAmount: 0,
+                items: [],
+                details: issueItem.details,
+            };
+        }
+        
+        const enrichedItem: EnrichedLogItem = {
+          ...issueItem,
+          originalQuantity: 0, // Not applicable for issue summary
+          issuedQuantity: issueItem.quantity,
+          balanceQuantity: 0,
+        };
+        
+        issueSummaries[groupId].items.push(enrichedItem);
+        issueSummaries[groupId].totalAmount += (issueItem.quantity || 0) * (issueItem.cost || 0);
+    });
+
+    const allSummaries = [...Object.values(grnSummaries), ...Object.values(issueSummaries)];
+    
+    allSummaries.sort((a,b) => b.date.getTime() - a.date.getTime());
+
+    return allSummaries.filter(summary =>
       summary.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [transactions, searchTerm]);
@@ -252,7 +291,7 @@ export default function TransactionsPage() {
       <ViewTransactionDialog 
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        grnSummary={selectedTransaction}
+        transactionSummary={selectedTransaction}
       />
     </>
   );

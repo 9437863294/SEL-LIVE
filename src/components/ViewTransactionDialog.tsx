@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { InventoryLog } from '@/lib/types';
+import type { InventoryLog, EnrichedLogItem } from '@/lib/types';
 import { format } from 'date-fns';
 import DocumentLink from './DocumentLink';
 import type { TransactionSummary } from '@/app/store-stock-management/[project]/transactions/page';
@@ -22,14 +22,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 interface ViewTransactionDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  grnSummary: TransactionSummary | null;
+  transactionSummary: TransactionSummary | null;
 }
 
-export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary }: ViewTransactionDialogProps) {
-  if (!grnSummary) return null;
+export default function ViewTransactionDialog({ isOpen, onOpenChange, transactionSummary: summary }: ViewTransactionDialogProps) {
+  if (!summary) return null;
 
-  const details = grnSummary.details;
-  const isGrn = grnSummary.transactionType === 'Goods Receipt';
+  const details = summary.details;
+  const isGrn = summary.transactionType === 'Goods Receipt';
   
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
@@ -49,7 +49,7 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Transaction Details: {grnSummary.id}</DialogTitle>
+          <DialogTitle>Transaction Details: {summary.id}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto p-4 space-y-4">
           
@@ -114,22 +114,26 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
                     <TableHead>BOQ Sl. No</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Unit Cost</TableHead>
+                    {isGrn && <TableHead>Issued</TableHead>}
+                    {isGrn && <TableHead>Balance</TableHead>}
                     <TableHead className="text-right">Total Cost</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {grnSummary.items.map(item => (
+                  {summary.items.map(item => (
                     <TableRow key={item.id}>
                       <TableCell>{item.itemName}</TableCell>
                       <TableCell>{item.details?.boqSlNo || 'N/A'}</TableCell>
                       <TableCell>{item.quantity} {item.unit}</TableCell>
                       <TableCell>{formatCurrency(item.cost)}</TableCell>
+                      {isGrn && <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>}
+                      {isGrn && <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>}
                       <TableCell className="text-right">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
                     </TableRow>
                   ))}
                    <TableRow className="font-bold bg-muted">
-                      <TableCell colSpan={4} className="text-right">Total</TableCell>
-                      <TableCell className="text-right">{formatCurrency(grnSummary.totalAmount)}</TableCell>
+                      <TableCell colSpan={isGrn ? 6 : 4} className="text-right">Total</TableCell>
+                      <TableCell className="text-right">{formatCurrency(summary.totalAmount)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
