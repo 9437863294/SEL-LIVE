@@ -19,6 +19,8 @@ import { Calendar as CalendarIcon, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 interface InventoryItem {
     id: string;
@@ -43,6 +45,7 @@ export default function InventoryPage() {
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+    const [showOnlyWithTransactions, setShowOnlyWithTransactions] = useState(false);
 
     useEffect(() => {
         if (!projectSlug) return;
@@ -96,7 +99,7 @@ export default function InventoryPage() {
         
         const boqWithMainItems = boqItems.filter(item => item['Sl No']);
 
-        const calculatedData = boqWithMainItems.map(item => {
+        let calculatedData = boqWithMainItems.map(item => {
             const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0 };
             const subItemMovements = (item.bom || []).reduce((acc, bomItem) => {
                 const subMovements = stockMovements.get(`bom-${item.id}-${bomItem.markNo}`) || { stockIn: 0, stockOut: 0 };
@@ -119,6 +122,10 @@ export default function InventoryPage() {
                 balance: stockIn - stockOut,
             };
         });
+
+        if (showOnlyWithTransactions) {
+          calculatedData = calculatedData.filter(item => item.stockIn > 0 || item.stockOut > 0);
+        }
         
         const lowercasedFilter = searchTerm.toLowerCase();
         const finalFilteredData = !searchTerm
@@ -130,11 +137,12 @@ export default function InventoryPage() {
 
         return finalFilteredData.sort((a,b) => parseFloat(a.slNo) - parseFloat(b.slNo));
 
-    }, [boqItems, inventoryLogs, isLoading, searchTerm, dateRange]);
+    }, [boqItems, inventoryLogs, isLoading, searchTerm, dateRange, showOnlyWithTransactions]);
     
     const clearFilters = () => {
         setSearchTerm('');
         setDateRange(undefined);
+        setShowOnlyWithTransactions(false);
     }
 
     return (
@@ -192,6 +200,10 @@ export default function InventoryPage() {
                                 />
                             </PopoverContent>
                         </Popover>
+                    </div>
+                     <div className="flex items-center space-x-2">
+                        <Checkbox id="filter-transactions" checked={showOnlyWithTransactions} onCheckedChange={(checked) => setShowOnlyWithTransactions(!!checked)} />
+                        <Label htmlFor="filter-transactions" className="whitespace-nowrap">Show only items with transactions</Label>
                     </div>
                      <Button onClick={clearFilters} variant="secondary">Clear</Button>
                 </CardContent>
