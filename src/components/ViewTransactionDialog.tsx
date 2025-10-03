@@ -52,41 +52,8 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto p-4 space-y-4">
           
-          <div className="space-y-4">
-            <h4 className="font-semibold text-lg">Items Received</h4>
-            <div className="border rounded-md">
-               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item Name</TableHead>
-                    <TableHead>BOQ Sl. No</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Unit Cost</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {grnSummary.items.map(item => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.itemName}</TableCell>
-                      <TableCell>{item.details?.boqSlNo || 'N/A'}</TableCell>
-                      <TableCell>{item.quantity} {item.unit}</TableCell>
-                      <TableCell>{formatCurrency(item.cost)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
-                    </TableRow>
-                  ))}
-                   <TableRow className="font-bold bg-muted">
-                      <TableCell colSpan={4} className="text-right">GRN Total</TableCell>
-                      <TableCell className="text-right">{formatCurrency(grnSummary.grnAmount)}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-
           {details && (
             <>
-              <Separator />
               <div className="space-y-4">
                 <h4 className="font-semibold text-lg">GRN Details</h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -125,9 +92,41 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, grnSummary
                     ) : <p className="text-sm">No transporter documents attached.</p>}
                  </div>
                </div>
+              <Separator />
             </>
           )}
 
+          <div className="space-y-4">
+            <h4 className="font-semibold text-lg">Items Received</h4>
+            <div className="border rounded-md">
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item Name</TableHead>
+                    <TableHead>BOQ Sl. No</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit Cost</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {grnSummary.items.map(item => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.itemName}</TableCell>
+                      <TableCell>{item.details?.boqSlNo || 'N/A'}</TableCell>
+                      <TableCell>{item.quantity} {item.unit}</TableCell>
+                      <TableCell>{formatCurrency(item.cost)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                    </TableRow>
+                  ))}
+                   <TableRow className="font-bold bg-muted">
+                      <TableCell colSpan={4} className="text-right">GRN Total</TableCell>
+                      <TableCell className="text-right">{formatCurrency(grnSummary.grnAmount)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <DialogClose asChild><Button variant="outline">Close</Button></DialogClose>
