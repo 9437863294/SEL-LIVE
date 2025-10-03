@@ -165,14 +165,35 @@ export default function StockInPage() {
   };
 
   const handleSave = async () => {
-    if (!supplier || items.some((item) => !item.itemId || item.quantity <= 0)) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please fill in Supplier and all item details.',
-        variant: 'destructive',
-      });
-      return;
+    // Enhanced Validation
+    if (!grnDate) {
+        toast({ title: 'Validation Error', description: 'Please select a GRN Date.', variant: 'destructive' });
+        return;
     }
+    if (!supplier.trim()) {
+        toast({ title: 'Validation Error', description: 'Please enter a Supplier Name.', variant: 'destructive' });
+        return;
+    }
+    if (!poNumber.trim()) {
+        toast({ title: 'Validation Error', description: 'Please enter a P.O. Number.', variant: 'destructive' });
+        return;
+    }
+    if (!invoiceNumber.trim()) {
+        toast({ title: 'Validation Error', description: 'Please enter an Invoice Number.', variant: 'destructive' });
+        return;
+    }
+
+    for (const item of items) {
+        if (!item.itemId) {
+            toast({ title: 'Validation Error', description: 'Please select a BOQ item for all rows.', variant: 'destructive' });
+            return;
+        }
+        if (item.quantity <= 0) {
+            toast({ title: 'Validation Error', description: 'Quantity for all items must be greater than zero.', variant: 'destructive' });
+            return;
+        }
+    }
+    
     setIsSaving(true);
 
     try {
