@@ -39,12 +39,11 @@ const itemSchema = z.object({
   itemUnit: z.string(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
   receiveUnit: z.string().min(1, { message: ' ' }),
-  batchNo: z.string().optional(),
   unitCost: z.coerce.number().optional(),
 });
 
 const grnSchema = z.object({
-    grnNo: z.string(),
+    grnNo: z.string().min(1, "GRN No. is required."),
     grnDate: z.date({ required_error: "A GRN date is required." }),
     supplier: z.string().min(1, "Supplier name is required."),
     poNumber: z.string().min(1, "P.O. Number is required."),
@@ -101,7 +100,7 @@ export default function StockInPage() {
     const grn = `GRN-${projectSlug.substring(0, 4).toUpperCase()}-${format(new Date(), 'yyyyMMdd')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
     form.setValue('grnNo', grn);
     if(fields.length === 0){
-        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', batchNo: '', unitCost: 0 });
+        append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
     }
   }, [projectSlug, form, fields, append]);
 
@@ -124,7 +123,7 @@ export default function StockInPage() {
   }, [projectSlug]);
 
   const handleAddItem = () => {
-    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', batchNo: '', unitCost: 0 });
+    append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', quantity: 1, receiveUnit: '', unitCost: 0 });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -289,16 +288,15 @@ export default function StockInPage() {
                 <Card>
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
-                         <div className="hidden md:grid md:grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-end p-2 text-xs font-medium text-muted-foreground">
+                         <div className="hidden md:grid md:grid-cols-[1fr,80px,100px,120px,auto] gap-2 items-end p-2 text-xs font-medium text-muted-foreground">
                             <Label>BOQ Item</Label>
                             <Label>Quantity</Label>
                             <Label>Receive Unit</Label>
-                            <Label>Batch No.</Label>
                             <Label>Unit Cost</Label>
                             <span></span>
                         </div>
                         {fields.map((field, index) => (
-                            <div key={field.id} className="grid md:grid-cols-[1fr,80px,100px,120px,120px,auto] gap-2 items-start md:items-center p-2 border rounded-md">
+                            <div key={field.id} className="grid md:grid-cols-[1fr,80px,100px,120px,auto] gap-2 items-start md:items-center p-2 border rounded-md">
                                 <FormField
                                     control={form.control}
                                     name={`items.${index}.itemId`}
@@ -318,7 +316,6 @@ export default function StockInPage() {
                                 />
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Quantity</Label><FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Receive Unit</Label><FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
-                                <div className="space-y-1"><Label className="text-xs md-hidden">Batch No.</Label><FormField control={form.control} name={`items.${index}.batchNo`} render={({ field }) => (<FormItem className="relative"><FormControl><Input {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                 <div className="space-y-1"><Label className="text-xs md:hidden">Unit Cost</Label><FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => (<FormItem className="relative"><FormControl><Input type="number" {...field} /></FormControl><FormMessage className="absolute -bottom-4 text-[10px]" /></FormItem>)} /></div>
                                <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
