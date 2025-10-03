@@ -50,6 +50,14 @@ import ViewTransactionDialog from '@/components/ViewTransactionDialog';
 
 const allColumns = ['Cost', 'Details', 'Notes'];
 
+interface GrnSummary {
+    grnNo: string;
+    date: Date;
+    transactionType: string;
+    grnAmount: number;
+    items: InventoryLog[];
+}
+
 export default function TransactionsPage() {
   const params = useParams();
   const projectSlug = params.project as string;
@@ -100,13 +108,29 @@ export default function TransactionsPage() {
     setSelectedTransaction(transaction);
     setIsViewOpen(true);
   };
+  
+  const grnSummaries = useMemo(() => {
+      const groupedByGrn: Record<string, GrnSummary> = {};
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(
-      (t) =>
-        t.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (t.batch || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+      transactions.forEach(t => {
+          const grnNo = t.details?.grnNo;
+          if (!grnNo) return;
+
+          if (!groupedByGrn[grnNo]) {
+              groupedByGrn[grnNo] = {
+                  grnNo: grnNo,
+                  date: t.date.toDate(),
+                  transactionType: t.transactionType,
+                  grnAmount: t.details?.invoiceAmount || 0,
+                  items: []
+              };
+          }
+          groupedByGrn[grnNo].items.push(t);
+      });
+      
+      return Object.values(groupedByGrn).filter(summary => 
+          summary.grnNo.toLowerCase().includes(searchTerm.toLowerCase())
+      );
   }, [transactions, searchTerm]);
 
   const getBadgeVariant = (type: string) => {
@@ -152,53 +176,22 @@ export default function TransactionsPage() {
               <div className="relative flex-grow">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Filter by Item Name or Batch..."
+                  placeholder="Filter by GRN No..."
                   className="pl-8"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
-                    <Columns3 className="mr-2 h-4 w-4" />
-                    Columns
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {allColumns.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col}
-                      checked={columnVisibility[col]}
-                      onCheckedChange={(checked) =>
-                        setColumnVisibility((prev) => ({
-                          ...prev,
-                          [col]: !!checked,
-                        }))
-                      }
-                    >
-                      {col}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>GRN No</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  {columnVisibility['Cost'] && <TableHead>Cost</TableHead>}
-                  {columnVisibility['Details'] && (
-                    <TableHead>Details</TableHead>
-                  )}
-                  {columnVisibility['Notes'] && <TableHead>Notes</TableHead>}
+                  <TableHead>GRN Amount</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -206,74 +199,36 @@ export default function TransactionsPage() {
                 {isLoading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8}>
+                      <TableCell colSpan={5}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
-                ) : filteredTransactions.length > 0 ? (
-                  filteredTransactions.map((t) => (
-                    <TableRow key={t.id}>
+                ) : grnSummaries.length > 0 ? (
+                  grnSummaries.map((summary) => (
+                    <TableRow key={summary.grnNo} onClick={() => handleViewDetails(summary.items[0])} className="cursor-pointer">
+                      <TableCell>{summary.grnNo}</TableCell>
                       <TableCell className="text-sm">
-                        {t.date
-                          ? format(
-                              t.date instanceof Date ? t.date : t.date.toDate(),
-                              'dd/MM/yyyy HH:mm'
-                            )
-                          : 'N/A'}
+                        {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={getBadgeVariant(t.transactionType)}>
-                          {t.transactionType}
+                        <Badge variant={getBadgeVariant(summary.transactionType)}>
+                          {summary.transactionType}
                         </Badge>
                       </TableCell>
-                      <TableCell>{t.itemName}</TableCell>
-                      <TableCell
-                        className={cn(
-                          'font-semibold',
-                          t.quantity > 0 ? 'text-green-600' : 'text-red-600'
-                        )}
-                      >
-                        {t.quantity > 0 ? `+${t.quantity}` : t.quantity}
-                      </TableCell>
-                      {columnVisibility['Cost'] && (
-                        <TableCell>
-                          {t.cost ? `$${t.cost.toFixed(2)}` : ''}
-                        </TableCell>
-                      )}
-                      {columnVisibility['Details'] && (
-                        <TableCell className="text-xs whitespace-pre-wrap">
-                          {t.description}
-                        </TableCell>
-                      )}
-                      {columnVisibility['Notes'] && (
-                        <TableCell>{t.notes}</TableCell>
-                      )}
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => handleViewDetails(t)}>
-                                <Eye className="mr-2 h-4 w-4"/>
-                                View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>Edit</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {summary.grnAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.grnAmount) : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleViewDetails(summary.items[0]); }}>
+                            <Eye className="h-4 w-4"/>
+                          </Button>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={5} className="text-center h-24">
                       No transactions found.
                     </TableCell>
                   </TableRow>
