@@ -174,10 +174,10 @@ export default function StockOutPage() {
           const itemsToIssue = item.isComponentIssue && item.bomItems 
             ? item.bomItems.map(bi => ({ 
                 ...bi, 
-                itemId: `sub-${item.itemId}-${bi.markNo}`,
+                itemId: bi.id, // Using the unique BOM item ID from form state
                 itemName: `${item.itemName} - ${bi.section}`,
-                itemUnit: 'Kg', 
-                availableQty: 99999,
+                itemUnit: 'Kg', // Assuming BOM items are in Kg
+                availableQty: uniqueAvailableItems.find(i => i.itemId === bi.id)?.availableQuantity || 0,
               }))
             : [item];
           
@@ -185,13 +185,13 @@ export default function StockOutPage() {
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
                 where('projectId', '==', projectSlug),
-                where('itemId', '==', issueItem.itemId)
+                where('itemId', '==', issueItem.itemId),
+                where('availableQuantity', '>', 0)
             );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             
             const logsWithStock = logsToUpdateSnap.docs
                 .map(doc => ({ ...doc.data(), id: doc.id } as InventoryLog))
-                .filter(log => log.availableQuantity > 0)
                 .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
             let quantityToIssue = issueItem.quantity;
@@ -282,15 +282,13 @@ export default function StockOutPage() {
                                     <FormLabel>Issue Date</FormLabel>
                                     <Popover>
                                         <PopoverTrigger asChild>
-                                            <FormControl>
-                                                <Button
-                                                    variant={"outline"}
-                                                    className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
-                                                >
-                                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                                    {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                                </Button>
-                                            </FormControl>
+                                            <Button
+                                                variant={"outline"}
+                                                className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                            </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0">
                                             <Calendar
@@ -325,7 +323,7 @@ export default function StockOutPage() {
                                         <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
                                         {hasBom && (
                                             <div className="flex items-end pb-1">
-                                                <FormField control={form.control} name={`items.${index}.isComponentIssue`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isComponentIssue-${index}`} /></FormControl> <FormLabel htmlFor={`isComponentIssue-${index}`}>Issue Components</FormLabel> </FormItem> )} />
+                                                <FormField control={form.control} name={`items.${index}.isComponentIssue`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isComponentIssue-${index}`} /></FormControl> <Label htmlFor={`isComponentIssue-${index}`} className="cursor-pointer">Issue Components</Label> </FormItem> )} />
                                             </div>
                                         )}
                                     </div>
@@ -362,3 +360,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
