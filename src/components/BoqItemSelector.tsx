@@ -79,7 +79,7 @@ export function BoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-                const item = boqItems.find(i => i.id === value);
+                const item = boqItems.find(i => String(i['Sl No'] || i['SL. No.']) === value);
                 if (!item) return 0;
 
                 const slNo = String(item['Sl No'] || item['SL. No.'] || '').toLowerCase();
@@ -104,7 +104,7 @@ export function BoqItemSelector({
                   return (
                     <CommandItem
                       key={item.id}
-                      value={item.id}
+                      value={String(slNo)}
                       onSelect={() => {
                         onSelect(item);
                         setOpen(false);
