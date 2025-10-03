@@ -45,7 +45,7 @@ export default function StockInPage() {
   const [poNumber, setPoNumber] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [notes, setNotes] = useState('');
-  const [items, setItems] = useState<GrnItem[]>([initialItemState]);
+  const [items, setItems] = useState<GrnItem[]>([{...initialItemState, id: Date.now()}]);
   const [isSaving, setIsSaving] = useState(false);
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -77,20 +77,24 @@ export default function StockInPage() {
     setItems(prevItems => [...prevItems, { ...initialItemState, id: Date.now() }]);
   };
 
-  const handleRemoveItem = (index: number) => {
+  const handleRemoveItem = (id: number) => {
     if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index));
+        setItems(items.filter((item) => item.id !== id));
+    } else {
+        setItems([{...initialItemState, id: Date.now()}]); // Reset the last item
     }
   };
 
   const handleItemChange = (
-    index: number,
+    id: number,
     field: keyof Omit<GrnItem, 'id'>,
     value: any
   ) => {
-    const newItems = [...items];
-    (newItems[index] as any)[field] = value;
-    setItems(newItems);
+    setItems(prevItems =>
+      prevItems.map(item =>
+        item.id === id ? { ...item, [field]: value } : item
+      )
+    );
   };
   
   const getItemDescription = (item: BoqItem) => {
@@ -108,23 +112,34 @@ export default function StockInPage() {
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
 
-  const handleItemSelect = (index: number, item: BoqItem | null) => {
-    const newItems = [...items];
-    const currentItem = newItems[index];
-    if (item) {
-      currentItem.itemId = item.id;
-      const description = getItemDescription(item);
-      currentItem.itemName = description;
-      const unit = item['UNIT'] || item['UNITS'] || '';
-      currentItem.itemUnit = unit;
-      currentItem.receiveUnit = unit;
-    } else {
-      currentItem.itemId = '';
-      currentItem.itemName = '';
-      currentItem.itemUnit = '';
-      currentItem.receiveUnit = '';
-    }
-    setItems(newItems);
+  const handleItemSelect = (id: number, selectedBoqItem: BoqItem | null) => {
+    setItems(prevItems =>
+      prevItems.map(item => {
+        if (item.id === id) {
+          if (selectedBoqItem) {
+            const description = getItemDescription(selectedBoqItem);
+            const unit = selectedBoqItem['UNIT'] || selectedBoqItem['UNITS'] || '';
+            return {
+              ...item,
+              itemId: selectedBoqItem.id,
+              itemName: description,
+              itemUnit: unit,
+              receiveUnit: unit,
+            };
+          } else {
+            // Reset if selection is cleared
+            return {
+              ...item,
+              itemId: '',
+              itemName: '',
+              itemUnit: '',
+              receiveUnit: '',
+            };
+          }
+        }
+        return item;
+      })
+    );
   };
 
   const handleSave = async () => {
@@ -144,7 +159,7 @@ export default function StockInPage() {
           date: new Date(),
           itemId: item.itemId,
           itemName: item.itemName,
-          itemType: 'Sub',
+          itemType: 'Sub', // Assuming all BOQ items are sub-items for now
           transactionType: 'Goods Receipt',
           quantity: item.quantity,
           unit: item.receiveUnit,
@@ -176,11 +191,12 @@ export default function StockInPage() {
     }
   };
 
-  const selectedSlNo = (item: GrnItem) => {
+  const getSelectedSlNo = (item: GrnItem) => {
     if (!item.itemId) return '';
     const boqItem = boqItems.find((bi) => bi.id === item.itemId);
     return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
   };
+
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -234,28 +250,28 @@ export default function StockInPage() {
                              {index === 0 && <Label className="text-xs">BOQ Item</Label>}
                              <BoqItemSelector
                                 boqItems={boqItems}
-                                selectedSlNo={selectedSlNo(item)}
-                                onSelect={(selectedItem) => handleItemSelect(index, selectedItem)}
+                                selectedSlNo={getSelectedSlNo(item)}
+                                onSelect={(selectedBoqItem) => handleItemSelect(item.id, selectedBoqItem)}
                                 isLoading={isLoadingItems}
                               />
                            </div>
                            <div className="space-y-1">
                               {index === 0 && <Label className="text-xs">Quantity</Label>}
-                              <Input type="number" placeholder="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))}/>
+                              <Input type="number" placeholder="1" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', Number(e.target.value))}/>
                            </div>
                             <div className="space-y-1">
                               {index === 0 && <Label className="text-xs">Receive Unit</Label>}
-                              <Input placeholder="e.g. Box" value={item.receiveUnit} onChange={e => handleItemChange(index, 'receiveUnit', e.target.value)} />
+                              <Input placeholder="e.g. Box" value={item.receiveUnit} onChange={e => handleItemChange(item.id, 'receiveUnit', e.target.value)} />
                            </div>
                            <div className="space-y-1">
                                {index === 0 && <Label className="text-xs">Batch No.</Label>}
-                               <Input placeholder="Batch/Lot" value={item.batchNo} onChange={e => handleItemChange(index, 'batchNo', e.target.value)} />
+                               <Input placeholder="Batch/Lot" value={item.batchNo} onChange={e => handleItemChange(item.id, 'batchNo', e.target.value)} />
                             </div>
                            <div className="space-y-1">
                                 {index === 0 && <Label className="text-xs">Unit Cost</Label>}
-                                <Input type="number" placeholder="0" value={item.unitCost} onChange={e => handleItemChange(index, 'unitCost', Number(e.target.value))} />
+                                <Input type="number" placeholder="0" value={item.unitCost} onChange={e => handleItemChange(item.id, 'unitCost', Number(e.target.value))} />
                             </div>
-                           <Button variant="destructive" size="icon" onClick={() => handleRemoveItem(index)}>
+                           <Button variant="destructive" size="icon" onClick={() => handleRemoveItem(item.id)}>
                                 <Trash2 className="h-4 w-4"/>
                            </Button>
                         </div>
