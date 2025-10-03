@@ -13,11 +13,7 @@ import {
   BarChart3,
   BrainCircuit,
   ClipboardList,
-  ChevronLeft,
-  ChevronRight
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import {
   SidebarProvider,
   Sidebar,
@@ -27,8 +23,6 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarFooter,
-  SidebarTrigger,
-  useSidebar,
 } from '@/components/ui/sidebar';
 
 function SidebarContentWrapper() {
@@ -71,7 +65,6 @@ function SidebarContentWrapper() {
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-         <SidebarTrigger />
       </SidebarFooter>
     </>
   )
