@@ -41,7 +41,6 @@ export default function ProjectLayout({
 
   const navItems = [
     { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
-    { href: `/store-stock-management/${projectSlug}/items`, icon: Package, label: 'Item Master' },
     { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory' },
     { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions' },
     { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
