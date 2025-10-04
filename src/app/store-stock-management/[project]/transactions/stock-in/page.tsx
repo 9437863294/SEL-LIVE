@@ -37,6 +37,7 @@ import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const bomItemSchema = z.object({
@@ -102,6 +103,7 @@ export default function StockInPage() {
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
+  const [units, setUnits] = useState<string[]>([]);
 
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -164,9 +166,13 @@ export default function StockInPage() {
       setIsLoadingItems(true);
       try {
         const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const unitsSnap = await getDocs(collection(db, 'units'));
+        
         const boqSnapshot = await getDocs(q);
         const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(boqData);
+        setUnits(unitsSnap.docs.map(doc => doc.data().name as string));
+
       } catch (error) {
         console.error('Error fetching BOQ:', error);
       }
@@ -319,7 +325,7 @@ export default function StockInPage() {
                   if (bomItem.quantity > 0) {
                       const logRef = doc(collection(db, 'inventoryLogs'));
                       const logEntry: Omit<InventoryLog, 'id'> = {
-                          date: data.grnDate,
+                          date: Timestamp.fromDate(data.grnDate),
                           itemId: bomItem.id,
                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                           itemType: 'Sub',
@@ -337,7 +343,7 @@ export default function StockInPage() {
           } else {
               const logRef = doc(collection(db, 'inventoryLogs'));
               const logEntry: Omit<InventoryLog, 'id'> = {
-                  date: data.grnDate,
+                  date: Timestamp.fromDate(data.grnDate),
                   itemId: item.itemId,
                   itemName: item.itemName,
                   itemType: 'Main',
@@ -422,12 +428,12 @@ export default function StockInPage() {
                     {files.map((file, i) => (
                         <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md text-xs">
                            <span>{file.name}</span>
-                            <Button type="button" variant="ghost" size="icon" className="h-5 w-5" onClick={() => {
+                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
                                 const newFiles = [...files];
                                 newFiles.splice(i, 1);
                                 field.onChange(newFiles);
                             }}>
-                                <X className="h-3 w-3"/>
+                                <X className="w-4 h-4" />
                             </Button>
                         </div>
                     ))}
@@ -542,7 +548,7 @@ export default function StockInPage() {
                                                           id={`isBomGrn-${index}`}
                                                         />
                                                       </FormControl>
-                                                      <FormLabel htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</FormLabel>
+                                                      <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label>
                                                     </FormItem>
                                                   )}
                                                 />
@@ -566,7 +572,23 @@ export default function StockInPage() {
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                                      <FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Receive Unit</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                      <FormField
+                                          control={form.control}
+                                          name={`items.${index}.receiveUnit`}
+                                          render={({ field }) => (
+                                            <FormItem className="space-y-1">
+                                              <FormLabel>Receive Unit</FormLabel>
+                                              <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl><SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger></FormControl>
+                                                <SelectContent>
+                                                  {units.map(unit => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}
+                                                </SelectContent>
+                                              </Select>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+
                                       <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Unit Cost</FormLabel> <FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                                       <div className="space-y-1 text-right">
                                         <Label className="text-xs">Total Cost</Label>
@@ -598,5 +620,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
