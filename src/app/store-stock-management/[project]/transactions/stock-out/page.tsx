@@ -358,15 +358,15 @@ export default function StockOutPage() {
                           const hasBom = (watchedItems[index]?.bomItems?.length ?? 0) > 0;
                           const isComponentIssue = watchedItems[index]?.isComponentIssue;
                           
-                           const requiredMainQtyForBom = (() => {
-                                if (!isComponentIssue || !watchedItems[index]?.bomItems) return 0;
-                                return watchedItems[index].bomItems!.reduce((maxSets, bi) => {
-                                    if (bi.quantity > 0 && bi.qtyPerSet > 0) {
-                                        return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
-                                    }
-                                    return maxSets;
-                                }, 0);
-                            })();
+                          const requiredMainQtyForBom = (() => {
+                              if (!isComponentIssue || !watchedItems[index]?.bomItems) return 0;
+                              return watchedItems[index].bomItems!.reduce((maxSets, bi) => {
+                                  if (bi.quantity > 0 && bi.qtyPerSet > 0) {
+                                      return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
+                                  }
+                                  return maxSets;
+                              }, 0);
+                          })();
                           
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -385,18 +385,21 @@ export default function StockOutPage() {
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
-                                           const availableQty = (watchedItems[index].availableQty - requiredMainQtyForBom + (bomItem.quantity/bomItem.qtyPerSet)) * bomItem.qtyPerSet;
+                                            const mainItemAvailable = watchedItems[index].availableQty;
+                                            const setsAvailableBasedOnMain = mainItemAvailable > 0 ? mainItemAvailable : 0;
+                                            const thisComponentQtyAvailable = setsAvailableBasedOnMain * bomItem.qtyPerSet;
+
                                            return (
                                               <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                                 <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${availableQty.toFixed(3)})`}</Label>
+                                                 <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${thisComponentQtyAvailable.toFixed(3)})`}</Label>
                                                  <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
                                                     <FormItem> 
                                                       <FormControl>
                                                         <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
                                                             onChange={(e) => {
                                                                 const val = e.target.valueAsNumber;
-                                                                if (val > availableQty) {
-                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${availableQty.toFixed(3)}`, variant: 'destructive'});
+                                                                if (val > thisComponentQtyAvailable) {
+                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${thisComponentQtyAvailable.toFixed(3)}`, variant: 'destructive'});
                                                                 } else {
                                                                     bomQtyField.onChange(val || 0);
                                                                 }
@@ -432,3 +435,4 @@ export default function StockOutPage() {
   );
 }
 
+    
