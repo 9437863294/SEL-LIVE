@@ -3,12 +3,20 @@
 
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Construction, Ruler } from 'lucide-react';
+import { Construction, Ruler, ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export default function SettingsPage() {
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6">Stock Management Settings</h1>
+    <div className="w-full px-4 sm:px-6 lg:px-8">
+       <div className="mb-6 flex items-center gap-2">
+        <Link href="/store-stock-management">
+            <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+            </Button>
+        </Link>
+        <h1 className="text-xl font-bold">Stock Management Settings</h1>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         <Link href="/store-stock-management/settings/projects" className="no-underline">
            <Card className="flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50 cursor-pointer">
