@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -41,6 +40,7 @@ const bomItemSchema = z.object({
   totalWtKg: z.number(),
   // Issue specific fields
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
+  availableQty: z.number().default(0), // New field for availability
 });
 
 const itemSchema = z.object({
@@ -155,13 +155,20 @@ export default function StockOutPage() {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
       const bom = relatedBoqItem?.bom || [];
       
+      const mainItemAvailableQty = selectedInventoryItem.availableQuantity || 0;
+
       update(index, {
         ...form.getValues(`items.${index}`),
         itemId: selectedInventoryItem.itemId,
         itemName: selectedInventoryItem.itemName,
         itemUnit: selectedInventoryItem.unit,
-        availableQty: selectedInventoryItem.availableQuantity,
-        bomItems: bom.map(b => ({ ...b, id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, quantity: 0 })),
+        availableQty: mainItemAvailableQty,
+        bomItems: bom.map(b => ({ 
+            ...b, 
+            id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, 
+            quantity: 0,
+            availableQty: mainItemAvailableQty * (b.qtyPerSet || 0), // Calculate component availability
+        })),
       });
     }
   };
@@ -178,11 +185,13 @@ export default function StockOutPage() {
                 itemId: bi.id, // Using the unique BOM item ID from form state
                 itemName: `${item.itemName} - ${bi.section}`,
                 itemUnit: 'Kg', // Assuming BOM items are in Kg
-                availableQty: uniqueAvailableItems.find(i => i.itemId === bi.id)?.availableQuantity || 0,
+                availableQty: bi.availableQty,
               }))
             : [item];
           
           for (const issueItem of itemsToIssue) {
+            if (issueItem.quantity === 0) continue; // Skip items with zero quantity
+
             // Simplified query
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
@@ -217,7 +226,7 @@ export default function StockOutPage() {
 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 batch.set(newIssueLogRef, {
-                    date: data.issueDate,
+                    date: Timestamp.fromDate(data.issueDate),
                     itemId: issueItem.itemId,
                     itemName: issueItem.itemName,
                     itemType: logDoc.itemType,
@@ -338,8 +347,23 @@ export default function StockOutPage() {
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
                                           <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade}`}</Label>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field }) => ( <FormItem> <FormControl><Input type="number" placeholder="Issue Qty" {...field} /></FormControl> </FormItem>)}/>
+                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${bomItem.availableQty})`}</Label>
+                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
+                                                <FormItem> 
+                                                  <FormControl>
+                                                    <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
+                                                        onChange={(e) => {
+                                                            const val = e.target.valueAsNumber;
+                                                            if (val > bomItem.availableQty) {
+                                                                toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty}`, variant: 'destructive'});
+                                                            } else {
+                                                                bomQtyField.onChange(val || 0);
+                                                            }
+                                                        }}
+                                                    />
+                                                  </FormControl>
+                                                </FormItem>
+                                             )}/>
                                           </div>
                                        ))}
                                     </div>
