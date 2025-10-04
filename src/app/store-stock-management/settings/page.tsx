@@ -8,7 +8,7 @@ import { Construction, Ruler } from 'lucide-react';
 export default function SettingsPage() {
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Settings</h1>
+      <h1 className="text-3xl font-bold mb-6">Stock Management Settings</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         <Link href="/store-stock-management/settings/projects" className="no-underline">
            <Card className="flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50 cursor-pointer">

@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,6 +49,7 @@ export default function ProjectLayout({
     { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ' },
     { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
     { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
+    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings' },
   ];
   
   const visibleNavItems = navItems; // Assuming all are visible for now

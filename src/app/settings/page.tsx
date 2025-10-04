@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -16,6 +15,7 @@ import {
   MailCheck,
   Receipt,
   LogIn,
+  Package,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -42,9 +42,10 @@ const settingsItemsBase = [
   { icon: ShieldCheck, text: 'Role Management', description: 'Define roles and their specific permissions.', href: '/settings/role-management', permission: 'View' },
   { icon: Hash, text: 'Serial No. Config', description: 'Configure document numbering sequences.', href: '/settings/serial-no-configuration', permission: 'View' },
   { icon: Clock, text: 'Working Hrs', description: 'Set company working hours and holidays.', href: '/settings/working-hours', permission: 'View' },
-  { icon: Palette, text: 'Appearance', description: 'Customize the application\'s look and feel.', href: '/settings/appearance', permission: 'View' },
+  { icon: Palette, text: 'Appearance', description: 'Customize the application's look and feel.', href: '/settings/appearance', permission: 'View' },
   { icon: MailCheck, text: 'Email Authorization', description: 'Authorize access to email services.', href: '/settings/email-authorization', permission: 'View' },
   { icon: LogIn, text: 'Login Expiry', description: 'Manage session timeout settings.', href: '/settings/login-expiry', permission: 'View' },
+  { icon: Package, text: 'Store & Stock', description: 'Configure stock management settings.', href: '/store-stock-management/settings', permission: 'View' },
 ];
 
 function SettingsCard({ item }: SettingsCardProps) {
@@ -83,7 +84,7 @@ export default function SettingsPage() {
   const { can, isLoading } = useAuthorization();
   
   const settingsItems = settingsItemsBase.map(item => {
-    let permissionModule = `Settings.${item.text}`;
+    let permissionModule: string;
     
     switch(item.href) {
       case '/settings/department': permissionModule = 'Settings.Manage Department'; break;
@@ -96,11 +97,16 @@ export default function SettingsPage() {
       case '/settings/appearance': permissionModule = 'Settings.Appearance'; break;
       case '/settings/email-authorization': permissionModule = 'Settings.Email Authorization'; break;
       case '/settings/login-expiry': permissionModule = 'Settings.Login Expiry'; break;
+      case '/store-stock-management/settings': permissionModule = 'Store & Stock Management'; break; // Top-level module permission
+      default: permissionModule = 'Settings';
     }
+
+    // A special case for Store & Stock, we check 'View Module' permission
+    const action = item.href === '/store-stock-management/settings' ? 'View Module' : item.permission;
 
     return {
       ...item,
-      disabled: !can(item.permission, permissionModule)
+      disabled: !can(action, permissionModule)
     }
   });
 
