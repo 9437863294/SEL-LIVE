@@ -577,23 +577,7 @@ export default function StockInPage() {
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                                      <FormField
-                                          control={form.control}
-                                          name={`items.${index}.receiveUnit`}
-                                          render={({ field }) => (
-                                            <FormItem className="space-y-1">
-                                              <FormLabel>Receive Unit</FormLabel>
-                                              <Select onValueChange={field.onChange} value={field.value}>
-                                                <FormControl><SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger></FormControl>
-                                                <SelectContent>
-                                                  {units.map(unit => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}
-                                                </SelectContent>
-                                              </Select>
-                                              <FormMessage />
-                                            </FormItem>
-                                          )}
-                                        />
-
+                                      <FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Receive Unit</FormLabel> <FormControl><Input readOnly className="bg-muted" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                                       <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Unit Cost</FormLabel> <FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                                       <div className="space-y-1 text-right">
                                         <Label className="text-xs">Total Cost</Label>
@@ -625,3 +609,5 @@ export default function StockInPage() {
     </>
   );
 }
+
+    
