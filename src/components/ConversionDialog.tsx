@@ -18,16 +18,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, collection, getDocs } from 'firebase/firestore';
-import type { BoqItem, Conversion, Site } from '@/lib/types'; // Assuming Site can be a UOM type for now
+import type { BoqItem, Conversion, Site } from '@/lib/types';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
-
-const initialConversionState: Omit<Conversion, 'id'> = {
-  fromUnit: '',
-  fromQty: 1,
-  toUnit: '',
-  toQty: 1,
-};
 
 interface ConversionDialogProps {
   isOpen: boolean;
@@ -41,6 +34,16 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
   const [conversions, setConversions] = useState<(Conversion)[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [units, setUnits] = useState<Site[]>([]);
+  
+  const baseUnit = item['UNIT'] || item['UNITS'] || 'N/A';
+  
+  const initialConversionState: Omit<Conversion, 'id'> = {
+    fromUnit: baseUnit,
+    fromQty: 1,
+    toUnit: '',
+    toQty: 1,
+  };
+
 
   useEffect(() => {
     const fetchUnits = async () => {
@@ -63,7 +66,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
         setConversions(existingConversions);
       }
     }
-  }, [isOpen, item.conversions]);
+  }, [isOpen, item.conversions, baseUnit]);
 
   const handleItemChange = (id: string, field: keyof Omit<Conversion, 'id'>, value: string | number) => {
     setConversions(prev =>
@@ -92,7 +95,6 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
           toQty: Number(rest.toQty)
       }));
 
-      // Validate all fields are filled
       if (conversionsToSave.some(c => !c.fromUnit || !c.toUnit || isNaN(c.fromQty) || isNaN(c.toQty) || c.fromQty <= 0 || c.toQty <= 0)) {
         toast({ title: 'Validation Error', description: 'All fields must be filled and quantities must be positive numbers.', variant: 'destructive'});
         setIsSaving(false);
@@ -125,7 +127,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
         <DialogHeader>
           <DialogTitle>Unit Conversions for: {getItemDescription(item)}</DialogTitle>
           <DialogDescription>
-            Define multiple conversion rules for this item. E.g., 1 Box = 10 Pcs.
+            Define multiple conversion rules for this item. E.g., 1 Box = 10 Pcs. The "From Unit" is the base unit from BOQ.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="h-[60vh] border rounded-md">
@@ -133,7 +135,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
                 <TableHeader>
                     <TableRow>
                         <TableHead>From Qty</TableHead>
-                        <TableHead>From Unit</TableHead>
+                        <TableHead>Base Unit (from BOQ)</TableHead>
                         <TableHead className="w-10 text-center">=</TableHead>
                         <TableHead>To Qty</TableHead>
                         <TableHead>To Unit</TableHead>
@@ -145,12 +147,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
                         <TableRow key={conv.id}>
                             <TableCell><Input type="number" value={conv.fromQty} onChange={(e) => handleItemChange(conv.id, 'fromQty', e.target.valueAsNumber)} /></TableCell>
                             <TableCell>
-                                <Select value={conv.fromUnit} onValueChange={(value) => handleItemChange(conv.id, 'fromUnit', value)}>
-                                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
-                                    <SelectContent>
-                                        {units.map(u => <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                                <Input value={baseUnit} readOnly className="bg-muted font-medium" />
                             </TableCell>
                             <TableCell className="text-center font-bold">=</TableCell>
                             <TableCell><Input type="number" value={conv.toQty} onChange={(e) => handleItemChange(conv.id, 'toQty', e.target.valueAsNumber)} /></TableCell>
