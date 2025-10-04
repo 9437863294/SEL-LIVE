@@ -42,7 +42,7 @@ const settingsItemsBase = [
   { icon: ShieldCheck, text: 'Role Management', description: 'Define roles and their specific permissions.', href: '/settings/role-management', permission: 'View' },
   { icon: Hash, text: 'Serial No. Config', description: 'Configure document numbering sequences.', href: '/settings/serial-no-configuration', permission: 'View' },
   { icon: Clock, text: 'Working Hrs', description: 'Set company working hours and holidays.', href: '/settings/working-hours', permission: 'View' },
-  { icon: Palette, text: 'Appearance', description: 'Customize the application's look and feel.', href: '/settings/appearance', permission: 'View' },
+  { icon: Palette, text: 'Appearance', description: 'Customize the application\'s look and feel.', href: '/settings/appearance', permission: 'View' },
   { icon: MailCheck, text: 'Email Authorization', description: 'Authorize access to email services.', href: '/settings/email-authorization', permission: 'View' },
   { icon: LogIn, text: 'Login Expiry', description: 'Manage session timeout settings.', href: '/settings/login-expiry', permission: 'View' },
   { icon: Package, text: 'Store & Stock', description: 'Configure stock management settings.', href: '/store-stock-management/settings', permission: 'View' },
