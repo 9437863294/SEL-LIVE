@@ -187,12 +187,14 @@ export default function StockOutPage() {
             // First pass: validate and calculate deductions for main items
             for (const item of data.items) {
                 if (item.isComponentIssue && item.bomItems) {
-                    // Group requested components by their parent main item
                     const bomDemands = item.bomItems.filter(bi => bi.quantity > 0);
                     if (bomDemands.length === 0) continue;
                     
                     let requiredMainItemQty = 0;
                     for (const bomDemand of bomDemands) {
+                        if (!bomDemand.qtyPerSet || bomDemand.qtyPerSet === 0) {
+                            throw new Error(`Component ${bomDemand.markNo} has zero quantity per set defined.`);
+                        }
                         const neededSets = bomDemand.quantity / bomDemand.qtyPerSet;
                         if (neededSets > requiredMainItemQty) {
                             requiredMainItemQty = neededSets;
@@ -212,10 +214,9 @@ export default function StockOutPage() {
             for (const item of data.items) {
                 const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
                 
-                // For component issues, we process the main item once
                 if(isComponentIssue) {
                     const requiredMainQty = mainItemsToUpdate.get(item.itemId);
-                    if (!requiredMainQty || requiredMainQty <= 0) continue; // No components of this main item were issued
+                    if (!requiredMainQty || requiredMainQty <= 0) continue; 
                     
                     const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
                     const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
@@ -247,22 +248,21 @@ export default function StockOutPage() {
                         const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                         transaction.set(newIssueLogRef, {
                             date: Timestamp.fromDate(data.issueDate),
-                            itemId: bomItem.id, // Using BOM item's unique ID
+                            itemId: bomItem.id,
                             itemName: `${item.itemName} - ${bomItem.section}`,
                             itemType: 'Sub',
                             transactionType: 'Goods Issue',
                             quantity: bomItem.quantity,
                             availableQuantity: 0,
                             unit: 'Kg',
-                            cost: bomItem.unitCost || 0, // Placeholder for proportional cost
+                            cost: bomItem.unitCost || 0,
                             projectId: projectSlug,
                             description: `Issued to ${data.issuedTo}`,
                             details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: 'BOM_CONVERSION' }
                         });
                     }
-                    mainItemsToUpdate.delete(item.itemId); // Mark as processed
+                    mainItemsToUpdate.delete(item.itemId); 
                 } else {
-                    // Standard item issue
                     let quantityToIssue = item.quantity;
                     
                     const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
@@ -281,9 +281,8 @@ export default function StockOutPage() {
                         transaction.update(doc(db, 'inventoryLogs', logDoc.id), {
                             availableQuantity: logDoc.availableQuantity - deduction
                         });
-                        quantityToIssue -= deduction;
-
-                         const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+                        
+                        const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                          transaction.set(newIssueLogRef, {
                             date: Timestamp.fromDate(data.issueDate),
                             itemId: item.itemId,
@@ -298,6 +297,7 @@ export default function StockOutPage() {
                             description: `Issued to ${data.issuedTo}`,
                             details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo }
                          });
+                         quantityToIssue -= deduction;
                     }
                 }
             }
