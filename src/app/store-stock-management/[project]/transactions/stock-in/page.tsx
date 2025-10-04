@@ -214,15 +214,20 @@ export default function StockInPage() {
       const description = getItemDescription(selectedBoqItem);
       const unit = selectedBoqItem['UNIT'] || selectedBoqItem['UNITS'] || '';
       const slNo = getSlNo(selectedBoqItem);
-      update(index, {
-        ...form.getValues(`items.${index}`),
+      
+      const currentItem = form.getValues(`items.${index}`);
+      const updatedItem = {
+        ...currentItem,
         itemId: selectedBoqItem.id,
         itemName: description,
         itemUnit: unit,
         receiveUnit: unit,
         boqSlNo: slNo,
         bomItems: selectedBoqItem.bom?.map(b => ({ ...b, id: `bom-${selectedBoqItem.id}-${b.markNo}`, quantity: 0, unitCost: 0 })) || [],
-      });
+      };
+      
+      update(index, updatedItem);
+      form.setValue(`items.${index}.receiveUnit`, unit);
     }
   };
   
