@@ -358,7 +358,7 @@ export default function StockOutPage() {
                           const hasBom = (watchedItems[index]?.bomItems?.length ?? 0) > 0;
                           const isComponentIssue = watchedItems[index]?.isComponentIssue;
                           
-                           const requiredMainQtyForBom = useMemo(() => {
+                           const requiredMainQtyForBom = (() => {
                                 if (!isComponentIssue || !watchedItems[index]?.bomItems) return 0;
                                 return watchedItems[index].bomItems!.reduce((maxSets, bi) => {
                                     if (bi.quantity > 0 && bi.qtyPerSet > 0) {
@@ -366,7 +366,7 @@ export default function StockOutPage() {
                                     }
                                     return maxSets;
                                 }, 0);
-                            }, [watchedItems[index]?.bomItems, isComponentIssue]);
+                            })();
                           
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -431,3 +431,4 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
