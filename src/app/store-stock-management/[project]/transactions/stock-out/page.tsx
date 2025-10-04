@@ -246,14 +246,14 @@ export default function StockOutPage() {
                 
                 const proportionalCost = (logDoc.cost || 0) * quantityToDeductFromMainItem;
                 
-                batch.update(doc(db, 'inventoryLogs', logDoc.id), {
+                transaction.update(doc(db, 'inventoryLogs', logDoc.id), {
                     availableQuantity: logDoc.availableQuantity - quantityToDeductFromMainItem
                 });
 
                 quantityToIssue -= issuedComponentQty;
 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
-                batch.set(newIssueLogRef, {
+                transaction.set(newIssueLogRef, {
                     date: Timestamp.fromDate(data.issueDate),
                     itemId: issueItem.itemId,
                     itemName: issueItem.itemName,
@@ -416,6 +416,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-
-    
