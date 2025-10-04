@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch, Timestamp } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -221,12 +221,12 @@ export default function StockInPage() {
         itemId: selectedBoqItem.id,
         itemName: description,
         itemUnit: unit,
-        receiveUnit: unit, // Default to base unit
+        receiveUnit: unit,
         boqSlNo: slNo,
         bomItems: selectedBoqItem.bom?.map(b => ({ ...b, id: `bom-${selectedBoqItem.id}-${b.markNo}`, quantity: 0, unitCost: 0 })) || [],
       };
       
-      update(index, updatedItem);
+      form.setValue(`items.${index}`, updatedItem, { shouldValidate: true });
     }
   };
   
@@ -330,7 +330,7 @@ export default function StockInPage() {
                       const logRef = doc(collection(db, 'inventoryLogs'));
                       const logEntry: Omit<InventoryLog, 'id'> = {
                           date: Timestamp.fromDate(data.grnDate),
-                          itemId: bomItem.id,
+                          itemId: bomItem.id, // Using BOM item's unique ID
                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                           itemType: 'Sub',
                           transactionType: 'Goods Receipt',
@@ -397,7 +397,9 @@ export default function StockInPage() {
                 </Button>
               </FormControl>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+            </PopoverContent>
           </Popover>
           <FormMessage />
         </FormItem>
@@ -613,3 +615,5 @@ export default function StockInPage() {
     </>
   );
 }
+
+    
