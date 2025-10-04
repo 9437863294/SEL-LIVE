@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +38,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Timestamp } from 'firebase/firestore';
 
 
 const bomItemSchema = z.object({
@@ -318,11 +319,24 @@ export default function StockInPage() {
           notes: data.notes,
       };
 
-      data.items.forEach((item) => {
+      for (const item of data.items) {
           const itemDetails = {
             ...baseDetails,
             boqSlNo: item.boqSlNo,
           };
+          
+          const boqItem = boqItems.find(bi => bi.id === item.itemId);
+          let finalQuantity = item.quantity;
+          let finalUnitCost = item.unitCost || 0;
+          let finalUnit = item.itemUnit;
+
+          if (item.receiveUnit !== item.itemUnit && boqItem?.conversions) {
+              const conversion = boqItem.conversions.find(c => c.toUnit === item.receiveUnit && c.fromUnit === item.itemUnit);
+              if (conversion) {
+                  finalQuantity = (item.quantity / conversion.toQty) * conversion.fromQty;
+                  finalUnitCost = (item.unitCost || 0) / (finalQuantity / item.quantity);
+              }
+          }
 
           if (item.isBomGrn && item.bomItems) {
               item.bomItems.forEach(bomItem => {
@@ -330,7 +344,7 @@ export default function StockInPage() {
                       const logRef = doc(collection(db, 'inventoryLogs'));
                       const logEntry: Omit<InventoryLog, 'id'> = {
                           date: Timestamp.fromDate(data.grnDate),
-                          itemId: bomItem.id, // Using BOM item's unique ID
+                          itemId: bomItem.id,
                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                           itemType: 'Sub',
                           transactionType: 'Goods Receipt',
@@ -352,16 +366,16 @@ export default function StockInPage() {
                   itemName: item.itemName,
                   itemType: 'Main',
                   transactionType: 'Goods Receipt',
-                  quantity: item.quantity,
-                  availableQuantity: item.quantity,
-                  unit: item.receiveUnit,
+                  quantity: finalQuantity,
+                  availableQuantity: finalQuantity,
+                  unit: finalUnit,
                   projectId: projectSlug,
-                  cost: item.unitCost,
+                  cost: finalUnitCost,
                   details: itemDetails,
               };
               batch.set(logRef, logEntry);
           }
-      });
+      }
       await batch.commit();
 
       toast({ title: 'Success', description: 'Goods receipt recorded successfully.' });
@@ -531,11 +545,9 @@ export default function StockInPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         {fields.map((field, index) => {
-                            const hasBom = boqItems.find(i => i.id === watchedItems[index]?.itemId)?.bom?.length ?? 0 > 0;
-                            const isBomGrn = watchedItems[index]?.isBomGrn;
                             const currentItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
-                            const conversionUnits = currentItem?.conversions?.map(c => c.toUnit) || [];
                             const baseUnit = currentItem?.['UNIT'] || currentItem?.['UNITS'] || '';
+                            const conversionUnits = currentItem?.conversions?.map(c => c.toUnit) || [];
                             const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
 
                             return (
@@ -543,7 +555,7 @@ export default function StockInPage() {
                                 <div className="flex justify-between items-start">
                                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>BOQ Item</FormLabel> <BoqItemSelector key={field.id} boqItems={boqItems} selectedSlNo={getSelectedSlNo(index)} onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
-                                        {hasBom && (
+                                        { (currentItem?.bom?.length ?? 0) > 0 && (
                                             <div className="flex items-end pb-1">
                                                 <FormField control={form.control} name={`items.${index}.isBomGrn`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isBomGrn-${index}`} /></FormControl> <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label> </FormItem> )} />
                                             </div>
@@ -552,7 +564,7 @@ export default function StockInPage() {
                                     <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
 
-                               {isBomGrn ? (
+                               {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
@@ -572,14 +584,18 @@ export default function StockInPage() {
                                         render={({ field }) => (
                                           <FormItem className="space-y-1">
                                             <FormLabel>Receive Unit</FormLabel>
-                                            <Select onValueChange={field.onChange} value={field.value}>
-                                                <FormControl>
-                                                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
+                                            {unitOptions.length > 1 ? (
+                                              <Select onValueChange={field.onChange} value={field.value}>
+                                                  <FormControl>
+                                                      <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                                                  </FormControl>
+                                                  <SelectContent>
+                                                      {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                                  </SelectContent>
+                                              </Select>
+                                            ) : (
+                                              <Input readOnly value={field.value} className="bg-muted" />
+                                            )}
                                             <FormMessage />
                                           </FormItem>
                                         )}
