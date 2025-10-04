@@ -65,7 +65,7 @@ const itemSchema = z.object({
   itemUnit: z.string(),
   boqSlNo: z.string().optional(),
   quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
-  receiveUnit: z.string().min(1, ''),
+  receiveUnit: z.string().min(1, { message: 'Receive unit is required.'}),
   unitCost: z.coerce.number().optional(),
   isBomGrn: z.boolean().default(false),
   bomItems: z.array(bomItemSchema).optional(),
@@ -221,13 +221,12 @@ export default function StockInPage() {
         itemId: selectedBoqItem.id,
         itemName: description,
         itemUnit: unit,
-        receiveUnit: unit,
+        receiveUnit: unit, // Default to base unit
         boqSlNo: slNo,
         bomItems: selectedBoqItem.bom?.map(b => ({ ...b, id: `bom-${selectedBoqItem.id}-${b.markNo}`, quantity: 0, unitCost: 0 })) || [],
       };
       
       update(index, updatedItem);
-      form.setValue(`items.${index}.receiveUnit`, unit);
     }
   };
   
@@ -451,7 +450,6 @@ export default function StockInPage() {
     );
   };
 
-
   return (
     <>
     <Form {...form}>
@@ -533,6 +531,10 @@ export default function StockInPage() {
                         {fields.map((field, index) => {
                             const hasBom = boqItems.find(i => i.id === watchedItems[index]?.itemId)?.bom?.length ?? 0 > 0;
                             const isBomGrn = watchedItems[index]?.isBomGrn;
+                            const currentItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
+                            const conversionUnits = currentItem?.conversions?.map(c => c.toUnit) || [];
+                            const baseUnit = currentItem?.['UNIT'] || currentItem?.['UNITS'] || '';
+                            const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
 
                             return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -541,22 +543,7 @@ export default function StockInPage() {
                                         <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>BOQ Item</FormLabel> <BoqItemSelector key={field.id} boqItems={boqItems} selectedSlNo={getSelectedSlNo(index)} onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
                                         {hasBom && (
                                             <div className="flex items-end pb-1">
-                                                <FormField
-                                                  control={form.control}
-                                                  name={`items.${index}.isBomGrn`}
-                                                  render={({ field: switchField }) => (
-                                                    <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3">
-                                                      <FormControl>
-                                                        <Switch
-                                                          checked={switchField.value}
-                                                          onCheckedChange={switchField.onChange}
-                                                          id={`isBomGrn-${index}`}
-                                                        />
-                                                      </FormControl>
-                                                      <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label>
-                                                    </FormItem>
-                                                  )}
-                                                />
+                                                <FormField control={form.control} name={`items.${index}.isBomGrn`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isBomGrn-${index}`} /></FormControl> <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label> </FormItem> )} />
                                             </div>
                                         )}
                                     </div>
@@ -577,7 +564,24 @@ export default function StockInPage() {
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                                      <FormField control={form.control} name={`items.${index}.receiveUnit`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Receive Unit</FormLabel> <FormControl><Input readOnly className="bg-muted" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                      <FormField
+                                        control={form.control}
+                                        name={`items.${index}.receiveUnit`}
+                                        render={({ field }) => (
+                                          <FormItem className="space-y-1">
+                                            <FormLabel>Receive Unit</FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                          </FormItem>
+                                        )}
+                                      />
                                       <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Unit Cost</FormLabel> <FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                                       <div className="space-y-1 text-right">
                                         <Label className="text-xs">Total Cost</Label>
@@ -609,5 +613,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
