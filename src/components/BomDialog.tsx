@@ -21,7 +21,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import type { BoqItem, FabricationBomItem } from '@/lib/types';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 
-const initialBomItemState: Omit<FabricationBomItem, 'id' | 'qtyPerPiece'> = {
+const initialBomItemState: Omit<FabricationBomItem, 'id'> = {
     markNo: '',
     section: '',
     grade: '',
@@ -44,7 +44,7 @@ interface BomDialogProps {
 
 export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: BomDialogProps) {
   const { toast } = useToast();
-  const [bomItems, setBomItems] = useState<(Omit<FabricationBomItem, 'qtyPerPiece'> & { id: string })[]>([]);
+  const [bomItems, setBomItems] = useState<(Omit<FabricationBomItem, 'id'> & { id: string })[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -65,26 +65,24 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
     }
   }, [isOpen, mainItem.bom]);
 
-  const handleItemChange = (index: number, field: keyof Omit<FabricationBomItem, 'id' | 'qtyPerPiece'>, value: string | number) => {
+  const handleItemChange = (index: number, field: keyof Omit<FabricationBomItem, 'id'>, value: string | number) => {
     const newItems = [...bomItems];
     const item = { ...newItems[index] };
-    (item[field] as any) = value;
+    
+    // Ensure numeric fields are handled correctly, defaulting to 0 if NaN
+    const numericValue = typeof value === 'number' ? value : parseFloat(value);
+    (item[field] as any) = isNaN(numericValue) ? 0 : numericValue;
+
 
     // Auto-calculate
     if (field === 'unitWt' || field === 'length') {
         item.wtPerPc = (item.unitWt || 0) * (item.length || 0) / 1000;
     }
-    if (field === 'wtPerPc') { // Removed qtyPerPiece dependency
-        // This calculation now depends on qtyPerSet, assuming totalWtPerSet is wt of all pieces in a set.
-        // Let's assume totalWtPerSet = wtPerPc * qtyPerSet for now.
+    if (field === 'wtPerPc' || field === 'qtyPerSet') {
         item.totalWtPerSet = (item.wtPerPc || 0) * (item.qtyPerSet || 0);
-    }
-    if (field === 'qtyPerSet') {
-        item.totalWtPerSet = (item.wtPerPc || 0) * (item.qtyPerSet || 0);
-        item.totalWtKg = (item.totalWtPerSet || 0); // Assuming 1 set for simplicity, or needs clarification
     }
     
-    if (field === 'totalWtPerSet') {
+    if (field === 'totalWtPerSet' || field === 'wtPerPc' || field === 'qtyPerSet') {
         item.totalWtKg = (item.totalWtPerSet || 0);
     }
 
@@ -160,11 +158,11 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
                             <TableCell><Input value={item.markNo} onChange={(e) => handleItemChange(index, 'markNo', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.section} onChange={(e) => handleItemChange(index, 'section', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.grade} onChange={(e) => handleItemChange(index, 'grade', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.length} onChange={(e) => handleItemChange(index, 'length', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input type="number" value={item.width} onChange={(e) => handleItemChange(index, 'width', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input type="number" value={item.unitWt} onChange={(e) => handleItemChange(index, 'unitWt', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input type="number" value={item.wtPerPc} onChange={(e) => handleItemChange(index, 'wtPerPc', e.target.valueAsNumber)} /></TableCell>
-                            <TableCell><Input type="number" value={item.qtyPerSet} onChange={(e) => handleItemChange(index, 'qtyPerSet', e.target.valueAsNumber)} /></TableCell>
+                            <TableCell><Input type="number" value={item.length} onChange={(e) => handleItemChange(index, 'length', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.width} onChange={(e) => handleItemChange(index, 'width', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.unitWt} onChange={(e) => handleItemChange(index, 'unitWt', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.wtPerPc} onChange={(e) => handleItemChange(index, 'wtPerPc', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.qtyPerSet} onChange={(e) => handleItemChange(index, 'qtyPerSet', e.target.value)} /></TableCell>
                             <TableCell><Input type="number" value={item.totalWtPerSet} readOnly className="bg-muted" /></TableCell>
                             <TableCell><Input type="number" value={item.totalWtKg} readOnly className="bg-muted" /></TableCell>
                             <TableCell className="text-right">
