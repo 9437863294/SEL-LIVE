@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -179,9 +180,12 @@ export default function StockOutPage() {
 
     try {
         for (const item of data.items) {
-          const itemsToIssue = item.isComponentIssue && item.bomItems 
-            ? item.bomItems.map(bi => ({ 
+          const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
+          
+          const itemsToIssue = isComponentIssue
+            ? item.bomItems!.map(bi => ({ 
                 ...bi, 
+                mainItemId: item.itemId, // Keep track of the parent item
                 itemId: bi.id, // Using the unique BOM item ID from form state
                 itemName: `${item.itemName} - ${bi.section}`,
                 itemUnit: 'Kg', // Assuming BOM items are in Kg
@@ -190,19 +194,21 @@ export default function StockOutPage() {
             : [item];
           
           for (const issueItem of itemsToIssue) {
-            if (issueItem.quantity === 0) continue; // Skip items with zero quantity
+            if (issueItem.quantity === 0) continue;
 
-            // Simplified query
+            const targetItemId = isComponentIssue ? (issueItem as any).mainItemId : issueItem.itemId;
+            
             const logsToUpdateQuery = query(
                 collection(db, 'inventoryLogs'),
                 where('projectId', '==', projectSlug),
-                where('itemId', '==', issueItem.itemId)
+                where('itemId', '==', targetItemId),
+                where('transactionType', '==', 'Goods Receipt')
             );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             
             const logsWithStock = logsToUpdateSnap.docs
                 .map(doc => ({ ...doc.data(), id: doc.id } as InventoryLog))
-                .filter(log => log.availableQuantity > 0) // Filter in code
+                .filter(log => log.availableQuantity > 0)
                 .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
             let quantityToIssue = issueItem.quantity;
@@ -229,7 +235,7 @@ export default function StockOutPage() {
                     date: Timestamp.fromDate(data.issueDate),
                     itemId: issueItem.itemId,
                     itemName: issueItem.itemName,
-                    itemType: logDoc.itemType,
+                    itemType: isComponentIssue ? 'Sub' : 'Main',
                     transactionType: 'Goods Issue',
                     quantity: quantityToDeduct,
                     availableQuantity: 0, 
@@ -388,3 +394,4 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
