@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -179,19 +179,19 @@ export default function StockOutPage() {
   
   const onSubmit = async (data: StockOutFormValues) => {
     setIsSaving(true);
-    const batch = writeBatch(db);
-
+    
     try {
+      await runTransaction(db, async (transaction) => {
         for (const item of data.items) {
           const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
           
           const itemsToIssue = isComponentIssue
-            ? item.bomItems!.map(bi => ({ 
-                ...bi, 
-                mainItemId: item.itemId, // Keep track of the parent item
-                itemId: bi.id, // Using the unique BOM item ID from form state
+            ? item.bomItems!.filter(bi => bi.quantity > 0).map(bi => ({ 
+                ...bi,
+                mainItemId: item.itemId,
+                itemId: bi.id,
                 itemName: `${item.itemName} - ${bi.section}`,
-                itemUnit: 'Kg', // Assuming BOM items are in Kg
+                itemUnit: 'Kg',
                 availableQty: bi.availableQty,
               }))
             : [item];
@@ -217,21 +217,40 @@ export default function StockOutPage() {
             let quantityToIssue = issueItem.quantity;
             let totalAvailableForThisItem = logsWithStock.reduce((sum, doc) => sum + doc.availableQuantity, 0);
 
+            if (isComponentIssue) {
+              const mainItemQtyPerComponent = issueItem.qtyPerSet || 1;
+              totalAvailableForThisItem *= mainItemQtyPerComponent;
+            }
+
             if (quantityToIssue > totalAvailableForThisItem) {
-              throw new Error(`Not enough stock for ${issueItem.itemName}. Required: ${quantityToIssue}, Available: ${totalAvailableForThisItem}.`);
+              throw new Error(`Not enough stock for ${issueItem.itemName}. Required: ${quantityToIssue}, Available: ${totalAvailableForThisItem.toFixed(3)}.`);
             }
 
             for (const logDoc of logsWithStock) {
                 if (quantityToIssue <= 0) break;
                 
-                const available = logDoc.availableQuantity;
-                const quantityToDeduct = Math.min(quantityToIssue, available);
+                let quantityToDeductFromMainItem: number;
+                let issuedComponentQty: number;
 
+                if (isComponentIssue) {
+                    const mainItemQtyPerBom = issueItem.qtyPerSet || 1;
+                    const availableComponentsInLog = logDoc.availableQuantity * mainItemQtyPerBom;
+                    const componentsToDeduct = Math.min(quantityToIssue, availableComponentsInLog);
+                    
+                    quantityToDeductFromMainItem = componentsToDeduct / mainItemQtyPerBom;
+                    issuedComponentQty = componentsToDeduct;
+                } else {
+                    quantityToDeductFromMainItem = Math.min(quantityToIssue, logDoc.availableQuantity);
+                    issuedComponentQty = quantityToDeductFromMainItem;
+                }
+                
+                const proportionalCost = (logDoc.cost || 0) * quantityToDeductFromMainItem;
+                
                 batch.update(doc(db, 'inventoryLogs', logDoc.id), {
-                    availableQuantity: available - quantityToDeduct
+                    availableQuantity: logDoc.availableQuantity - quantityToDeductFromMainItem
                 });
 
-                quantityToIssue -= quantityToDeduct;
+                quantityToIssue -= issuedComponentQty;
 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 batch.set(newIssueLogRef, {
@@ -240,10 +259,10 @@ export default function StockOutPage() {
                     itemName: issueItem.itemName,
                     itemType: isComponentIssue ? 'Sub' : 'Main',
                     transactionType: 'Goods Issue',
-                    quantity: quantityToDeduct,
+                    quantity: issuedComponentQty,
                     availableQuantity: 0, 
                     unit: issueItem.itemUnit,
-                    cost: logDoc.cost, 
+                    cost: proportionalCost / issuedComponentQty,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
                     details: {
@@ -255,9 +274,9 @@ export default function StockOutPage() {
             }
           }
         }
-        await batch.commit();
-        toast({ title: 'Success', description: 'Stock out transaction recorded successfully.' });
-        router.push(`/store-stock-management/${projectSlug}/transactions`);
+      });
+      toast({ title: 'Success', description: 'Stock out transaction recorded successfully.' });
+      router.push(`/store-stock-management/${projectSlug}/transactions`);
     } catch (e: any) {
       console.error(e);
       toast({ title: 'Error', description: e.message || 'Failed to save stock-out transaction.', variant: 'destructive' });
@@ -356,7 +375,7 @@ export default function StockOutPage() {
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
                                           <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${bomItem.availableQty})`}</Label>
+                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${bomItem.availableQty.toFixed(3)})`}</Label>
                                              <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
                                                 <FormItem> 
                                                   <FormControl>
@@ -364,7 +383,7 @@ export default function StockOutPage() {
                                                         onChange={(e) => {
                                                             const val = e.target.valueAsNumber;
                                                             if (val > bomItem.availableQty) {
-                                                                toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty}`, variant: 'destructive'});
+                                                                toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty.toFixed(3)}`, variant: 'destructive'});
                                                             } else {
                                                                 bomQtyField.onChange(val || 0);
                                                             }
@@ -397,3 +416,6 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+
+    
