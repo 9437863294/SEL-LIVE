@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -156,7 +156,7 @@ export default function StockOutPage() {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
       const bom = relatedBoqItem?.bom || [];
       
-      const mainItemAvailableQty = selectedInventoryItem.availableQuantity || 0;
+      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQuantity || 0;
 
       update(index, {
         ...form.getValues(`items.${index}`),
@@ -164,12 +164,15 @@ export default function StockOutPage() {
         itemName: selectedInventoryItem.itemName,
         itemUnit: selectedInventoryItem.unit,
         availableQty: mainItemAvailableQty,
-        bomItems: bom.map(b => ({ 
+        bomItems: bom.map(b => {
+          const componentAvailable = (mainItemAvailableQty * (b.qtyPerSet || 0));
+          return {
             ...b, 
             id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, 
             quantity: 0,
-            availableQty: mainItemAvailableQty * (b.qtyPerSet || 0), // Calculate component availability
-        })),
+            availableQty: componentAvailable
+          }
+        }),
       });
     }
   };
@@ -394,4 +397,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
