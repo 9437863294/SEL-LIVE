@@ -713,7 +713,6 @@ export interface Loan {
 export interface FabricationBomItem {
     id: string;
     markNo: string;
-    qtyPerPiece: string;
     section: string;
     grade: string;
     length: number;
