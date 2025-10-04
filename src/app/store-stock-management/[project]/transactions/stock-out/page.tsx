@@ -16,7 +16,7 @@ import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -43,6 +43,7 @@ const bomItemSchema = z.object({
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
   availableQty: z.number().default(0), // New field for availability
 });
+
 
 const itemSchema = z.object({
   id: z.string(),
@@ -182,46 +183,23 @@ export default function StockOutPage() {
 
     try {
         await runTransaction(db, async (transaction) => {
-            const mainItemsToUpdate = new Map<string, number>();
-
-            // First pass: validate and calculate deductions for main items
-            for (const item of data.items) {
-                if (item.isComponentIssue && item.bomItems) {
-                    const bomDemands = item.bomItems.filter(bi => bi.quantity > 0);
-                    if (bomDemands.length === 0) continue;
-                    
-                    let requiredMainItemQty = 0;
-                    for (const bomDemand of bomDemands) {
-                        if (!bomDemand.qtyPerSet || bomDemand.qtyPerSet === 0) {
-                            throw new Error(`Component ${bomDemand.markNo} has zero quantity per set defined.`);
-                        }
-                        const neededSets = bomDemand.quantity / bomDemand.qtyPerSet;
-                        if (neededSets > requiredMainItemQty) {
-                            requiredMainItemQty = neededSets;
-                        }
-                    }
-
-                    const currentDeduction = mainItemsToUpdate.get(item.itemId) || 0;
-                    mainItemsToUpdate.set(item.itemId, currentDeduction + requiredMainItemQty);
-
-                } else { // Standard item issue
-                    const currentDeduction = mainItemsToUpdate.get(item.itemId) || 0;
-                    mainItemsToUpdate.set(item.itemId, currentDeduction + item.quantity);
-                }
-            }
-
-            // Second pass: process deductions and create issue logs
             for (const item of data.items) {
                 const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
                 
-                if(isComponentIssue) {
-                    const requiredMainQty = mainItemsToUpdate.get(item.itemId);
-                    if (!requiredMainQty || requiredMainQty <= 0) continue; 
-                    
+                if (isComponentIssue) {
+                    const requiredMainQty = item.bomItems!.reduce((maxSets, bi) => {
+                        if (bi.quantity > 0 && bi.qtyPerSet > 0) {
+                            return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
+                        }
+                        return maxSets;
+                    }, 0);
+
+                    if (requiredMainQty <= 0) continue;
+
+                    let totalAvailableForMainItem = 0;
                     const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
                     const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
                     
-                    let totalAvailableForMainItem = 0;
                     const logsWithStock = logsToUpdateSnap.docs.map(d => {
                         const data = d.data() as InventoryLog;
                         totalAvailableForMainItem += data.availableQuantity;
@@ -229,13 +207,12 @@ export default function StockOutPage() {
                     }).filter(l => l.availableQuantity > 0).sort((a, b) => a.date.toDate().getTime() - b.date.toDate().getTime());
                     
                     if (requiredMainQty > totalAvailableForMainItem) {
-                        throw new Error(`Not enough stock for ${item.itemName}. Required: ${requiredMainQty.toFixed(3)}, Available: ${totalAvailableForMainItem.toFixed(3)}.`);
+                        throw new Error(`Not enough stock for ${item.itemName}. Required sets: ${requiredMainQty.toFixed(3)}, Available sets: ${totalAvailableForMainItem.toFixed(3)}.`);
                     }
-                    
+
                     let mainQtyToDeduct = requiredMainQty;
                     for (const logDoc of logsWithStock) {
                         if (mainQtyToDeduct <= 0) break;
-
                         const deduction = Math.min(mainQtyToDeduct, logDoc.availableQuantity);
                         transaction.update(doc(db, 'inventoryLogs', logDoc.id), {
                             availableQuantity: logDoc.availableQuantity - deduction
@@ -243,7 +220,6 @@ export default function StockOutPage() {
                         mainQtyToDeduct -= deduction;
                     }
 
-                    // Create logs for each issued BOM component
                     for (const bomItem of item.bomItems!.filter(bi => bi.quantity > 0)) {
                         const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                         transaction.set(newIssueLogRef, {
@@ -261,13 +237,10 @@ export default function StockOutPage() {
                             details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: 'BOM_CONVERSION' }
                         });
                     }
-                    mainItemsToUpdate.delete(item.itemId); 
                 } else {
                     let quantityToIssue = item.quantity;
-                    
                     const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
                     const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
-                    
                     const logsWithStock = logsToUpdateSnap.docs.map(d => ({ ...d.data(), id: d.id } as InventoryLog)).filter(l => l.availableQuantity > 0).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
                     
                     let totalAvailable = logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0);
@@ -311,7 +284,6 @@ export default function StockOutPage() {
         setIsSaving(false);
     }
 };
-
 
   const watchedItems = form.watch('items');
 
@@ -385,6 +357,17 @@ export default function StockOutPage() {
                         {fields.map((field, index) => {
                           const hasBom = (watchedItems[index]?.bomItems?.length ?? 0) > 0;
                           const isComponentIssue = watchedItems[index]?.isComponentIssue;
+                          
+                           const requiredMainQtyForBom = useMemo(() => {
+                                if (!isComponentIssue || !watchedItems[index]?.bomItems) return 0;
+                                return watchedItems[index].bomItems!.reduce((maxSets, bi) => {
+                                    if (bi.quantity > 0 && bi.qtyPerSet > 0) {
+                                        return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
+                                    }
+                                    return maxSets;
+                                }, 0);
+                            }, [watchedItems[index]?.bomItems, isComponentIssue]);
+                          
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
                                 <div className="flex justify-between items-start">
@@ -401,27 +384,31 @@ export default function StockOutPage() {
                                 {isComponentIssue && hasBom ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
-                                       {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
-                                          <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                             <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${bomItem.availableQty.toFixed(3)})`}</Label>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
-                                                <FormItem> 
-                                                  <FormControl>
-                                                    <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
-                                                        onChange={(e) => {
-                                                            const val = e.target.valueAsNumber;
-                                                            if (val > bomItem.availableQty) {
-                                                                toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty.toFixed(3)}`, variant: 'destructive'});
-                                                            } else {
-                                                                bomQtyField.onChange(val || 0);
-                                                            }
-                                                        }}
-                                                    />
-                                                  </FormControl>
-                                                </FormItem>
-                                             )}/>
-                                          </div>
-                                       ))}
+                                       {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
+                                           const availableQty = (watchedItems[index].availableQty - requiredMainQtyForBom + (bomItem.quantity/bomItem.qtyPerSet)) * bomItem.qtyPerSet;
+                                           return (
+                                              <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
+                                                 <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${availableQty.toFixed(3)})`}</Label>
+                                                 <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
+                                                    <FormItem> 
+                                                      <FormControl>
+                                                        <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
+                                                            onChange={(e) => {
+                                                                const val = e.target.valueAsNumber;
+                                                                if (val > availableQty) {
+                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${availableQty.toFixed(3)}`, variant: 'destructive'});
+                                                                } else {
+                                                                    bomQtyField.onChange(val || 0);
+                                                                }
+                                                            }}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                 )}/>
+                                              </div>
+                                           )
+                                       })}
+                                        {requiredMainQtyForBom > 0 && <p className="text-xs text-blue-600 font-medium">Requires {requiredMainQtyForBom.toFixed(3)} sets of main item.</p>}
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
@@ -429,12 +416,12 @@ export default function StockOutPage() {
                                           <Label>Available Qty</Label>
                                           <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
                                       </div>
-                                      <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; if (val > form.getValues(`items.${index}.availableQty`)) { toast({title: "Quantity Exceeded", description: "Issue quantity cannot be greater than available quantity.", variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
+                                      <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
                                     </div>
                                 )}
                             </div>
-                        )})}
+                          )})}
                         <Button variant="outline" size="sm" type="button" onClick={handleAddItem} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Item</Button>
                     </CardContent>
                 </Card>
