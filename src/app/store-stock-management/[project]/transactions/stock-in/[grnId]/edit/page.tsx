@@ -93,7 +93,7 @@ const grnSchema = z.object({
 
 type GrnFormValues = z.infer<typeof grnSchema>;
 
-export default function EditStockInPage({ params }: { params: { project: string, grnId: string } }) {
+export default function EditStockInPage({ params }: { params: { project: string; grnId: string } }) {
   const { toast } = useToast();
   const router = useRouter();
   const { project: projectSlug, grnId } = params;
@@ -464,4 +464,3 @@ export default function EditStockInPage({ params }: { params: { project: string,
     </Form>
   );
 }
-
