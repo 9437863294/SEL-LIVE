@@ -17,6 +17,7 @@ import {
   File as FileIcon,
   X,
   Library,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -577,6 +578,7 @@ export default function StockInPage() {
                             const baseUnit = currentItem?.['UNIT'] || currentItem?.['UNITS'] || '';
                             const conversionUnits = currentItem?.conversions?.map(c => c.toUnit) || [];
                             const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
+                            const bom = currentItem?.bom || [];
 
                             return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -599,7 +601,7 @@ export default function StockInPage() {
                                           </FormItem>
                                         )}
                                       />
-                                      { (currentItem?.bom?.length ?? 0) > 0 && (
+                                      { (bom.length > 0) && (
                                             <div className="flex items-end pb-1">
                                                 <FormField control={form.control} name={`items.${index}.isBomGrn`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isBomGrn-${index}`} /></FormControl> <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label> </FormItem> )} />
                                             </div>
@@ -617,8 +619,8 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty</TableHead>
-                                             <TableHead>Cost per Unit</TableHead>
+                                             <TableHead>Receive Qty (Kg)</TableHead>
+                                             <TableHead>Cost/Kg</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>
