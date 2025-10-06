@@ -32,7 +32,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog, EnrichedLogItem } from '@/lib/types';
 import { format } from 'date-fns';
