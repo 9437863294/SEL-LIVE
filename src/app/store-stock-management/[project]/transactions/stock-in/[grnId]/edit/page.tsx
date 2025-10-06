@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -165,6 +165,17 @@ export default function EditStockInPage({ params }: { params: { project: string;
     fetchGrnData();
   }, [grnId, projectSlug, router, toast, form]);
 
+   useEffect(() => {
+    const fetchBoq = async () => {
+      if (!projectSlug) return;
+      const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+      const boqSnapshot = await getDocs(q);
+      const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+      setBoqItems(boqData);
+    };
+    fetchBoq();
+  }, [projectSlug]);
+
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);
     const batch = writeBatch(db);
@@ -207,6 +218,43 @@ export default function EditStockInPage({ params }: { params: { project: string;
       setIsSaving(false);
     }
   };
+  
+    const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section} - ${(item as FabricationBomItem).grade}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
+
+  const handleItemSelect = (index: number, selectedBoqItem: BoqItem | null) => {
+    if (selectedBoqItem) {
+      const description = getItemDescription(selectedBoqItem);
+      const unit = selectedBoqItem['UNIT'] || selectedBoqItem['UNITS'] || '';
+      const slNo = getSlNo(selectedBoqItem);
+      
+      const currentItem = form.getValues(`items.${index}`);
+      const updatedItem = {
+        ...currentItem,
+        itemId: selectedBoqItem.id,
+        itemName: description,
+        itemUnit: unit,
+        receiveUnit: unit,
+        boqSlNo: slNo,
+        bomItems: selectedBoqItem.bom?.map(b => ({ ...b, id: `bom-${selectedBoqItem.id}-${b.markNo}`, quantity: 0, unitCost: 0 })) || [],
+      };
+      
+      form.setValue(`items.${index}`, updatedItem, { shouldValidate: true });
+    }
+  };
 
   const DatePickerField = ({ name, label }: { name: keyof GrnFormValues, label: string }) => (
     <FormField
@@ -220,7 +268,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
               <FormControl>
                 <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
+                  {field.value ? format(new Date(field.value), 'PPP') : <span>Pick a date</span>}
                 </Button>
               </FormControl>
             </PopoverTrigger>
@@ -278,6 +326,13 @@ export default function EditStockInPage({ params }: { params: { project: string;
       />
     );
   };
+  
+    const getSelectedSlNo = (index: number): string => {
+        const itemId = form.getValues(`items.${index}.itemId`);
+        if (!itemId) return '';
+        const boqItem = boqItems.find(bi => bi.id === itemId);
+        return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
+    };
 
 
   if (isLoading) {
@@ -354,16 +409,34 @@ export default function EditStockInPage({ params }: { params: { project: string;
                         {fields.map((field, index) => (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
                                <div className="flex justify-between items-start">
-                                    <p className="font-semibold">{field.itemName}</p>
-                                    <Button variant="ghost" size="icon" type="button" onClick={() => remove(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                  <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <FormField
+                                        control={form.control}
+                                        name={`items.${index}.itemId`}
+                                        render={() => (
+                                          <FormItem className="space-y-1">
+                                            <FormLabel>BOQ Item</FormLabel>
+                                            <BoqItemSelector
+                                              key={field.id}
+                                              boqItems={boqItems}
+                                              selectedSlNo={getSelectedSlNo(index)}
+                                              onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
+                                              isLoading={isLoadingItems}
+                                            />
+                                            <FormMessage />
+                                          </FormItem>
+                                        )}
+                                      />
+                                  </div>
+                                    <Button variant="destructive" size="icon" type="button" onClick={() => remove(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                                    <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                                    <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field }) => ( <FormItem className="space-y-1"> <FormLabel>Unit Cost</FormLabel> <FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
-                                    <div className="space-y-1 text-right">
-                                        <Label className="text-xs">Total Cost</Label>
-                                        <p className="font-semibold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.unitCost`) || 0))}</p>
-                                    </div>
+                                  <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                  <FormField control={form.control} name={`items.${index}.unitCost`} render={({ field: costField }) => ( <FormItem className="space-y-1"> <FormLabel>Unit Cost</FormLabel> <FormControl><Input type="number" {...costField} value={costField.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                  <div className="space-y-1 text-right">
+                                    <Label className="text-xs">Total Cost</Label>
+                                    <p className="font-semibold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.unitCost`) || 0))}</p>
+                                  </div>
                                 </div>
                             </div>
                         ))}
