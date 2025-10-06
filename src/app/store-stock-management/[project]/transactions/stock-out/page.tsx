@@ -34,6 +34,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { ItemSelector } from '@/components/ItemSelector';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 const bomItemSchema = z.object({
@@ -175,7 +176,10 @@ export default function StockOutPage() {
         itemUnit: selectedInventoryItem.unit,
         availableQty: mainItemAvailableQty,
         bomItems: bom.map(b => {
-          const componentAvailable = (mainItemAvailableQty * (b.qtyPerSet || 0));
+          const componentAvailable = availableItems
+              .filter(i => i.itemId === b.id && i.itemType === 'Sub')
+              .reduce((sum, i) => sum + i.availableQuantity, 0);
+
           return {
             ...b, 
             id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, 
@@ -398,34 +402,48 @@ export default function StockOutPage() {
                                 {isComponentIssue && hasBom ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
-                                       {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
-                                            const mainItemAvailable = watchedItems[index].availableQty;
-                                            const totalComponentAvailable = availableItems
-                                                .filter(i => i.itemId === bomItem.id && i.itemType === 'Sub')
-                                                .reduce((sum, i) => sum + i.availableQuantity, 0);
-
-                                           return (
-                                              <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                                 <Label className="text-xs truncate col-span-2">Mark No. {bomItem.markNo} ({bomItem.section}) (Av: {totalComponentAvailable.toFixed(3)})</Label>
-                                                 <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
-                                                    <FormItem> 
-                                                      <FormControl>
-                                                        <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
-                                                            onChange={(e) => {
-                                                                const val = e.target.valueAsNumber;
-                                                                if (val > totalComponentAvailable) {
-                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${totalComponentAvailable.toFixed(3)}`, variant: 'destructive'});
-                                                                } else {
-                                                                    bomQtyField.onChange(val || 0);
-                                                                }
-                                                            }}
-                                                        />
-                                                      </FormControl>
-                                                    </FormItem>
-                                                 )}/>
-                                              </div>
-                                           )
-                                       })}
+                                       <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Mark No.</TableHead>
+                                                    <TableHead>Available Qty (Kg)</TableHead>
+                                                    <TableHead>Issue Qty (Kg)</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                               {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
+                                                    const totalComponentAvailable = bomItem.availableQty;
+                                                   return (
+                                                        <TableRow key={bomItem.id}>
+                                                            <TableCell>
+                                                                <Label className="text-xs font-medium">Mark No. {bomItem.markNo} ({bomItem.section})</Label>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Input value={totalComponentAvailable.toFixed(3)} readOnly className="bg-muted"/>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
+                                                                    <FormItem> 
+                                                                    <FormControl>
+                                                                        <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
+                                                                            onChange={(e) => {
+                                                                                const val = e.target.valueAsNumber;
+                                                                                if (val > totalComponentAvailable) {
+                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${totalComponentAvailable.toFixed(3)}`, variant: 'destructive'});
+                                                                                } else {
+                                                                                    bomQtyField.onChange(val || 0);
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    </FormControl>
+                                                                    </FormItem>
+                                                                )}/>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                   )
+                                               })}
+                                           </TableBody>
+                                       </Table>
                                         {requiredMainQtyForBom > 0 && <p className="text-xs text-blue-600 font-medium">Requires {requiredMainQtyForBom.toFixed(3)} sets of main item.</p>}
                                     </div>
                                 ) : (
@@ -462,3 +480,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
