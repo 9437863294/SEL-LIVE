@@ -68,8 +68,8 @@ type StockOutFormValues = z.infer<typeof stockOutSchema>;
 export default function StockOutPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const params = useParams() as { project: string };
-  const projectSlug = params.project;
+  const params = useParams();
+  const projectSlug = params.project as string;
 
   const [isSaving, setIsSaving] = useState(false);
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
@@ -157,7 +157,7 @@ export default function StockOutPage() {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
       const bom = relatedBoqItem?.bom || [];
       
-      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQuantity || 0;
+      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQty || 0;
 
       update(index, {
         ...form.getValues(`items.${index}`),
@@ -419,6 +419,10 @@ export default function StockOutPage() {
                                           <Label>Available Qty</Label>
                                           <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
                                       </div>
+                                       <div>
+                                          <Label>Unit</Label>
+                                          <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
+                                      </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
                                     </div>
@@ -435,4 +439,3 @@ export default function StockOutPage() {
   );
 }
 
-    
