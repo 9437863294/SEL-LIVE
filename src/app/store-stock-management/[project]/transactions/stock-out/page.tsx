@@ -7,7 +7,15 @@ import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Plus, Trash2, Save, Loader2, Calendar as CalendarIcon, Search } from 'lucide-react';
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Save,
+  Loader2,
+  Calendar as CalendarIcon,
+  Search,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -158,7 +166,7 @@ export default function StockOutPage() {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
       const bom = relatedBoqItem?.bom || [];
       
-      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQty || 0;
+      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQuantity || 0;
 
       update(index, {
         ...form.getValues(`items.${index}`),
@@ -232,7 +240,7 @@ export default function StockOutPage() {
                             quantity: bomItem.quantity,
                             availableQuantity: 0,
                             unit: 'Kg',
-                            cost: bomItem.unitCost || 0,
+                            cost: 0,
                             projectId: projectSlug,
                             description: `Issued to ${data.issuedTo}`,
                             details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: 'BOM_CONVERSION' }
@@ -421,27 +429,13 @@ export default function StockOutPage() {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                                      <div>
+                                      <div className="space-y-2">
                                           <Label>Available Qty</Label>
                                           <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
                                       </div>
-                                       <div>
+                                       <div className="space-y-2">
                                             <Label>Unit</Label>
-                                            {unitOptions.length > 1 ? (
-                                                <Select
-                                                    value={form.getValues(`items.${index}.itemUnit`)}
-                                                    onValueChange={(value) => form.setValue(`items.${index}.itemUnit`, value)}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Select Unit" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                            ) : (
-                                                <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted" />
-                                            )}
+                                            <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted" />
                                         </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
@@ -459,3 +453,4 @@ export default function StockOutPage() {
   );
 }
 
+    
