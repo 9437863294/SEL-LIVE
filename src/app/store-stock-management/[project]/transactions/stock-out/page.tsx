@@ -50,7 +50,7 @@ const bomItemSchema = z.object({
   totalWtKg: z.number(),
   // Issue specific fields
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
-  availableQty: z.number().default(0), // New field for availability
+  availableQty: z.number().default(0),
 });
 
 
@@ -377,10 +377,10 @@ export default function StockOutPage() {
                               }, 0);
                           })();
                           
-                          const boqItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
-                          const baseUnit = boqItem?.['UNIT'] || boqItem?.['UNITS'] || '';
-                          const conversionUnits = boqItem?.conversions?.map(c => c.toUnit) || [];
-                          const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
+                           const boqItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
+                           const baseUnit = boqItem?.['UNIT'] || boqItem?.['UNITS'] || '';
+                           const conversionUnits = boqItem?.conversions?.map(c => c.toUnit) || [];
+                           const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
 
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -435,7 +435,7 @@ export default function StockOutPage() {
                                       </div>
                                        <div className="space-y-2">
                                             <Label>Unit</Label>
-                                            <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted" />
+                                            <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
                                         </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
@@ -452,5 +452,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
