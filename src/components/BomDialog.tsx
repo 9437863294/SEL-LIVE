@@ -158,13 +158,13 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
                             <TableCell><Input value={item.markNo} onChange={(e) => handleItemChange(index, 'markNo', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.section} onChange={(e) => handleItemChange(index, 'section', e.target.value)} /></TableCell>
                             <TableCell><Input value={item.grade} onChange={(e) => handleItemChange(index, 'grade', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.length} onChange={(e) => handleItemChange(index, 'length', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.width} onChange={(e) => handleItemChange(index, 'width', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.unitWt} onChange={(e) => handleItemChange(index, 'unitWt', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.wtPerPc} onChange={(e) => handleItemChange(index, 'wtPerPc', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.qtyPerSet} onChange={(e) => handleItemChange(index, 'qtyPerSet', e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" value={item.totalWtPerSet} readOnly className="bg-muted" /></TableCell>
-                            <TableCell><Input type="number" value={item.totalWtKg} readOnly className="bg-muted" /></TableCell>
+                            <TableCell><Input type="number" value={item.length || ''} onChange={(e) => handleItemChange(index, 'length', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.width || ''} onChange={(e) => handleItemChange(index, 'width', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.unitWt || ''} onChange={(e) => handleItemChange(index, 'unitWt', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.wtPerPc || ''} onChange={(e) => handleItemChange(index, 'wtPerPc', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.qtyPerSet || ''} onChange={(e) => handleItemChange(index, 'qtyPerSet', e.target.value)} /></TableCell>
+                            <TableCell><Input type="number" value={item.totalWtPerSet || ''} readOnly className="bg-muted" /></TableCell>
+                            <TableCell><Input type="number" value={item.totalWtKg || ''} readOnly className="bg-muted" /></TableCell>
                             <TableCell className="text-right">
                                 <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
