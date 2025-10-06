@@ -615,7 +615,7 @@ export default function StockInPage() {
                                            <TableRow>
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
-                                             <TableHead>Available Qty (Kg)</TableHead>
+                                             <TableHead>Qty/Set</TableHead>
                                              <TableHead>Receive Qty (Kg)</TableHead>
                                              <TableHead>Cost/Kg</TableHead>
                                            </TableRow>
@@ -625,9 +625,7 @@ export default function StockInPage() {
                                               <TableRow key={bomItem.id}>
                                                   <TableCell>{bomItem.markNo}</TableCell>
                                                   <TableCell>{bomItem.section}</TableCell>
-                                                  <TableCell>
-                                                    <Input value={bomItem.availableQty?.toFixed(3) || '0.000'} readOnly className="bg-muted"/>
-                                                  </TableCell>
+                                                  <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
@@ -672,7 +670,7 @@ export default function StockInPage() {
                                     </div>
                                 )}
                             </div>
-                        )})}
+                          )})}
                         <Button variant="outline" size="sm" type="button" onClick={handleAddItem} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Item</Button>
                     </CardContent>
                 </Card>
@@ -696,3 +694,5 @@ export default function StockInPage() {
     </>
   );
 }
+
+    
