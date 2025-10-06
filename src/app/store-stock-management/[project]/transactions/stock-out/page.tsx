@@ -400,20 +400,21 @@ export default function StockOutPage() {
                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
                                             const mainItemAvailable = watchedItems[index].availableQty;
-                                            const setsAvailableBasedOnMain = mainItemAvailable > 0 ? mainItemAvailable : 0;
-                                            const thisComponentQtyAvailable = setsAvailableBasedOnMain * bomItem.qtyPerSet;
+                                            const totalComponentAvailable = availableItems
+                                                .filter(i => i.itemId === bomItem.id && i.itemType === 'Sub')
+                                                .reduce((sum, i) => sum + i.availableQuantity, 0);
 
                                            return (
                                               <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                                 <Label className="text-xs truncate col-span-2">Mark No. {bomItem.markNo} ({bomItem.section}) (Av: {thisComponentQtyAvailable.toFixed(3)})</Label>
+                                                 <Label className="text-xs truncate col-span-2">Mark No. {bomItem.markNo} ({bomItem.section}) (Av: {totalComponentAvailable.toFixed(3)})</Label>
                                                  <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
                                                     <FormItem> 
                                                       <FormControl>
                                                         <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
                                                             onChange={(e) => {
                                                                 const val = e.target.valueAsNumber;
-                                                                if (val > thisComponentQtyAvailable) {
-                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${thisComponentQtyAvailable.toFixed(3)}`, variant: 'destructive'});
+                                                                if (val > totalComponentAvailable) {
+                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${totalComponentAvailable.toFixed(3)}`, variant: 'destructive'});
                                                                 } else {
                                                                     bomQtyField.onChange(val || 0);
                                                                 }
