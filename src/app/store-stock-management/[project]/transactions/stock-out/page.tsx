@@ -405,7 +405,7 @@ export default function StockOutPage() {
 
                                            return (
                                               <div key={bomItem.id} className="grid grid-cols-3 gap-2 items-center">
-                                                 <Label className="text-xs truncate col-span-2">{`${bomItem.section} - ${bomItem.grade} (Av: ${thisComponentQtyAvailable.toFixed(3)})`}</Label>
+                                                 <Label className="text-xs truncate col-span-2">Mark No. {bomItem.markNo} ({bomItem.section}) (Av: {thisComponentQtyAvailable.toFixed(3)})</Label>
                                                  <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
                                                     <FormItem> 
                                                       <FormControl>
@@ -435,7 +435,16 @@ export default function StockOutPage() {
                                       </div>
                                        <div className="space-y-2">
                                             <Label>Unit</Label>
-                                            <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
+                                            {unitOptions.length > 1 ? (
+                                                <Select value={form.getValues(`items.${index}.itemUnit`)} onValueChange={(value) => form.setValue(`items.${index}.itemUnit`, value)}>
+                                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                                    <SelectContent>
+                                                        {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
+                                            )}
                                         </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
