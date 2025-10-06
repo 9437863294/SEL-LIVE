@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -172,9 +172,12 @@ export default function EditStockInPage({ params }: { params: { project: string;
       setIsLoadingItems(true);
       try {
         const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const unitsSnap = await getDocs(collection(db, 'units'));
+        
         const boqSnapshot = await getDocs(q);
         const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(boqData);
+
       } catch (error) {
         console.error('Error fetching BOQ:', error);
       }
@@ -461,3 +464,5 @@ export default function EditStockInPage({ params }: { params: { project: string;
     </Form>
   );
 }
+
+    
