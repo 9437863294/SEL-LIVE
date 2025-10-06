@@ -142,20 +142,21 @@ export default function TransactionsPage() {
                     collection(db, 'inventoryLogs'), 
                     where('projectId', '==', projectSlug),
                     where('itemId', '==', issueItem.itemId),
-                    where('transactionType', '==', 'Goods Receipt'),
-                    orderBy('date', 'asc')
+                    where('transactionType', '==', 'Goods Receipt')
                 );
                 const grnItemsSnap = await getDocs(grnItemsQuery);
 
-                const grnDocs = grnItemsSnap.docs;
+                const grnDocs = grnItemsSnap.docs
+                    .map(d => ({...d.data(), id: d.id} as InventoryLog))
+                    .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
                 if (grnDocs.length > 0) {
                     // Add the quantity back to the first available GRN record
                     // This is a simplified FIFO refund. A more complex system might distribute it.
                     const firstGrnDoc = grnDocs[0];
-                    const grnItem = firstGrnDoc.data() as InventoryLog;
+                    const grnItem = firstGrnDoc;
                     const newAvailableQty = grnItem.availableQuantity + issueItem.quantity;
-                    batch.update(firstGrnDoc.ref, { availableQuantity: newAvailableQty });
+                    batch.update(doc(db, 'inventoryLogs', firstGrnDoc.id), { availableQuantity: newAvailableQty });
                 } else {
                      // This case should be rare if data is consistent, but it's good to handle.
                      console.warn(`Could not find a source GRN for issued item ${issueItem.itemName} to return stock to.`);
