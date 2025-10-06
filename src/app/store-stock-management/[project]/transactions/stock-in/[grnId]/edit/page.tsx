@@ -12,6 +12,10 @@ import {
   Save,
   Loader2,
   Trash2,
+  CalendarIcon,
+  Upload,
+  File as FileIcon,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,11 +23,17 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem } from '@/lib/types';
 import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { Textarea } from '@/components/ui/textarea';
 
 
 const itemSchema = z.object({
@@ -41,8 +51,20 @@ const itemSchema = z.object({
 
 const grnSchema = z.object({
     grnNo: z.string().min(1, "GRN No. is required."),
+    grnDate: z.date({ required_error: "A GRN date is required." }),
     supplier: z.string().min(1, "Supplier name is required."),
     poNumber: z.string().min(1, "P.O. Number is required."),
+    poDate: z.date().optional(),
+    invoiceNumber: z.string().min(1, "Invoice number is required."),
+    invoiceDate: z.date().optional(),
+    invoiceAmount: z.coerce.number().nullable().optional(),
+    invoiceFiles: z.array(z.custom<File>()).optional().default([]),
+    transporterDocs: z.array(z.custom<File>()).optional().default([]),
+    vehicleNo: z.string().optional().default(''),
+    waybillNo: z.string().optional().default(''),
+    lrNo: z.string().optional().default(''),
+    lrDate: z.date().optional(),
+    notes: z.string().optional().default(''),
     items: z.array(itemSchema).min(1, { message: 'At least one item is required.' }),
 });
 
@@ -85,8 +107,18 @@ export default function EditStockInPage({ params }: { params: { project: string;
         
         form.reset({
             grnNo: firstItem.details?.grnNo,
+            grnDate: firstItem.date ? firstItem.date.toDate() : new Date(),
             supplier: firstItem.details?.supplier,
             poNumber: firstItem.details?.poNumber,
+            poDate: firstItem.details?.poDate ? new Date(firstItem.details.poDate) : undefined,
+            invoiceNumber: firstItem.details?.invoiceNumber,
+            invoiceDate: firstItem.details?.invoiceDate ? new Date(firstItem.details.invoiceDate) : undefined,
+            invoiceAmount: firstItem.details?.invoiceAmount,
+            vehicleNo: firstItem.details?.vehicleNo,
+            waybillNo: firstItem.details?.waybillNo,
+            lrNo: firstItem.details?.lrNo,
+            lrDate: firstItem.details?.lrDate ? new Date(firstItem.details.lrDate) : undefined,
+            notes: firstItem.details?.notes,
             items: grnItems.map(item => ({
                 id: item.id,
                 itemId: item.itemId,
@@ -121,11 +153,21 @@ export default function EditStockInPage({ params }: { params: { project: string;
                 quantity: item.quantity,
                 availableQuantity: item.quantity, // Reset available qty on update
                 cost: item.unitCost,
+                date: Timestamp.fromDate(data.grnDate),
                 details: {
                     ...boqItems.find(b => b.id === item.itemId)?.details, // Assumes details are on BOQ
                     grnNo: data.grnNo,
                     supplier: data.supplier,
                     poNumber: data.poNumber,
+                    poDate: data.poDate ? format(data.poDate, 'yyyy-MM-dd') : null,
+                    invoiceNumber: data.invoiceNumber,
+                    invoiceDate: data.invoiceDate ? format(data.invoiceDate, 'yyyy-MM-dd') : null,
+                    invoiceAmount: data.invoiceAmount,
+                    vehicleNo: data.vehicleNo,
+                    waybillNo: data.waybillNo,
+                    lrNo: data.lrNo,
+                    lrDate: data.lrDate ? format(data.lrDate, 'yyyy-MM-dd') : null,
+                    notes: data.notes,
                     boqSlNo: item.boqSlNo,
                 }
             };
@@ -142,6 +184,78 @@ export default function EditStockInPage({ params }: { params: { project: string;
       setIsSaving(false);
     }
   };
+
+  const DatePickerField = ({ name, label }: { name: keyof GrnFormValues, label: string }) => (
+    <FormField
+      control={form.control}
+      name={name as any}
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <FormLabel>{label}</FormLabel>
+          <Popover>
+            <PopoverTrigger asChild>
+              <FormControl>
+                <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
+                </Button>
+              </FormControl>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+            </PopoverContent>
+          </Popover>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+  
+  const FileUpload = ({ name, label }: { name: keyof GrnFormValues, label: string }) => {
+    const files = form.watch(name as any) as File[] || [];
+    return (
+      <FormField
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <FormItem className="space-y-2">
+            <FormLabel>{label}</FormLabel>
+            <div className="flex items-center gap-2">
+               <FormControl>
+                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(Array.from(e.target.files || []))} />
+               </FormControl>
+                <Label htmlFor={name} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                    {files.length > 0 ? `${files.length} file(s) selected` : 'No file selected'}
+                </Label>
+                <Button asChild variant="outline">
+                    <Label htmlFor={name} className="cursor-pointer">
+                        <Upload className="mr-2 h-4 w-4"/> Upload
+                    </Label>
+                </Button>
+            </div>
+             {files.length > 0 && (
+                <div className="mt-2 space-y-1">
+                    {files.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md text-xs">
+                           <span>{file.name}</span>
+                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                                const newFiles = [...files];
+                                newFiles.splice(i, 1);
+                                field.onChange(newFiles);
+                            }}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+             )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    );
+  };
+
 
   if (isLoading) {
     return (
@@ -178,11 +292,39 @@ export default function EditStockInPage({ params }: { params: { project: string;
                 <Card>
                     <CardHeader><CardTitle>GRN Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
+                       <DatePickerField name="grnDate" label="GRN Date" />
                        <FormField control={form.control} name="supplier" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Supplier Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                        <FormField control={form.control} name="poNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>P.O. Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                       <DatePickerField name="poDate" label="P.O. Date" />
                     </CardContent>
                 </Card>
-
+                
+                <Card>
+                    <CardHeader><CardTitle>Invoice Details</CardTitle></CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormField control={form.control} name="invoiceNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                        <DatePickerField name="invoiceDate" label="Invoice Date" />
+                        <FormField control={form.control} name="invoiceAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Invoice Amount</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)}/>
+                        <div className="md:col-span-3">
+                           <FileUpload name="invoiceFiles" label="Upload Invoice(s)" />
+                        </div>
+                    </CardContent>
+                </Card>
+                
+                <Card>
+                    <CardHeader><CardTitle>Transporter Details</CardTitle></CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormField control={form.control} name="vehicleNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Vehicle No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                        <FormField control={form.control} name="waybillNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Waybill No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                        <FormField control={form.control} name="lrNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>LR No.</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                        <DatePickerField name="lrDate" label="LR Date" />
+                         <div className="md:col-span-3">
+                           <FileUpload name="transporterDocs" label="Upload Transporter Doc(s)" />
+                        </div>
+                    </CardContent>
+                </Card>
+                
                 <Card>
                     <CardHeader><CardTitle>Items Received</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
@@ -204,9 +346,18 @@ export default function EditStockInPage({ params }: { params: { project: string;
                         ))}
                     </CardContent>
                 </Card>
+
+                 <Card>
+                    <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+                    <CardContent>
+                       <FormField control={form.control} name="notes" render={({ field }) => (<FormItem><FormControl><Textarea placeholder="Add any relevant notes for this transaction..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                    </CardContent>
+                </Card>
             </div>
         </div>
       </form>
     </Form>
   );
 }
+
+    
