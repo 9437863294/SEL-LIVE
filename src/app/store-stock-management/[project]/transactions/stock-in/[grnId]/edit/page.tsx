@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -16,6 +16,7 @@ import {
   Upload,
   File as FileIcon,
   X,
+  Library,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +35,28 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Textarea } from '@/components/ui/textarea';
+import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Timestamp } from 'firebase/firestore';
+
+
+const bomItemSchema = z.object({
+  id: z.string(),
+  markNo: z.string(),
+  section: z.string(),
+  grade: z.string(),
+  length: z.number(),
+  width: z.number(),
+  unitWt: z.number(),
+  wtPerPc: z.number(),
+  totalWtPerSet: z.number(),
+  qtyPerSet: z.number(),
+  totalWtKg: z.number(),
+  // GRN specific fields
+  quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
+  unitCost: z.coerce.number().optional(),
+});
 
 
 const itemSchema = z.object({
@@ -289,7 +312,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
             </div>
 
             <div className="space-y-6">
-                <Card>
+                 <Card>
                     <CardHeader><CardTitle>GRN Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                        <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
@@ -359,3 +382,5 @@ export default function EditStockInPage({ params }: { params: { project: string;
     </Form>
   );
 }
+
+    
