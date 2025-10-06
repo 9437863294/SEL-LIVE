@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -8,10 +9,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
   ArrowLeft,
-  Plus,
-  Trash2,
   Save,
   Loader2,
+  Trash2,
   Calendar as CalendarIcon,
   Upload,
   File as FileIcon,
@@ -365,8 +365,10 @@ export default function StockInPage() {
           }
 
           if (item.isBomGrn && item.bomItems) {
+              const numSets = item.quantity; // Number of main items being received
               item.bomItems.forEach(bomItem => {
-                  if (bomItem.quantity > 0) {
+                  const requiredQtyForBomItem = bomItem.qtyPerSet * numSets;
+                  if (requiredQtyForBomItem > 0) {
                       const logRef = doc(collection(db, 'inventoryLogs'));
                       const logEntry: Omit<InventoryLog, 'id'> = {
                           date: Timestamp.fromDate(data.grnDate),
@@ -374,11 +376,11 @@ export default function StockInPage() {
                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                           itemType: 'Sub',
                           transactionType: 'Goods Receipt',
-                          quantity: bomItem.quantity,
-                          availableQuantity: bomItem.quantity,
-                          unit: 'Kg',
-                          projectId: projectSlug,
+                          quantity: requiredQtyForBomItem,
+                          availableQuantity: requiredQtyForBomItem,
+                          unit: 'Kg', // Assuming BOM components are always in Kg
                           cost: bomItem.unitCost,
+                          projectId: projectSlug,
                           details: itemDetails,
                       };
                       batch.set(logRef, logEntry);
@@ -615,8 +617,8 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty (Kg)</TableHead>
-                                             <TableHead>Cost/Kg</TableHead>
+                                             <TableHead>Receive Qty</TableHead>
+                                             <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>
