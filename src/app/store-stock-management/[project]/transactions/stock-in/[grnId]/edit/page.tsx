@@ -48,10 +48,9 @@ const grnSchema = z.object({
 
 type GrnFormValues = z.infer<typeof grnSchema>;
 
-export default function EditStockInPage() {
+export default function EditStockInPage({ params }: { params: { project: string; grnId: string } }) {
   const { toast } = useToast();
   const router = useRouter();
-  const params = useParams() as { project: string; grnId: string };
   const { project: projectSlug, grnId } = params;
 
   const [isSaving, setIsSaving] = useState(false);
