@@ -2,9 +2,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -168,10 +168,16 @@ export default function EditStockInPage({ params }: { params: { project: string;
    useEffect(() => {
     const fetchBoq = async () => {
       if (!projectSlug) return;
-      const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-      const boqSnapshot = await getDocs(q);
-      const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-      setBoqItems(boqData);
+      setIsLoading(true);
+      try {
+        const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const boqSnapshot = await getDocs(q);
+        const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+        setBoqItems(boqData);
+      } catch (error) {
+        console.error('Error fetching BOQ:', error);
+      }
+      setIsLoading(false);
     };
     fetchBoq();
   }, [projectSlug]);
@@ -367,7 +373,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
             </div>
 
             <div className="space-y-6">
-                 <Card>
+                <Card>
                     <CardHeader><CardTitle>GRN Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                        <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
@@ -428,7 +434,6 @@ export default function EditStockInPage({ params }: { params: { project: string;
                                         )}
                                       />
                                   </div>
-                                    <Button variant="destructive" size="icon" type="button" onClick={() => remove(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
                                   <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
