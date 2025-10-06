@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
@@ -69,7 +69,7 @@ const itemSchema = z.object({
   receiveUnit: z.string().min(1, { message: 'Receive unit is required.'}),
   unitCost: z.coerce.number().optional(),
   isBomGrn: z.boolean().default(false),
-  bomItems: z.array(bomItemSchema).optional(),
+  bomItems: z.array(z.any()).optional(),
 });
 
 const grnSchema = z.object({
@@ -200,7 +200,7 @@ export default function StockInPage() {
       if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
     }
     if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section} - ${(item as FabricationBomItem).grade}`;
+        return `${(item as FabricationBomItem).section}`;
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
@@ -501,14 +501,14 @@ export default function StockInPage() {
                 <Card>
                     <CardHeader><CardTitle>GRN Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly value={previewGrnNo}/></FormControl><FormMessage /></FormItem>)}/>
-                        <DatePickerField name="grnDate" label="GRN Date" />
-                        <FormField control={form.control} name="supplier" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Supplier Name</FormLabel><FormControl><Input placeholder="e.g., ACME Corp" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                        <FormField control={form.control} name="poNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>P.O. Number</FormLabel><FormControl><Input placeholder="e.g., PO-12345" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                        <DatePickerField name="poDate" label="P.O. Date" />
+                       <FormField control={form.control} name="grnNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>GRN No.</FormLabel><FormControl><Input {...field} readOnly value={previewGrnNo}/></FormControl><FormMessage /></FormItem>)}/>
+                       <DatePickerField name="grnDate" label="GRN Date" />
+                       <FormField control={form.control} name="supplier" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Supplier Name</FormLabel><FormControl><Input placeholder="e.g., ACME Corp" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                       <FormField control={form.control} name="poNumber" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>P.O. Number</FormLabel><FormControl><Input placeholder="e.g., PO-12345" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                       <DatePickerField name="poDate" label="P.O. Date" />
                     </CardContent>
                 </Card>
-
+                
                 <Card>
                     <CardHeader><CardTitle>Invoice Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -520,7 +520,7 @@ export default function StockInPage() {
                         </div>
                     </CardContent>
                 </Card>
-
+                
                  <Card>
                     <CardHeader><CardTitle>Transporter Details</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -533,7 +533,7 @@ export default function StockInPage() {
                         </div>
                     </CardContent>
                 </Card>
-
+                
                 <Card>
                     <CardHeader>
                         <div className="flex items-center justify-between">
@@ -570,8 +570,8 @@ export default function StockInPage() {
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
                                           <div key={bomItem.id} className="grid grid-cols-4 gap-2 items-center">
                                              <Label className="text-xs truncate col-span-2">{getItemDescription(bomItem)}</Label>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...field} /></FormControl> </FormItem>)}/>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Unit" {...field} value={field.value ?? ''} /></FormControl> </FormItem>)}/>
+                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Unit" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
                                           </div>
                                        ))}
                                     </div>
@@ -612,7 +612,8 @@ export default function StockInPage() {
                         <Button variant="outline" size="sm" type="button" onClick={handleAddItem} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Item</Button>
                     </CardContent>
                 </Card>
-                <Card>
+
+                 <Card>
                     <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
                     <CardContent>
                        <FormField control={form.control} name="notes" render={({ field }) => (<FormItem><FormControl><Textarea placeholder="Add any relevant notes for this transaction..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
@@ -631,5 +632,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
