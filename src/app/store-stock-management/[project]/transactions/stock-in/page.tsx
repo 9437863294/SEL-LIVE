@@ -616,7 +616,7 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty (Kg)</TableHead>
+                                             <TableHead>Receive Qty</TableHead>
                                              <TableHead>Cost/Kg</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -625,7 +625,9 @@ export default function StockInPage() {
                                               <TableRow key={bomItem.id}>
                                                   <TableCell>{bomItem.markNo}</TableCell>
                                                   <TableCell>{bomItem.section}</TableCell>
-                                                  <TableCell>{bomItem.qtyPerSet}</TableCell>
+                                                  <TableCell>
+                                                    <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
+                                                  </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
@@ -694,5 +696,7 @@ export default function StockInPage() {
     </>
   );
 }
+
+    
 
     
