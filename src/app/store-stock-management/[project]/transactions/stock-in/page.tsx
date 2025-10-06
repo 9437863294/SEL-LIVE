@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -569,7 +570,7 @@ export default function StockInPage() {
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
                                        {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
                                           <div key={bomItem.id} className="grid grid-cols-4 gap-2 items-center">
-                                             <Label className="text-xs truncate col-span-2">{getItemDescription(bomItem)}</Label>
+                                             <Label className="font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-xs truncate col-span-2">{bomItem.markNo}</Label>
                                              <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                              <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Unit" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
                                           </div>
