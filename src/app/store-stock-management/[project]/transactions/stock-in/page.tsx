@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -616,7 +615,7 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty</TableHead>
+                                             <TableHead>Receive Qty (Kg)</TableHead>
                                              <TableHead>Cost/Kg</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -629,7 +628,7 @@ export default function StockInPage() {
                                                     <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Kg" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
@@ -696,7 +695,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
-
-    
