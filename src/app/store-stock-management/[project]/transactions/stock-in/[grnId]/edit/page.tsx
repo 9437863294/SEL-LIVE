@@ -101,6 +101,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(true);
   
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -168,7 +169,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
    useEffect(() => {
     const fetchBoq = async () => {
       if (!projectSlug) return;
-      setIsLoading(true);
+      setIsLoadingItems(true);
       try {
         const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
         const boqSnapshot = await getDocs(q);
@@ -177,7 +178,7 @@ export default function EditStockInPage({ params }: { params: { project: string;
       } catch (error) {
         console.error('Error fetching BOQ:', error);
       }
-      setIsLoading(false);
+      setIsLoadingItems(false);
     };
     fetchBoq();
   }, [projectSlug]);
