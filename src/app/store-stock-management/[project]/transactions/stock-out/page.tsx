@@ -162,6 +162,22 @@ export default function StockOutPage() {
     }
   };
 
+  const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section} - ${(item as FabricationBomItem).grade}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
+
   const handleItemSelect = (index: number, selectedInventoryItem: InventoryLog | null) => {
     if (selectedInventoryItem) {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
@@ -176,7 +192,7 @@ export default function StockOutPage() {
         itemUnit: selectedInventoryItem.unit,
         availableQty: mainItemAvailableQty,
         bomItems: bom.map(b => {
-          const componentAvailable = availableItems
+          const componentAvailable = uniqueAvailableItems
               .filter(i => i.itemId === b.id && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
@@ -401,49 +417,46 @@ export default function StockOutPage() {
                                 </div>
                                 {isComponentIssue && hasBom ? (
                                     <div className="pl-4 border-l-2 space-y-2">
-                                       <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
-                                       <Table>
+                                        <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
+                                        <Table>
                                             <TableHeader>
                                                 <TableRow>
                                                     <TableHead>Mark No.</TableHead>
+                                                    <TableHead>Section</TableHead>
                                                     <TableHead>Available Qty (Kg)</TableHead>
                                                     <TableHead>Issue Qty (Kg)</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                               {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => {
-                                                    const totalComponentAvailable = bomItem.availableQty;
-                                                   return (
-                                                        <TableRow key={bomItem.id}>
-                                                            <TableCell>
-                                                                <Label className="text-xs font-medium">Mark No. {bomItem.markNo} ({bomItem.section})</Label>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <Input value={totalComponentAvailable.toFixed(3)} readOnly className="bg-muted"/>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( 
-                                                                    <FormItem> 
+                                                {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
+                                                    <TableRow key={bomItem.id}>
+                                                        <TableCell>{bomItem.markNo}</TableCell>
+                                                        <TableCell>{bomItem.section}</TableCell>
+                                                        <TableCell>
+                                                            <Input value={bomItem.availableQty.toFixed(3)} readOnly className="bg-muted"/>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
+                                                                <FormItem>
                                                                     <FormControl>
-                                                                        <Input type="number" placeholder="Issue Qty" {...bomQtyField} 
+                                                                        <Input type="number" placeholder="Issue Qty" {...bomQtyField}
                                                                             onChange={(e) => {
                                                                                 const val = e.target.valueAsNumber;
-                                                                                if (val > totalComponentAvailable) {
-                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${totalComponentAvailable.toFixed(3)}`, variant: 'destructive'});
+                                                                                if (val > bomItem.availableQty) {
+                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty.toFixed(3)}`, variant: 'destructive'});
                                                                                 } else {
                                                                                     bomQtyField.onChange(val || 0);
                                                                                 }
                                                                             }}
                                                                         />
                                                                     </FormControl>
-                                                                    </FormItem>
-                                                                )}/>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                   )
-                                               })}
-                                           </TableBody>
-                                       </Table>
+                                                                </FormItem>
+                                                            )}/>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
                                         {requiredMainQtyForBom > 0 && <p className="text-xs text-blue-600 font-medium">Requires {requiredMainQtyForBom.toFixed(3)} sets of main item.</p>}
                                     </div>
                                 ) : (
@@ -452,18 +465,9 @@ export default function StockOutPage() {
                                           <Label>Available Qty</Label>
                                           <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
                                       </div>
-                                       <div className="space-y-2">
+                                      <div className="space-y-2">
                                             <Label>Unit</Label>
-                                            {unitOptions.length > 1 ? (
-                                                <Select value={form.getValues(`items.${index}.itemUnit`)} onValueChange={(value) => form.setValue(`items.${index}.itemUnit`, value)}>
-                                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                                    <SelectContent>
-                                                        {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                            ) : (
-                                                <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
-                                            )}
+                                            <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
                                         </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
@@ -480,5 +484,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
