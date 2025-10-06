@@ -16,7 +16,7 @@ import type { InventoryLog, BoqItem, FabricationBomItem } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -25,6 +25,7 @@ import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { ItemSelector } from '@/components/ItemSelector';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const bomItemSchema = z.object({
@@ -368,6 +369,11 @@ export default function StockOutPage() {
                               }, 0);
                           })();
                           
+                          const boqItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
+                          const baseUnit = boqItem?.['UNIT'] || boqItem?.['UNITS'] || '';
+                          const conversionUnits = boqItem?.conversions?.map(c => c.toUnit) || [];
+                          const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
+
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
                                 <div className="flex justify-between items-start">
@@ -420,9 +426,23 @@ export default function StockOutPage() {
                                           <Input value={form.getValues(`items.${index}.availableQty`)} readOnly className="bg-muted"/>
                                       </div>
                                        <div>
-                                          <Label>Unit</Label>
-                                          <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted"/>
-                                      </div>
+                                            <Label>Unit</Label>
+                                            {unitOptions.length > 1 ? (
+                                                <Select
+                                                    value={form.getValues(`items.${index}.itemUnit`)}
+                                                    onValueChange={(value) => form.setValue(`items.${index}.itemUnit`, value)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select Unit" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <Input value={form.getValues(`items.${index}.itemUnit`)} readOnly className="bg-muted" />
+                                            )}
+                                        </div>
                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1"> <FormLabel>Issue Quantity</FormLabel> <FormControl><Input type="number" {...qtyField} onChange={(e) => { const val = e.target.valueAsNumber; const available = form.getValues(`items.${index}.availableQty`); if (val > available) { toast({title: "Quantity Exceeded", description: `Issue quantity cannot be greater than available quantity (${available}).`, variant: "destructive"}); } else { qtyField.onChange(val || 0); } }} />
                                       </FormControl> <FormMessage /> </FormItem> )}/>
                                     </div>
@@ -439,3 +459,4 @@ export default function StockOutPage() {
   );
 }
 
+    
