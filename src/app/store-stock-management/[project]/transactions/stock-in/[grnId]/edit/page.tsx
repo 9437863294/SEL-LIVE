@@ -382,5 +382,3 @@ export default function EditStockInPage({ params }: { params: { project: string;
     </Form>
   );
 }
-
-    
