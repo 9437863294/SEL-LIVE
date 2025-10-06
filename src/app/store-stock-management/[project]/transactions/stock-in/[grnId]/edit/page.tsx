@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -94,9 +94,10 @@ const grnSchema = z.object({
 type GrnFormValues = z.infer<typeof grnSchema>;
 
 export default function EditStockInPage({ params }: { params: { project: string; grnId: string } }) {
+  const resolvedParams = use(params);
   const { toast } = useToast();
   const router = useRouter();
-  const { project: projectSlug, grnId } = params;
+  const { project: projectSlug, grnId } = resolvedParams;
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
