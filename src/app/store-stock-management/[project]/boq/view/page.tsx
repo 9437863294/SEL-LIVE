@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -454,7 +455,7 @@ export default function ViewBoqPage() {
                 <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
                 <ScrollArea className="h-96 pr-4">
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
+                        <Droppable droppableId="columns" isDropDisabled={false}>
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
