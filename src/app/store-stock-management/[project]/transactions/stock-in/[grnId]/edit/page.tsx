@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect, useRef, use } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -96,7 +96,7 @@ type GrnFormValues = z.infer<typeof grnSchema>;
 export default function EditStockInPage({ params }: { params: { project: string; grnId: string } }) {
   const { toast } = useToast();
   const router = useRouter();
-  const { project: projectSlug, grnId } = use(Promise.resolve(params));
+  const { project: projectSlug, grnId } = params;
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -464,3 +464,5 @@ export default function EditStockInPage({ params }: { params: { project: string;
     </Form>
   );
 }
+
+    
