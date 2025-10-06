@@ -168,7 +168,7 @@ export default function StockOutPage() {
       if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
     }
     if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section} - ${(item as FabricationBomItem).grade}`;
+        return `${(item as FabricationBomItem).section}`;
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
@@ -192,13 +192,14 @@ export default function StockOutPage() {
         itemUnit: selectedInventoryItem.unit,
         availableQty: mainItemAvailableQty,
         bomItems: bom.map(b => {
+          const bomComponentId = `bom-${selectedInventoryItem.itemId}-${b.markNo}`;
           const componentAvailable = uniqueAvailableItems
-              .filter(i => i.itemId === b.id && i.itemType === 'Sub')
+              .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
           return {
             ...b, 
-            id: `bom-${selectedInventoryItem.itemId}-${b.markNo}`, 
+            id: bomComponentId,
             quantity: 0,
             availableQty: componentAvailable
           }
@@ -399,9 +400,7 @@ export default function StockOutPage() {
                           
                            const boqItem = boqItems.find(i => i.id === watchedItems[index]?.itemId);
                            const baseUnit = boqItem?.['UNIT'] || boqItem?.['UNITS'] || '';
-                           const conversionUnits = boqItem?.conversions?.map(c => c.toUnit) || [];
-                           const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
-
+                           
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
                                 <div className="flex justify-between items-start">
@@ -484,3 +483,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
