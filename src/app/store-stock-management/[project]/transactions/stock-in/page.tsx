@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -25,21 +24,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
-import { BoqItemSelector } from '@/components/BoqItemSelector';
-import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { BoqItemSelector } from '@/components/BoqItemSelector';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Timestamp } from 'firebase/firestore';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 const bomItemSchema = z.object({
@@ -57,6 +58,7 @@ const bomItemSchema = z.object({
   // GRN specific fields
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
   unitCost: z.coerce.number().optional(),
+  availableQty: z.number().optional().default(0),
 });
 
 
@@ -102,6 +104,7 @@ export default function StockInPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
@@ -170,6 +173,14 @@ export default function StockInPage() {
         const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
         const unitsSnap = await getDocs(collection(db, 'units'));
         
+        const inventoryQuery = query(
+          collection(db, 'inventoryLogs'),
+          where('projectId', '==', projectSlug)
+        );
+        const inventorySnapshot = await getDocs(inventoryQuery);
+        const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog));
+        setAvailableItems(inventoryData);
+
         const boqSnapshot = await getDocs(q);
         const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(boqData);
@@ -225,7 +236,17 @@ export default function StockInPage() {
         itemUnit: unit,
         receiveUnit: unit,
         boqSlNo: slNo,
-        bomItems: selectedBoqItem.bom?.map(b => ({ ...b, id: `bom-${selectedBoqItem.id}-${b.markNo}`, quantity: 0, unitCost: 0 })) || [],
+        bomItems: selectedBoqItem.bom?.map(b => {
+          const bomComponentId = `bom-${selectedBoqItem.id}-${b.markNo}`;
+          const componentAvailable = availableItems.filter(i => i.itemId === bomComponentId && i.itemType === 'Sub').reduce((sum, i) => sum + i.availableQuantity, 0);
+          return {
+            ...b,
+            id: bomComponentId,
+            quantity: 0,
+            unitCost: 0,
+            availableQty: componentAvailable,
+          };
+        }) || [],
       };
       
       form.setValue(`items.${index}`, updatedItem, { shouldValidate: true });
@@ -244,16 +265,21 @@ export default function StockInPage() {
             itemName: getItemDescription(mainItem),
             itemUnit: mainItem['UNIT'] || mainItem['UNITS'] || 'Set',
             boqSlNo: getSlNo(mainItem),
-            quantity: 1, // Default to 1 set
+            quantity: 1,
             receiveUnit: 'Set',
             unitCost: 0,
-            isBomGrn: true, // Default to GRN as BOM
-            bomItems: mainItem.bom.map(bomItem => ({
+            isBomGrn: true,
+            bomItems: mainItem.bom.map(bomItem => {
+              const bomComponentId = `bom-${mainItem.id}-${bomItem.markNo}`;
+              const componentAvailable = availableItems.filter(i => i.itemId === bomComponentId && i.itemType === 'Sub').reduce((sum, i) => sum + i.availableQuantity, 0);
+              return {
                 ...bomItem,
-                id: `bom-${mainItem.id}-${bomItem.markNo}`,
+                id: bomComponentId,
                 quantity: 0,
                 unitCost: 0,
-            }))
+                availableQty: componentAvailable,
+              };
+            })
           };
       }).filter(Boolean) as GrnFormValues['items'];
 
@@ -553,28 +579,65 @@ export default function StockInPage() {
 
                             return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>BOQ Item</FormLabel> <BoqItemSelector key={field.id} boqItems={boqItems} selectedSlNo={getSelectedSlNo(index)} onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
-                                        { (currentItem?.bom?.length ?? 0) > 0 && (
+                               <div className="flex justify-between items-start">
+                                  <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <FormField
+                                        control={form.control}
+                                        name={`items.${index}.itemId`}
+                                        render={() => (
+                                          <FormItem className="space-y-1">
+                                            <FormLabel>BOQ Item</FormLabel>
+                                            <BoqItemSelector
+                                              key={field.id}
+                                              boqItems={boqItems}
+                                              selectedSlNo={getSelectedSlNo(index)}
+                                              onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
+                                              isLoading={isLoadingItems}
+                                            />
+                                            <FormMessage />
+                                          </FormItem>
+                                        )}
+                                      />
+                                      { (currentItem?.bom?.length ?? 0) > 0 && (
                                             <div className="flex items-end pb-1">
                                                 <FormField control={form.control} name={`items.${index}.isBomGrn`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isBomGrn-${index}`} /></FormControl> <Label htmlFor={`isBomGrn-${index}`} className="cursor-pointer">GRN as BOM</Label> </FormItem> )} />
                                             </div>
                                         )}
-                                    </div>
+                                  </div>
                                     <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
 
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
-                                          <div key={bomItem.id} className="grid grid-cols-4 gap-2 items-center">
-                                             <Label className="font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-xs truncate col-span-2">{bomItem.markNo}</Label>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
-                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Unit" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
-                                          </div>
-                                       ))}
+                                       <Table>
+                                         <TableHeader>
+                                           <TableRow>
+                                             <TableHead>Mark No.</TableHead>
+                                             <TableHead>Section</TableHead>
+                                             <TableHead>Available Qty (Kg)</TableHead>
+                                             <TableHead>Receive Qty (Kg)</TableHead>
+                                             <TableHead>Cost/Kg</TableHead>
+                                           </TableRow>
+                                         </TableHeader>
+                                         <TableBody>
+                                          {watchedItems[index]?.bomItems?.map((bomItem, bomIndex) => (
+                                              <TableRow key={bomItem.id}>
+                                                  <TableCell>{bomItem.markNo}</TableCell>
+                                                  <TableCell>{bomItem.section}</TableCell>
+                                                  <TableCell>
+                                                    <Input value={bomItem.availableQty?.toFixed(3) || '0.000'} readOnly className="bg-muted"/>
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Kg" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
+                                                  </TableCell>
+                                              </TableRow>
+                                          ))}
+                                         </TableBody>
+                                       </Table>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
