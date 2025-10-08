@@ -69,10 +69,12 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
     const newItems = [...bomItems];
     const item = { ...newItems[index] };
     
-    // Ensure numeric fields are handled correctly, defaulting to 0 if NaN
-    const numericValue = typeof value === 'number' ? value : parseFloat(value);
-    (item[field] as any) = isNaN(numericValue) ? 0 : numericValue;
-
+    if (typeof value === 'string' && ['markNo', 'section', 'grade'].includes(field)) {
+      (item[field] as any) = value;
+    } else {
+      const numericValue = typeof value === 'number' ? value : parseFloat(value);
+      (item[field] as any) = isNaN(numericValue) ? 0 : numericValue;
+    }
 
     // Auto-calculate
     if (field === 'unitWt' || field === 'length') {
