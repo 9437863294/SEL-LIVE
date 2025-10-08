@@ -41,6 +41,21 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
 
 const bomItemSchema = z.object({
   id: z.string(),
@@ -91,22 +106,6 @@ export default function StockOutPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
 
-  const getItemDescription = (item: BoqItem | FabricationBomItem) => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
-    for (const key of descriptionKeys) {
-      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
-    }
-    if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section}`;
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
-  };
-  
-  const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
-  }
-  
   const form = useForm<StockOutFormValues>({
     resolver: zodResolver(stockOutSchema),
     defaultValues: {
@@ -162,6 +161,7 @@ export default function StockOutPage() {
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
 
+    // Aggregate physical stock of main items
     availableItems.forEach(item => {
         if (item.itemType === 'Main') {
             const existing = itemMap.get(item.itemId);
@@ -173,6 +173,7 @@ export default function StockOutPage() {
         }
     });
 
+    // Add main items that can be assembled from BOM components
     boqItems.forEach(boqItem => {
         if (boqItem.bom && boqItem.bom.length > 0) {
             let possibleSets = Infinity;
@@ -191,6 +192,7 @@ export default function StockOutPage() {
 
             if (possibleSets > 0 && possibleSets !== Infinity) {
                 if (!itemMap.has(boqItem.id)) {
+                    // This is a "virtual" entry just for the selector
                     itemMap.set(boqItem.id, {
                         id: `virtual-${boqItem.id}`,
                         itemId: boqItem.id,
@@ -199,8 +201,8 @@ export default function StockOutPage() {
                         unit: boqItem.UNIT || boqItem.UNITS || 'N/A',
                         availableQuantity: 0, // Physical stock is 0
                         quantity: 0,
-                        transactionType: 'Goods Receipt',
-                        date: Timestamp.now(),
+                        transactionType: 'Goods Receipt', // Placeholder
+                        date: Timestamp.now(), // Placeholder
                         projectId: projectSlug,
                     });
                 }
@@ -209,7 +211,7 @@ export default function StockOutPage() {
     });
 
     return Array.from(itemMap.values());
-  }, [availableItems, boqItems]);
+  }, [availableItems, boqItems, projectSlug]);
 
 
   const handleAddItem = () => {
@@ -268,16 +270,15 @@ export default function StockOutPage() {
               if (bomItem.quantity <= 0) continue;
   
               const componentId = bomItem.id;
-              
-              const componentLooseStockLogsQuery = query(collection(db, 'inventoryLogs'), 
-                where('projectId', '==', projectSlug), 
-                where('itemId', '==', componentId), 
-                where('itemType', '==', 'Sub'),
-                where('availableQuantity', '>', 0)
+
+              // This is the part that causes issues. Let's fetch all project logs once and filter in memory.
+              const componentLooseStockLogs = availableItems.filter(log => 
+                log.itemId === componentId &&
+                log.itemType === 'Sub' &&
+                log.availableQuantity > 0
               );
               
-              const componentLooseStockLogsSnap = await getDocs(componentLooseStockLogsQuery);
-              let componentAvailable = componentLooseStockLogsSnap.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
+              let componentAvailable = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
 
               if (bomItem.quantity > bomItem.availableQty) {
                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${bomItem.availableQty}.`);
@@ -290,16 +291,12 @@ export default function StockOutPage() {
   
               if (neededFromMain > 0) {
                 let mainQtyToBreak = neededFromMain;
-                const mainItemLogsQuery = query(collection(db, 'inventoryLogs'), 
-                  where('projectId', '==', projectSlug), 
-                  where('itemId', '==', item.itemId), 
-                  where('itemType', '==', 'Main'),
-                  where('availableQuantity', '>', 0)
-                );
-                const mainItemLogsSnap = await getDocs(mainItemLogsQuery);
-                const mainItemLogs = mainItemLogsSnap.docs
-                    .map(d => ({...d.data(), id: d.id } as InventoryLog))
-                    .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+                // Fetching main item logs and filtering in memory
+                const mainItemLogs = availableItems.filter(log => 
+                    log.itemId === item.itemId && 
+                    log.itemType === 'Main' &&
+                    log.availableQuantity > 0
+                ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
                 
                 let totalMainAvailable = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
                 if (mainQtyToBreak > totalMainAvailable) throw new Error(`Not enough main item '${item.itemName}' to break. Need ${mainQtyToBreak}, have ${totalMainAvailable}.`);
@@ -326,23 +323,18 @@ export default function StockOutPage() {
                             unit: 'Kg',
                             projectId: projectSlug,
                             description: `From breaking down ${deduction} sets of ${item.itemName}`,
-                            details: { fromConversion: true, sourceGrn: log.details?.grnNo },
+                            details: { fromConversion: true, sourceGrn: log.details?.grnNo || null },
                         });
                     });
                 }
               }
 
               let qtyToIssueFromComponents = bomItem.quantity;
-              const componentLogsToUpdateQuery = query(collection(db, 'inventoryLogs'), 
-                where('projectId', '==', projectSlug), 
-                where('itemId', '==', componentId),
-                where('itemType', '==', 'Sub'),
-                where('availableQuantity', '>', 0)
-              );
-              const componentLogsToUpdateSnap = await getDocs(componentLogsToUpdateQuery);
-              const componentLogsToUpdate = componentLogsToUpdateSnap.docs
-                .map(d => ({...d.data(), id: d.id } as InventoryLog))
-                .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+              const componentLogsToUpdate = availableItems.filter(log =>
+                log.itemId === componentId &&
+                log.itemType === 'Sub' &&
+                log.availableQuantity > 0
+              ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
               for (const log of componentLogsToUpdate) {
                 if (qtyToIssueFromComponents <= 0) break;
@@ -364,23 +356,19 @@ export default function StockOutPage() {
                     cost: log.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo || null }
                 });
                 qtyToIssueFromComponents -= deduction;
               }
             }
           } else { // Direct issue of main item
             let quantityToIssue = item.quantity;
-            const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), 
-              where('projectId', '==', projectSlug), 
-              where('itemId', '==', item.itemId), 
-              where('transactionType', '==', 'Goods Receipt'),
-              where('availableQuantity', '>', 0)
-            );
-            const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
-            const logsWithStock = logsToUpdateSnap.docs
-                .map(d => ({ ...d.data(), id: d.id } as InventoryLog))
-                .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+            
+            const logsWithStock = availableItems.filter(log => 
+                log.itemId === item.itemId && 
+                log.transactionType === 'Goods Receipt' &&
+                log.availableQuantity > 0
+            ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
             
             let totalAvailable = logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0);
             if(quantityToIssue > totalAvailable) {
@@ -408,7 +396,7 @@ export default function StockOutPage() {
                     cost: logDoc.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
                  });
                  quantityToIssue -= deduction;
             }
@@ -580,3 +568,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
