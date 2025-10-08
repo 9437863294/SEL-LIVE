@@ -124,61 +124,59 @@ export default function TransactionsPage() {
   const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
     try {
+      await runTransaction(db, async (transaction) => {
         if (summary.transactionType === 'Goods Receipt') {
-            const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
-            if (hasBeenIssued) {
-                toast({ title: "Delete Error", description: "Cannot delete GRN. Some items have already been issued.", variant: "destructive" });
-                setIsDeleting(false);
-                return;
-            }
-            
-            const batch = writeBatch(db);
-            summary.items.forEach(item => {
-                const docRef = doc(db, 'inventoryLogs', item.id);
-                batch.delete(docRef);
-            });
-            await batch.commit();
-            toast({ title: "Success", description: "GRN and all its items have been deleted." });
-
+          const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
+          if (hasBeenIssued) {
+            throw new Error("Cannot delete GRN. Some items have already been issued.");
+          }
+          summary.items.forEach(item => {
+            const docRef = doc(db, 'inventoryLogs', item.id);
+            transaction.delete(docRef);
+          });
         } else if (summary.transactionType === 'Goods Issue') {
-            const batch = writeBatch(db);
-
-            for (const issueItem of summary.items) {
-                // Find all GRN records for this specific item, ordered by date to ensure FIFO
-                const grnItemsQuery = query(
-                    collection(db, 'inventoryLogs'), 
-                    where('projectId', '==', projectSlug),
-                    where('itemId', '==', issueItem.itemId),
-                    where('transactionType', '==', 'Goods Receipt')
+          for (const issueItem of summary.items) {
+            if (issueItem.itemType === 'Main') {
+              const sourceGrnId = issueItem.details?.sourceGrn;
+              if (sourceGrnId) {
+                const grnItemQuery = query(
+                  collection(db, 'inventoryLogs'),
+                  where('details.grnNo', '==', sourceGrnId),
+                  where('itemId', '==', issueItem.itemId)
                 );
-                const grnItemsSnap = await getDocs(grnItemsQuery);
-
-                const grnDocs = grnItemsSnap.docs
-                    .map(d => ({...d.data(), id: d.id} as InventoryLog))
-                    .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-
-                if (grnDocs.length > 0) {
-                    // Add the quantity back to the first available GRN record
-                    // This is a simplified FIFO refund. A more complex system might distribute it.
-                    const firstGrnDoc = grnDocs[0];
-                    const grnItem = firstGrnDoc;
-                    const newAvailableQty = grnItem.availableQuantity + issueItem.quantity;
-                    batch.update(doc(db, 'inventoryLogs', firstGrnDoc.id), { availableQuantity: newAvailableQty });
-                } else {
-                     // This case should be rare if data is consistent, but it's good to handle.
-                     console.warn(`Could not find a source GRN for issued item ${issueItem.itemName} to return stock to.`);
+                const grnItemSnap = await getDocs(grnItemQuery);
+                if (!grnItemSnap.empty) {
+                  const grnDocRef = grnItemSnap.docs[0].ref;
+                  const grnItemData = grnItemSnap.docs[0].data() as InventoryLog;
+                  transaction.update(grnDocRef, { availableQuantity: grnItemData.availableQuantity + issueItem.quantity });
                 }
-                
-                // Delete the goods issue log itself
-                batch.delete(doc(db, 'inventoryLogs', issueItem.id));
+              }
+            } else if (issueItem.itemType === 'Sub') {
+                const sourceGrnId = issueItem.details?.sourceGrn;
+                if (sourceGrnId) {
+                  const grnItemQuery = query(
+                    collection(db, 'inventoryLogs'),
+                    where('details.grnNo', '==', sourceGrnId),
+                    where('itemId', '==', issueItem.itemId)
+                  );
+                  const grnItemSnap = await getDocs(grnItemQuery);
+                  if (!grnItemSnap.empty) {
+                    const grnDocRef = grnItemSnap.docs[0].ref;
+                    const grnItemData = grnItemSnap.docs[0].data() as InventoryLog;
+                    transaction.update(grnDocRef, { availableQuantity: grnItemData.availableQuantity + issueItem.quantity });
+                  }
+                }
             }
-            await batch.commit();
-            toast({ title: "Success", description: "Goods issue has been reversed and stock updated." });
+            transaction.delete(doc(db, 'inventoryLogs', issueItem.id));
+          }
         }
-        fetchData();
-    } catch (error) {
-        console.error("Error deleting transaction:", error);
-        toast({ title: "Delete Failed", description: "An error occurred while deleting.", variant: "destructive" });
+      });
+
+      toast({ title: "Success", description: "Transaction and its items have been deleted, and stock has been reversed." });
+      fetchData();
+    } catch (error: any) {
+      console.error("Error deleting transaction:", error);
+      toast({ title: "Delete Failed", description: error.message || "An error occurred while deleting.", variant: "destructive" });
     }
     setIsDeleting(false);
   };
