@@ -303,8 +303,11 @@ export default function StockInPage() {
       const currentItems = form.getValues('items');
       const isFirstItemEmpty = fields.length === 1 && !fields[0].itemId;
 
-      if(isFirstItemEmpty) {
-        form.setValue('items', newItems);
+      if(isFirstItemEmpty && newItems.length > 0) {
+        form.setValue('items', [newItems[0]]);
+        if(newItems.length > 1) {
+           append(newItems.slice(1));
+        }
       } else {
         append(newItems);
       }
@@ -374,7 +377,7 @@ export default function StockInPage() {
           if (item.isBomGrn && item.bomItems) {
               const mainItemQty = item.quantity;
               
-              // Log receipt for each component
+              // Step 1: Log receipt for each component
               for (const bomItem of item.bomItems) {
                   if (bomItem.quantity > 0) {
                       const receiptLogRef = doc(collection(db, 'inventoryLogs'));
@@ -394,8 +397,9 @@ export default function StockInPage() {
                   }
               }
 
+              // Step 2 & 3: If main items are created, log consumption and main item receipt
               if (mainItemQty > 0) {
-                  // Log consumption of components
+                  // Consume components
                   for (const bomItem of item.bomItems) {
                       const consumedQty = mainItemQty * bomItem.qtyPerSet;
                       if(consumedQty > 0) {
@@ -407,28 +411,29 @@ export default function StockInPage() {
                                itemType: 'Sub',
                                transactionType: 'Conversion',
                                quantity: consumedQty,
-                               availableQuantity: 0,
+                               availableQuantity: 0, // This is a consumption log
                                unit: 'Kg',
                                cost: bomItem.unitCost,
                                projectId: projectSlug,
                                description: `Consumed for ${mainItemQty} sets of ${item.itemName}`,
                                details: {...itemDetails, consumedForMainItemId: item.itemId },
                           });
-                          
-                          // Here, we also need to adjust the available quantity of the just-received components
-                          const receiptLogToUpdateQuery = query(
-                              collection(db, 'inventoryLogs'), 
+
+                           // Update the available quantity of the received BOM items
+                           const receiptLogRefToUpdate = query(collection(db, 'inventoryLogs'), 
                               where('details.grnNo', '==', grnNo), 
                               where('itemId', '==', bomItem.id)
-                          );
-                          // This part is tricky inside a batch. A better approach is to not set availableQuantity on creation
-                          // but to manage it in a separate process, or adjust it here carefully.
-                          // For simplicity, we are assuming this consumption happens logically right after.
-                          // A cloud function might be more robust for real-time inventory adjustments.
+                            );
+                            const receiptDocs = await getDocs(receiptLogRefToUpdate);
+                            if (!receiptDocs.empty) {
+                                const docToUpdate = receiptDocs.docs[0];
+                                const currentAvail = docToUpdate.data().availableQuantity;
+                                batch.update(docToUpdate.ref, { availableQuantity: currentAvail - consumedQty });
+                            }
                       }
                   }
                   
-                  // Finally, log receipt of main item from conversion
+                  // Receive main item
                   const mainItemLogRef = doc(collection(db, 'inventoryLogs'));
                   batch.set(mainItemLogRef, {
                         date: Timestamp.fromDate(data.grnDate),
@@ -445,7 +450,7 @@ export default function StockInPage() {
                   });
               }
 
-          } else { // This block handles non-BOM GRN items
+          } else { 
               const logRef = doc(collection(db, 'inventoryLogs'));
               const boqItem = boqItems.find(bi => bi.id === item.itemId);
               let finalQuantity = item.quantity;
@@ -488,84 +493,6 @@ export default function StockInPage() {
     }
   };
   
-  const getSelectedSlNo = (index: number): string => {
-    const itemId = form.getValues(`items.${index}.itemId`);
-    if (!itemId) return '';
-    const boqItem = boqItems.find(bi => bi.id === itemId);
-    return boqItem ? String(boqItem['Sl No'] || boqItem['SL. No.'] || '') : '';
-  };
-
-  const DatePickerField = ({ name, label }: { name: keyof GrnFormValues, label: string }) => (
-    <FormField
-      control={form.control}
-      name={name as any}
-      render={({ field }) => (
-        <FormItem className="space-y-2">
-          <FormLabel>{label}</FormLabel>
-          <Popover>
-            <PopoverTrigger asChild>
-              <FormControl>
-                <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
-                </Button>
-              </FormControl>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
-            </PopoverContent>
-          </Popover>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-  
-  const FileUpload = ({ name, label }: { name: keyof GrnFormValues, label: string }) => {
-    const files = form.watch(name as any) as File[] || [];
-    return (
-      <FormField
-        control={form.control}
-        name={name}
-        render={({ field }) => (
-          <FormItem className="space-y-2">
-            <FormLabel>{label}</FormLabel>
-            <div className="flex items-center gap-2">
-               <FormControl>
-                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(Array.from(e.target.files || []))} />
-               </FormControl>
-                <Label htmlFor={name} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
-                    {files.length > 0 ? `${files.length} file(s) selected` : 'No file selected'}
-                </Label>
-                <Button asChild variant="outline">
-                    <Label htmlFor={name} className="cursor-pointer">
-                        <Upload className="mr-2 h-4 w-4"/> Upload
-                    </Label>
-                </Button>
-            </div>
-             {files.length > 0 && (
-                <div className="mt-2 space-y-1">
-                    {files.map((file, i) => (
-                        <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md text-xs">
-                           <span>{file.name}</span>
-                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
-                                const newFiles = [...files];
-                                newFiles.splice(i, 1);
-                                field.onChange(newFiles);
-                            }}>
-                                <X className="w-4 h-4" />
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-             )}
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    );
-  };
-  
   useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
         if (name?.startsWith('items') && name.endsWith('.quantity') && type === 'change') {
@@ -587,7 +514,6 @@ export default function StockInPage() {
     });
     return () => subscription.unsubscribe();
   }, [form]);
-
 
   return (
     <>
@@ -686,7 +612,7 @@ export default function StockInPage() {
                                             <BoqItemSelector
                                               key={field.id}
                                               boqItems={boqItems}
-                                              selectedSlNo={getSelectedSlNo(index)}
+                                              selectedSlNo={getSlNo(currentItem!)}
                                               onSelect={(selectedBoqItem) => handleItemSelect(index, selectedBoqItem)}
                                               isLoading={isLoadingItems}
                                             />
@@ -706,7 +632,6 @@ export default function StockInPage() {
                                {isComponentIssue ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly className="bg-muted" /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
@@ -791,3 +716,75 @@ export default function StockInPage() {
     </>
   );
 }
+
+const DatePickerField = ({ name, label }: { name: keyof GrnFormValues, label: string }) => (
+    <FormField
+      control={form.control}
+      name={name as any}
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <FormLabel>{label}</FormLabel>
+          <Popover>
+            <PopoverTrigger asChild>
+              <FormControl>
+                <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
+                </Button>
+              </FormControl>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+            </PopoverContent>
+          </Popover>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+  
+  const FileUpload = ({ name, label }: { name: keyof GrnFormValues, label: string }) => {
+    const form = useForm<GrnFormValues>();
+    const files = form.watch(name as any) as File[] || [];
+    return (
+      <FormField
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <FormItem className="space-y-2">
+            <FormLabel>{label}</FormLabel>
+            <div className="flex items-center gap-2">
+               <FormControl>
+                    <Input id={name} type="file" multiple className="hidden" onChange={(e) => field.onChange(Array.from(e.target.files || []))} />
+               </FormControl>
+                <Label htmlFor={name} className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50">
+                    {files.length > 0 ? `${files.length} file(s) selected` : 'No file selected'}
+                </Label>
+                <Button asChild variant="outline">
+                    <Label htmlFor={name} className="cursor-pointer">
+                        <Upload className="mr-2 h-4 w-4"/> Upload
+                    </Label>
+                </Button>
+            </div>
+             {files.length > 0 && (
+                <div className="mt-2 space-y-1">
+                    {files.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between p-1 bg-muted/50 rounded-md text-xs">
+                           <span>{file.name}</span>
+                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                                const newFiles = [...files];
+                                newFiles.splice(i, 1);
+                                field.onChange(newFiles);
+                            }}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+             )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    );
+  };
