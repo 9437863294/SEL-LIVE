@@ -30,11 +30,12 @@ import {
   Edit,
   Trash2,
   Loader2,
+  GitCommit,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, writeBatch, doc, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
-import type { InventoryLog, EnrichedLogItem } from '@/lib/types';
+import type { InventoryLog, EnrichedLogItem, BoqItem } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ViewTransactionDialog from '@/components/ViewTransactionDialog';
@@ -74,6 +75,7 @@ export default function TransactionsPage() {
   const router = useRouter();
   const projectSlug = params.project as string;
   const [transactions, setTransactions] = useState<InventoryLog[]>([]);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
@@ -81,6 +83,7 @@ export default function TransactionsPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isAutoAssembling, setIsAutoAssembling] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -89,7 +92,9 @@ export default function TransactionsPage() {
         collection(db, 'inventoryLogs'),
         where('projectId', '==', projectSlug)
       );
-      const [transactionsSnap] = await Promise.all([getDocs(q)]);
+      const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+
+      const [transactionsSnap, boqSnap] = await Promise.all([getDocs(q), getDocs(boqQuery)]);
 
       const data = transactionsSnap.docs.map(
         (doc) => ({ ...doc.data(), id: doc.id } as InventoryLog)
@@ -98,6 +103,8 @@ export default function TransactionsPage() {
         (a, b) => b.date.toDate().getTime() - a.date.toDate().getTime()
       );
       setTransactions(data);
+      setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));
+
     } catch (e) {
       console.error(e);
     } finally {
@@ -188,6 +195,114 @@ export default function TransactionsPage() {
          toast({ title: "Info", description: "Editing Goods Issue is not supported. Please delete and create a new one.", variant: "default" });
     }
   };
+
+  const handleAutoAssembly = async () => {
+    setIsAutoAssembling(true);
+    let setsCreatedCount = 0;
+    let mainItemsAffected: string[] = [];
+
+    try {
+        await runTransaction(db, async (transaction) => {
+            const mainItemsWithBOM = boqItems.filter(item => item.bom && item.bom.length > 0);
+            
+            const componentInventory: Record<string, { totalAvailable: number; logs: {id: string, available: number}[] }> = {};
+
+            const subItemsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemType', '==', 'Sub'), where('availableQuantity', '>', 0));
+            const subItemsSnap = await getDocs(subItemsQuery);
+
+            subItemsSnap.forEach(doc => {
+                const item = doc.data() as InventoryLog;
+                if (!componentInventory[item.itemId]) {
+                    componentInventory[item.itemId] = { totalAvailable: 0, logs: [] };
+                }
+                componentInventory[item.itemId].totalAvailable += item.availableQuantity;
+                componentInventory[item.itemId].logs.push({ id: doc.id, available: item.availableQuantity });
+            });
+
+            for (const mainItem of mainItemsWithBOM) {
+                if (!mainItem.bom) continue;
+
+                let possibleSets = Infinity;
+                for (const bomComponent of mainItem.bom) {
+                    const componentId = `bom-${mainItem.id}-${bomComponent.markNo}`;
+                    const inventory = componentInventory[componentId];
+                    if (!inventory || inventory.totalAvailable < bomComponent.qtyPerSet) {
+                        possibleSets = 0;
+                        break;
+                    }
+                    possibleSets = Math.min(possibleSets, Math.floor(inventory.totalAvailable / bomComponent.qtyPerSet));
+                }
+
+                const setsToCreate = Math.floor(possibleSets);
+
+                if (setsToCreate > 0) {
+                    setsCreatedCount += setsToCreate;
+                    mainItemsAffected.push(mainItem.Description || mainItem.id);
+
+                    for (const bomComponent of mainItem.bom) {
+                        const componentId = `bom-${mainItem.id}-${bomComponent.markNo}`;
+                        let consumedQty = setsToCreate * bomComponent.qtyPerSet;
+
+                        componentInventory[componentId].logs.sort((a, b) => a.available - b.available);
+
+                        for (const log of componentInventory[componentId].logs) {
+                            if (consumedQty <= 0) break;
+                            const deduction = Math.min(consumedQty, log.available);
+                            transaction.update(doc(db, 'inventoryLogs', log.id), { availableQuantity: log.available - deduction });
+                            log.available -= deduction;
+                            consumedQty -= deduction;
+                        }
+
+                        const newConsumptionLogRef = doc(collection(db, 'inventoryLogs'));
+                        transaction.set(newConsumptionLogRef, {
+                             date: Timestamp.now(),
+                             itemId: componentId,
+                             itemName: `${mainItem.Description} - ${bomComponent.section}`,
+                             itemType: 'Sub',
+                             transactionType: 'Conversion',
+                             quantity: setsToCreate * bomComponent.qtyPerSet,
+                             availableQuantity: 0,
+                             unit: 'Kg',
+                             projectId: projectSlug,
+                             description: `Auto-assembled into ${setsToCreate} sets of ${mainItem.Description}`,
+                        });
+                    }
+
+                    const newMainItemLogRef = doc(collection(db, 'inventoryLogs'));
+                    transaction.set(newMainItemLogRef, {
+                        date: Timestamp.now(),
+                        itemId: mainItem.id,
+                        itemName: mainItem.Description,
+                        itemType: 'Main',
+                        transactionType: 'Goods Receipt',
+                        quantity: setsToCreate,
+                        availableQuantity: setsToCreate,
+                        unit: mainItem.UNIT || 'Set',
+                        projectId: projectSlug,
+                        description: 'Auto-assembled from BOM components',
+                        details: { fromConversion: true },
+                    });
+                }
+            }
+        });
+
+        if (setsCreatedCount > 0) {
+            toast({
+                title: "Auto-Assembly Complete",
+                description: `Successfully created ${setsCreatedCount} set(s) for: ${mainItemsAffected.join(', ')}.`,
+            });
+            await fetchData();
+        } else {
+            toast({ title: "Auto-Assembly", description: "No complete sets could be formed from available components." });
+        }
+    } catch (e: any) {
+        console.error("Auto-assembly transaction failed:", e);
+        toast({ title: "Error", description: `Auto-assembly failed: ${e.message}`, variant: "destructive" });
+    } finally {
+        setIsAutoAssembling(false);
+    }
+  };
+
 
 
   const transactionSummaries = useMemo(() => {
@@ -291,6 +406,10 @@ export default function TransactionsPage() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
+                 <Button variant="secondary" onClick={handleAutoAssembly} disabled={isAutoAssembling}>
+                    {isAutoAssembling ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <GitCommit className="mr-2 h-4 w-4" />}
+                    Auto-Assemble
+                </Button>
                 <Link href={`/store-stock-management/${projectSlug}/transactions/stock-in`}>
                     <Button variant="outline">
                         <PlusCircle className="mr-2 h-4 w-4" /> Stock In
