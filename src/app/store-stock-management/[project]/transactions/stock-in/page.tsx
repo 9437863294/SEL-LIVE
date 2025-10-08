@@ -643,7 +643,7 @@ export default function StockInPage() {
                                                     <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" readOnly className="bg-muted" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
@@ -710,4 +710,3 @@ export default function StockInPage() {
     </>
   );
 }
-
