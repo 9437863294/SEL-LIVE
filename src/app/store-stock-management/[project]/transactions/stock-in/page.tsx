@@ -42,7 +42,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Timestamp } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-
 const bomItemSchema = z.object({
   id: z.string(),
   markNo: z.string(),
@@ -55,12 +54,10 @@ const bomItemSchema = z.object({
   totalWtPerSet: z.number(),
   qtyPerSet: z.number(),
   totalWtKg: z.number(),
-  // GRN specific fields
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
   unitCost: z.coerce.number().optional(),
   availableQty: z.number().optional().default(0),
 });
-
 
 const itemSchema = z.object({
   id: z.string(),
@@ -75,26 +72,26 @@ const itemSchema = z.object({
   bomItems: z.array(z.any()).optional(),
 });
 
-const grnSchema = z.object({
+const generateGrnSchema = (mandatoryFields: any) => z.object({
     grnNo: z.string().min(1, "GRN No. is required."),
     grnDate: z.date({ required_error: "A GRN date is required." }),
     supplier: z.string().min(1, "Supplier name is required."),
-    poNumber: z.string().min(1, "P.O. Number is required."),
-    poDate: z.date().optional(),
-    invoiceNumber: z.string().min(1, "Invoice number is required."),
-    invoiceDate: z.date().optional(),
-    invoiceAmount: z.coerce.number().nullable().optional(),
-    invoiceFiles: z.array(z.custom<File>()).optional().default([]),
-    transporterDocs: z.array(z.custom<File>()).optional().default([]),
-    vehicleNo: z.string().optional().default(''),
-    waybillNo: z.string().optional().default(''),
-    lrNo: z.string().optional().default(''),
-    lrDate: z.date().optional(),
+    poNumber: mandatoryFields.poNumber ? z.string().min(1, "P.O. Number is required.") : z.string().optional(),
+    poDate: mandatoryFields.poDate ? z.date({ required_error: "A P.O. date is required."}) : z.date().optional(),
+    invoiceNumber: mandatoryFields.invoiceNumber ? z.string().min(1, "Invoice number is required.") : z.string().optional(),
+    invoiceDate: mandatoryFields.invoiceDate ? z.date({ required_error: "An invoice date is required."}) : z.date().optional(),
+    invoiceAmount: mandatoryFields.invoiceAmount ? z.coerce.number().min(0, "Amount must be positive.") : z.coerce.number().nullable().optional(),
+    invoiceFiles: mandatoryFields.invoiceFiles ? z.array(z.custom<File>()).min(1, "Invoice file is required.") : z.array(z.custom<File>()).optional().default([]),
+    transporterDocs: mandatoryFields.transporterDocs ? z.array(z.custom<File>()).min(1, "Transporter document is required.") : z.array(z.custom<File>()).optional().default([]),
+    vehicleNo: mandatoryFields.vehicleNo ? z.string().min(1, "Vehicle No. is required.") : z.string().optional().default(''),
+    waybillNo: mandatoryFields.waybillNo ? z.string().min(1, "Waybill No. is required.") : z.string().optional().default(''),
+    lrNo: mandatoryFields.lrNo ? z.string().min(1, "LR No. is required.") : z.string().optional().default(''),
+    lrDate: mandatoryFields.lrDate ? z.date({ required_error: "An LR date is required."}) : z.date().optional(),
     notes: z.string().optional().default(''),
     items: z.array(itemSchema).min(1, { message: 'At least one item is required.' }),
 });
 
-type GrnFormValues = z.infer<typeof grnSchema>;
+type GrnFormValues = z.infer<ReturnType<typeof generateGrnSchema>>;
 
 export default function StockInPage() {
   const { toast } = useToast();
@@ -109,6 +106,24 @@ export default function StockInPage() {
   const [previewGrnNo, setPreviewGrnNo] = useState('Generating...');
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
   const [units, setUnits] = useState<string[]>([]);
+  
+  const [grnSchema, setGrnSchema] = useState(() => generateGrnSchema({}));
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'storeStockSettings', 'grnEntry'));
+        if (settingsDoc.exists()) {
+          setGrnSchema(() => generateGrnSchema(settingsDoc.data().mandatoryFields || {}));
+        } else {
+          setGrnSchema(() => generateGrnSchema({})); // fallback to default non-mandatory
+        }
+      } catch (error) {
+        console.error("Could not fetch GRN settings:", error);
+      }
+    };
+    fetchSettings();
+  }, []);
 
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -277,7 +292,7 @@ export default function StockInPage() {
               return {
                 ...bomItem,
                 id: bomComponentId,
-                quantity: 1 * (bomItem.qtyPerSet || 0), // Pre-fill based on 1 set
+                quantity: 1 * (bomItem.qtyPerSet || 0),
                 unitCost: 0,
                 availableQty: componentAvailable,
               };
@@ -378,7 +393,7 @@ export default function StockInPage() {
                           transactionType: 'Goods Receipt',
                           quantity: bomItem.quantity,
                           availableQuantity: bomItem.quantity,
-                          unit: 'Kg', // Assuming BOM components are always in Kg
+                          unit: 'Kg', 
                           cost: bomItem.unitCost,
                           projectId: projectSlug,
                           details: itemDetails,
@@ -592,9 +607,6 @@ export default function StockInPage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle>Items Received</CardTitle>
-                             <Button variant="outline" size="sm" type="button" onClick={() => setIsBoqMultiSelectOpen(true)} className="ml-auto">
-                                <Library className="mr-2 h-4 w-4" /> Add from BOM
-                            </Button>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -638,7 +650,7 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly className="bg-muted"/></FormControl> <FormMessage /> </FormItem> )}/>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
@@ -646,7 +658,7 @@ export default function StockInPage() {
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
                                              <TableHead>Receive Qty (Kg)</TableHead>
-                                             <TableHead>Cost/Kg</TableHead>
+                                             <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>
