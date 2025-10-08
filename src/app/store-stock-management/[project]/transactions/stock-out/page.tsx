@@ -90,7 +90,7 @@ export default function StockOutPage() {
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
-  
+
   const getItemDescription = (item: BoqItem | FabricationBomItem) => {
     const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
     for (const key of descriptionKeys) {
@@ -106,7 +106,7 @@ export default function StockOutPage() {
   const getSlNo = (item: BoqItem): string => {
     return String(item['Sl No'] || item['SL. No.'] || '');
   }
-
+  
   const form = useForm<StockOutFormValues>({
     resolver: zodResolver(stockOutSchema),
     defaultValues: {
@@ -161,52 +161,54 @@ export default function StockOutPage() {
   
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
-    
-    // Process all items with physical stock
+
     availableItems.forEach(item => {
-        const existing = itemMap.get(item.itemId);
-        if (existing) {
-            existing.availableQuantity += item.availableQuantity;
-        } else {
-            itemMap.set(item.itemId, { ...item });
+        if (item.itemType === 'Main') {
+            const existing = itemMap.get(item.itemId);
+            if (existing) {
+                existing.availableQuantity += item.availableQuantity;
+            } else {
+                itemMap.set(item.itemId, { ...item });
+            }
         }
     });
 
-    // Add potential main items that can be assembled from BOM components
     boqItems.forEach(boqItem => {
-        if (boqItem.bom && boqItem.bom.length > 0 && !itemMap.has(boqItem.id)) {
-            // Check if this item can be assembled
+        if (boqItem.bom && boqItem.bom.length > 0) {
             let possibleSets = Infinity;
             for (const bomComponent of boqItem.bom) {
                 const componentId = `bom-${boqItem.id}-${bomComponent.markNo}`;
-                const componentStock = availableItems.find(i => i.itemId === componentId);
-                const componentAvailable = componentStock?.availableQuantity || 0;
-                
-                if (componentAvailable < bomComponent.qtyPerSet) {
+                const componentStock = availableItems
+                    .filter(i => i.itemId === componentId && i.itemType === 'Sub')
+                    .reduce((sum, i) => sum + i.availableQuantity, 0);
+
+                if (componentStock < bomComponent.qtyPerSet) {
                     possibleSets = 0;
                     break;
                 }
-                possibleSets = Math.min(possibleSets, Math.floor(componentAvailable / bomComponent.qtyPerSet));
+                possibleSets = Math.min(possibleSets, Math.floor(componentStock / bomComponent.qtyPerSet));
             }
 
             if (possibleSets > 0 && possibleSets !== Infinity) {
-                itemMap.set(boqItem.id, {
-                    id: `virtual-${boqItem.id}`,
-                    itemId: boqItem.id,
-                    itemName: getItemDescription(boqItem),
-                    itemType: 'Main',
-                    unit: boqItem.UNIT || boqItem.UNITS || 'N/A',
-                    availableQuantity: 0, // Physical stock is 0
-                    quantity: 0,
-                    transactionType: 'Goods Receipt',
-                    date: Timestamp.now(),
-                    projectId: projectSlug,
-                });
+                if (!itemMap.has(boqItem.id)) {
+                    itemMap.set(boqItem.id, {
+                        id: `virtual-${boqItem.id}`,
+                        itemId: boqItem.id,
+                        itemName: getItemDescription(boqItem),
+                        itemType: 'Main',
+                        unit: boqItem.UNIT || boqItem.UNITS || 'N/A',
+                        availableQuantity: 0, // Physical stock is 0
+                        quantity: 0,
+                        transactionType: 'Goods Receipt',
+                        date: Timestamp.now(),
+                        projectId: projectSlug,
+                    });
+                }
             }
         }
     });
 
-    return Array.from(itemMap.values()).filter(item => item.itemType === 'Main');
+    return Array.from(itemMap.values());
   }, [availableItems, boqItems]);
 
 
@@ -235,11 +237,12 @@ export default function StockOutPage() {
         availableQty: mainItemPhysicalStock,
         bomItems: bom.map(b => {
           const bomComponentId = `bom-${selectedInventoryItem.itemId}-${b.markNo}`;
+          
           const componentLooseStock = availableItems
               .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
-          const totalAvailable = componentLooseStock + (mainItemPhysicalStock * b.qtyPerSet);
+          const totalAvailable = componentLooseStock + (mainItemPhysicalStock * (b.qtyPerSet || 0));
 
           return {
             ...b, 
@@ -264,7 +267,6 @@ export default function StockOutPage() {
             for (const bomItem of item.bomItems!) {
               if (bomItem.quantity <= 0) continue;
   
-              let neededFromMain = 0;
               const componentId = bomItem.id;
               
               const componentLooseStockLogsQuery = query(collection(db, 'inventoryLogs'), 
@@ -275,8 +277,13 @@ export default function StockOutPage() {
               );
               
               const componentLooseStockLogsSnap = await getDocs(componentLooseStockLogsQuery);
-              const componentAvailable = componentLooseStockLogsSnap.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
+              let componentAvailable = componentLooseStockLogsSnap.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
 
+              if (bomItem.quantity > bomItem.availableQty) {
+                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${bomItem.availableQty}.`);
+              }
+
+              let neededFromMain = 0;
               if (bomItem.quantity > componentAvailable) {
                 neededFromMain = Math.ceil((bomItem.quantity - componentAvailable) / bomItem.qtyPerSet);
               }
@@ -300,12 +307,9 @@ export default function StockOutPage() {
                 for (const log of mainItemLogs) {
                     if (mainQtyToBreak <= 0) break;
                     const logRef = doc(db, 'inventoryLogs', log.id);
-                    const logDoc = await transaction.get(logRef);
-                    if (!logDoc.exists()) throw new Error(`Inventory log ${log.id} not found in transaction.`);
-                    const currentLogData = logDoc.data() as InventoryLog;
                     
-                    const deduction = Math.min(mainQtyToBreak, currentLogData.availableQuantity);
-                    transaction.update(logRef, { availableQuantity: currentLogData.availableQuantity - deduction });
+                    const deduction = Math.min(mainQtyToBreak, log.availableQuantity);
+                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
                     mainQtyToBreak -= deduction;
 
                     const relatedBoqItem = boqItems.find(b => b.id === item.itemId);
@@ -322,7 +326,7 @@ export default function StockOutPage() {
                             unit: 'Kg',
                             projectId: projectSlug,
                             description: `From breaking down ${deduction} sets of ${item.itemName}`,
-                            details: { fromConversion: true, sourceGrn: log.details?.grnNo }
+                            details: { fromConversion: true, sourceGrn: log.details?.grnNo },
                         });
                     });
                 }
@@ -343,12 +347,9 @@ export default function StockOutPage() {
               for (const log of componentLogsToUpdate) {
                 if (qtyToIssueFromComponents <= 0) break;
                 const logRef = doc(db, 'inventoryLogs', log.id);
-                const logDoc = await transaction.get(logRef);
-                if (!logDoc.exists()) throw new Error(`Inventory log ${log.id} not found in transaction.`);
-                const currentLogData = logDoc.data() as InventoryLog;
                 
-                const deduction = Math.min(qtyToIssueFromComponents, currentLogData.availableQuantity);
-                transaction.update(logRef, { availableQuantity: currentLogData.availableQuantity - deduction });
+                const deduction = Math.min(qtyToIssueFromComponents, log.availableQuantity);
+                transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
                 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 transaction.set(newIssueLogRef, {
@@ -389,13 +390,9 @@ export default function StockOutPage() {
             for (const logDoc of logsWithStock) {
                 if (quantityToIssue <= 0) break;
                 const logRef = doc(db, 'inventoryLogs', logDoc.id);
-                const currentLogDoc = await transaction.get(logRef);
-                if (!currentLogDoc.exists()) throw new Error(`Inventory log ${logDoc.id} not found in transaction.`);
-                const currentLogData = currentLogDoc.data() as InventoryLog;
-
-                const deduction = Math.min(quantityToIssue, currentLogData.availableQuantity);
+                const deduction = Math.min(quantityToIssue, logDoc.availableQuantity);
                 transaction.update(logRef, {
-                    availableQuantity: currentLogData.availableQuantity - deduction
+                    availableQuantity: logDoc.availableQuantity - deduction
                 });
                 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
@@ -427,7 +424,7 @@ export default function StockOutPage() {
       setIsSaving(false);
     }
   };
-
+  
   const watchedItems = form.watch('items');
 
   return (
