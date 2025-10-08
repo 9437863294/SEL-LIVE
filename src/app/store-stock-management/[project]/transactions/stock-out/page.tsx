@@ -282,7 +282,7 @@ export default function StockOutPage() {
                             unit: 'Kg',
                             projectId: projectSlug,
                             description: `From breaking down ${deduction} sets of ${item.itemName}`,
-                            details: { fromConversion: true, sourceGrn: log.details?.grnNo }
+                            details: { fromConversion: true, sourceGrn: log.details?.grnNo || null }
                         });
                     });
                 }
@@ -317,7 +317,7 @@ export default function StockOutPage() {
                     cost: log.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo || null }
                 });
                 qtyToIssueFromComponents -= deduction;
               }
@@ -356,7 +356,7 @@ export default function StockOutPage() {
                     cost: logDoc.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
                  });
                  quantityToIssue -= deduction;
             }
@@ -477,7 +477,7 @@ export default function StockOutPage() {
                                                         <TableCell>{bomItem.markNo}</TableCell>
                                                         <TableCell>{bomItem.section}</TableCell>
                                                         <TableCell>
-                                                            <Input value={(bomItem.availableQty / (bomItem.qtyPerSet || 1)).toFixed(3)} readOnly className="bg-muted"/>
+                                                            <Input value={((bomItem.availableQty || 0) / (bomItem.qtyPerSet || 1)).toFixed(3)} readOnly className="bg-muted"/>
                                                         </TableCell>
                                                         <TableCell>
                                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
