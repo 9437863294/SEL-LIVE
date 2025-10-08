@@ -1,5 +1,4 @@
 
-      
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -69,7 +68,7 @@ const itemSchema = z.object({
   itemName: z.string(),
   itemUnit: z.string(),
   boqSlNo: z.string().optional(),
-  quantity: z.coerce.number().min(1, { message: 'Qty must be > 0.' }),
+  quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
   receiveUnit: z.string().min(1, { message: 'Receive unit is required.'}),
   unitCost: z.coerce.number().optional(),
   isBomGrn: z.boolean().default(false),
@@ -372,11 +371,9 @@ export default function StockInPage() {
           if (item.isBomGrn && item.bomItems) {
               const mainItemQty = item.quantity;
               
+              // First, log all component receipts
               for (const bomItem of item.bomItems) {
                   if (bomItem.quantity > 0) {
-                      const consumedQty = mainItemQty * bomItem.qtyPerSet;
-                      const balanceQty = bomItem.quantity - consumedQty;
-
                       const receiptLogRef = doc(collection(db, 'inventoryLogs'));
                       batch.set(receiptLogRef, {
                           date: Timestamp.fromDate(data.grnDate),
@@ -385,14 +382,20 @@ export default function StockInPage() {
                           itemType: 'Sub',
                           transactionType: 'Goods Receipt',
                           quantity: bomItem.quantity,
-                          availableQuantity: balanceQty,
+                          availableQuantity: bomItem.quantity,
                           unit: 'Kg',
                           cost: bomItem.unitCost,
                           projectId: projectSlug,
                           details: itemDetails,
                       });
+                  }
+              }
 
-                      if (consumedQty > 0) {
+              if (mainItemQty > 0) {
+                  // Then, log consumption of components
+                  for (const bomItem of item.bomItems) {
+                      const consumedQty = mainItemQty * bomItem.qtyPerSet;
+                      if(consumedQty > 0) {
                           const consumptionLogRef = doc(collection(db, 'inventoryLogs'));
                           batch.set(consumptionLogRef, {
                                date: Timestamp.fromDate(data.grnDate),
@@ -410,9 +413,8 @@ export default function StockInPage() {
                           });
                       }
                   }
-              }
-
-              if (mainItemQty > 0) {
+                  
+                  // Finally, log receipt of main item
                   const mainItemLogRef = doc(collection(db, 'inventoryLogs'));
                   batch.set(mainItemLogRef, {
                         date: Timestamp.fromDate(data.grnDate),
@@ -424,7 +426,7 @@ export default function StockInPage() {
                         availableQuantity: mainItemQty,
                         unit: item.itemUnit,
                         projectId: projectSlug,
-                        cost: item.bomItems.reduce((sum, bi) => sum + (bi.quantity * (bi.unitCost || 0)), 0) / mainItemQty,
+                        cost: item.bomItems.reduce((sum, bi) => sum + (bi.qtyPerSet * (bi.unitCost || 0)), 0),
                         details: {...itemDetails, fromConversion: true },
                   });
               }
@@ -552,12 +554,12 @@ export default function StockInPage() {
   
     useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-        if (name?.startsWith('items') && (name.endsWith('.quantity') || name.endsWith('isBomGrn'))) {
+        if (name?.startsWith('items') && name.endsWith('.quantity') && type === 'change') {
             const itemIndex = parseInt(name.split('.')[1], 10);
             const currentItem = form.getValues(`items.${itemIndex}`);
             
             if (currentItem.isBomGrn && currentItem.bomItems && currentItem.bomItems.length > 0) {
-                const possibleSets = currentItem.bomItems.map(bi => 
+                 const possibleSets = currentItem.bomItems.map(bi => 
                     (bi.quantity > 0 && bi.qtyPerSet > 0) ? Math.floor(bi.quantity / bi.qtyPerSet) : Infinity
                 );
 
@@ -697,7 +699,7 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Total Req. Qty</TableHead>
+                                             <TableHead>Receive Qty (Kg)</TableHead>
                                              <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -775,5 +777,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    
