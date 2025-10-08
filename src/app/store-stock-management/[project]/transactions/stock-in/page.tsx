@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -493,6 +494,27 @@ export default function StockInPage() {
     );
   };
   
+    useEffect(() => {
+    const subscription = form.watch((value, { name, type }) => {
+      if (name?.startsWith('items') && name.endsWith('quantity')) {
+        const parts = name.split('.');
+        if (parts.length === 3) {
+          const itemIndex = parseInt(parts[1], 10);
+          const currentItem = form.getValues(`items.${itemIndex}`);
+          if (currentItem.isBomGrn && currentItem.bomItems) {
+            const mainQty = currentItem.quantity || 0;
+            const updatedBomItems = currentItem.bomItems.map(bi => ({
+              ...bi,
+              quantity: mainQty * (bi.qtyPerSet || 0)
+            }));
+            form.setValue(`items.${itemIndex}.bomItems`, updatedBomItems);
+          }
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
+
   return (
     <>
     <Form {...form}>
@@ -611,13 +633,14 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty</TableHead>
+                                             <TableHead>Total Req. Qty</TableHead>
                                              <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -626,11 +649,9 @@ export default function StockInPage() {
                                               <TableRow key={bomItem.id}>
                                                   <TableCell>{bomItem.markNo}</TableCell>
                                                   <TableCell>{bomItem.section}</TableCell>
+                                                  <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                   <TableCell>
-                                                    <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
-                                                  </TableCell>
-                                                  <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
