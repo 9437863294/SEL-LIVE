@@ -32,7 +32,7 @@ import {
   Loader2,
   GitCommit,
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog, EnrichedLogItem, BoqItem } from '@/lib/types';
@@ -282,7 +282,7 @@ export default function TransactionsPage() {
                         unit: mainItem.UNIT || 'Set',
                         projectId: projectSlug,
                         description: 'Auto-assembled from BOM components',
-                        details: { fromConversion: true },
+                        details: { fromConversion: true, sourceGrn: null },
                     });
                 }
             }
@@ -345,16 +345,13 @@ export default function TransactionsPage() {
     
     const issueSummaries: Record<string, TransactionSummary> = {};
     goodsIssues.forEach(issueItem => {
-        const issueTo = issueItem.details?.issuedTo;
-        if (!issueTo) return;
-        
-        const issueDate = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm-ss');
-        const groupId = `ISSUE-${issueDate}-${issueTo}-${Math.random().toString(36).substring(2, 9)}`;
+        const issueTo = issueItem.details?.issuedTo || 'Unknown';
+        const dateStr = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm');
+        const issueGroupId = `ISSUE-${dateStr}-${issueTo}`;
 
-
-        if (!issueSummaries[groupId]) {
-            issueSummaries[groupId] = {
-                id: groupId,
+        if (!issueSummaries[issueGroupId]) {
+            issueSummaries[issueGroupId] = {
+                id: issueGroupId,
                 date: issueItem.date.toDate(),
                 transactionType: 'Goods Issue',
                 totalAmount: 0,
@@ -370,8 +367,8 @@ export default function TransactionsPage() {
           balanceQuantity: 0,
         };
         
-        issueSummaries[groupId].items.push(enrichedItem);
-        issueSummaries[groupId].totalAmount += (issueItem.quantity || 0) * (issueItem.cost || 0);
+        issueSummaries[issueGroupId].items.push(enrichedItem);
+        issueSummaries[issueGroupId].totalAmount += (issueItem.quantity || 0) * (issueItem.cost || 0);
     });
 
     const allSummaries = [...Object.values(grnSummaries), ...Object.values(issueSummaries)];
@@ -552,3 +549,5 @@ export default function TransactionsPage() {
     </>
   );
 }
+
+    
