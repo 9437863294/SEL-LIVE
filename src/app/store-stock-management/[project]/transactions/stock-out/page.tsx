@@ -145,18 +145,53 @@ export default function StockOutPage() {
   
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
-    availableItems
-      .filter(item => item.itemType === 'Main') // Only show main items in the selector
-      .forEach(item => {
+    
+    // First, process all items with physical stock
+    availableItems.forEach(item => {
         const existing = itemMap.get(item.itemId);
-        if(existing) {
+        if (existing) {
             existing.availableQuantity += item.availableQuantity;
         } else {
             itemMap.set(item.itemId, { ...item });
         }
     });
-    return Array.from(itemMap.values());
-  }, [availableItems]);
+
+    // Second, add potential main items that can be assembled from BOM components
+    boqItems.forEach(boqItem => {
+        if (boqItem.bom && boqItem.bom.length > 0 && !itemMap.has(boqItem.id)) {
+            // Check if this item can be assembled
+            let possibleSets = Infinity;
+            for (const bomComponent of boqItem.bom) {
+                const componentId = `bom-${boqItem.id}-${bomComponent.markNo}`;
+                const componentStock = availableItems.find(i => i.itemId === componentId);
+                const componentAvailable = componentStock?.availableQuantity || 0;
+                
+                if (componentAvailable < bomComponent.qtyPerSet) {
+                    possibleSets = 0;
+                    break;
+                }
+                possibleSets = Math.min(possibleSets, Math.floor(componentAvailable / bomComponent.qtyPerSet));
+            }
+
+            if (possibleSets > 0 && possibleSets !== Infinity) {
+                itemMap.set(boqItem.id, {
+                    id: `virtual-${boqItem.id}`,
+                    itemId: boqItem.id,
+                    itemName: getItemDescription(boqItem),
+                    itemType: 'Main',
+                    unit: boqItem.UNIT || boqItem.UNITS || 'N/A',
+                    availableQuantity: 0, // Physical stock is 0
+                    quantity: 0,
+                    transactionType: 'Goods Receipt',
+                    date: Timestamp.now(),
+                    projectId: projectSlug,
+                });
+            }
+        }
+    });
+
+    return Array.from(itemMap.values()).filter(item => item.itemType === 'Main');
+  }, [availableItems, boqItems]);
 
 
   const handleAddItem = () => {
@@ -190,21 +225,21 @@ export default function StockOutPage() {
       const relatedBoqItem = boqItems.find(b => b.id === selectedInventoryItem.itemId);
       const bom = relatedBoqItem?.bom || [];
       
-      const mainItemAvailableQty = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQuantity || 0;
+      const mainItemPhysicalStock = uniqueAvailableItems.find(i => i.itemId === selectedInventoryItem.itemId)?.availableQuantity || 0;
 
       update(index, {
         ...form.getValues(`items.${index}`),
         itemId: selectedInventoryItem.itemId,
         itemName: selectedInventoryItem.itemName,
         itemUnit: selectedInventoryItem.unit,
-        availableQty: mainItemAvailableQty,
+        availableQty: mainItemPhysicalStock,
         bomItems: bom.map(b => {
           const bomComponentId = `bom-${selectedInventoryItem.itemId}-${b.markNo}`;
           const componentLooseStock = availableItems
               .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
-          const totalAvailable = componentLooseStock + (mainItemAvailableQty * b.qtyPerSet);
+          const totalAvailable = componentLooseStock + (mainItemPhysicalStock * b.qtyPerSet);
 
           return {
             ...b, 
@@ -230,7 +265,7 @@ export default function StockOutPage() {
               if (bomItem.quantity <= 0) continue;
   
               let neededFromMain = 0;
-              const componentId = `bom-${item.itemId}-${bomItem.markNo}`;
+              const componentId = bomItem.id;
               
               const componentLooseStockLogsQuery = query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
