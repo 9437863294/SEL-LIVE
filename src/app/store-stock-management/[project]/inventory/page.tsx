@@ -203,10 +203,6 @@ export default function InventoryPage() {
             </Card>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>Stock Overview</CardTitle>
-                    <CardDescription>A summary of your inventory based on BOQ items.</CardDescription>
-                </CardHeader>
                 <CardContent>
                     <ScrollArea className="h-[calc(100vh-28rem)]">
                         <Table>
