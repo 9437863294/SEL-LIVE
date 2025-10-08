@@ -41,6 +41,22 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+}
+
 const bomItemSchema = z.object({
   id: z.string(),
   markNo: z.string(),
@@ -79,21 +95,6 @@ const stockOutSchema = z.object({
 
 type StockOutFormValues = z.infer<typeof stockOutSchema>;
 
-const getItemDescription = (item: BoqItem | FabricationBomItem) => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
-    for (const key of descriptionKeys) {
-      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
-    }
-    if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section}`;
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
-  };
-  
-const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
-}
 
 export default function StockOutPage() {
   const { toast } = useToast();
@@ -262,12 +263,16 @@ export default function StockOutPage() {
   
     try {
       await runTransaction(db, async (transaction) => {
+        const inventoryLogsRef = collection(db, 'inventoryLogs');
+        const projectInventoryLogsQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
+        const projectInventorySnap = await getDocs(projectInventoryLogsQuery);
+        const currentProjectInventory = projectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+
         for (const item of data.items) {
           const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
   
           if (isComponentIssue) {
-            // This logic block handles issuing components, potentially by breaking down a main item.
-            const mainItemLogs = availableItems.filter(log => 
+            const mainItemLogs = currentProjectInventory.filter(log => 
                 log.itemId === item.itemId && 
                 log.itemType === 'Main' &&
                 log.availableQuantity > 0
@@ -280,7 +285,7 @@ export default function StockOutPage() {
   
               const componentId = bomItem.id;
               
-              const componentLooseStockLogs = availableItems.filter(log =>
+              const componentLooseStockLogs = currentProjectInventory.filter(log =>
                 log.itemId === componentId &&
                 log.itemType === 'Sub' &&
                 log.availableQuantity > 0
@@ -303,7 +308,6 @@ export default function StockOutPage() {
               if (neededFromMainSets > 0) {
                   let qtyToBreak = neededFromMainSets;
                   if(qtyToBreak > mainItemPhysicalStock) {
-                    // This is a safeguard, the earlier check should catch this.
                     throw new Error(`Cannot issue components. Need to break ${qtyToBreak} sets of ${item.itemName}, but only ${mainItemPhysicalStock} are in stock.`);
                   }
 
@@ -350,7 +354,7 @@ export default function StockOutPage() {
           } else { // Direct issue of main item
             let quantityToIssue = item.quantity;
             
-            const logsWithStock = availableItems.filter(log => 
+            const logsWithStock = currentProjectInventory.filter(log => 
                 log.itemId === item.itemId && 
                 log.itemType === 'Main' &&
                 log.availableQuantity > 0
@@ -554,3 +558,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
