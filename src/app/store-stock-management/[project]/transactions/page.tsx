@@ -205,19 +205,20 @@ export default function TransactionsPage() {
         await runTransaction(db, async (transaction) => {
             const mainItemsWithBOM = boqItems.filter(item => item.bom && item.bom.length > 0);
             
+            // Re-fetch the latest inventory state within the transaction
+            const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug));
+            const freshInventorySnap = await getDocs(inventoryQuery);
+            const currentInventory = freshInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+
             const componentInventory: Record<string, { totalAvailable: number; logs: {id: string, available: number}[] }> = {};
 
-            const subItemsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemType', '==', 'Sub'));
-            const subItemsSnap = await getDocs(subItemsQuery);
-
-            subItemsSnap.docs.forEach(doc => {
-                const item = doc.data() as InventoryLog;
-                if (item.availableQuantity > 0) {
+            currentInventory.forEach(item => {
+                if (item.itemType === 'Sub' && item.availableQuantity > 0) {
                   if (!componentInventory[item.itemId]) {
                       componentInventory[item.itemId] = { totalAvailable: 0, logs: [] };
                   }
                   componentInventory[item.itemId].totalAvailable += item.availableQuantity;
-                  componentInventory[item.itemId].logs.push({ id: doc.id, available: item.availableQuantity });
+                  componentInventory[item.itemId].logs.push({ id: item.id, available: item.availableQuantity });
                 }
             });
 
@@ -239,7 +240,10 @@ export default function TransactionsPage() {
 
                 if (setsToCreate > 0) {
                     setsCreatedCount += setsToCreate;
-                    mainItemsAffected.push(mainItem.Description || mainItem.id);
+                    const mainItemDescription = mainItem.Description || mainItem.id;
+                    if (!mainItemsAffected.includes(mainItemDescription)) {
+                        mainItemsAffected.push(mainItemDescription);
+                    }
 
                     for (const bomComponent of mainItem.bom) {
                         const componentId = `bom-${mainItem.id}-${bomComponent.markNo}`;
@@ -259,14 +263,14 @@ export default function TransactionsPage() {
                         transaction.set(newConsumptionLogRef, {
                              date: Timestamp.now(),
                              itemId: componentId,
-                             itemName: `${mainItem.Description} - ${bomComponent.section}`,
+                             itemName: `${mainItemDescription} - ${bomComponent.section}`,
                              itemType: 'Sub',
                              transactionType: 'Conversion',
                              quantity: setsToCreate * bomComponent.qtyPerSet,
                              availableQuantity: 0,
                              unit: 'Kg',
                              projectId: projectSlug,
-                             description: `Auto-assembled into ${setsToCreate} sets of ${mainItem.Description}`,
+                             description: `Auto-assembled into ${setsToCreate} sets of ${mainItemDescription}`,
                         });
                     }
 
@@ -274,7 +278,7 @@ export default function TransactionsPage() {
                     transaction.set(newMainItemLogRef, {
                         date: Timestamp.now(),
                         itemId: mainItem.id,
-                        itemName: mainItem.Description,
+                        itemName: mainItemDescription,
                         itemType: 'Main',
                         transactionType: 'Goods Receipt',
                         quantity: setsToCreate,
@@ -346,7 +350,7 @@ export default function TransactionsPage() {
     const issueSummaries: Record<string, TransactionSummary> = {};
     goodsIssues.forEach(issueItem => {
         const issueTo = issueItem.details?.issuedTo || 'Unknown';
-        const dateStr = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm');
+        const dateStr = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm-ss'); // Added seconds for more uniqueness
         const issueGroupId = `ISSUE-${dateStr}-${issueTo}`;
 
         if (!issueSummaries[issueGroupId]) {
@@ -549,5 +553,3 @@ export default function TransactionsPage() {
     </>
   );
 }
-
-    
