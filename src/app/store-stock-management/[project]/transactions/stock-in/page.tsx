@@ -42,6 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Timestamp } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+
 const bomItemSchema = z.object({
   id: z.string(),
   markNo: z.string(),
@@ -54,10 +55,12 @@ const bomItemSchema = z.object({
   totalWtPerSet: z.number(),
   qtyPerSet: z.number(),
   totalWtKg: z.number(),
+  // GRN specific fields
   quantity: z.coerce.number().min(0, { message: 'Qty must be >= 0.' }),
   unitCost: z.coerce.number().optional(),
   availableQty: z.number().optional().default(0),
 });
+
 
 const itemSchema = z.object({
   id: z.string(),
@@ -526,14 +529,14 @@ export default function StockInPage() {
             }, 0);
             
             if (currentItem.quantity !== requiredMainQty) {
-              form.setValue(`items.${index}.quantity`, requiredMainQty, { shouldValidate: true });
+              form.setValue(`items.${itemIndex}.quantity`, requiredMainQty, { shouldValidate: true });
             }
           }
         }
       }
     });
     return () => subscription.unsubscribe();
-  }, [form]);
+  }, [form, form.watch]);
 
   return (
     <>
@@ -607,6 +610,7 @@ export default function StockInPage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle>Items Received</CardTitle>
+                            <Button type="button" variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}><Library className="mr-2 h-4 w-4" /> Add from BOM</Button>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -650,14 +654,14 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" readOnly placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty (Kg)</TableHead>
+                                             <TableHead>Receive Qty</TableHead>
                                              <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
