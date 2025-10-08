@@ -222,8 +222,8 @@ export default function StockOutPage() {
           const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
   
           if (isComponentIssue) {
-            const issuePromises = item.bomItems!.map(async (bomItem) => {
-              if (bomItem.quantity <= 0) return;
+            for (const bomItem of item.bomItems!) {
+              if (bomItem.quantity <= 0) continue;
   
               let neededFromMain = 0;
               const componentId = `bom-${item.itemId}-${bomItem.markNo}`;
@@ -232,11 +232,14 @@ export default function StockOutPage() {
               const componentLogsQuery = query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
                 where('itemId', '==', componentId), 
-                where('itemType', '==', 'Sub'),
-                where('availableQuantity', '>', 0)
+                where('itemType', '==', 'Sub')
               );
               const componentLogsSnap = await getDocs(componentLogsQuery);
-              componentLogsSnap.docs.forEach(doc => componentAvailable += doc.data().availableQuantity);
+              componentLogsSnap.docs.forEach(doc => {
+                  if (doc.data().availableQuantity > 0) {
+                    componentAvailable += doc.data().availableQuantity;
+                  }
+              });
 
 
               if (bomItem.quantity > componentAvailable) {
@@ -248,11 +251,13 @@ export default function StockOutPage() {
                 const mainItemLogsQuery = query(collection(db, 'inventoryLogs'), 
                   where('projectId', '==', projectSlug), 
                   where('itemId', '==', item.itemId), 
-                  where('itemType', '==', 'Main'),
-                  where('availableQuantity', '>', 0)
+                  where('itemType', '==', 'Main')
                 );
                 const mainItemLogsSnap = await getDocs(mainItemLogsQuery);
-                const mainItemLogs = mainItemLogsSnap.docs.map(d => ({...d.data(), id: d.id } as InventoryLog)).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+                const mainItemLogs = mainItemLogsSnap.docs
+                    .map(d => ({...d.data(), id: d.id } as InventoryLog))
+                    .filter(d => d.availableQuantity > 0)
+                    .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
                 
                 let totalMainAvailable = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
                 if (mainQtyToBreak > totalMainAvailable) throw new Error(`Not enough main item '${item.itemName}' to break. Need ${mainQtyToBreak}, have ${totalMainAvailable}.`);
@@ -286,11 +291,13 @@ export default function StockOutPage() {
               let qtyToIssueFromComponents = bomItem.quantity;
               const componentLogsToUpdateQuery = query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
-                where('itemId', '==', componentId), 
-                where('availableQuantity', '>', 0)
+                where('itemId', '==', componentId)
               );
               const componentLogsToUpdateSnap = await getDocs(componentLogsToUpdateQuery);
-              const componentLogsToUpdate = componentLogsToUpdateSnap.docs.map(d => ({...d.data(), id: d.id } as InventoryLog)).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+              const componentLogsToUpdate = componentLogsToUpdateSnap.docs
+                .map(d => ({...d.data(), id: d.id } as InventoryLog))
+                .filter(d => d.availableQuantity > 0)
+                .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
               for (const log of componentLogsToUpdate) {
                 if (qtyToIssueFromComponents <= 0) break;
@@ -314,14 +321,15 @@ export default function StockOutPage() {
                 });
                 qtyToIssueFromComponents -= deduction;
               }
-            });
-            await Promise.all(issuePromises);
-
+            }
           } else { // Direct issue of main item
             let quantityToIssue = item.quantity;
-            const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'), where('availableQuantity', '>', 0));
+            const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
-            const logsWithStock = logsToUpdateSnap.docs.map(d => ({ ...d.data(), id: d.id } as InventoryLog)).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+            const logsWithStock = logsToUpdateSnap.docs
+                .map(d => ({ ...d.data(), id: d.id } as InventoryLog))
+                .filter(d => d.availableQuantity > 0)
+                .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
             
             let totalAvailable = logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0);
             if(quantityToIssue > totalAvailable) {
@@ -469,7 +477,7 @@ export default function StockOutPage() {
                                                         <TableCell>{bomItem.markNo}</TableCell>
                                                         <TableCell>{bomItem.section}</TableCell>
                                                         <TableCell>
-                                                            <Input value={(bomItem.availableQty / (bomItem.qtyPerSet || 1)).toFixed(2)} readOnly className="bg-muted"/>
+                                                            <Input value={(bomItem.availableQty / (bomItem.qtyPerSet || 1)).toFixed(3)} readOnly className="bg-muted"/>
                                                         </TableCell>
                                                         <TableCell>
                                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
