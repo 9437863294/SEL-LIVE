@@ -99,8 +99,8 @@ type GrnFormValues = z.infer<typeof grnSchema>;
 export default function StockInPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const params = useParams() as { project: string };
-  const projectSlug = params.project;
+  const params = useParams();
+  const projectSlug = params.project as string;
 
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -136,6 +136,8 @@ export default function StockInPage() {
     control: form.control,
     name: 'items',
   });
+  
+  const watchedItems = form.watch('items');
 
    useEffect(() => {
     const generatePreviewId = async () => {
@@ -193,6 +195,18 @@ export default function StockInPage() {
     };
     fetchBoq();
   }, [projectSlug]);
+
+    useEffect(() => {
+        watchedItems.forEach((item, index) => {
+            if (item.isBomGrn && item.bomItems && item.quantity > 0) {
+                const newBomItems = item.bomItems.map((bomItem: any) => ({
+                    ...bomItem,
+                    quantity: (item.quantity || 0) * (bomItem.qtyPerSet || 0),
+                }));
+                form.setValue(`items.${index}.bomItems`, newBomItems, { shouldValidate: true });
+            }
+        });
+    }, [JSON.stringify(watchedItems.map(i => i.quantity)), JSON.stringify(watchedItems.map(i => i.isBomGrn))]);
 
   const handleAddItem = () => {
     append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', boqSlNo: '', quantity: 1, receiveUnit: '', unitCost: 0, isBomGrn: false, bomItems: [] });
@@ -290,7 +304,6 @@ export default function StockInPage() {
       }
   };
   
-  const watchedItems = form.watch('items');
   const totalGrnValue = watchedItems.reduce((sum, item) => {
       let itemTotal = 0;
       if (item.isBomGrn && item.bomItems) {
@@ -366,10 +379,8 @@ export default function StockInPage() {
           }
 
           if (item.isBomGrn && item.bomItems) {
-              const numSets = item.quantity; // Number of main items being received
               item.bomItems.forEach(bomItem => {
-                  const requiredQtyForBomItem = bomItem.qtyPerSet * numSets;
-                  if (requiredQtyForBomItem > 0) {
+                  if (bomItem.quantity > 0) {
                       const logRef = doc(collection(db, 'inventoryLogs'));
                       const logEntry: Omit<InventoryLog, 'id'> = {
                           date: Timestamp.fromDate(data.grnDate),
@@ -377,8 +388,8 @@ export default function StockInPage() {
                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                           itemType: 'Sub',
                           transactionType: 'Goods Receipt',
-                          quantity: requiredQtyForBomItem,
-                          availableQuantity: requiredQtyForBomItem,
+                          quantity: bomItem.quantity,
+                          availableQuantity: bomItem.quantity,
                           unit: 'Kg', // Assuming BOM components are always in Kg
                           cost: bomItem.unitCost,
                           projectId: projectSlug,
@@ -619,8 +630,8 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty </TableHead>
-                                             <TableHead>Cost</TableHead>
+                                             <TableHead>Total Req. Qty</TableHead>
+                                             <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>
@@ -632,10 +643,10 @@ export default function StockInPage() {
                                                     <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" readOnly className="bg-muted" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Kg" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                               </TableRow>
                                           ))}
@@ -699,3 +710,4 @@ export default function StockInPage() {
     </>
   );
 }
+
