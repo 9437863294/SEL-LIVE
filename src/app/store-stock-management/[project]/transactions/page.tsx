@@ -207,16 +207,18 @@ export default function TransactionsPage() {
             
             const componentInventory: Record<string, { totalAvailable: number; logs: {id: string, available: number}[] }> = {};
 
-            const subItemsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemType', '==', 'Sub'), where('availableQuantity', '>', 0));
+            const subItemsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemType', '==', 'Sub'));
             const subItemsSnap = await getDocs(subItemsQuery);
 
-            subItemsSnap.forEach(doc => {
+            subItemsSnap.docs.forEach(doc => {
                 const item = doc.data() as InventoryLog;
-                if (!componentInventory[item.itemId]) {
-                    componentInventory[item.itemId] = { totalAvailable: 0, logs: [] };
+                if (item.availableQuantity > 0) {
+                  if (!componentInventory[item.itemId]) {
+                      componentInventory[item.itemId] = { totalAvailable: 0, logs: [] };
+                  }
+                  componentInventory[item.itemId].totalAvailable += item.availableQuantity;
+                  componentInventory[item.itemId].logs.push({ id: doc.id, available: item.availableQuantity });
                 }
-                componentInventory[item.itemId].totalAvailable += item.availableQuantity;
-                componentInventory[item.itemId].logs.push({ id: doc.id, available: item.availableQuantity });
             });
 
             for (const mainItem of mainItemsWithBOM) {
