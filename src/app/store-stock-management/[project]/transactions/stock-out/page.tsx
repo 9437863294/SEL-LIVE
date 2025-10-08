@@ -265,21 +265,26 @@ export default function StockOutPage() {
       await runTransaction(db, async (transaction) => {
         const inventoryLogsRef = collection(db, 'inventoryLogs');
         const projectInventoryLogsQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
-        const projectInventorySnap = await getDocs(projectInventoryLogsQuery);
+        // We must fetch inside the transaction to get the latest state
+        const projectInventorySnap = await transaction.get(projectInventoryLogsQuery);
         const currentProjectInventory = projectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
         for (const item of data.items) {
           const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
   
           if (isComponentIssue) {
-            const mainItemLogs = currentProjectInventory.filter(log => 
+            const mainItemBoq = boqItems.find(b => b.id === item.itemId);
+            if (!mainItemBoq?.bom) {
+                throw new Error(`BOM not found for ${item.itemName}. Cannot issue components.`);
+            }
+
+            const mainItemPhysicalStockLogs = currentProjectInventory.filter(log => 
                 log.itemId === item.itemId && 
                 log.itemType === 'Main' &&
                 log.availableQuantity > 0
             ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-            
-            let mainItemPhysicalStock = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
-  
+            const mainItemPhysicalStock = mainItemPhysicalStockLogs.reduce((s, d) => s + d.availableQuantity, 0);
+
             for (const bomItem of item.bomItems!) {
               if (bomItem.quantity <= 0) continue;
   
@@ -291,7 +296,7 @@ export default function StockOutPage() {
                 log.availableQuantity > 0
               ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
-              let componentLooseStock = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
+              const componentLooseStock = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
               
               const totalPossibleFromStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
 
@@ -299,25 +304,24 @@ export default function StockOutPage() {
                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
               }
   
-              let neededFromMainSets = 0;
+              let qtyToConsumeFromMain = 0;
               if (bomItem.quantity > componentLooseStock) {
-                  neededFromMainSets = Math.ceil((bomItem.quantity - componentLooseStock) / bomItem.qtyPerSet);
+                  qtyToConsumeFromMain = Math.ceil((bomItem.quantity - componentLooseStock) / bomItem.qtyPerSet);
               }
   
               // Step 1: "Break down" main items if needed
-              if (neededFromMainSets > 0) {
-                  let qtyToBreak = neededFromMainSets;
+              if (qtyToConsumeFromMain > 0) {
+                  let qtyToBreak = qtyToConsumeFromMain;
                   if(qtyToBreak > mainItemPhysicalStock) {
                     throw new Error(`Cannot issue components. Need to break ${qtyToBreak} sets of ${item.itemName}, but only ${mainItemPhysicalStock} are in stock.`);
                   }
 
-                  for (const log of mainItemLogs) {
+                  for (const log of mainItemPhysicalStockLogs) {
                     if(qtyToBreak <= 0) break;
                     const logRef = doc(db, 'inventoryLogs', log.id);
                     const deduction = Math.min(qtyToBreak, log.availableQuantity);
                     transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
                     log.availableQuantity -= deduction; 
-                    mainItemPhysicalStock -= deduction;
                     qtyToBreak -= deduction;
                   }
               }
@@ -478,15 +482,15 @@ export default function StockOutPage() {
                           
                           return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
-                                        {hasBom && (
+                               <div className="flex justify-between items-start">
+                                  <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
+                                      {hasBom && (
                                             <div className="flex items-end pb-1">
                                                 <FormField control={form.control} name={`items.${index}.isComponentIssue`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isComponentIssue-${index}`} /></FormControl> <Label htmlFor={`isComponentIssue-${index}`} className="cursor-pointer">Issue Components</Label> </FormItem> )} />
                                             </div>
                                         )}
-                                    </div>
+                                  </div>
                                     <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
                                 {isComponentIssue && hasBom ? (
@@ -558,5 +562,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
