@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -196,18 +195,6 @@ export default function StockInPage() {
     fetchBoq();
   }, [projectSlug]);
 
-    useEffect(() => {
-        watchedItems.forEach((item, index) => {
-            if (item.isBomGrn && item.bomItems && item.quantity > 0) {
-                const newBomItems = item.bomItems.map((bomItem: any) => ({
-                    ...bomItem,
-                    quantity: (item.quantity || 0) * (bomItem.qtyPerSet || 0),
-                }));
-                form.setValue(`items.${index}.bomItems`, newBomItems, { shouldValidate: true });
-            }
-        });
-    }, [JSON.stringify(watchedItems.map(i => i.quantity)), JSON.stringify(watchedItems.map(i => i.isBomGrn))]);
-
   const handleAddItem = () => {
     append({ id: `item-${Date.now()}`, itemId: '', itemName: '', itemUnit: '', boqSlNo: '', quantity: 1, receiveUnit: '', unitCost: 0, isBomGrn: false, bomItems: [] });
   };
@@ -289,7 +276,7 @@ export default function StockInPage() {
               return {
                 ...bomItem,
                 id: bomComponentId,
-                quantity: 0,
+                quantity: 1 * (bomItem.qtyPerSet || 0), // Pre-fill based on 1 set
                 unitCost: 0,
                 availableQty: componentAvailable,
               };
@@ -505,7 +492,7 @@ export default function StockInPage() {
       />
     );
   };
-
+  
   return (
     <>
     <Form {...form}>
@@ -630,7 +617,7 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Total Req. Qty</TableHead>
+                                             <TableHead>Receive Qty</TableHead>
                                              <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -643,7 +630,7 @@ export default function StockInPage() {
                                                     <Input value={bomItem.qtyPerSet} readOnly className="bg-muted"/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
