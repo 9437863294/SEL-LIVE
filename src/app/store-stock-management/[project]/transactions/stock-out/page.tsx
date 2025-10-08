@@ -202,8 +202,7 @@ export default function StockOutPage() {
               .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
-          const componentFromMainItem = mainItemAvailableQty * b.qtyPerSet;
-          const totalAvailable = componentLooseStock + componentFromMainItem;
+          const totalAvailable = componentLooseStock + (mainItemAvailableQty * b.qtyPerSet);
 
           return {
             ...b, 
@@ -231,14 +230,15 @@ export default function StockOutPage() {
               let neededFromMain = 0;
               const componentId = `bom-${item.itemId}-${bomItem.markNo}`;
               
-              // This is a simplified fetch for validation, actual updates must use transaction.get
-              const componentLooseStockLogs = await getDocs(query(collection(db, 'inventoryLogs'), 
+              const componentLooseStockLogsQuery = query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
                 where('itemId', '==', componentId), 
                 where('itemType', '==', 'Sub'),
                 where('availableQuantity', '>', 0)
-              ));
-              const componentAvailable = componentLooseStockLogs.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
+              );
+              
+              const componentLooseStockLogsSnap = await getDocs(componentLooseStockLogsQuery);
+              const componentAvailable = componentLooseStockLogsSnap.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
 
               if (bomItem.quantity > componentAvailable) {
                 neededFromMain = Math.ceil((bomItem.quantity - componentAvailable) / bomItem.qtyPerSet);
@@ -285,7 +285,7 @@ export default function StockOutPage() {
                             unit: 'Kg',
                             projectId: projectSlug,
                             description: `From breaking down ${deduction} sets of ${item.itemName}`,
-                            details: { fromConversion: true, sourceGrn: log.details?.grnNo || null }
+                            details: { fromConversion: true, sourceGrn: log.details?.grnNo }
                         });
                     });
                 }
@@ -326,7 +326,7 @@ export default function StockOutPage() {
                     cost: log.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo || null }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
                 });
                 qtyToIssueFromComponents -= deduction;
               }
@@ -374,7 +374,7 @@ export default function StockOutPage() {
                     cost: logDoc.cost,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
+                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo }
                  });
                  quantityToIssue -= deduction;
             }
@@ -495,7 +495,7 @@ export default function StockOutPage() {
                                                         <TableCell>{bomItem.markNo}</TableCell>
                                                         <TableCell>{bomItem.section}</TableCell>
                                                         <TableCell>
-                                                            <Input value={((bomItem.availableQty || 0) / (bomItem.qtyPerSet || 1)).toFixed(3)} readOnly className="bg-muted"/>
+                                                          {((bomItem.availableQty || 0) / (bomItem.qtyPerSet || 1)).toFixed(3)}
                                                         </TableCell>
                                                         <TableCell>
                                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
