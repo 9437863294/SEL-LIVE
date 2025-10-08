@@ -87,15 +87,39 @@ export default function InventoryPage() {
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number }>();
 
+        // Initialize all BOQ items in the map
+        boqItems.forEach(item => {
+            stockMovements.set(item.id, { stockIn: 0, stockOut: 0 });
+        });
+
         filteredLogs.forEach(log => {
-            if (log.itemType === 'Main') { // Only process main items for the summary view
-                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
-                if (log.transactionType === 'Goods Receipt') {
-                    current.stockIn += log.quantity;
-                } else if (log.transactionType === 'Goods Issue') {
-                    current.stockOut += log.quantity;
+            let itemIdToUpdate: string | undefined;
+            let quantity = log.quantity;
+
+            if (log.itemType === 'Main') {
+                itemIdToUpdate = log.itemId;
+            } else if (log.itemType === 'Sub' && log.transactionType === 'Goods Issue') {
+                // This is a component issue, we need to find the parent main item
+                const parentBoqItem = boqItems.find(boq => 
+                    boq.bom?.some(bomItem => `bom-${boq.id}-${bomItem.markNo}` === log.itemId)
+                );
+                if (parentBoqItem) {
+                    const bomItem = parentBoqItem.bom!.find(bi => `bom-${parentBoqItem.id}-${bi.markNo}` === log.itemId)!;
+                    // This issue of components effectively "uses up" a fraction of the main item
+                    itemIdToUpdate = parentBoqItem.id;
+                    // The "quantity" to deduct from the main item is proportional to how many sets this component issue represents.
+                    quantity = log.quantity / bomItem.qtyPerSet;
                 }
-                stockMovements.set(log.itemId, current);
+            }
+            
+            if (itemIdToUpdate) {
+                const current = stockMovements.get(itemIdToUpdate) || { stockIn: 0, stockOut: 0 };
+                if (log.transactionType === 'Goods Receipt') {
+                    current.stockIn += quantity;
+                } else if (log.transactionType === 'Goods Issue') {
+                    current.stockOut += quantity;
+                }
+                stockMovements.set(itemIdToUpdate, current);
             }
         });
         
@@ -143,10 +167,7 @@ export default function InventoryPage() {
             <h1 className="text-3xl font-bold mb-6">Inventory Status</h1>
 
             <Card className="mb-6">
-                <CardHeader>
-                    <CardTitle>Filters</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+                <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-end gap-4">
                     <div className="relative w-full sm:w-auto flex-grow">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
