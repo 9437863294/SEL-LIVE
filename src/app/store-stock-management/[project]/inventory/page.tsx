@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -77,7 +77,7 @@ export default function InventoryPage() {
 
     const inventoryData = useMemo((): InventoryItem[] => {
         if (isLoading) return [];
-        
+
         const filteredLogs = dateRange?.from && dateRange?.to
             ? inventoryLogs.filter(log => {
                 const logDate = log.date.toDate();
@@ -87,47 +87,68 @@ export default function InventoryPage() {
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number }>();
 
-        // Initialize all BOQ items in the map
+        // Initialize all BOQ items
         boqItems.forEach(item => {
             stockMovements.set(item.id, { stockIn: 0, stockOut: 0 });
         });
 
+        // Calculate Stock In from main item Goods Receipts
         filteredLogs.forEach(log => {
-            let itemIdToUpdate: string | undefined;
-            let quantity = log.quantity;
-
-            if (log.itemType === 'Main') {
-                itemIdToUpdate = log.itemId;
-            } else if (log.itemType === 'Sub' && log.transactionType === 'Goods Issue') {
-                // This is a component issue, we need to find the parent main item
-                const parentBoqItem = boqItems.find(boq => 
-                    boq.bom?.some(bomItem => `bom-${boq.id}-${bomItem.markNo}` === log.itemId)
-                );
-                if (parentBoqItem) {
-                    const bomItem = parentBoqItem.bom!.find(bi => `bom-${parentBoqItem.id}-${bi.markNo}` === log.itemId)!;
-                    // This issue of components effectively "uses up" a fraction of the main item
-                    itemIdToUpdate = parentBoqItem.id;
-                    // The "quantity" to deduct from the main item is proportional to how many sets this component issue represents.
-                    quantity = log.quantity / bomItem.qtyPerSet;
-                }
+            if (log.itemType === 'Main' && log.transactionType === 'Goods Receipt') {
+                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
+                current.stockIn += log.quantity;
+                stockMovements.set(log.itemId, current);
             }
-            
-            if (itemIdToUpdate) {
-                const current = stockMovements.get(itemIdToUpdate) || { stockIn: 0, stockOut: 0 };
-                if (log.transactionType === 'Goods Receipt') {
-                    current.stockIn += quantity;
-                } else if (log.transactionType === 'Goods Issue') {
-                    current.stockOut += quantity;
+        });
+
+        // Calculate Stock Out from main item Goods Issues
+        filteredLogs.forEach(log => {
+            if (log.itemType === 'Main' && log.transactionType === 'Goods Issue') {
+                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
+                current.stockOut += log.quantity;
+                stockMovements.set(log.itemId, current);
+            }
+        });
+
+        // Group component issues by transaction time to deduce main item sets issued
+        const componentIssuesByTime = new Map<number, InventoryLog[]>();
+        filteredLogs.forEach(log => {
+            if (log.itemType === 'Sub' && log.transactionType === 'Goods Issue') {
+                const timestamp = log.date.toDate().getTime();
+                if (!componentIssuesByTime.has(timestamp)) {
+                    componentIssuesByTime.set(timestamp, []);
                 }
-                stockMovements.set(itemIdToUpdate, current);
+                componentIssuesByTime.get(timestamp)!.push(log);
             }
         });
         
-        const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
+        // Calculate stock out from component issues
+        componentIssuesByTime.forEach(logs => {
+            const firstLog = logs[0];
+            const parentBoqItem = boqItems.find(boq => firstLog.itemName.startsWith(boq.Description || boq.id));
 
+            if (parentBoqItem && parentBoqItem.bom) {
+                const setsIssued = logs.reduce((minSets, log) => {
+                    const bomComponent = parentBoqItem.bom?.find(bc => `bom-${parentBoqItem.id}-${bc.markNo}` === log.itemId);
+                    if (bomComponent && bomComponent.qtyPerSet > 0) {
+                        const setsFromThisComponent = log.quantity / bomComponent.qtyPerSet;
+                        return Math.min(minSets, setsFromThisComponent);
+                    }
+                    return minSets;
+                }, Infinity);
+                
+                if (setsIssued !== Infinity && setsIssued > 0) {
+                     const current = stockMovements.get(parentBoqItem.id) || { stockIn: 0, stockOut: 0 };
+                     current.stockOut += setsIssued;
+                     stockMovements.set(parentBoqItem.id, current);
+                }
+            }
+        });
+
+        const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
+        
         let calculatedData = boqWithMainItems.map(item => {
             const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0 };
-            
             return {
                 id: item.id,
                 slNo: String(item['Sl No'] || item['SL. No.'] || ''),
@@ -224,6 +245,10 @@ export default function InventoryPage() {
             </Card>
 
             <Card>
+                <CardHeader>
+                    <CardTitle>Stock Overview</CardTitle>
+                    <CardDescription>A summary of your inventory based on BOQ items.</CardDescription>
+                </CardHeader>
                 <CardContent>
                     <ScrollArea className="h-[calc(100vh-28rem)]">
                         <Table>
