@@ -459,7 +459,7 @@ export default function StockOutPage() {
                                                 <TableRow>
                                                     <TableHead>Mark No.</TableHead>
                                                     <TableHead>Section</TableHead>
-                                                    <TableHead>Available Qty (Kg)</TableHead>
+                                                    <TableHead>Available Qty (Sets)</TableHead>
                                                     <TableHead>Issue Qty (Kg)</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -469,7 +469,7 @@ export default function StockOutPage() {
                                                         <TableCell>{bomItem.markNo}</TableCell>
                                                         <TableCell>{bomItem.section}</TableCell>
                                                         <TableCell>
-                                                            <Input value={bomItem.availableQty.toFixed(3)} readOnly className="bg-muted"/>
+                                                            <Input value={(bomItem.availableQty / (bomItem.qtyPerSet || 1)).toFixed(2)} readOnly className="bg-muted"/>
                                                         </TableCell>
                                                         <TableCell>
                                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
@@ -478,8 +478,9 @@ export default function StockOutPage() {
                                                                         <Input type="number" placeholder="Issue Qty" {...bomQtyField}
                                                                             onChange={(e) => {
                                                                                 const val = e.target.valueAsNumber;
-                                                                                if (val > bomItem.availableQty) {
-                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available: ${bomItem.availableQty.toFixed(3)}`, variant: 'destructive'});
+                                                                                const available = bomItem.availableQty + ((form.getValues(`items.${index}.availableQty`) || 0) * bomItem.qtyPerSet);
+                                                                                if (val > available) {
+                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available stock: ${available.toFixed(3)} Kg. This may require breaking down main items.`, variant: 'destructive'});
                                                                                 } else {
                                                                                     bomQtyField.onChange(val || 0);
                                                                                 }
@@ -519,4 +520,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-  
