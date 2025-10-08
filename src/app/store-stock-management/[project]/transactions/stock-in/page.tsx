@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
-import { collection, getDocs, addDoc, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -295,7 +295,7 @@ export default function StockInPage() {
               return {
                 ...bomItem,
                 id: bomComponentId,
-                quantity: 1 * (bomItem.qtyPerSet || 0),
+                quantity: 0,
                 unitCost: 0,
                 availableQty: componentAvailable,
               };
@@ -514,29 +514,29 @@ export default function StockInPage() {
   
     useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-      if (name?.startsWith('items') && name.endsWith('bomItems')) {
-        const parts = name.split('.');
-        if (parts.length >= 3) {
-          const itemIndex = parseInt(parts[1], 10);
-          const currentItem = form.getValues(`items.${itemIndex}`);
-          
-          if (currentItem.isBomGrn && currentItem.bomItems) {
-            const requiredMainQty = currentItem.bomItems.reduce((maxSets, bi) => {
-              if (bi.quantity > 0 && bi.qtyPerSet > 0) {
-                return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
-              }
-              return maxSets;
-            }, 0);
+        if (name?.startsWith('items') && name.endsWith('.quantity')) {
+            const itemIndex = parseInt(name.split('.')[1], 10);
+            const currentItem = form.getValues(`items.${itemIndex}`);
             
-            if (currentItem.quantity !== requiredMainQty) {
-              form.setValue(`items.${itemIndex}.quantity`, requiredMainQty, { shouldValidate: true });
+            if (currentItem.isBomGrn && currentItem.bomItems) {
+                const requiredMainQty = currentItem.bomItems.reduce((minSets, bi) => {
+                    if (bi.quantity > 0 && bi.qtyPerSet > 0) {
+                        const possibleSets = Math.floor(bi.quantity / bi.qtyPerSet);
+                        return Math.min(minSets, possibleSets);
+                    }
+                    return minSets;
+                }, Infinity);
+
+                const finalQty = requiredMainQty === Infinity ? 0 : requiredMainQty;
+                if (currentItem.quantity !== finalQty) {
+                    form.setValue(`items.${itemIndex}.quantity`, finalQty, { shouldValidate: true });
+                }
             }
-          }
         }
-      }
     });
     return () => subscription.unsubscribe();
-  }, [form, form.watch]);
+}, [form]);
+
 
   return (
     <>
@@ -654,7 +654,7 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" readOnly placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
@@ -672,10 +672,10 @@ export default function StockInPage() {
                                                   <TableCell>{bomItem.section}</TableCell>
                                                   <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} onChange={(e) => bomQtyField.onChange(e.target.valueAsNumber || 0)}/></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} onChange={(e) => bomCostField.onChange(e.target.valueAsNumber || 0)} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                               </TableRow>
                                           ))}
@@ -739,3 +739,4 @@ export default function StockInPage() {
     </>
   );
 }
+
