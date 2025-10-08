@@ -275,22 +275,19 @@ export default function StockInPage() {
   };
   
   const handleAddFromBom = (selectedBoqItems: BoqItem[]) => {
-      const newJmcItems = selectedBoqItems.map(mainItem => {
-          if (!mainItem.bom || mainItem.bom.length === 0) {
-              toast({ title: "No BOM", description: `Item "${getItemDescription(mainItem)}" does not have a Bill of Materials defined.`, variant: "destructive"});
-              return null;
-          }
+      const newItems = selectedBoqItems.map(mainItem => {
+          const unit = mainItem['UNIT'] || mainItem['UNITS'] || 'Set';
           return {
             id: `item-${Date.now()}-${Math.random()}`,
             itemId: mainItem.id,
             itemName: getItemDescription(mainItem),
-            itemUnit: mainItem['UNIT'] || mainItem['UNITS'] || 'Set',
+            itemUnit: unit,
             boqSlNo: getSlNo(mainItem),
-            quantity: 0, // This will be auto-calculated
-            receiveUnit: 'Set',
+            quantity: 0,
+            receiveUnit: unit,
             unitCost: 0,
             isBomGrn: true,
-            bomItems: mainItem.bom.map(bomItem => {
+            bomItems: mainItem.bom?.map(bomItem => {
               const bomComponentId = `bom-${mainItem.id}-${bomItem.markNo}`;
               const componentAvailable = availableItems.filter(i => i.itemId === bomComponentId && i.itemType === 'Sub').reduce((sum, i) => sum + i.availableQuantity, 0);
               return {
@@ -300,14 +297,14 @@ export default function StockInPage() {
                 unitCost: 0,
                 availableQty: componentAvailable,
               };
-            })
+            }) || []
           };
-      }).filter(Boolean) as GrnFormValues['items'];
+      });
 
       if (fields.length === 1 && !fields[0].itemId) {
-        form.setValue('items', newJmcItems);
+        form.setValue('items', newItems);
       } else {
-        append(newJmcItems);
+        append(newItems);
       }
   };
   
@@ -373,48 +370,48 @@ export default function StockInPage() {
           };
           
           if (item.isBomGrn && item.bomItems) {
-              const mainItemQty = item.quantity; // This is the calculated number of sets
-              item.bomItems.forEach(bomItem => {
-                  const consumedQty = mainItemQty * bomItem.qtyPerSet;
-                  const balanceQty = bomItem.quantity - consumedQty;
+              const mainItemQty = item.quantity;
+              
+              for (const bomItem of item.bomItems) {
+                  if (bomItem.quantity > 0) {
+                      const consumedQty = mainItemQty * bomItem.qtyPerSet;
+                      const balanceQty = bomItem.quantity - consumedQty;
 
-                  // Log the full received quantity for the component
-                  const receiptLogRef = doc(collection(db, 'inventoryLogs'));
-                  batch.set(receiptLogRef, {
-                      date: Timestamp.fromDate(data.grnDate),
-                      itemId: bomItem.id,
-                      itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
-                      itemType: 'Sub',
-                      transactionType: 'Goods Receipt',
-                      quantity: bomItem.quantity,
-                      availableQuantity: balanceQty, // Set initial available qty to the balance
-                      unit: 'Kg',
-                      cost: bomItem.unitCost,
-                      projectId: projectSlug,
-                      details: itemDetails,
-                  });
-
-                  // Log the conversion/consumption
-                  if (consumedQty > 0) {
-                      const consumptionLogRef = doc(collection(db, 'inventoryLogs'));
-                      batch.set(consumptionLogRef, {
-                           date: Timestamp.fromDate(data.grnDate),
-                           itemId: bomItem.id,
-                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
-                           itemType: 'Sub',
-                           transactionType: 'Conversion',
-                           quantity: consumedQty,
-                           availableQuantity: 0, // This is a debit, no longer available
-                           unit: 'Kg',
-                           cost: bomItem.unitCost,
-                           projectId: projectSlug,
-                           description: `Consumed for ${mainItemQty} sets of ${item.itemName}`,
-                           details: {...itemDetails, consumedForMainItemId: item.itemId },
+                      const receiptLogRef = doc(collection(db, 'inventoryLogs'));
+                      batch.set(receiptLogRef, {
+                          date: Timestamp.fromDate(data.grnDate),
+                          itemId: bomItem.id,
+                          itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                          itemType: 'Sub',
+                          transactionType: 'Goods Receipt',
+                          quantity: bomItem.quantity,
+                          availableQuantity: balanceQty,
+                          unit: 'Kg',
+                          cost: bomItem.unitCost,
+                          projectId: projectSlug,
+                          details: itemDetails,
                       });
-                  }
-              });
 
-              // Finally, log the creation of the main item sets
+                      if (consumedQty > 0) {
+                          const consumptionLogRef = doc(collection(db, 'inventoryLogs'));
+                          batch.set(consumptionLogRef, {
+                               date: Timestamp.fromDate(data.grnDate),
+                               itemId: bomItem.id,
+                               itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                               itemType: 'Sub',
+                               transactionType: 'Conversion',
+                               quantity: consumedQty,
+                               availableQuantity: 0,
+                               unit: 'Kg',
+                               cost: bomItem.unitCost,
+                               projectId: projectSlug,
+                               description: `Consumed for ${mainItemQty} sets of ${item.itemName}`,
+                               details: {...itemDetails, consumedForMainItemId: item.itemId },
+                          });
+                      }
+                  }
+              }
+
               if (mainItemQty > 0) {
                   const mainItemLogRef = doc(collection(db, 'inventoryLogs'));
                   batch.set(mainItemLogRef, {
@@ -658,6 +655,7 @@ export default function StockInPage() {
                             const conversionUnits = currentItem?.conversions?.map(c => c.toUnit) || [];
                             const unitOptions = [...new Set([baseUnit, ...conversionUnits])].filter(Boolean);
                             const bom = currentItem?.bom || [];
+                            const isComponentIssue = watchedItems[index]?.isBomGrn;
 
                             return (
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
@@ -689,7 +687,7 @@ export default function StockInPage() {
                                     <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
 
-                               {watchedItems[index]?.isBomGrn ? (
+                               {isComponentIssue ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
                                        <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly className="bg-muted" /></FormControl> <FormMessage /> </FormItem> )}/>
@@ -699,7 +697,7 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty</TableHead>
+                                             <TableHead>Total Req. Qty</TableHead>
                                              <TableHead>Cost per Unit</TableHead>
                                            </TableRow>
                                          </TableHeader>
@@ -710,10 +708,10 @@ export default function StockInPage() {
                                                   <TableCell>{bomItem.section}</TableCell>
                                                   <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} onChange={(e) => bomQtyField.onChange(e.target.valueAsNumber || 0)}/></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty (Kg)" {...bomQtyField} onChange={(e) => bomQtyField.onChange(e.target.valueAsNumber || 0)}/></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} onChange={(e) => bomCostField.onChange(e.target.valueAsNumber || 0)} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost/Kg" {...bomCostField} value={bomCostField.value ?? ''} onChange={(e) => bomCostField.onChange(e.target.valueAsNumber || 0)} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                               </TableRow>
                                           ))}
