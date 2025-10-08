@@ -88,38 +88,31 @@ export default function InventoryPage() {
         const stockMovements = new Map<string, { stockIn: number; stockOut: number }>();
 
         filteredLogs.forEach(log => {
-            const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
-            if (log.transactionType === 'Goods Receipt') {
-                current.stockIn += log.quantity;
-            } else if (log.transactionType === 'Goods Issue') {
-                current.stockOut += log.quantity;
+            if (log.itemType === 'Main') { // Only process main items for the summary view
+                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
+                if (log.transactionType === 'Goods Receipt') {
+                    current.stockIn += log.quantity;
+                } else if (log.transactionType === 'Goods Issue') {
+                    current.stockOut += log.quantity;
+                }
+                stockMovements.set(log.itemId, current);
             }
-            stockMovements.set(log.itemId, current);
         });
         
-        const boqWithMainItems = boqItems.filter(item => item['Sl No']);
+        const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
 
         let calculatedData = boqWithMainItems.map(item => {
             const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0 };
-            const subItemMovements = (item.bom || []).reduce((acc, bomItem) => {
-                const subMovements = stockMovements.get(`bom-${item.id}-${bomItem.markNo}`) || { stockIn: 0, stockOut: 0 };
-                acc.stockIn += subMovements.stockIn;
-                acc.stockOut += subMovements.stockOut;
-                return acc;
-            }, { stockIn: 0, stockOut: 0 });
-
-            const stockIn = movements.stockIn + subItemMovements.stockIn;
-            const stockOut = movements.stockOut + subItemMovements.stockOut;
-
+            
             return {
                 id: item.id,
                 slNo: String(item['Sl No'] || item['SL. No.'] || ''),
                 description: String(item['Description'] || item['DESCRIPTION OF ITEMS'] || ''),
                 boqQty: Number(item['BOQ QTY'] || item['Total Qty'] || 0),
                 unit: String(item['UNIT'] || item['UNITS'] || 'N/A'),
-                stockIn: stockIn,
-                stockOut: stockOut,
-                balance: stockIn - stockOut,
+                stockIn: movements.stockIn,
+                stockOut: movements.stockOut,
+                balance: movements.stockIn - movements.stockOut,
             };
         });
 
