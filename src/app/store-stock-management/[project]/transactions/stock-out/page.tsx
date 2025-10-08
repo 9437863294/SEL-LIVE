@@ -90,6 +90,22 @@ export default function StockOutPage() {
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
+  
+  const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+  }
 
   const form = useForm<StockOutFormValues>({
     resolver: zodResolver(stockOutSchema),
@@ -146,7 +162,7 @@ export default function StockOutPage() {
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
     
-    // First, process all items with physical stock
+    // Process all items with physical stock
     availableItems.forEach(item => {
         const existing = itemMap.get(item.itemId);
         if (existing) {
@@ -156,7 +172,7 @@ export default function StockOutPage() {
         }
     });
 
-    // Second, add potential main items that can be assembled from BOM components
+    // Add potential main items that can be assembled from BOM components
     boqItems.forEach(boqItem => {
         if (boqItem.bom && boqItem.bom.length > 0 && !itemMap.has(boqItem.id)) {
             // Check if this item can be assembled
@@ -203,22 +219,6 @@ export default function StockOutPage() {
       remove(index);
     }
   };
-
-  const getItemDescription = (item: BoqItem | FabricationBomItem) => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
-    for (const key of descriptionKeys) {
-      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
-    }
-    if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section}`;
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
-  };
-  
-  const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
-  }
 
   const handleItemSelect = (index: number, selectedInventoryItem: InventoryLog | null) => {
     if (selectedInventoryItem) {
@@ -522,7 +522,7 @@ export default function StockOutPage() {
                                                 <TableRow>
                                                     <TableHead>Mark No.</TableHead>
                                                     <TableHead>Section</TableHead>
-                                                    <TableHead>Available Qty (Sets)</TableHead>
+                                                    <TableHead>Available Qty (Kg)</TableHead>
                                                     <TableHead>Issue Qty (Kg)</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -532,7 +532,7 @@ export default function StockOutPage() {
                                                         <TableCell>{bomItem.markNo}</TableCell>
                                                         <TableCell>{bomItem.section}</TableCell>
                                                         <TableCell>
-                                                          {((bomItem.availableQty || 0) / (bomItem.qtyPerSet || 1)).toFixed(3)}
+                                                          {bomItem.availableQty.toFixed(3)}
                                                         </TableCell>
                                                         <TableCell>
                                                             <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => (
@@ -543,7 +543,7 @@ export default function StockOutPage() {
                                                                                 const val = e.target.valueAsNumber;
                                                                                 const available = bomItem.availableQty;
                                                                                 if (val > available) {
-                                                                                    toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available stock: ${available.toFixed(3)} Kg. This may require breaking down main items.`, variant: 'destructive'});
+                                                                                    toast({title: "Quantity Exceeded", description: `Cannot issue more than available stock: ${available.toFixed(3)} Kg.`, variant: "destructive"});
                                                                                 } else {
                                                                                     bomQtyField.onChange(val || 0);
                                                                                 }
