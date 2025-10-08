@@ -145,7 +145,9 @@ export default function StockOutPage() {
   
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
-    availableItems.forEach(item => {
+    availableItems
+      .filter(item => item.itemType === 'Main') // Only show main items in the selector
+      .forEach(item => {
         const existing = itemMap.get(item.itemId);
         if(existing) {
             existing.availableQuantity += item.availableQuantity;
@@ -198,7 +200,7 @@ export default function StockOutPage() {
         availableQty: mainItemAvailableQty,
         bomItems: bom.map(b => {
           const bomComponentId = `bom-${selectedInventoryItem.itemId}-${b.markNo}`;
-          const componentLooseStock = uniqueAvailableItems
+          const componentLooseStock = availableItems
               .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
 
