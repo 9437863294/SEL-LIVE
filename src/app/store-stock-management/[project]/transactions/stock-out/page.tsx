@@ -198,15 +198,18 @@ export default function StockOutPage() {
         availableQty: mainItemAvailableQty,
         bomItems: bom.map(b => {
           const bomComponentId = `bom-${selectedInventoryItem.itemId}-${b.markNo}`;
-          const componentAvailable = uniqueAvailableItems
+          const componentLooseStock = uniqueAvailableItems
               .filter(i => i.itemId === bomComponentId && i.itemType === 'Sub')
               .reduce((sum, i) => sum + i.availableQuantity, 0);
+
+          const componentFromMainItem = mainItemAvailableQty * b.qtyPerSet;
+          const totalAvailable = componentLooseStock + componentFromMainItem;
 
           return {
             ...b, 
             id: bomComponentId,
             quantity: 0,
-            availableQty: componentAvailable,
+            availableQty: totalAvailable,
           }
         }),
       });
@@ -227,20 +230,15 @@ export default function StockOutPage() {
   
               let neededFromMain = 0;
               const componentId = `bom-${item.itemId}-${bomItem.markNo}`;
-              let componentAvailable = 0;
-
-              const componentLogsQuery = query(collection(db, 'inventoryLogs'), 
+              
+              // This is a simplified fetch for validation, actual updates must use transaction.get
+              const componentLooseStockLogs = await getDocs(query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
                 where('itemId', '==', componentId), 
-                where('itemType', '==', 'Sub')
-              );
-              const componentLogsSnap = await getDocs(componentLogsQuery);
-              componentLogsSnap.docs.forEach(doc => {
-                  if (doc.data().availableQuantity > 0) {
-                    componentAvailable += doc.data().availableQuantity;
-                  }
-              });
-
+                where('itemType', '==', 'Sub'),
+                where('availableQuantity', '>', 0)
+              ));
+              const componentAvailable = componentLooseStockLogs.docs.reduce((sum, doc) => sum + doc.data().availableQuantity, 0);
 
               if (bomItem.quantity > componentAvailable) {
                 neededFromMain = Math.ceil((bomItem.quantity - componentAvailable) / bomItem.qtyPerSet);
@@ -251,12 +249,12 @@ export default function StockOutPage() {
                 const mainItemLogsQuery = query(collection(db, 'inventoryLogs'), 
                   where('projectId', '==', projectSlug), 
                   where('itemId', '==', item.itemId), 
-                  where('itemType', '==', 'Main')
+                  where('itemType', '==', 'Main'),
+                  where('availableQuantity', '>', 0)
                 );
                 const mainItemLogsSnap = await getDocs(mainItemLogsQuery);
                 const mainItemLogs = mainItemLogsSnap.docs
                     .map(d => ({...d.data(), id: d.id } as InventoryLog))
-                    .filter(d => d.availableQuantity > 0)
                     .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
                 
                 let totalMainAvailable = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
@@ -264,8 +262,13 @@ export default function StockOutPage() {
 
                 for (const log of mainItemLogs) {
                     if (mainQtyToBreak <= 0) break;
-                    const deduction = Math.min(mainQtyToBreak, log.availableQuantity);
-                    transaction.update(doc(db, 'inventoryLogs', log.id), { availableQuantity: log.availableQuantity - deduction });
+                    const logRef = doc(db, 'inventoryLogs', log.id);
+                    const logDoc = await transaction.get(logRef);
+                    if (!logDoc.exists()) throw new Error(`Inventory log ${log.id} not found in transaction.`);
+                    const currentLogData = logDoc.data() as InventoryLog;
+                    
+                    const deduction = Math.min(mainQtyToBreak, currentLogData.availableQuantity);
+                    transaction.update(logRef, { availableQuantity: currentLogData.availableQuantity - deduction });
                     mainQtyToBreak -= deduction;
 
                     const relatedBoqItem = boqItems.find(b => b.id === item.itemId);
@@ -291,18 +294,24 @@ export default function StockOutPage() {
               let qtyToIssueFromComponents = bomItem.quantity;
               const componentLogsToUpdateQuery = query(collection(db, 'inventoryLogs'), 
                 where('projectId', '==', projectSlug), 
-                where('itemId', '==', componentId)
+                where('itemId', '==', componentId),
+                where('itemType', '==', 'Sub'),
+                where('availableQuantity', '>', 0)
               );
               const componentLogsToUpdateSnap = await getDocs(componentLogsToUpdateQuery);
               const componentLogsToUpdate = componentLogsToUpdateSnap.docs
                 .map(d => ({...d.data(), id: d.id } as InventoryLog))
-                .filter(d => d.availableQuantity > 0)
                 .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
               for (const log of componentLogsToUpdate) {
                 if (qtyToIssueFromComponents <= 0) break;
-                const deduction = Math.min(qtyToIssueFromComponents, log.availableQuantity);
-                transaction.update(doc(db, 'inventoryLogs', log.id), { availableQuantity: log.availableQuantity - deduction });
+                const logRef = doc(db, 'inventoryLogs', log.id);
+                const logDoc = await transaction.get(logRef);
+                if (!logDoc.exists()) throw new Error(`Inventory log ${log.id} not found in transaction.`);
+                const currentLogData = logDoc.data() as InventoryLog;
+                
+                const deduction = Math.min(qtyToIssueFromComponents, currentLogData.availableQuantity);
+                transaction.update(logRef, { availableQuantity: currentLogData.availableQuantity - deduction });
                 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 transaction.set(newIssueLogRef, {
@@ -324,11 +333,15 @@ export default function StockOutPage() {
             }
           } else { // Direct issue of main item
             let quantityToIssue = item.quantity;
-            const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug), where('itemId', '==', item.itemId), where('transactionType', '==', 'Goods Receipt'));
+            const logsToUpdateQuery = query(collection(db, 'inventoryLogs'), 
+              where('projectId', '==', projectSlug), 
+              where('itemId', '==', item.itemId), 
+              where('transactionType', '==', 'Goods Receipt'),
+              where('availableQuantity', '>', 0)
+            );
             const logsToUpdateSnap = await getDocs(logsToUpdateQuery);
             const logsWithStock = logsToUpdateSnap.docs
                 .map(d => ({ ...d.data(), id: d.id } as InventoryLog))
-                .filter(d => d.availableQuantity > 0)
                 .sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
             
             let totalAvailable = logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0);
@@ -338,9 +351,14 @@ export default function StockOutPage() {
 
             for (const logDoc of logsWithStock) {
                 if (quantityToIssue <= 0) break;
-                const deduction = Math.min(quantityToIssue, logDoc.availableQuantity);
-                transaction.update(doc(db, 'inventoryLogs', logDoc.id), {
-                    availableQuantity: logDoc.availableQuantity - deduction
+                const logRef = doc(db, 'inventoryLogs', logDoc.id);
+                const currentLogDoc = await transaction.get(logRef);
+                if (!currentLogDoc.exists()) throw new Error(`Inventory log ${logDoc.id} not found in transaction.`);
+                const currentLogData = currentLogDoc.data() as InventoryLog;
+
+                const deduction = Math.min(quantityToIssue, currentLogData.availableQuantity);
+                transaction.update(logRef, {
+                    availableQuantity: currentLogData.availableQuantity - deduction
                 });
                 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
@@ -486,7 +504,7 @@ export default function StockOutPage() {
                                                                         <Input type="number" placeholder="Issue Qty" {...bomQtyField}
                                                                             onChange={(e) => {
                                                                                 const val = e.target.valueAsNumber;
-                                                                                const available = bomItem.availableQty + ((form.getValues(`items.${index}.availableQty`) || 0) * bomItem.qtyPerSet);
+                                                                                const available = bomItem.availableQty;
                                                                                 if (val > available) {
                                                                                     toast({ title: 'Quantity Exceeded', description: `Cannot issue more than available stock: ${available.toFixed(3)} Kg. This may require breaking down main items.`, variant: 'destructive'});
                                                                                 } else {
