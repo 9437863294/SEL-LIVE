@@ -1,4 +1,5 @@
 
+      
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -285,7 +286,7 @@ export default function StockInPage() {
             itemName: getItemDescription(mainItem),
             itemUnit: mainItem['UNIT'] || mainItem['UNITS'] || 'Set',
             boqSlNo: getSlNo(mainItem),
-            quantity: 1,
+            quantity: 0, // This will be auto-calculated
             receiveUnit: 'Set',
             unitCost: 0,
             isBomGrn: true,
@@ -371,41 +372,81 @@ export default function StockInPage() {
             boqSlNo: item.boqSlNo,
           };
           
-          const boqItem = boqItems.find(bi => bi.id === item.itemId);
-          let finalQuantity = item.quantity;
-          let finalUnitCost = item.unitCost || 0;
-          let finalUnit = item.itemUnit;
-
-          if (item.receiveUnit !== item.itemUnit && boqItem?.conversions) {
-              const conversion = boqItem.conversions.find(c => c.toUnit === item.receiveUnit && c.fromUnit === item.itemUnit);
-              if (conversion) {
-                  finalQuantity = (item.quantity / conversion.toQty) * conversion.fromQty;
-                  finalUnitCost = (item.unitCost || 0) / (finalQuantity / item.quantity);
-              }
-          }
-
           if (item.isBomGrn && item.bomItems) {
+              const mainItemQty = item.quantity; // This is the calculated number of sets
               item.bomItems.forEach(bomItem => {
-                  if (bomItem.quantity > 0) {
-                      const logRef = doc(collection(db, 'inventoryLogs'));
-                      const logEntry: Omit<InventoryLog, 'id'> = {
-                          date: Timestamp.fromDate(data.grnDate),
-                          itemId: bomItem.id,
-                          itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
-                          itemType: 'Sub',
-                          transactionType: 'Goods Receipt',
-                          quantity: bomItem.quantity,
-                          availableQuantity: bomItem.quantity,
-                          unit: 'Kg', 
-                          cost: bomItem.unitCost,
-                          projectId: projectSlug,
-                          details: itemDetails,
-                      };
-                      batch.set(logRef, logEntry);
+                  const consumedQty = mainItemQty * bomItem.qtyPerSet;
+                  const balanceQty = bomItem.quantity - consumedQty;
+
+                  // Log the full received quantity for the component
+                  const receiptLogRef = doc(collection(db, 'inventoryLogs'));
+                  batch.set(receiptLogRef, {
+                      date: Timestamp.fromDate(data.grnDate),
+                      itemId: bomItem.id,
+                      itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                      itemType: 'Sub',
+                      transactionType: 'Goods Receipt',
+                      quantity: bomItem.quantity,
+                      availableQuantity: balanceQty, // Set initial available qty to the balance
+                      unit: 'Kg',
+                      cost: bomItem.unitCost,
+                      projectId: projectSlug,
+                      details: itemDetails,
+                  });
+
+                  // Log the conversion/consumption
+                  if (consumedQty > 0) {
+                      const consumptionLogRef = doc(collection(db, 'inventoryLogs'));
+                      batch.set(consumptionLogRef, {
+                           date: Timestamp.fromDate(data.grnDate),
+                           itemId: bomItem.id,
+                           itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                           itemType: 'Sub',
+                           transactionType: 'Conversion',
+                           quantity: consumedQty,
+                           availableQuantity: 0, // This is a debit, no longer available
+                           unit: 'Kg',
+                           cost: bomItem.unitCost,
+                           projectId: projectSlug,
+                           description: `Consumed for ${mainItemQty} sets of ${item.itemName}`,
+                           details: {...itemDetails, consumedForMainItemId: item.itemId },
+                      });
                   }
               });
+
+              // Finally, log the creation of the main item sets
+              if (mainItemQty > 0) {
+                  const mainItemLogRef = doc(collection(db, 'inventoryLogs'));
+                  batch.set(mainItemLogRef, {
+                        date: Timestamp.fromDate(data.grnDate),
+                        itemId: item.itemId,
+                        itemName: item.itemName,
+                        itemType: 'Main',
+                        transactionType: 'Goods Receipt',
+                        quantity: mainItemQty,
+                        availableQuantity: mainItemQty,
+                        unit: item.itemUnit,
+                        projectId: projectSlug,
+                        cost: item.bomItems.reduce((sum, bi) => sum + (bi.quantity * (bi.unitCost || 0)), 0) / mainItemQty,
+                        details: {...itemDetails, fromConversion: true },
+                  });
+              }
+
           } else {
               const logRef = doc(collection(db, 'inventoryLogs'));
+              const boqItem = boqItems.find(bi => bi.id === item.itemId);
+              let finalQuantity = item.quantity;
+              let finalUnitCost = item.unitCost || 0;
+              let finalUnit = item.itemUnit;
+
+              if (item.receiveUnit !== item.itemUnit && boqItem?.conversions) {
+                  const conversion = boqItem.conversions.find(c => c.toUnit === item.receiveUnit && c.fromUnit === item.itemUnit);
+                  if (conversion) {
+                      finalQuantity = (item.quantity / conversion.toQty) * conversion.fromQty;
+                      finalUnitCost = (item.unitCost || 0) / (finalQuantity / item.quantity);
+                  }
+              }
+
               const logEntry: Omit<InventoryLog, 'id'> = {
                   date: Timestamp.fromDate(data.grnDate),
                   itemId: item.itemId,
@@ -514,28 +555,25 @@ export default function StockInPage() {
   
     useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-        if (name?.startsWith('items') && name.endsWith('.quantity')) {
+        if (name?.startsWith('items') && (name.endsWith('.quantity') || name.endsWith('isBomGrn'))) {
             const itemIndex = parseInt(name.split('.')[1], 10);
             const currentItem = form.getValues(`items.${itemIndex}`);
             
-            if (currentItem.isBomGrn && currentItem.bomItems) {
-                const requiredMainQty = currentItem.bomItems.reduce((minSets, bi) => {
-                    if (bi.quantity > 0 && bi.qtyPerSet > 0) {
-                        const possibleSets = Math.floor(bi.quantity / bi.qtyPerSet);
-                        return Math.min(minSets, possibleSets);
-                    }
-                    return minSets;
-                }, Infinity);
+            if (currentItem.isBomGrn && currentItem.bomItems && currentItem.bomItems.length > 0) {
+                const possibleSets = currentItem.bomItems.map(bi => 
+                    (bi.quantity > 0 && bi.qtyPerSet > 0) ? Math.floor(bi.quantity / bi.qtyPerSet) : Infinity
+                );
 
-                const finalQty = requiredMainQty === Infinity ? 0 : requiredMainQty;
-                if (currentItem.quantity !== finalQty) {
+                const finalQty = Math.min(...possibleSets);
+                
+                if (currentItem.quantity !== finalQty && finalQty !== Infinity) {
                     form.setValue(`items.${itemIndex}.quantity`, finalQty, { shouldValidate: true });
                 }
             }
         }
     });
     return () => subscription.unsubscribe();
-}, [form]);
+  }, [form]);
 
 
   return (
@@ -654,7 +692,7 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly /></FormControl> <FormMessage /> </FormItem> )}/>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly className="bg-muted" /></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
@@ -740,3 +778,4 @@ export default function StockInPage() {
   );
 }
 
+    
