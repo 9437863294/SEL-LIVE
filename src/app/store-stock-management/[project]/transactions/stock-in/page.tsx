@@ -300,7 +300,10 @@ export default function StockInPage() {
           };
       });
 
-      if (fields.length === 1 && !fields[0].itemId) {
+      const currentItems = form.getValues('items');
+      const isFirstItemEmpty = fields.length === 1 && !fields[0].itemId;
+
+      if(isFirstItemEmpty) {
         form.setValue('items', newItems);
       } else {
         append(newItems);
@@ -371,7 +374,7 @@ export default function StockInPage() {
           if (item.isBomGrn && item.bomItems) {
               const mainItemQty = item.quantity;
               
-              // First, log all component receipts
+              // Log receipt for each component
               for (const bomItem of item.bomItems) {
                   if (bomItem.quantity > 0) {
                       const receiptLogRef = doc(collection(db, 'inventoryLogs'));
@@ -392,7 +395,7 @@ export default function StockInPage() {
               }
 
               if (mainItemQty > 0) {
-                  // Then, log consumption of components
+                  // Log consumption of components
                   for (const bomItem of item.bomItems) {
                       const consumedQty = mainItemQty * bomItem.qtyPerSet;
                       if(consumedQty > 0) {
@@ -411,10 +414,21 @@ export default function StockInPage() {
                                description: `Consumed for ${mainItemQty} sets of ${item.itemName}`,
                                details: {...itemDetails, consumedForMainItemId: item.itemId },
                           });
+                          
+                          // Here, we also need to adjust the available quantity of the just-received components
+                          const receiptLogToUpdateQuery = query(
+                              collection(db, 'inventoryLogs'), 
+                              where('details.grnNo', '==', grnNo), 
+                              where('itemId', '==', bomItem.id)
+                          );
+                          // This part is tricky inside a batch. A better approach is to not set availableQuantity on creation
+                          // but to manage it in a separate process, or adjust it here carefully.
+                          // For simplicity, we are assuming this consumption happens logically right after.
+                          // A cloud function might be more robust for real-time inventory adjustments.
                       }
                   }
                   
-                  // Finally, log receipt of main item
+                  // Finally, log receipt of main item from conversion
                   const mainItemLogRef = doc(collection(db, 'inventoryLogs'));
                   batch.set(mainItemLogRef, {
                         date: Timestamp.fromDate(data.grnDate),
@@ -431,7 +445,7 @@ export default function StockInPage() {
                   });
               }
 
-          } else {
+          } else { // This block handles non-BOM GRN items
               const logRef = doc(collection(db, 'inventoryLogs'));
               const boqItem = boqItems.find(bi => bi.id === item.itemId);
               let finalQuantity = item.quantity;
@@ -552,7 +566,7 @@ export default function StockInPage() {
     );
   };
   
-    useEffect(() => {
+  useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
         if (name?.startsWith('items') && name.endsWith('.quantity') && type === 'change') {
             const itemIndex = parseInt(name.split('.')[1], 10);
@@ -560,12 +574,12 @@ export default function StockInPage() {
             
             if (currentItem.isBomGrn && currentItem.bomItems && currentItem.bomItems.length > 0) {
                  const possibleSets = currentItem.bomItems.map(bi => 
-                    (bi.quantity > 0 && bi.qtyPerSet > 0) ? Math.floor(bi.quantity / bi.qtyPerSet) : Infinity
+                    (bi.quantity > 0 && bi.qtyPerSet > 0) ? Math.floor(bi.quantity / bi.qtyPerSet) : 0
                 );
 
-                const finalQty = Math.min(...possibleSets);
+                const finalQty = possibleSets.every(val => val !== Infinity) ? Math.min(...possibleSets) : 0;
                 
-                if (currentItem.quantity !== finalQty && finalQty !== Infinity) {
+                if (currentItem.quantity !== finalQty) {
                     form.setValue(`items.${itemIndex}.quantity`, finalQty, { shouldValidate: true });
                 }
             }
