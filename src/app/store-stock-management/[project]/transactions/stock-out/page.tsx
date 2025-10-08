@@ -260,106 +260,148 @@ export default function StockOutPage() {
   
   const onSubmit = async (data: StockOutFormValues) => {
     setIsSaving(true);
-    
+  
     // Fetch fresh inventory data before starting the transaction
     const inventoryLogsRef = collection(db, 'inventoryLogs');
     const projectInventoryLogsQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
     const freshInventorySnap = await getDocs(projectInventoryLogsQuery);
-    const currentProjectInventory = freshInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+    const currentProjectInventory = freshInventorySnap.docs.map(d => ({ id: d.id, ...d.data() }) as InventoryLog);
   
     try {
       await runTransaction(db, async (transaction) => {
+        // Pre-transaction validation loop
         for (const item of data.items) {
-          const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
-  
-          if (isComponentIssue) {
+          if (item.isComponentIssue && item.bomItems && item.bomItems.length > 0) {
             const mainItemBoq = boqItems.find(b => b.id === item.itemId);
             if (!mainItemBoq?.bom) {
               throw new Error(`BOM not found for ${item.itemName}. Cannot issue components.`);
             }
-
-            for (const bomItem of item.bomItems!) {
+  
+            for (const bomItem of item.bomItems) {
               if (bomItem.quantity <= 0) continue;
   
               const componentId = bomItem.id;
               
+              const componentLooseStock = currentProjectInventory
+                .filter(log => log.itemId === componentId && log.itemType === 'Sub')
+                .reduce((sum, log) => sum + log.availableQuantity, 0);
+  
+              const mainItemPhysicalStock = currentProjectInventory
+                .filter(log => log.itemId === item.itemId && log.itemType === 'Main')
+                .reduce((sum, log) => sum + log.availableQuantity, 0);
+  
+              const totalPossibleFromStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
+  
+              if (bomItem.quantity > totalPossibleFromStock) {
+                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
+              }
+            }
+          } else {
+            let totalAvailable = currentProjectInventory
+              .filter(log => log.itemId === item.itemId && log.itemType === 'Main')
+              .reduce((sum, log) => sum + log.availableQuantity, 0);
+  
+            if (item.quantity > totalAvailable) {
+              throw new Error(`Not enough stock for ${item.itemName}. Required: ${item.quantity}, Available: ${totalAvailable}.`);
+            }
+          }
+        }
+  
+        // If all validations pass, proceed with writes
+        for (const item of data.items) {
+          const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
+  
+          if (isComponentIssue) {
+            const mainItemBoq = boqItems.find(b => b.id === item.itemId)!;
+  
+            for (const bomItem of item.bomItems!) {
+              if (bomItem.quantity <= 0) continue;
+  
+              let qtyToDeduct = bomItem.quantity;
+  
+              // 1. Deduct from loose components first
               const componentStockLogs = currentProjectInventory.filter(log =>
-                log.itemId === componentId &&
+                log.itemId === bomItem.id &&
                 log.itemType === 'Sub' &&
                 log.availableQuantity > 0
               ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-
-              const componentTotalStock = componentStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
-
-              if (bomItem.quantity > componentTotalStock) {
-                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${componentTotalStock}.`);
-              }
-              
-              let qtyToIssueFromComponents = bomItem.quantity;
-              
+  
               for (const log of componentStockLogs) {
-                if (qtyToIssueFromComponents <= 0) break;
+                if (qtyToDeduct <= 0) break;
                 const logRef = doc(db, 'inventoryLogs', log.id);
-                const deduction = Math.min(qtyToIssueFromComponents, log.availableQuantity);
-
+                const deduction = Math.min(qtyToDeduct, log.availableQuantity);
                 transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
-                
-                const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
-                transaction.set(newIssueLogRef, {
-                    date: Timestamp.fromDate(data.issueDate),
-                    itemId: bomItem.id,
-                    itemName: `${item.itemName} - ${bomItem.section}`,
-                    itemType: 'Sub',
-                    transactionType: 'Goods Issue',
-                    quantity: deduction,
-                    availableQuantity: 0,
-                    unit: 'Kg',
-                    cost: log.cost,
-                    projectId: projectSlug,
-                    description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo || null }
-                });
-                qtyToIssueFromComponents -= deduction;
+                qtyToDeduct -= deduction;
               }
+  
+              // 2. If more is needed, "break down" main items
+              if (qtyToDeduct > 0) {
+                const neededFromMainSets = Math.ceil(qtyToDeduct / bomItem.qtyPerSet);
+                
+                const mainItemLogs = currentProjectInventory.filter(log =>
+                    log.itemId === item.itemId &&
+                    log.itemType === 'Main' &&
+                    log.availableQuantity > 0
+                ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+
+                let setsToBreak = neededFromMainSets;
+
+                for (const log of mainItemLogs) {
+                    if(setsToBreak <= 0) break;
+                    const logRef = doc(db, 'inventoryLogs', log.id);
+                    const deduction = Math.min(setsToBreak, log.availableQuantity);
+                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
+                    setsToBreak -= deduction;
+                }
+              }
+
+              // 3. Log the final component issue
+              const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+              transaction.set(newIssueLogRef, {
+                  date: Timestamp.fromDate(data.issueDate),
+                  itemId: bomItem.id,
+                  itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                  itemType: 'Sub',
+                  transactionType: 'Goods Issue',
+                  quantity: bomItem.quantity,
+                  availableQuantity: 0, 
+                  unit: 'Kg', 
+                  cost: 0,
+                  projectId: projectSlug,
+                  description: `Issued to ${data.issuedTo}`,
+                  details: { issuedTo: data.issuedTo, notes: data.notes }
+              });
             }
-          } else { // Direct issue of main item
+          } else {
             let quantityToIssue = item.quantity;
-            
-            const logsWithStock = currentProjectInventory.filter(log => 
-                log.itemId === item.itemId && 
+            const logsWithStock = currentProjectInventory.filter(log =>
+                log.itemId === item.itemId &&
                 log.itemType === 'Main' &&
                 log.availableQuantity > 0
             ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
             
-            let totalAvailable = logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0);
-            if(quantityToIssue > totalAvailable) {
-                throw new Error(`Not enough stock for ${item.itemName}. Required: ${quantityToIssue}, Available: ${totalAvailable}.`);
-            }
-
             for (const logDoc of logsWithStock) {
-                if (quantityToIssue <= 0) break;
-                const logRef = doc(db, 'inventoryLogs', logDoc.id);
-                const deduction = Math.min(quantityToIssue, logDoc.availableQuantity);
-                transaction.update(logRef, {
-                    availableQuantity: logDoc.availableQuantity - deduction
-                });
-                
-                const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
-                 transaction.set(newIssueLogRef, {
-                    date: Timestamp.fromDate(data.issueDate),
-                    itemId: item.itemId,
-                    itemName: item.itemName,
-                    itemType: 'Main',
-                    transactionType: 'Goods Issue',
-                    quantity: deduction,
-                    availableQuantity: 0,
-                    unit: item.itemUnit,
-                    cost: logDoc.cost,
-                    projectId: projectSlug,
-                    description: `Issued to ${data.issuedTo}`,
-                    details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
-                 });
-                 quantityToIssue -= deduction;
+              if (quantityToIssue <= 0) break;
+              const logRef = doc(db, 'inventoryLogs', logDoc.id);
+              const deduction = Math.min(quantityToIssue, logDoc.availableQuantity);
+              transaction.update(logRef, { availableQuantity: logDoc.availableQuantity - deduction });
+              
+              const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+              transaction.set(newIssueLogRef, {
+                  date: Timestamp.fromDate(data.issueDate),
+                  itemId: item.itemId,
+                  itemName: item.itemName,
+                  itemType: 'Main',
+                  transactionType: 'Goods Issue',
+                  quantity: deduction,
+                  availableQuantity: 0,
+                  unit: item.itemUnit,
+                  cost: logDoc.cost,
+                  projectId: projectSlug,
+                  description: `Issued to ${data.issuedTo}`,
+                  details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
+              });
+              quantityToIssue -= deduction;
             }
           }
         }
@@ -368,7 +410,7 @@ export default function StockOutPage() {
       router.push(`/store-stock-management/${projectSlug}/transactions`);
     } catch (e: any) {
       console.error(e);
-      toast({ title: 'Error', description: e.message || 'Failed to save stock-out transaction.', variant: 'destructive' });
+      toast({ title: 'Transaction Error', description: e.message || 'Failed to save stock-out transaction.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -529,3 +571,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
