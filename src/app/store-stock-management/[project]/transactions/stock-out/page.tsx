@@ -266,82 +266,65 @@ export default function StockOutPage() {
           const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
   
           if (isComponentIssue) {
+            // This logic block handles issuing components, potentially by breaking down a main item.
+            const mainItemLogs = availableItems.filter(log => 
+                log.itemId === item.itemId && 
+                log.itemType === 'Main' &&
+                log.availableQuantity > 0
+            ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+            
+            let mainItemPhysicalStock = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
+  
             for (const bomItem of item.bomItems!) {
               if (bomItem.quantity <= 0) continue;
   
               const componentId = bomItem.id;
-
-              // This is the part that causes issues. Let's fetch all project logs once and filter in memory.
-              const componentLooseStockLogs = availableItems.filter(log => 
-                log.itemId === componentId &&
-                log.itemType === 'Sub' &&
-                log.availableQuantity > 0
-              );
               
-              let componentAvailable = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
-
-              if (bomItem.quantity > bomItem.availableQty) {
-                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${bomItem.availableQty}.`);
-              }
-
-              let neededFromMain = 0;
-              if (bomItem.quantity > componentAvailable) {
-                neededFromMain = Math.ceil((bomItem.quantity - componentAvailable) / bomItem.qtyPerSet);
-              }
-  
-              if (neededFromMain > 0) {
-                let mainQtyToBreak = neededFromMain;
-                // Fetching main item logs and filtering in memory
-                const mainItemLogs = availableItems.filter(log => 
-                    log.itemId === item.itemId && 
-                    log.itemType === 'Main' &&
-                    log.availableQuantity > 0
-                ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-                
-                let totalMainAvailable = mainItemLogs.reduce((s, d) => s + d.availableQuantity, 0);
-                if (mainQtyToBreak > totalMainAvailable) throw new Error(`Not enough main item '${item.itemName}' to break. Need ${mainQtyToBreak}, have ${totalMainAvailable}.`);
-
-                for (const log of mainItemLogs) {
-                    if (mainQtyToBreak <= 0) break;
-                    const logRef = doc(db, 'inventoryLogs', log.id);
-                    
-                    const deduction = Math.min(mainQtyToBreak, log.availableQuantity);
-                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
-                    mainQtyToBreak -= deduction;
-
-                    const relatedBoqItem = boqItems.find(b => b.id === item.itemId);
-                    relatedBoqItem?.bom?.forEach(bi => {
-                        const newSubItemLogRef = doc(collection(db, 'inventoryLogs'));
-                        transaction.set(newSubItemLogRef, {
-                            date: Timestamp.fromDate(data.issueDate),
-                            itemId: `bom-${item.itemId}-${bi.markNo}`,
-                            itemName: `${item.itemName} - ${getItemDescription(bi)}`,
-                            itemType: 'Sub',
-                            transactionType: 'Goods Receipt',
-                            quantity: deduction * bi.qtyPerSet,
-                            availableQuantity: deduction * bi.qtyPerSet,
-                            unit: 'Kg',
-                            projectId: projectSlug,
-                            description: `From breaking down ${deduction} sets of ${item.itemName}`,
-                            details: { fromConversion: true, sourceGrn: log.details?.grnNo || null },
-                        });
-                    });
-                }
-              }
-
-              let qtyToIssueFromComponents = bomItem.quantity;
-              const componentLogsToUpdate = availableItems.filter(log =>
+              const componentLooseStockLogs = availableItems.filter(log =>
                 log.itemId === componentId &&
                 log.itemType === 'Sub' &&
                 log.availableQuantity > 0
               ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
-              for (const log of componentLogsToUpdate) {
+              let componentLooseStock = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
+
+              if (bomItem.quantity > bomItem.availableQty) {
+                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${bomItem.availableQty}.`);
+              }
+  
+              let neededFromMainSets = 0;
+              if (bomItem.quantity > componentLooseStock) {
+                  neededFromMainSets = Math.ceil((bomItem.quantity - componentLooseStock) / bomItem.qtyPerSet);
+              }
+  
+              // Step 1: "Break down" main items if needed
+              if (neededFromMainSets > 0) {
+                  let qtyToBreak = neededFromMainSets;
+                  if(qtyToBreak > mainItemPhysicalStock) {
+                    throw new Error(`Cannot issue components. Need to break ${qtyToBreak} sets of ${item.itemName}, but only ${mainItemPhysicalStock} are in stock.`);
+                  }
+
+                  for (const log of mainItemLogs) {
+                    if(qtyToBreak <= 0) break;
+                    const logRef = doc(db, 'inventoryLogs', log.id);
+                    const deduction = Math.min(qtyToBreak, log.availableQuantity);
+                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
+                    log.availableQuantity -= deduction; // Update in-memory state for subsequent calculations
+                    mainItemPhysicalStock -= deduction;
+                    qtyToBreak -= deduction;
+                  }
+              }
+  
+              // Step 2: Issue the components from loose stock
+              let qtyToIssueFromComponents = bomItem.quantity;
+              
+              for (const log of componentLooseStockLogs) {
                 if (qtyToIssueFromComponents <= 0) break;
                 const logRef = doc(db, 'inventoryLogs', log.id);
                 
                 const deduction = Math.min(qtyToIssueFromComponents, log.availableQuantity);
                 transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
+                log.availableQuantity -= deduction;
                 
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 transaction.set(newIssueLogRef, {
@@ -366,7 +349,7 @@ export default function StockOutPage() {
             
             const logsWithStock = availableItems.filter(log => 
                 log.itemId === item.itemId && 
-                log.transactionType === 'Goods Receipt' &&
+                log.itemType === 'Main' &&
                 log.availableQuantity > 0
             ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
             
@@ -568,5 +551,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
