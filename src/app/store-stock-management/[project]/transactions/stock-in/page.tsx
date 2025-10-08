@@ -496,18 +496,23 @@ export default function StockInPage() {
   
     useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-      if (name?.startsWith('items') && name.endsWith('quantity')) {
+      if (name?.startsWith('items') && name.endsWith('bomItems')) {
         const parts = name.split('.');
-        if (parts.length === 3) {
+        if (parts.length >= 3) {
           const itemIndex = parseInt(parts[1], 10);
           const currentItem = form.getValues(`items.${itemIndex}`);
+          
           if (currentItem.isBomGrn && currentItem.bomItems) {
-            const mainQty = currentItem.quantity || 0;
-            const updatedBomItems = currentItem.bomItems.map(bi => ({
-              ...bi,
-              quantity: mainQty * (bi.qtyPerSet || 0)
-            }));
-            form.setValue(`items.${itemIndex}.bomItems`, updatedBomItems);
+            const requiredMainQty = currentItem.bomItems.reduce((maxSets, bi) => {
+              if (bi.quantity > 0 && bi.qtyPerSet > 0) {
+                return Math.max(maxSets, bi.quantity / bi.qtyPerSet);
+              }
+              return maxSets;
+            }, 0);
+            
+            if (currentItem.quantity !== requiredMainQty) {
+              form.setValue(`items.${index}.quantity`, requiredMainQty, { shouldValidate: true });
+            }
           }
         }
       }
@@ -633,16 +638,15 @@ export default function StockInPage() {
                                {watchedItems[index]?.isBomGrn ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                        <p className="text-sm font-medium text-muted-foreground">BOM Components:</p>
-                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} /></FormControl> <FormMessage /> </FormItem> )}/>
+                                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => ( <FormItem className="space-y-1 w-48"> <FormLabel>Main Item Qty (Sets)</FormLabel> <FormControl><Input type="number" placeholder="Sets" {...qtyField} readOnly className="bg-muted"/></FormControl> <FormMessage /> </FormItem> )}/>
                                        <Table>
                                          <TableHeader>
                                            <TableRow>
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Total Req. Qty</TableHead>
-                                             <TableHead>Receive Qty</TableHead>
-                                             <TableHead>Cost per Unit</TableHead>
+                                             <TableHead>Receive Qty (Kg)</TableHead>
+                                             <TableHead>Cost/Kg</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>
@@ -652,10 +656,7 @@ export default function StockInPage() {
                                                   <TableCell>{bomItem.section}</TableCell>
                                                   <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                   <TableCell>
-                                                    <Input type="number" value={bomItem.quantity} readOnly className="bg-muted"/>
-                                                  </TableCell>
-                                                  <TableCell>
-                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" {...bomQtyField} /></FormControl> </FormItem>)}/>
+                                                    <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.quantity`} render={({ field: bomQtyField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Receive Qty" {...bomQtyField} /></FormControl> </FormItem>)}/>
                                                   </TableCell>
                                                   <TableCell>
                                                     <FormField control={form.control} name={`items.${index}.bomItems.${bomIndex}.unitCost`} render={({ field: bomCostField }) => ( <FormItem> <FormControl><Input type="number" placeholder="Cost" {...bomCostField} value={bomCostField.value ?? ''} /></FormControl> </FormItem>)}/>
