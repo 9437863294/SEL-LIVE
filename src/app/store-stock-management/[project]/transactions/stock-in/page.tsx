@@ -619,8 +619,8 @@ export default function StockInPage() {
                                              <TableHead>Mark No.</TableHead>
                                              <TableHead>Section</TableHead>
                                              <TableHead>Qty/Set</TableHead>
-                                             <TableHead>Receive Qty (Kg)</TableHead>
-                                             <TableHead>Cost/Kg</TableHead>
+                                             <TableHead>Receive Qty </TableHead>
+                                             <TableHead>Cost</TableHead>
                                            </TableRow>
                                          </TableHeader>
                                          <TableBody>

@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,6 +39,7 @@ import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Timestamp } from 'firebase/firestore';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 const bomItemSchema = z.object({
@@ -93,10 +94,12 @@ const grnSchema = z.object({
 
 type GrnFormValues = z.infer<typeof grnSchema>;
 
-export default function EditStockInPage({ params }: { params: { project: string; grnId: string } }) {
+export default function EditStockInPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const { project: projectSlug, grnId } = params;
+  const params = useParams();
+  const projectSlug = params.project as string;
+  const grnId = params.grnId as string;
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
