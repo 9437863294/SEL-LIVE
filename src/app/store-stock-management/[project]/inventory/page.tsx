@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -245,10 +245,6 @@ export default function InventoryPage() {
             </Card>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>Stock Overview</CardTitle>
-                    <CardDescription>A summary of your inventory based on BOQ items.</CardDescription>
-                </CardHeader>
                 <CardContent>
                     <ScrollArea className="h-[calc(100vh-28rem)]">
                         <Table>
