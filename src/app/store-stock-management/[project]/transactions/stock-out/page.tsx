@@ -41,22 +41,6 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-const getItemDescription = (item: BoqItem | FabricationBomItem) => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
-    for (const key of descriptionKeys) {
-      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
-    }
-    if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section}`;
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
-  };
-  
-  const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
-  }
-
 const bomItemSchema = z.object({
   id: z.string(),
   markNo: z.string(),
@@ -94,6 +78,22 @@ const stockOutSchema = z.object({
 });
 
 type StockOutFormValues = z.infer<typeof stockOutSchema>;
+
+const getItemDescription = (item: BoqItem | FabricationBomItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+}
 
 export default function StockOutPage() {
   const { toast } = useToast();
@@ -287,9 +287,11 @@ export default function StockOutPage() {
               ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
 
               let componentLooseStock = componentLooseStockLogs.reduce((sum, log) => sum + log.availableQuantity, 0);
+              
+              const totalPossibleFromStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
 
-              if (bomItem.quantity > bomItem.availableQty) {
-                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${bomItem.availableQty}.`);
+              if (bomItem.quantity > totalPossibleFromStock) {
+                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
               }
   
               let neededFromMainSets = 0;
@@ -301,6 +303,7 @@ export default function StockOutPage() {
               if (neededFromMainSets > 0) {
                   let qtyToBreak = neededFromMainSets;
                   if(qtyToBreak > mainItemPhysicalStock) {
+                    // This is a safeguard, the earlier check should catch this.
                     throw new Error(`Cannot issue components. Need to break ${qtyToBreak} sets of ${item.itemName}, but only ${mainItemPhysicalStock} are in stock.`);
                   }
 
@@ -309,7 +312,7 @@ export default function StockOutPage() {
                     const logRef = doc(db, 'inventoryLogs', log.id);
                     const deduction = Math.min(qtyToBreak, log.availableQuantity);
                     transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
-                    log.availableQuantity -= deduction; // Update in-memory state for subsequent calculations
+                    log.availableQuantity -= deduction; 
                     mainItemPhysicalStock -= deduction;
                     qtyToBreak -= deduction;
                   }
