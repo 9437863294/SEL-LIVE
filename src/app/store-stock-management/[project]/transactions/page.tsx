@@ -333,14 +333,14 @@ export default function TransactionsPage() {
         }
         
         const issuedQty = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnItem.details?.grnNo && issue.itemId === grnItem.itemId)
+            .filter(issue => issue.details?.sourceGrn === grnItem.id) // Match on inventory log ID
             .reduce((sum, issue) => sum + issue.quantity, 0);
             
         const enrichedItem: EnrichedLogItem = {
           ...grnItem,
           originalQuantity: grnItem.quantity,
           issuedQuantity: issuedQty,
-          balanceQuantity: grnItem.quantity - issuedQty,
+          balanceQuantity: grnItem.availableQuantity,
         };
 
         grnSummaries[grnNo].items.push(enrichedItem);
