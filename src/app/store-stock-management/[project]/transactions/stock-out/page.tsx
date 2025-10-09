@@ -261,118 +261,102 @@ export default function StockOutPage() {
   
   const onSubmit = async (data: StockOutFormValues) => {
     setIsSaving(true);
-  
-    // Fetch fresh inventory data before starting the transaction
+    
+    // Fetch latest inventory state before starting the transaction
     const inventoryLogsRef = collection(db, 'inventoryLogs');
     const projectInventoryLogsQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
-    
+    const projectInventorySnap = await getDocs(projectInventoryLogsQuery);
+    const currentProjectInventory = projectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+
     try {
-      const freshInventorySnap = await getDocs(projectInventoryLogsQuery);
-      const currentProjectInventory = freshInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
-      
       await runTransaction(db, async (transaction) => {
-        // Pre-transaction validation loop
         for (const item of data.items) {
-          if (item.isComponentIssue && item.bomItems && item.bomItems.length > 0) {
+          const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
+
+          if (isComponentIssue) {
             const mainItemBoq = boqItems.find(b => b.id === item.itemId);
             if (!mainItemBoq?.bom) {
               throw new Error(`BOM not found for ${item.itemName}. Cannot issue components.`);
             }
-  
-            for (const bomItem of item.bomItems) {
+
+            for (const bomItem of item.bomItems!) {
               if (bomItem.quantity <= 0) continue;
-  
+
               const componentId = bomItem.id;
               
               const componentLooseStock = currentProjectInventory
-                .filter(log => log.itemId === componentId && log.itemType === 'Sub')
+                .filter(log => log.itemId === componentId && log.itemType === 'Sub' && log.availableQuantity > 0)
                 .reduce((sum, log) => sum + log.availableQuantity, 0);
-  
+
               const mainItemPhysicalStock = currentProjectInventory
-                .filter(log => log.itemId === item.itemId && log.itemType === 'Main')
+                .filter(log => log.itemId === item.itemId && log.itemType === 'Main' && log.availableQuantity > 0)
                 .reduce((sum, log) => sum + log.availableQuantity, 0);
-  
-              const totalPossibleFromStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
-  
-              if (bomItem.quantity > totalPossibleFromStock) {
-                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
+
+              const componentTotalStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
+
+              if (bomItem.quantity > componentTotalStock) {
+                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${componentTotalStock}.`);
               }
-            }
-          } else {
-            let totalAvailable = currentProjectInventory
-              .filter(log => log.itemId === item.itemId && log.itemType === 'Main')
-              .reduce((sum, log) => sum + log.availableQuantity, 0);
-  
-            if (item.quantity > totalAvailable) {
-              throw new Error(`Not enough stock for ${item.itemName}. Required: ${item.quantity}, Available: ${totalAvailable}.`);
-            }
-          }
-        }
-  
-        // If all validations pass, proceed with writes
-        for (const item of data.items) {
-          const isComponentIssue = item.isComponentIssue && item.bomItems && item.bomItems.length > 0;
-  
-          if (isComponentIssue) {
-            const mainItemBoq = boqItems.find(b => b.id === item.itemId)!;
-  
-            for (const bomItem of item.bomItems!) {
-              if (bomItem.quantity <= 0) continue;
-  
-              let qtyToDeduct = bomItem.quantity;
-  
-              // 1. Deduct from loose components first (FIFO)
+              
+              let qtyToIssueFromComponents = bomItem.quantity;
+              
+              // 1. Consume loose components
               const componentStockLogs = currentProjectInventory.filter(log =>
-                log.itemId === bomItem.id &&
-                log.itemType === 'Sub' &&
-                log.availableQuantity > 0
+                  log.itemId === componentId &&
+                  log.itemType === 'Sub' &&
+                  log.availableQuantity > 0
               ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-  
+              
               for (const log of componentStockLogs) {
-                if (qtyToDeduct <= 0) break;
+                if(qtyToIssueFromComponents <= 0) break;
                 const logRef = doc(db, 'inventoryLogs', log.id);
-                const deduction = Math.min(qtyToDeduct, log.availableQuantity);
+                const deduction = Math.min(qtyToIssueFromComponents, log.availableQuantity);
                 transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
-                qtyToDeduct -= deduction;
-              }
-  
-              // 2. If more is needed, "break down" main items
-              if (qtyToDeduct > 0) {
-                const neededFromMainSets = Math.ceil(qtyToDeduct / bomItem.qtyPerSet);
                 
-                const mainItemLogs = currentProjectInventory.filter(log =>
-                    log.itemId === item.itemId &&
-                    log.itemType === 'Main' &&
-                    log.availableQuantity > 0
-                ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
-
-                let setsToBreak = neededFromMainSets;
-
-                for (const log of mainItemLogs) {
-                    if(setsToBreak <= 0) break;
-                    const logRef = doc(db, 'inventoryLogs', log.id);
-                    const deduction = Math.min(setsToBreak, log.availableQuantity);
-                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
-                    setsToBreak -= deduction;
-                }
+                const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+                transaction.set(newIssueLogRef, {
+                    date: Timestamp.fromDate(data.issueDate),
+                    itemId: bomItem.id, itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                    itemType: 'Sub', transactionType: 'Goods Issue',
+                    quantity: deduction, availableQuantity: 0, 
+                    unit: 'Kg', cost: log.cost, projectId: projectSlug,
+                    description: `Issued to ${data.issuedTo}`, details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
+                });
+                qtyToIssueFromComponents -= deduction;
               }
 
-              // 3. Log the final component issue
-              const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
-              transaction.set(newIssueLogRef, {
-                  date: Timestamp.fromDate(data.issueDate),
-                  itemId: bomItem.id,
-                  itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
-                  itemType: 'Sub',
-                  transactionType: 'Goods Issue',
-                  quantity: bomItem.quantity,
-                  availableQuantity: 0, 
-                  unit: 'Kg', 
-                  cost: 0,
-                  projectId: projectSlug,
-                  description: `Issued to ${data.issuedTo}`,
-                  details: { issuedTo: data.issuedTo, notes: data.notes }
-              });
+              // 2. Consume from breaking down main items
+              if (qtyToIssueFromComponents > 0) {
+                  const mainItemSetsNeeded = Math.ceil(qtyToIssueFromComponents / bomItem.qtyPerSet);
+                  
+                  const mainItemLogs = currentProjectInventory.filter(log =>
+                      log.itemId === item.itemId &&
+                      log.itemType === 'Main' &&
+                      log.availableQuantity > 0
+                  ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+
+                  let setsToBreakdown = mainItemSetsNeeded;
+
+                  for (const log of mainItemLogs) {
+                    if (setsToBreakdown <= 0) break;
+                    const logRef = doc(db, 'inventoryLogs', log.id);
+                    const deduction = Math.min(setsToBreakdown, log.availableQuantity);
+                    transaction.update(logRef, { availableQuantity: log.availableQuantity - deduction });
+                    setsToBreakdown -= deduction;
+
+                    const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+                    transaction.set(newIssueLogRef, {
+                        date: Timestamp.fromDate(data.issueDate),
+                        itemId: bomItem.id, itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                        itemType: 'Sub', transactionType: 'Goods Issue',
+                        quantity: deduction * bomItem.qtyPerSet, availableQuantity: 0,
+                        unit: 'Kg', cost: log.cost, // Cost is inherited from the main item's GRN
+                        projectId: projectSlug,
+                        description: `Issued to ${data.issuedTo} by breaking ${deduction} sets of ${item.itemName}`,
+                        details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
+                    });
+                  }
+              }
             }
           } else {
             let quantityToIssue = item.quantity;
@@ -381,6 +365,10 @@ export default function StockOutPage() {
                 log.itemType === 'Main' &&
                 log.availableQuantity > 0
             ).sort((a,b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+            
+            if (item.quantity > logsWithStock.reduce((sum, log) => sum + log.availableQuantity, 0)) {
+              throw new Error(`Not enough stock for ${item.itemName}. Required: ${item.quantity}, Available: ${item.availableQty}.`);
+            }
             
             for (const logDoc of logsWithStock) {
               if (quantityToIssue <= 0) break;
