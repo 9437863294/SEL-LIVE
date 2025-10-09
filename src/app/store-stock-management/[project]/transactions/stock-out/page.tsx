@@ -263,6 +263,7 @@ export default function StockOutPage() {
         const keys = Object.keys(item);
         const specificKey = 'UNIT PRICE';
         if (keys.includes(specificKey)) return specificKey;
+        
         return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
     };
 
@@ -575,5 +576,3 @@ export default function StockOutPage() {
     </Form>
   );
 }
-
-    
