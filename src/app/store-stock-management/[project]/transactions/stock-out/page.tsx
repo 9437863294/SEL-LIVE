@@ -272,7 +272,6 @@ export default function StockOutPage() {
     try {
       await runTransaction(db, async (transaction) => {
           const inventoryLogsRef = collection(db, 'inventoryLogs');
-          // We must fetch inside the transaction to get the latest state before updating
           const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
           const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
@@ -285,8 +284,8 @@ export default function StockOutPage() {
               throw new Error(`BOM not found for ${item.itemName}. Cannot issue components.`);
             }
             
-            const mainItemPriceKey = findBasicPriceKey(mainItemBoq);
-            const mainItemPrice = mainItemPriceKey ? Number(mainItemBoq[mainItemPriceKey]) : 0;
+            const priceKey = findBasicPriceKey(mainItemBoq);
+            const mainItemPrice = priceKey ? Number(mainItemBoq[priceKey]) : 0;
             const totalBomPieces = mainItemBoq.bom.reduce((sum, b) => sum + b.qtyPerSet, 0);
             const pricePerPiece = totalBomPieces > 0 ? mainItemPrice / totalBomPieces : 0;
 
@@ -365,7 +364,7 @@ export default function StockOutPage() {
                         itemType: 'Sub', transactionType: 'Goods Issue',
                         quantity: deduction * bomItem.qtyPerSet, availableQuantity: 0,
                         unit: 'Kg', 
-                        cost: pricePerPiece * bomItem.qtyPerSet, // Cost calculation
+                        cost: pricePerPiece * bomItem.qtyPerSet,
                         projectId: projectSlug,
                         description: `Issued to ${data.issuedTo} by breaking ${deduction} sets of ${item.itemName}`,
                         details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
@@ -576,3 +575,5 @@ export default function StockOutPage() {
     </Form>
   );
 }
+
+    
