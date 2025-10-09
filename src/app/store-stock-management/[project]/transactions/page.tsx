@@ -124,59 +124,43 @@ export default function TransactionsPage() {
   const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
     try {
-      await runTransaction(db, async (transaction) => {
-        if (summary.transactionType === 'Goods Receipt') {
-          const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
-          if (hasBeenIssued) {
-            throw new Error("Cannot delete GRN. Some items have already been issued.");
-          }
-          summary.items.forEach(item => {
-            const docRef = doc(db, 'inventoryLogs', item.id);
-            transaction.delete(docRef);
-          });
-        } else if (summary.transactionType === 'Goods Issue') {
-          for (const issueItem of summary.items) {
-            if (issueItem.itemType === 'Main') {
-              const sourceGrnId = issueItem.details?.sourceGrn;
-              if (sourceGrnId) {
-                const grnItemQuery = query(
-                  collection(db, 'inventoryLogs'),
-                  where('details.grnNo', '==', sourceGrnId),
-                  where('itemId', '==', issueItem.itemId)
-                );
-                const grnItemSnap = await getDocs(grnItemQuery);
-                if (!grnItemSnap.empty) {
-                  const grnDocRef = grnItemSnap.docs[0].ref;
-                  const grnItemData = grnItemSnap.docs[0].data() as InventoryLog;
-                  transaction.update(grnDocRef, { availableQuantity: grnItemData.availableQuantity + issueItem.quantity });
+        await runTransaction(db, async (transaction) => {
+            const inventoryLogsRef = collection(db, 'inventoryLogs');
+
+            if (summary.transactionType === 'Goods Receipt') {
+                const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
+                if (hasBeenIssued) {
+                    throw new Error("Cannot delete GRN. Some items have already been issued.");
                 }
-              }
-            } else if (issueItem.itemType === 'Sub') {
-                const sourceGrnId = issueItem.details?.sourceGrn;
-                if (sourceGrnId) {
-                  const grnItemQuery = query(
-                    collection(db, 'inventoryLogs'),
-                    where('details.grnNo', '==', sourceGrnId),
-                    where('itemId', '==', issueItem.itemId)
-                  );
-                  const grnItemSnap = await getDocs(grnItemQuery);
-                  if (!grnItemSnap.empty) {
-                    const grnDocRef = grnItemSnap.docs[0].ref;
-                    const grnItemData = grnItemSnap.docs[0].data() as InventoryLog;
-                    transaction.update(grnDocRef, { availableQuantity: grnItemData.availableQuantity + issueItem.quantity });
-                  }
+                for (const item of summary.items) {
+                    const docRef = doc(inventoryLogsRef, item.id);
+                    transaction.delete(docRef);
+                }
+            } else if (summary.transactionType === 'Goods Issue') {
+                for (const issueItem of summary.items) {
+                    if (issueItem.details?.sourceGrn) {
+                         // Find the original GRN item log this issue came from
+                        const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
+                        const sourceGrnItemsSnap = await getDocs(q);
+                        
+                        if (!sourceGrnItemsSnap.empty) {
+                            // Assuming one GRN item log per item per GRN
+                            const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
+                            const sourceData = sourceGrnItemsSnap.docs[0].data() as InventoryLog;
+                            transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + issueItem.quantity });
+                        }
+                    }
+                    // Finally, delete the goods issue log itself
+                    transaction.delete(doc(inventoryLogsRef, issueItem.id));
                 }
             }
-            transaction.delete(doc(db, 'inventoryLogs', issueItem.id));
-          }
-        }
-      });
+        });
 
-      toast({ title: "Success", description: "Transaction and its items have been deleted, and stock has been reversed." });
-      fetchData();
+        toast({ title: "Success", description: "Transaction and its items have been deleted, and stock has been reversed." });
+        fetchData();
     } catch (error: any) {
-      console.error("Error deleting transaction:", error);
-      toast({ title: "Delete Failed", description: error.message || "An error occurred while deleting.", variant: "destructive" });
+        console.error("Error deleting transaction:", error);
+        toast({ title: "Delete Failed", description: error.message || "An error occurred while deleting.", variant: "destructive" });
     }
     setIsDeleting(false);
   };
@@ -331,7 +315,7 @@ export default function TransactionsPage() {
         }
         
         const issuedQty = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnItem.id) // Match on inventory log ID
+            .filter(issue => issue.details?.sourceGrn === grnItem.details?.grnNo && issue.itemId === grnItem.itemId)
             .reduce((sum, issue) => sum + issue.quantity, 0);
             
         const enrichedItem: EnrichedLogItem = {
@@ -348,7 +332,7 @@ export default function TransactionsPage() {
     const issueSummaries: Record<string, TransactionSummary> = {};
     goodsIssues.forEach(issueItem => {
         const issueTo = issueItem.details?.issuedTo || 'Unknown';
-        const dateStr = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm-ss'); // Added seconds for more uniqueness
+        const dateStr = format(issueItem.date.toDate(), 'yyyy-MM-dd-HH-mm');
         const issueGroupId = `ISSUE-${dateStr}-${issueTo}`;
 
         if (!issueSummaries[issueGroupId]) {
@@ -551,3 +535,5 @@ export default function TransactionsPage() {
     </>
   );
 }
+
+    
