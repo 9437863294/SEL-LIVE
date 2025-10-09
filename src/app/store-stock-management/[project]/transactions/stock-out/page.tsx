@@ -262,7 +262,7 @@ export default function StockOutPage() {
     const findBasicPriceKey = (item: BoqItem): string | undefined => {
         const keys = Object.keys(item);
         const specificKey = 'UNIT PRICE';
-        if (keys.includes(specificKey)) return specificKey;
+        if(keys.includes(specificKey)) return specificKey;
         
         return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
     };
@@ -426,6 +426,7 @@ export default function StockOutPage() {
   const watchedItems = form.watch('items');
 
   return (
+    <>
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <div className="w-full max-w-4xl mx-auto">
@@ -576,5 +577,8 @@ export default function StockOutPage() {
         </div>
       </form>
     </Form>
+    </>
   );
 }
+
+    
