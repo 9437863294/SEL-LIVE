@@ -23,9 +23,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem, FabricationBomItem, Attachment } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
-import { collection, getDocs, addDoc, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +39,7 @@ import { format } from 'date-fns';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Timestamp } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const getItemDescription = (item: BoqItem | FabricationBomItem) => {
@@ -264,10 +265,11 @@ export default function StockOutPage() {
     // Fetch fresh inventory data before starting the transaction
     const inventoryLogsRef = collection(db, 'inventoryLogs');
     const projectInventoryLogsQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
-    const freshInventorySnap = await getDocs(projectInventoryLogsQuery);
-    const currentProjectInventory = freshInventorySnap.docs.map(d => ({ id: d.id, ...d.data() }) as InventoryLog);
-  
+    
     try {
+      const freshInventorySnap = await getDocs(projectInventoryLogsQuery);
+      const currentProjectInventory = freshInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+      
       await runTransaction(db, async (transaction) => {
         // Pre-transaction validation loop
         for (const item of data.items) {
@@ -293,7 +295,7 @@ export default function StockOutPage() {
               const totalPossibleFromStock = componentLooseStock + (mainItemPhysicalStock * bomItem.qtyPerSet);
   
               if (bomItem.quantity > totalPossibleFromStock) {
-                throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
+                 throw new Error(`Not enough stock for ${bomItem.section}. Required: ${bomItem.quantity}, Available: ${totalPossibleFromStock}.`);
               }
             }
           } else {
@@ -319,7 +321,7 @@ export default function StockOutPage() {
   
               let qtyToDeduct = bomItem.quantity;
   
-              // 1. Deduct from loose components first
+              // 1. Deduct from loose components first (FIFO)
               const componentStockLogs = currentProjectInventory.filter(log =>
                 log.itemId === bomItem.id &&
                 log.itemType === 'Sub' &&
@@ -572,4 +574,3 @@ export default function StockOutPage() {
   );
 }
 
-    
