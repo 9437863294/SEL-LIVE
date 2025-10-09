@@ -225,7 +225,7 @@ export default function EditRolePage() {
                                                     )}
                                                     <div className={!hasViewModulePermission ? 'opacity-50 pointer-events-none' : ''}>
                                                         {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
-                                                            if (subModuleKey === 'View Module') return null;
+                                                            if (subModuleKey === 'View Module' || !Array.isArray(permissions)) return null;
 
                                                             const fullKey = `${moduleName}.${subModuleKey}`;
                                                             
@@ -235,7 +235,7 @@ export default function EditRolePage() {
                                                                         <h4 className="font-semibold text-sm mb-3">{subModuleKey}-specific Permissions</h4>
                                                                         {departments.map(dept => {
                                                                             const deptKey = `Expenses.Departments.${dept.id}`;
-                                                                            const deptPermissions = permissions;
+                                                                            const deptPermissions = permissions as string[];
                                                                             const grantedInDept = editingRole.permissions?.[deptKey] || [];
                                                                             const isAllInDeptSelected = deptPermissions.length > 0 && grantedInDept.length === deptPermissions.length;
                                                                             return (
