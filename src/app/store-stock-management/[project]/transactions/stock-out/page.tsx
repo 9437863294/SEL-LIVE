@@ -273,6 +273,8 @@ export default function StockOutPage() {
     try {
       await runTransaction(db, async (transaction) => {
           const inventoryLogsRef = collection(db, 'inventoryLogs');
+          
+          // Re-fetch within transaction for consistency
           const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
           const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
@@ -331,7 +333,7 @@ export default function StockOutPage() {
                     itemType: 'Sub', transactionType: 'Goods Issue',
                     quantity: deduction, availableQuantity: 0, 
                     unit: 'Kg', 
-                    cost: pricePerPiece * bomItem.qtyPerSet,
+                    cost: pricePerPiece * deduction,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`, 
                     details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
@@ -365,7 +367,7 @@ export default function StockOutPage() {
                         itemType: 'Sub', transactionType: 'Goods Issue',
                         quantity: deduction * bomItem.qtyPerSet, availableQuantity: 0,
                         unit: 'Kg', 
-                        cost: pricePerPiece * bomItem.qtyPerSet,
+                        cost: pricePerPiece * (deduction * bomItem.qtyPerSet),
                         projectId: projectSlug,
                         description: `Issued to ${data.issuedTo} by breaking ${deduction} sets of ${item.itemName}`,
                         details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
