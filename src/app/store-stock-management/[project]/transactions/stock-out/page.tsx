@@ -331,7 +331,7 @@ export default function StockOutPage() {
                     itemType: 'Sub', transactionType: 'Goods Issue',
                     quantity: deduction, availableQuantity: 0, 
                     unit: 'Kg', 
-                    cost: log.cost,
+                    cost: pricePerPiece * bomItem.qtyPerSet,
                     projectId: projectSlug,
                     description: `Issued to ${data.issuedTo}`, 
                     details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
