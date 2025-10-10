@@ -85,31 +85,37 @@ export function StockBoqItemSelector({
             <CommandEmpty>
               {isLoading ? 'Loading...' : 'No available items found.'}
             </CommandEmpty>
-              <ScrollArea className="h-72">
-                 <div className="p-1">
-                    {inventoryItems.map((item) => {
-                        const slNo = getSlNo(item.itemId);
-                        const description = getItemDescription(item);
-                        return (
-                          <CommandItem
-                            key={item.itemId}
-                            value={item.itemId}
-                            onSelect={() => {
-                              onSelect(item);
-                              setOpen(false);
-                            }}
-                            className="flex flex-col items-start"
-                          >
-                            <div className="flex justify-between w-full">
-                                <span className="font-medium text-sm">{slNo}</span>
-                                <span className="text-xs text-muted-foreground">{item.availableQuantity} {item.unit}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate w-full">{description}</p>
-                          </CommandItem>
-                        )
-                    })}
-                 </div>
-              </ScrollArea>
+            <ScrollArea className="h-72">
+              <div className="p-2">
+                {/* Header */}
+                <div className="flex px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  <div className="w-[20%]">Sl. No.</div>
+                  <div className="w-[55%]">Description</div>
+                  <div className="w-[25%] text-right">Available Qty</div>
+                </div>
+                {inventoryItems.map((item) => {
+                    const slNo = getSlNo(item.itemId);
+                    const description = getItemDescription(item);
+                    return (
+                      <CommandItem
+                        key={item.itemId}
+                        value={item.itemId}
+                        onSelect={() => {
+                          onSelect(item);
+                          setOpen(false);
+                        }}
+                        className="flex flex-col items-start p-2"
+                      >
+                         <div className="flex w-full items-center">
+                            <div className="w-[20%] font-medium text-sm truncate">{slNo}</div>
+                            <div className="w-[55%] text-sm text-muted-foreground truncate">{description}</div>
+                            <div className="w-[25%] text-right text-sm font-medium">{item.availableQuantity} {item.unit}</div>
+                         </div>
+                      </CommandItem>
+                    )
+                })}
+              </div>
+            </ScrollArea>
           </CommandList>
         </Command>
       </PopoverContent>
