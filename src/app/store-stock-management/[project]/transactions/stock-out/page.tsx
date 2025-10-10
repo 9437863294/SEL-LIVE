@@ -361,13 +361,14 @@ export default function StockOutPage() {
                     setsToBreakdown -= deduction;
 
                     const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
+                    const issuedComponentQty = deduction * bomItem.qtyPerSet;
                     transaction.set(newIssueLogRef, {
                         date: Timestamp.fromDate(data.issueDate),
                         itemId: bomItem.id, itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
                         itemType: 'Sub', transactionType: 'Goods Issue',
-                        quantity: deduction * bomItem.qtyPerSet, availableQuantity: 0,
+                        quantity: issuedComponentQty, availableQuantity: 0,
                         unit: 'Kg', 
-                        cost: pricePerPiece * (deduction * bomItem.qtyPerSet),
+                        cost: pricePerPiece * issuedComponentQty,
                         projectId: projectSlug,
                         description: `Issued to ${data.issuedTo} by breaking ${deduction} sets of ${item.itemName}`,
                         details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
