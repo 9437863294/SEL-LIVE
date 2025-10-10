@@ -11,6 +11,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandGroup,
 } from '@/components/ui/command';
 import {
   Popover,
@@ -85,37 +86,33 @@ export function StockBoqItemSelector({
             <CommandEmpty>
               {isLoading ? 'Loading...' : 'No available items found.'}
             </CommandEmpty>
-            <ScrollArea className="h-72">
-              <div className="p-2">
-                {/* Header */}
-                <div className="flex px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  <div className="w-[20%]">Sl. No.</div>
-                  <div className="w-[55%]">Description</div>
-                  <div className="w-[25%] text-right">Available Qty</div>
-                </div>
-                {inventoryItems.map((item) => {
-                    const slNo = getSlNo(item.itemId);
-                    const description = getItemDescription(item);
-                    return (
-                      <CommandItem
-                        key={item.itemId}
-                        value={item.itemId}
-                        onSelect={() => {
-                          onSelect(item);
-                          setOpen(false);
-                        }}
-                        className="flex flex-col items-start p-2"
-                      >
-                         <div className="flex w-full items-center">
-                            <div className="w-[20%] font-medium text-sm truncate">{slNo}</div>
-                            <div className="w-[55%] text-sm text-muted-foreground truncate">{description}</div>
-                            <div className="w-[25%] text-right text-sm font-medium">{item.availableQuantity} {item.unit}</div>
-                         </div>
-                      </CommandItem>
-                    )
-                })}
-              </div>
-            </ScrollArea>
+            <CommandGroup>
+                <ScrollArea className="h-72">
+                    {inventoryItems.map((item) => {
+                        const slNo = getSlNo(item.itemId);
+                        const description = getItemDescription(item);
+                        return (
+                        <CommandItem
+                            key={item.itemId}
+                            value={item.itemId}
+                            onSelect={() => {
+                            onSelect(item);
+                            setOpen(false);
+                            }}
+                        >
+                            <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.itemId ? 'opacity-100' : 'opacity-0')}/>
+                            <div className="flex-1">
+                                <p className="text-sm font-medium">{description}</p>
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Sl. No: {slNo}</span>
+                                    <span>Available: {item.availableQuantity} {item.unit}</span>
+                                </div>
+                            </div>
+                        </CommandItem>
+                        )
+                    })}
+                </ScrollArea>
+            </CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>

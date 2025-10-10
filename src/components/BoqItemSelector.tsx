@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button';
 import {
   Command,
   CommandEmpty,
-  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
+  CommandGroup,
 } from '@/components/ui/command';
 import {
   Popover,
@@ -133,19 +133,12 @@ export function BoqItemSelector({
                         )}
                       />
                        <div className="flex-1">
-                        <div className="flex justify-between items-start">
-                          <span className="font-medium text-sm">{slNo}</span>
-                          <span className="text-xs text-right">
-                              <strong>Rate:</strong> {rate}
-                          </span>
-                        </div>
-                         <div className="flex justify-between items-end mt-1">
-                            <p className="text-xs text-muted-foreground flex-1 pr-2 truncate">{description}</p>
-                            <span className="text-xs text-muted-foreground text-right">
-                                <strong>Unit:</strong> {item['UNIT'] || item['UNITS'] || 'N/A'}
-                            </span>
-                         </div>
-                      </div>
+                            <p className="text-sm font-medium">{description}</p>
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Sl.No: {slNo}</span>
+                                <span>Rate: {rate} / {item['UNIT'] || item['UNITS'] || 'N/A'}</span>
+                            </div>
+                       </div>
                     </CommandItem>
                   )
                 })}
