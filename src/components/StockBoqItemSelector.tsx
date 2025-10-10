@@ -87,10 +87,10 @@ export function StockBoqItemSelector({
             </CommandEmpty>
               <ScrollArea className="h-72">
                  <div className="p-2">
-                    <div className="grid grid-cols-[1fr_2fr_1fr] gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                        <div>BOQ Sl. No.</div>
-                        <div>Description</div>
-                        <div className="text-right">Available Qty</div>
+                    <div className="flex justify-between items-center px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                        <div className="flex-1">BOQ Sl. No.</div>
+                        <div className="flex-[2]">Description</div>
+                        <div className="flex-1 text-right">Available Qty</div>
                     </div>
                     {inventoryItems.map((item) => {
                         const slNo = getSlNo(item.itemId);
@@ -103,13 +103,11 @@ export function StockBoqItemSelector({
                               onSelect(item);
                               setOpen(false);
                             }}
-                            className="p-0"
+                            className="p-2 flex justify-between items-center w-full cursor-pointer text-sm"
                           >
-                               <div className="grid grid-cols-[1fr_2fr_1fr] gap-2 p-2 w-full cursor-pointer text-sm items-center">
-                                    <div className="font-medium truncate">{slNo}</div>
-                                    <div className="truncate">{description}</div>
-                                    <div className="text-right">{item.availableQuantity}</div>
-                               </div>
+                            <div className="flex-1 font-medium truncate">{slNo}</div>
+                            <div className="flex-[2] truncate px-2">{description}</div>
+                            <div className="flex-1 text-right">{item.availableQuantity}</div>
                           </CommandItem>
                         )
                     })}
