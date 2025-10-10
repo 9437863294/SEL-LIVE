@@ -126,23 +126,27 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
     const inventoryLogsRef = collection(db, 'inventoryLogs');
     
     try {
-        // Pre-read all necessary data before starting the transaction.
         const sourceGrnUpdates = new Map<string, { docRef: any, newAvailableQty: number }>();
+        const issueDocIdsToDelete = new Set<string>();
+
+        for (const item of summary.items) {
+          issueDocIdsToDelete.add(item.id);
+        }
 
         if (summary.transactionType === 'Goods Issue') {
-            for (const issueItem of summary.items) {
+            const relevantIssueLogs = transactions.filter(t => issueDocIdsToDelete.has(t.id));
+
+            for (const issueItem of relevantIssueLogs) {
                 const isMainItemIssue = issueItem.itemType === 'Main' && issueItem.details?.sourceGrn;
                 const isComponentBreakdownIssue = issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking');
                 
                 if (isMainItemIssue) {
-                    const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
-                    const sourceGrnItemsSnap = await getDocs(q);
-                    if (!sourceGrnItemsSnap.empty) {
-                        const sourceDoc = sourceGrnItemsSnap.docs[0];
-                        const sourceData = sourceDoc.data() as InventoryLog;
+                    const sourceGrnLogs = transactions.filter(t => t.details?.grnNo === issueItem.details?.sourceGrn && t.itemId === issueItem.itemId && t.transactionType === 'Goods Receipt');
+                    if (sourceGrnLogs.length > 0) {
+                        const sourceDoc = sourceGrnLogs[0];
                         sourceGrnUpdates.set(sourceDoc.id, {
-                            docRef: sourceDoc.ref,
-                            newAvailableQty: sourceData.availableQuantity + issueItem.quantity
+                            docRef: doc(inventoryLogsRef, sourceDoc.id),
+                            newAvailableQty: sourceDoc.availableQuantity + issueItem.quantity
                         });
                     }
                 } else if (isComponentBreakdownIssue) {
@@ -152,18 +156,14 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                     const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
 
                     if (setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
-                        const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', mainItemBoq.id));
-                        const sourceGrnItemsSnap = await getDocs(q);
-                        if (!sourceGrnItemsSnap.empty) {
-                            const sourceDoc = sourceGrnItemsSnap.docs[0];
-                            const sourceData = sourceDoc.data() as InventoryLog;
-                            
-                             // If multiple components from the same GRN are reversed, accumulate the qty
+                       const sourceGrnLogs = transactions.filter(t => t.details?.grnNo === issueItem.details?.sourceGrn && t.itemId === mainItemBoq.id && t.transactionType === 'Goods Receipt');
+                        if (sourceGrnLogs.length > 0) {
+                            const sourceDoc = sourceGrnLogs[0];
                             const existingUpdate = sourceGrnUpdates.get(sourceDoc.id);
-                            const newQty = (existingUpdate ? existingUpdate.newAvailableQty : sourceData.availableQuantity) + setsBrokenDown;
+                            const newQty = (existingUpdate ? existingUpdate.newAvailableQty : sourceDoc.availableQuantity) + setsBrokenDown;
 
                             sourceGrnUpdates.set(sourceDoc.id, {
-                                docRef: sourceDoc.ref,
+                                docRef: doc(inventoryLogsRef, sourceDoc.id),
                                 newAvailableQty: newQty
                             });
                         }
@@ -171,8 +171,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                 }
             }
         }
-
-        // Now run the transaction with pre-fetched data.
+        
         await runTransaction(db, async (transaction) => {
             if (summary.transactionType === 'Goods Receipt') {
                 const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
@@ -184,15 +183,12 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                     transaction.delete(docRef);
                 }
             } else if (summary.transactionType === 'Goods Issue') {
-                // Update source GRN items from our pre-fetched map
                 sourceGrnUpdates.forEach(update => {
                     transaction.update(update.docRef, { availableQuantity: update.newAvailableQty });
                 });
-
-                // Delete the issue logs
-                for (const issueItem of summary.items) {
-                    transaction.delete(doc(inventoryLogsRef, issueItem.id));
-                }
+                issueDocIdsToDelete.forEach(id => {
+                    transaction.delete(doc(inventoryLogsRef, id));
+                });
             }
         });
 
@@ -239,7 +235,6 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
         await runTransaction(db, async (transaction) => {
             const inventoryLogsRef = collection(db, 'inventoryLogs');
             
-            // This is a read operation inside a transaction, which is fine as long as it's before writes.
             const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
             const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
@@ -368,7 +363,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
         }
         
         const issuedQty = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnItem.details?.grnNo && issue.itemId === grnItem.itemId)
+            .filter(issue => issue.details?.sourceGrn === grnNo && issue.itemId === grnItem.itemId)
             .reduce((sum, issue) => sum + issue.quantity, 0);
             
         const enrichedItem: EnrichedLogItem = {

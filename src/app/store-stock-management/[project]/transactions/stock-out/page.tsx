@@ -468,6 +468,7 @@ export default function StockOutPage() {
                             render={({ field }) => (
                                 <FormItem className="space-y-2 flex flex-col">
                                     <FormLabel>Issue Date</FormLabel>
+                                
                                     <Popover>
                                         <PopoverTrigger asChild>
                                             <FormControl>
