@@ -88,8 +88,8 @@ export function StockBoqItemSelector({
             </CommandEmpty>
             <CommandGroup>
                 <div className="grid grid-cols-[1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
-                    <div>Sl. No.</div>
-                    <div>Description</div>
+                    <div className="text-left">Sl. No.</div>
+                    <div className="text-left">Description</div>
                     <div className="text-right">Available</div>
                 </div>
                 <ScrollArea className="h-72">
@@ -101,16 +101,16 @@ export function StockBoqItemSelector({
                             key={item.itemId}
                             value={item.itemId}
                             onSelect={() => {
-                            onSelect(item);
-                            setOpen(false);
+                                onSelect(item);
+                                setOpen(false);
                             }}
-                            className="p-0"
+                            className="p-2 cursor-pointer"
                         >
-                            <div className="grid grid-cols-[1fr_3fr_1fr] w-full items-center p-2">
-                                <div className="text-sm">{slNo}</div>
-                                <div className="text-sm font-medium truncate pr-2">{description}</div>
-                                <div className="text-right text-sm">{item.availableQuantity} {item.unit}</div>
-                            </div>
+                          <div className="grid grid-cols-[1fr_3fr_1fr] w-full items-center gap-2">
+                              <div className="text-sm">{slNo}</div>
+                              <div className="text-sm font-medium truncate pr-2">{description}</div>
+                              <div className="text-right text-sm">{item.availableQuantity} {item.unit}</div>
+                          </div>
                         </CommandItem>
                         )
                     })}
