@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -58,7 +59,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 
 export interface TransactionSummary {
@@ -124,9 +125,48 @@ export default function TransactionsPage() {
 const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
     try {
-        await runTransaction(db, async (transaction) => {
-            const inventoryLogsRef = collection(db, 'inventoryLogs');
+        const inventoryLogsRef = collection(db, 'inventoryLogs');
+        
+        // --- PRE-TRANSACTION READS ---
+        const sourceGrnDocsToUpdate = new Map<string, { docRef: any, newAvailableQty: number }>();
 
+        if (summary.transactionType === 'Goods Issue') {
+            for (const issueItem of summary.items) {
+                if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
+                    const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
+                    const sourceGrnItemsSnap = await getDocs(q);
+                    if (!sourceGrnItemsSnap.empty) {
+                        const sourceDoc = sourceGrnItemsSnap.docs[0];
+                        const sourceData = sourceDoc.data() as InventoryLog;
+                        sourceGrnDocsToUpdate.set(sourceDoc.id, {
+                            docRef: sourceDoc.ref,
+                            newAvailableQty: sourceData.availableQuantity + issueItem.quantity
+                        });
+                    }
+                } else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
+                    const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
+                    const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                    const mainItemName = issueItem.description.split(' of ')[1];
+                    const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
+
+                    if (setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
+                        const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', mainItemBoq.id));
+                        const sourceGrnItemsSnap = await getDocs(q);
+                        if (!sourceGrnItemsSnap.empty) {
+                            const sourceDoc = sourceGrnItemsSnap.docs[0];
+                             const sourceData = sourceDoc.data() as InventoryLog;
+                            sourceGrnDocsToUpdate.set(sourceDoc.id, {
+                                docRef: sourceDoc.ref,
+                                newAvailableQty: sourceData.availableQuantity + setsBrokenDown
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        // --- END OF PRE-TRANSACTION READS ---
+
+        await runTransaction(db, async (transaction) => {
             if (summary.transactionType === 'Goods Receipt') {
                 const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
                 if (hasBeenIssued) {
@@ -137,44 +177,13 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                     transaction.delete(docRef);
                 }
             } else if (summary.transactionType === 'Goods Issue') {
-                 for (const issueItem of summary.items) {
-                    // This is a direct issue of a main item.
-                    if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
-                        const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
-                        const sourceGrnItemsSnap = await getDocs(q); // getDocs is fine outside transaction, but we need to get it inside.
-                        
-                        if (!sourceGrnItemsSnap.empty) {
-                             const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
-                             const sourceDoc = await transaction.get(sourceDocRef);
-                             if (sourceDoc.exists()){
-                                const sourceData = sourceDoc.data() as InventoryLog;
-                                transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + issueItem.quantity });
-                             }
-                        }
-                    } 
-                    // This is a component issue from breaking down a main item.
-                    else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
-                        const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
-                        const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
-                        const mainItemName = issueItem.description.split(' of ')[1];
+                // Update source GRN items from our pre-fetched map
+                sourceGrnDocsToUpdate.forEach(update => {
+                    transaction.update(update.docRef, { availableQuantity: update.newAvailableQty });
+                });
 
-                        const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
-
-                        if(setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
-                            const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', mainItemBoq.id));
-                            const sourceGrnItemsSnap = await getDocs(q);
-                            if (!sourceGrnItemsSnap.empty) {
-                                const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
-                                const sourceDoc = await transaction.get(sourceDocRef);
-                                if (sourceDoc.exists()) {
-                                    const sourceData = sourceDoc.data() as InventoryLog;
-                                    transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + setsBrokenDown });
-                                }
-                            }
-                        }
-                    }
-
-                    // Finally, delete the goods issue log itself
+                // Delete the issue logs
+                for (const issueItem of summary.items) {
                     transaction.delete(doc(inventoryLogsRef, issueItem.id));
                 }
             }
@@ -221,8 +230,8 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
         await runTransaction(db, async (transaction) => {
             const inventoryLogsRef = collection(db, 'inventoryLogs');
             
-            const currentProjectInventoryQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
-            const currentProjectInventorySnap = await getDocs(currentProjectInventoryQuery);
+            // This is a read operation inside a transaction, which is fine as long as it's before writes.
+            const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
             const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
             const mainItemsWithBOM = boqItems.filter(item => item.bom && item.bom.length > 0);
@@ -272,7 +281,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                             if (consumedQty <= 0) break;
                             const deduction = Math.min(consumedQty, log.available);
                             transaction.update(doc(inventoryLogsRef, log.id), { availableQuantity: log.available - deduction });
-                            log.available -= deduction;
+                            log.available -= deduction; // Update local state for subsequent calculations in the same transaction
                             consumedQty -= deduction;
                         }
 
@@ -572,3 +581,4 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
 }
 
     
+
