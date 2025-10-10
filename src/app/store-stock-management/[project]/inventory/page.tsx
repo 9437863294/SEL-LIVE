@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -110,59 +110,16 @@ export default function InventoryPage() {
             stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost });
         });
 
-        // Calculate Stock In from main item Goods Receipts
         filteredLogs.forEach(log => {
-            if (log.itemType === 'Main' && log.transactionType === 'Goods Receipt') {
-                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
+            const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
+            if (log.transactionType === 'Goods Receipt') {
                 current.stockIn += log.quantity;
-                stockMovements.set(log.itemId, current);
-            }
-        });
-
-        // Calculate Stock Out from main item Goods Issues
-        filteredLogs.forEach(log => {
-            if (log.itemType === 'Main' && log.transactionType === 'Goods Issue') {
-                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
+            } else if (log.transactionType === 'Goods Issue') {
                 current.stockOut += log.quantity;
-                stockMovements.set(log.itemId, current);
             }
-        });
-
-        // Group component issues by transaction time to deduce main item sets issued
-        const componentIssuesByTime = new Map<number, InventoryLog[]>();
-        filteredLogs.forEach(log => {
-            if (log.itemType === 'Sub' && log.transactionType === 'Goods Issue') {
-                const timestamp = log.date.toDate().getTime();
-                if (!componentIssuesByTime.has(timestamp)) {
-                    componentIssuesByTime.set(timestamp, []);
-                }
-                componentIssuesByTime.get(timestamp)!.push(log);
-            }
+            stockMovements.set(log.itemId, current);
         });
         
-        // Calculate stock out from component issues
-        componentIssuesByTime.forEach(logs => {
-            const firstLog = logs[0];
-            const mainItemBoq = boqItems.find(boq => firstLog.itemName.startsWith(boq.Description || boq.id));
-
-            if (mainItemBoq && mainItemBoq.bom) {
-                const setsIssued = logs.reduce((minSets, log) => {
-                    const bomComponent = mainItemBoq.bom?.find(bc => `bom-${mainItemBoq.id}-${bc.markNo}` === log.itemId);
-                    if (bomComponent && bomComponent.qtyPerSet > 0) {
-                        const setsFromThisComponent = log.quantity / bomComponent.qtyPerSet;
-                        return Math.min(minSets, setsFromThisComponent);
-                    }
-                    return minSets;
-                }, Infinity);
-                
-                if (setsIssued !== Infinity && setsIssued > 0) {
-                     const current = stockMovements.get(mainItemBoq.id) || { stockIn: 0, stockOut: 0, latestCost: 0 };
-                     current.stockOut += setsIssued;
-                     stockMovements.set(mainItemBoq.id, current);
-                }
-            }
-        });
-
         const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
         
         let calculatedData = boqWithMainItems.map(item => {
@@ -203,9 +160,9 @@ export default function InventoryPage() {
         setShowOnlyWithTransactions(false);
     }
 
-    const itemTransactionDetails = (itemId: string) => {
+    const itemTransactionDetails = useCallback((itemId: string) => {
         return inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
-    };
+    }, [inventoryLogs]);
     
     const formatCurrency = (amount: number) => {
       if (typeof amount !== 'number' || isNaN(amount)) return 'N/A';
@@ -369,5 +326,3 @@ export default function InventoryPage() {
         </div>
     );
 }
-
-    
