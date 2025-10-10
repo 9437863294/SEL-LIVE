@@ -103,7 +103,7 @@ export function StockBoqItemSelector({
                               onSelect(item);
                               setOpen(false);
                             }}
-                            className="p-2 flex justify-between items-center w-full cursor-pointer text-sm"
+                            className="flex justify-between items-center w-full cursor-pointer text-sm"
                           >
                             <div className="w-1/4 font-medium truncate">{slNo}</div>
                             <div className="w-1/2 truncate px-2">{description}</div>
