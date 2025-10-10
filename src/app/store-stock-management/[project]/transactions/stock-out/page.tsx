@@ -30,7 +30,7 @@ import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { ItemSelector } from '@/components/ItemSelector';
+import { StockBoqItemSelector } from '@/components/StockBoqItemSelector';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -512,7 +512,24 @@ export default function StockOutPage() {
                             <div key={field.id} className="p-4 border rounded-md space-y-4">
                                <div className="flex justify-between items-start">
                                   <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      <FormField control={form.control} name={`items.${index}.itemId`} render={() => ( <FormItem className="space-y-1"> <FormLabel>Item</FormLabel> <ItemSelector key={field.id} items={uniqueAvailableItems} selectedItemId={form.getValues(`items.${index}.itemId`)} onSelect={(selectedItem) => handleItemSelect(index, selectedItem)} isLoading={isLoadingItems} /> <FormMessage /> </FormItem> )}/>
+                                      <FormField
+                                        control={form.control}
+                                        name={`items.${index}.itemId`}
+                                        render={() => (
+                                          <FormItem className="space-y-1">
+                                            <FormLabel>Item</FormLabel>
+                                            <StockBoqItemSelector
+                                              key={field.id}
+                                              inventoryItems={uniqueAvailableItems}
+                                              boqItems={boqItems}
+                                              selectedItemId={form.getValues(`items.${index}.itemId`)}
+                                              onSelect={(selectedItem) => handleItemSelect(index, selectedItem)}
+                                              isLoading={isLoadingItems}
+                                            />
+                                            <FormMessage />
+                                          </FormItem>
+                                        )}
+                                      />
                                       {hasBom && (
                                             <div className="flex items-end pb-1">
                                                 <FormField control={form.control} name={`items.${index}.isComponentIssue`} render={({ field: switchField }) => ( <FormItem className="flex flex-row items-center gap-2 rounded-lg border p-3"> <FormControl><Switch checked={switchField.value} onCheckedChange={switchField.onChange} id={`isComponentIssue-${index}`} /></FormControl> <Label htmlFor={`isComponentIssue-${index}`} className="cursor-pointer">Issue Components</Label> </FormItem> )} />
@@ -591,4 +608,3 @@ export default function StockOutPage() {
     </>
   );
 }
-
