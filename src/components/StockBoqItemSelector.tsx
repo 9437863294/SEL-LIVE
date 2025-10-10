@@ -64,7 +64,7 @@ export function StockBoqItemSelector({
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[500px] p-0">
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command
             filter={(value, search) => {
                 const item = inventoryItems.find(i => i.itemId.toLowerCase() === value.toLowerCase());
@@ -87,11 +87,6 @@ export function StockBoqItemSelector({
             </CommandEmpty>
               <ScrollArea className="h-72">
                  <div className="p-1">
-                    <div className="flex justify-between items-center px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                        <div className="w-1/4">BOQ Sl. No.</div>
-                        <div className="w-1/2">Description</div>
-                        <div className="w-1/4 text-right">Available Qty</div>
-                    </div>
                     {inventoryItems.map((item) => {
                         const slNo = getSlNo(item.itemId);
                         const description = getItemDescription(item);
@@ -103,11 +98,13 @@ export function StockBoqItemSelector({
                               onSelect(item);
                               setOpen(false);
                             }}
-                            className="flex justify-between items-center w-full cursor-pointer text-sm"
+                            className="flex flex-col items-start"
                           >
-                            <div className="w-1/4 font-medium truncate">{slNo}</div>
-                            <div className="w-1/2 truncate px-2">{description}</div>
-                            <div className="w-1/4 text-right">{item.availableQuantity} {item.unit}</div>
+                            <div className="flex justify-between w-full">
+                                <span className="font-medium text-sm">{slNo}</span>
+                                <span className="text-xs text-muted-foreground">{item.availableQuantity} {item.unit}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate w-full">{description}</p>
                           </CommandItem>
                         )
                     })}
