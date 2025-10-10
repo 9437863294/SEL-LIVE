@@ -47,7 +47,7 @@ export default function ProjectLayout({
     { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
     { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'BOM Management' },
     { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ' },
-    { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
+    { href: `/store-stock-management/reports/ageing-report`, icon: BarChart3, label: 'Reports' },
     { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
     { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings' },
   ];
