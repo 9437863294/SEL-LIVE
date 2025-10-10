@@ -65,7 +65,7 @@ export function StockBoqItemSelector({
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[600px] p-0">
+      <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
                 const item = inventoryItems.find(i => i.itemId === value);
@@ -87,16 +87,13 @@ export function StockBoqItemSelector({
               {isLoading ? 'Loading...' : 'No available items found.'}
             </CommandEmpty>
               <ScrollArea className="h-72">
-                 <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>BOQ Sl. No.</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead className="text-right">Available Qty</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {inventoryItems.map((item) => {
+                 <div className="p-2">
+                    <div className="grid grid-cols-[1fr,2fr,1fr] gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                        <div>BOQ Sl. No.</div>
+                        <div>Description</div>
+                        <div className="text-right">Available Qty</div>
+                    </div>
+                    {inventoryItems.map((item) => {
                         const slNo = getSlNo(item.itemId);
                         const description = getItemDescription(item);
                         return (
@@ -107,18 +104,15 @@ export function StockBoqItemSelector({
                               onSelect(item);
                               setOpen(false);
                             }}
-                            className="p-0"
+                            className="grid grid-cols-[1fr,2fr,1fr] gap-2 p-2 w-full cursor-pointer text-sm"
                           >
-                            <TableRow className="w-full cursor-pointer">
-                                <TableCell className="font-medium">{slNo}</TableCell>
-                                <TableCell className="truncate max-w-[250px]">{description}</TableCell>
-                                <TableCell className="text-right">{item.availableQuantity}</TableCell>
-                            </TableRow>
+                                <div className="font-medium truncate">{slNo}</div>
+                                <div className="truncate">{description}</div>
+                                <div className="text-right">{item.availableQuantity}</div>
                           </CommandItem>
                         )
-                      })}
-                    </TableBody>
-                 </Table>
+                    })}
+                 </div>
               </ScrollArea>
           </CommandList>
         </Command>
