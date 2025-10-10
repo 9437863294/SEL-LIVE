@@ -274,6 +274,7 @@ export default function StockOutPage() {
       await runTransaction(db, async (transaction) => {
           const inventoryLogsRef = collection(db, 'inventoryLogs');
           
+          // Get a fresh read of the inventory within the transaction
           const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
           const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
@@ -348,12 +349,12 @@ export default function StockOutPage() {
                   for (const mainItemLog of mainItemLogs) {
                       if (remainingQtyToIssue <= 0) break;
 
-                      // Correct cost calculation logic
-                      const mainItemPrice = mainItemLog.cost || 0;
-                      const totalBomWeight = mainItemBoq.bom.reduce((sum, b) => sum + b.totalWtKg, 0);
-                      const pricePerKg = totalBomWeight > 0 ? mainItemPrice / totalBomWeight : 0;
-                      const componentCost = pricePerKg * bomItem.totalWtKg; // Cost for this component in one set
-
+                      const priceKey = findBasicPriceKey(mainItemBoq);
+                      const mainItemPrice = mainItemLog.cost || (priceKey ? Number(mainItemBoq[priceKey]) : 0);
+                      const totalBomPieces = mainItemBoq.bom.reduce((sum, b) => sum + b.qtyPerSet, 0);
+                      const pricePerPiece = totalBomPieces > 0 ? mainItemPrice / totalBomPieces : 0;
+                      const componentCost = pricePerPiece * bomItem.quantity;
+                      
                       const availableComponentsFromThisLog = mainItemLog.availableQuantity * bomItem.qtyPerSet;
                       const componentsToTakeFromThisLog = Math.min(remainingQtyToIssue, availableComponentsFromThisLog);
                       
@@ -589,4 +590,3 @@ export default function StockOutPage() {
     </>
   );
 }
-
