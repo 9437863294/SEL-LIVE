@@ -86,11 +86,11 @@ export function StockBoqItemSelector({
               {isLoading ? 'Loading...' : 'No available items found.'}
             </CommandEmpty>
               <ScrollArea className="h-72">
-                 <div className="p-2">
+                 <div className="p-1">
                     <div className="flex justify-between items-center px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                        <div className="flex-1">BOQ Sl. No.</div>
-                        <div className="flex-[2]">Description</div>
-                        <div className="flex-1 text-right">Available Qty</div>
+                        <div className="w-1/4">BOQ Sl. No.</div>
+                        <div className="w-1/2">Description</div>
+                        <div className="w-1/4 text-right">Available Qty</div>
                     </div>
                     {inventoryItems.map((item) => {
                         const slNo = getSlNo(item.itemId);
@@ -105,9 +105,9 @@ export function StockBoqItemSelector({
                             }}
                             className="p-2 flex justify-between items-center w-full cursor-pointer text-sm"
                           >
-                            <div className="flex-1 font-medium truncate">{slNo}</div>
-                            <div className="flex-[2] truncate px-2">{description}</div>
-                            <div className="flex-1 text-right">{item.availableQuantity}</div>
+                            <div className="w-1/4 font-medium truncate">{slNo}</div>
+                            <div className="w-1/2 truncate px-2">{description}</div>
+                            <div className="w-1/4 text-right">{item.availableQuantity} {item.unit}</div>
                           </CommandItem>
                         )
                     })}
