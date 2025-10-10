@@ -317,7 +317,7 @@ export default function InventoryPage() {
                                                                 </TableHeader>
                                                                 <TableBody>
                                                                     {itemTransactionDetails(item.id).map(log => (
-                                                                        <TableRow key={log.id}>
+                                                                        <TableRow key={`${log.id}-${log.date.toMillis()}`}>
                                                                             <TableCell>{format(log.date.toDate(), 'dd MMM yyyy')}</TableCell>
                                                                             <TableCell>{log.transactionType}</TableCell>
                                                                             <TableCell className={log.transactionType === 'Goods Issue' ? 'text-red-600' : 'text-green-600'}>
