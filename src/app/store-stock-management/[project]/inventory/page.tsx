@@ -21,6 +21,7 @@ import { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 
 interface InventoryItem {
     id: string;
@@ -360,5 +361,3 @@ export default function InventoryPage() {
         </div>
     );
 }
-
-    
