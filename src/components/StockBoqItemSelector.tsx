@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/popover';
 import type { InventoryLog, BoqItem } from '@/lib/types';
 import { ScrollArea } from './ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface StockBoqItemSelectorProps {
   inventoryItems: InventoryLog[];
@@ -68,7 +67,7 @@ export function StockBoqItemSelector({
       <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
-                const item = inventoryItems.find(i => i.itemId === value);
+                const item = inventoryItems.find(i => i.itemId.toLowerCase() === value.toLowerCase());
                 if (!item) return 0;
                 
                 const slNo = getSlNo(item.itemId).toLowerCase();
@@ -88,7 +87,7 @@ export function StockBoqItemSelector({
             </CommandEmpty>
               <ScrollArea className="h-72">
                  <div className="p-2">
-                    <div className="grid grid-cols-[1fr,2fr,1fr] gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                    <div className="grid grid-cols-[1fr_2fr_1fr] gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground">
                         <div>BOQ Sl. No.</div>
                         <div>Description</div>
                         <div className="text-right">Available Qty</div>
@@ -104,11 +103,13 @@ export function StockBoqItemSelector({
                               onSelect(item);
                               setOpen(false);
                             }}
-                            className="grid grid-cols-[1fr,2fr,1fr] gap-2 p-2 w-full cursor-pointer text-sm"
+                            className="p-0"
                           >
-                                <div className="font-medium truncate">{slNo}</div>
-                                <div className="truncate">{description}</div>
-                                <div className="text-right">{item.availableQuantity}</div>
+                               <div className="grid grid-cols-[1fr_2fr_1fr] gap-2 p-2 w-full cursor-pointer text-sm items-center">
+                                    <div className="font-medium truncate">{slNo}</div>
+                                    <div className="truncate">{description}</div>
+                                    <div className="text-right">{item.availableQuantity}</div>
+                               </div>
                           </CommandItem>
                         )
                     })}
