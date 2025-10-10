@@ -65,7 +65,7 @@ export function StockBoqItemSelector({
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent className="w-[500px] p-0">
         <Command
             filter={(value, search) => {
                 const item = inventoryItems.find(i => i.itemId.toLowerCase() === value.toLowerCase());
@@ -87,6 +87,11 @@ export function StockBoqItemSelector({
               {isLoading ? 'Loading...' : 'No available items found.'}
             </CommandEmpty>
             <CommandGroup>
+                <div className="grid grid-cols-[1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+                    <div>Sl. No.</div>
+                    <div>Description</div>
+                    <div className="text-right">Available</div>
+                </div>
                 <ScrollArea className="h-72">
                     {inventoryItems.map((item) => {
                         const slNo = getSlNo(item.itemId);
@@ -99,14 +104,12 @@ export function StockBoqItemSelector({
                             onSelect(item);
                             setOpen(false);
                             }}
+                            className="p-0"
                         >
-                            <Check className={cn('mr-2 h-4 w-4', selectedItemId === item.itemId ? 'opacity-100' : 'opacity-0')}/>
-                            <div className="flex-1">
-                                <p className="text-sm font-medium">{description}</p>
-                                <div className="flex justify-between text-xs text-muted-foreground">
-                                    <span>Sl. No: {slNo}</span>
-                                    <span>Available: {item.availableQuantity} {item.unit}</span>
-                                </div>
+                            <div className="grid grid-cols-[1fr_3fr_1fr] w-full items-center p-2">
+                                <div className="text-sm">{slNo}</div>
+                                <div className="text-sm font-medium truncate pr-2">{description}</div>
+                                <div className="text-right text-sm">{item.availableQuantity} {item.unit}</div>
                             </div>
                         </CommandItem>
                         )
