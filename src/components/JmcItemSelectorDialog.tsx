@@ -13,7 +13,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
@@ -69,7 +75,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
 
             allBills.forEach(bill => {
                 bill.items.forEach(item => {
-                    billedQuantities[item.jmcItemId] = (billedQuantities[item.jmcItemId] || 0) + item.billedQty;
+                    billedQuantities[item.jmcItemId] = (billedQuantities[item.jmcItemId] || 0) + parseFloat(item.billedQty);
                 });
             });
 
@@ -77,7 +83,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
             allJmcEntries.forEach(entry => {
                 entry.items.forEach((item, index) => {
                     const jmcItemId = `${entry.id}-${index}`; // Create a unique ID for each JMC item
-                    const executedQty = item.executedQty;
+                    const executedQty = parseFloat(item.executedQty || '0');
                     const billedQty = billedQuantities[jmcItemId] || 0;
                     const availableQty = executedQty - billedQty;
 
@@ -143,8 +149,8 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
         boqSlNo: item.boqSlNo,
         description: item.description,
         unit: item.unit,
-        rate: item.rate,
-        executedQty: item.availableQty, // Available qty for billing
+        rate: String(item.rate),
+        executedQty: String(item.availableQty), // Available qty for billing
         billedQty: '', // User will fill this
         totalAmount: ''
     }));
@@ -178,54 +184,50 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
                 />
             </div>
             <ScrollArea className="h-96 border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-[50px]">
-                                <Checkbox
-                                    checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
-                                    onCheckedChange={handleSelectAll}
-                                />
-                            </TableHead>
-                            <TableHead>JMC No.</TableHead>
-                            <TableHead>BOQ Sl.No.</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Available Qty</TableHead>
-                            <TableHead>Rate</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading ? (
-                            <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center">
-                                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                                </TableCell>
-                            </TableRow>
-                        ) : filteredItems.length > 0 ? (
-                           filteredItems.map(item => (
-                            <TableRow key={item.id} data-state={selectedIds.has(item.id) && "selected"}>
-                                <TableCell>
+                <div className="p-1">
+                    <div className="flex items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                        <div className="w-[50px] flex justify-center">
+                            <Checkbox
+                                checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                                onCheckedChange={handleSelectAll}
+                            />
+                        </div>
+                        <div className="w-1/6">JMC No.</div>
+                        <div className="w-1/6">BOQ Sl.No.</div>
+                        <div className="w-2/6">Description</div>
+                        <div className="w-1/6 text-right">Available Qty</div>
+                        <div className="w-1/6 text-right">Rate</div>
+                    </div>
+                    {isLoading ? (
+                        <div className="flex items-center justify-center h-full p-8">
+                            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                        </div>
+                    ) : filteredItems.length > 0 ? (
+                        filteredItems.map(item => (
+                            <div 
+                                key={item.id} 
+                                className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
+                            >
+                                <div className="w-[50px] flex justify-center">
                                     <Checkbox
                                         checked={selectedIds.has(item.id)}
                                         onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                     />
-                                </TableCell>
-                                <TableCell>{item.jmcNo}</TableCell>
-                                <TableCell>{item.boqSlNo}</TableCell>
-                                <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.availableQty}</TableCell>
-                                <TableCell>{formatCurrency(item.rate)}</TableCell>
-                            </TableRow>
-                           ))
-                        ) : (
-                             <TableRow>
-                                <TableCell colSpan={6} className="text-center h-24">
-                                   No available items found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                                </div>
+                                <div className="w-1/6 truncate">{item.jmcNo}</div>
+                                <div className="w-1/6 truncate">{item.boqSlNo}</div>
+                                <div className="w-2/6 truncate">{item.description}</div>
+                                <div className="w-1/6 text-right">{item.availableQty}</div>
+                                <div className="w-1/6 text-right">{formatCurrency(item.rate)}</div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center p-8 text-muted-foreground">
+                            No available items found.
+                        </div>
+                    )}
+                </div>
             </ScrollArea>
         </div>
         <DialogFooter>
