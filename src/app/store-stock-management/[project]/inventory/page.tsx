@@ -199,6 +199,11 @@ export default function InventoryPage() {
     const itemTransactionDetails = (itemId: string) => {
         return inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
     };
+    
+    const formatCurrency = (amount: number) => {
+      if (typeof amount !== 'number' || isNaN(amount)) return 'N/A';
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+    };
 
     return (
         <div>
@@ -310,20 +315,26 @@ export default function InventoryPage() {
                                                                 <TableHeader>
                                                                     <TableRow>
                                                                         <TableHead>Date</TableHead>
+                                                                        <TableHead>GRN / Issue ID</TableHead>
                                                                         <TableHead>Type</TableHead>
-                                                                        <TableHead>Quantity</TableHead>
-                                                                        <TableHead>Details</TableHead>
+                                                                        <TableHead>Unit</TableHead>
+                                                                        <TableHead className="text-right">Qty</TableHead>
+                                                                        <TableHead className="text-right">Price</TableHead>
+                                                                        <TableHead className="text-right">Total</TableHead>
                                                                     </TableRow>
                                                                 </TableHeader>
                                                                 <TableBody>
                                                                     {itemTransactionDetails(item.id).map(log => (
                                                                         <TableRow key={`${log.id}-${log.date.toMillis()}`}>
                                                                             <TableCell>{format(log.date.toDate(), 'dd MMM yyyy')}</TableCell>
-                                                                            <TableCell>{log.transactionType}</TableCell>
-                                                                            <TableCell className={log.transactionType === 'Goods Issue' ? 'text-red-600' : 'text-green-600'}>
-                                                                                {log.transactionType === 'Goods Issue' ? '-' : '+'}{log.quantity.toLocaleString()}
+                                                                            <TableCell>{log.details?.grnNo || `Issued to ${log.details?.issuedTo}`}</TableCell>
+                                                                            <TableCell>
+                                                                              <Badge variant={log.transactionType === 'Goods Receipt' ? 'default' : 'destructive'}>{log.transactionType}</Badge>
                                                                             </TableCell>
-                                                                            <TableCell>{log.details?.issuedTo || log.details?.supplier || ''}</TableCell>
+                                                                            <TableCell>{log.unit}</TableCell>
+                                                                            <TableCell className="text-right">{log.quantity.toLocaleString()}</TableCell>
+                                                                            <TableCell className="text-right">{formatCurrency(log.cost || 0)}</TableCell>
+                                                                            <TableCell className="text-right">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
                                                                         </TableRow>
                                                                     ))}
                                                                 </TableBody>
@@ -348,7 +359,6 @@ export default function InventoryPage() {
             </Card>
         </div>
     );
-
-    
 }
 
+    
