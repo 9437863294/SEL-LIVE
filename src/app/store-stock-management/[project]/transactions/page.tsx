@@ -137,8 +137,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                 if (issueItem.details?.sourceGrn) {
                     const grnItemsQuery = query(inventoryLogsRef, 
                         where('projectId', '==', projectSlug),
-                        where('details.grnNo', '==', issueItem.details.sourceGrn),
-                        where('itemType', '==', 'Main')
+                        where('details.grnNo', '==', issueItem.details.sourceGrn)
                     );
                     const grnItemsSnap = await getDocs(grnItemsQuery);
                     grnItemsSnap.forEach(doc => {
@@ -193,7 +192,6 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                              const sourceDocId = Array.from(sourceGrnDataMap.entries()).find(([id, data]) => data === sourceGrnLog)?.[0];
                               if(sourceDocId) {
                                 const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
-                                // Only add the sets that were broken down, not the component quantity
                                 sourceGrnUpdates.set(sourceDocId, currentUpdate + setsBrokenDown);
                               }
                            }
@@ -387,9 +385,21 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
             };
         }
         
-        const issuedQty = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnNo && issue.itemId === grnItem.itemId)
+        // Sum up issues from this specific GRN item (direct issue)
+        const directIssuedQty = goodsIssues
+            .filter(issue => issue.itemType === 'Main' && issue.details?.sourceGrn === grnNo && issue.itemId === grnItem.itemId)
             .reduce((sum, issue) => sum + issue.quantity, 0);
+
+        // Sum up issues from components broken down from this GRN item
+        const componentIssuedFromThisGrn = goodsIssues
+            .filter(issue => issue.itemType === 'Sub' && issue.description?.includes(`of ${grnItem.itemName}`) && issue.details?.sourceGrn === grnNo)
+            .reduce((sum, issue) => {
+                const setsBrokenDownMatch = issue.description.match(/by breaking (\d+) sets/);
+                const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                return sum + setsBrokenDown;
+            }, 0);
+        
+        const issuedQty = directIssuedQty + componentIssuedFromThisGrn;
             
         const enrichedItem: EnrichedLogItem = {
           ...grnItem,
@@ -437,7 +447,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
     return allSummaries.filter(summary =>
       summary.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [transactions, searchTerm]);
+  }, [transactions, searchTerm, boqItems]);
   
   const getBadgeVariant = (type: string) => {
     switch (type) {
