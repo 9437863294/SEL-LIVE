@@ -353,7 +353,7 @@ export default function StockOutPage() {
                       const mainItemPrice = mainItemLog.cost || (priceKey ? Number(mainItemBoq[priceKey]) : 0);
                       const totalBomPieces = mainItemBoq.bom.reduce((sum, b) => sum + b.qtyPerSet, 0);
                       const pricePerPiece = totalBomPieces > 0 ? mainItemPrice / totalBomPieces : 0;
-                      const componentCost = pricePerPiece * bomItem.quantity;
+                      const componentCost = pricePerPiece ;
                       
                       const availableComponentsFromThisLog = mainItemLog.availableQuantity * bomItem.qtyPerSet;
                       const componentsToTakeFromThisLog = Math.min(remainingQtyToIssue, availableComponentsFromThisLog);
@@ -468,7 +468,6 @@ export default function StockOutPage() {
                             render={({ field }) => (
                                 <FormItem className="space-y-2 flex flex-col">
                                     <FormLabel>Issue Date</FormLabel>
-                                
                                     <Popover>
                                         <PopoverTrigger asChild>
                                             <FormControl>

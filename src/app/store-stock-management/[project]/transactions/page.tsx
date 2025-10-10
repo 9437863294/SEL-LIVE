@@ -123,56 +123,39 @@ export default function TransactionsPage() {
   
 const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
-    const inventoryLogsRef = collection(db, 'inventoryLogs');
     
     try {
-        const sourceGrnUpdates = new Map<string, { docRef: any, newAvailableQty: number }>();
-        const issueDocIdsToDelete = new Set<string>();
+        const issueDocIdsToDelete = new Set(summary.items.map(item => item.id));
+        const relevantIssueLogs = transactions.filter(t => issueDocIdsToDelete.has(t.id));
 
-        for (const item of summary.items) {
-          issueDocIdsToDelete.add(item.id);
-        }
-
-        if (summary.transactionType === 'Goods Issue') {
-            const relevantIssueLogs = transactions.filter(t => issueDocIdsToDelete.has(t.id));
-
+        await runTransaction(db, async (transaction) => {
+            const inventoryLogsRef = collection(db, 'inventoryLogs');
+            
+            // Fetch all source GRN documents that need updating first
+            const sourceGrnDocRefs = new Map<string, any>();
             for (const issueItem of relevantIssueLogs) {
-                const isMainItemIssue = issueItem.itemType === 'Main' && issueItem.details?.sourceGrn;
-                const isComponentBreakdownIssue = issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking');
-                
-                if (isMainItemIssue) {
-                    const sourceGrnLogs = transactions.filter(t => t.details?.grnNo === issueItem.details?.sourceGrn && t.itemId === issueItem.itemId && t.transactionType === 'Goods Receipt');
-                    if (sourceGrnLogs.length > 0) {
-                        const sourceDoc = sourceGrnLogs[0];
-                        sourceGrnUpdates.set(sourceDoc.id, {
-                            docRef: doc(inventoryLogsRef, sourceDoc.id),
-                            newAvailableQty: sourceDoc.availableQuantity + issueItem.quantity
-                        });
-                    }
-                } else if (isComponentBreakdownIssue) {
-                    const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
-                    const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
-                    const mainItemName = issueItem.description.split(' of ')[1];
-                    const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
-
-                    if (setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
-                       const sourceGrnLogs = transactions.filter(t => t.details?.grnNo === issueItem.details?.sourceGrn && t.itemId === mainItemBoq.id && t.transactionType === 'Goods Receipt');
-                        if (sourceGrnLogs.length > 0) {
-                            const sourceDoc = sourceGrnLogs[0];
-                            const existingUpdate = sourceGrnUpdates.get(sourceDoc.id);
-                            const newQty = (existingUpdate ? existingUpdate.newAvailableQty : sourceDoc.availableQuantity) + setsBrokenDown;
-
-                            sourceGrnUpdates.set(sourceDoc.id, {
-                                docRef: doc(inventoryLogsRef, sourceDoc.id),
-                                newAvailableQty: newQty
-                            });
+                if (issueItem.details?.sourceGrn) {
+                    const grnItemsQuery = query(inventoryLogsRef, 
+                        where('projectId', '==', projectSlug),
+                        where('details.grnNo', '==', issueItem.details.sourceGrn),
+                        where('itemType', '==', 'Main')
+                    );
+                    const grnItemsSnap = await getDocs(grnItemsQuery);
+                    grnItemsSnap.forEach(doc => {
+                        if (!sourceGrnDocRefs.has(doc.id)) {
+                             sourceGrnDocRefs.set(doc.id, doc.ref);
                         }
-                    }
+                    });
                 }
             }
-        }
-        
-        await runTransaction(db, async (transaction) => {
+
+            const sourceGrnDocs = await Promise.all(
+                Array.from(sourceGrnDocRefs.values()).map(ref => transaction.get(ref))
+            );
+
+            const sourceGrnDataMap = new Map(sourceGrnDocs.map(doc => [doc.id, doc.data() as InventoryLog]));
+
+            // Now perform writes
             if (summary.transactionType === 'Goods Receipt') {
                 const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
                 if (hasBeenIssued) {
@@ -183,9 +166,51 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                     transaction.delete(docRef);
                 }
             } else if (summary.transactionType === 'Goods Issue') {
-                sourceGrnUpdates.forEach(update => {
-                    transaction.update(update.docRef, { availableQuantity: update.newAvailableQty });
+                const sourceGrnUpdates = new Map<string, number>();
+
+                for (const issueItem of relevantIssueLogs) {
+                    const isMainItemIssue = issueItem.itemType === 'Main' && issueItem.details?.sourceGrn;
+                    const isComponentBreakdownIssue = issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking');
+                    
+                    if (isMainItemIssue) {
+                        const sourceGrnLog = Array.from(sourceGrnDataMap.values()).find(log => log.details?.grnNo === issueItem.details?.sourceGrn && log.itemId === issueItem.itemId);
+                        if (sourceGrnLog) {
+                            const sourceDocId = Array.from(sourceGrnDataMap.entries()).find(([id, data]) => data === sourceGrnLog)?.[0];
+                            if(sourceDocId) {
+                               const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
+                               sourceGrnUpdates.set(sourceDocId, currentUpdate + issueItem.quantity);
+                            }
+                        }
+                    } else if (isComponentBreakdownIssue) {
+                        const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
+                        const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                        const mainItemName = issueItem.description.split(' of ')[1];
+                        const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
+
+                        if (setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
+                           const sourceGrnLog = Array.from(sourceGrnDataMap.values()).find(log => log.details?.grnNo === issueItem.details?.sourceGrn && log.itemId === mainItemBoq.id);
+                           if(sourceGrnLog) {
+                             const sourceDocId = Array.from(sourceGrnDataMap.entries()).find(([id, data]) => data === sourceGrnLog)?.[0];
+                              if(sourceDocId) {
+                                const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
+                                // Only add the sets that were broken down, not the component quantity
+                                sourceGrnUpdates.set(sourceDocId, currentUpdate + setsBrokenDown);
+                              }
+                           }
+                        }
+                    }
+                }
+                
+                // Apply all updates
+                sourceGrnUpdates.forEach((qtyToAdd, docId) => {
+                    const docRef = doc(inventoryLogsRef, docId);
+                    const currentData = sourceGrnDataMap.get(docId);
+                    if (currentData) {
+                      transaction.update(docRef, { availableQuantity: currentData.availableQuantity + qtyToAdd });
+                    }
                 });
+
+                // Delete all issue documents
                 issueDocIdsToDelete.forEach(id => {
                     transaction.delete(doc(inventoryLogsRef, id));
                 });
