@@ -140,9 +140,9 @@ export default function InventoryPage() {
             const firstLog = logs[0];
             const mainItemBoq = boqItems.find(boq => firstLog.itemName.startsWith(boq.Description || boq.id));
 
-            if (parentBoqItem && parentBoqItem.bom) {
+            if (mainItemBoq && mainItemBoq.bom) {
                 const setsIssued = logs.reduce((minSets, log) => {
-                    const bomComponent = parentBoqItem.bom?.find(bc => `bom-${parentBoqItem.id}-${bc.markNo}` === log.itemId);
+                    const bomComponent = mainItemBoq.bom?.find(bc => `bom-${mainItemBoq.id}-${bc.markNo}` === log.itemId);
                     if (bomComponent && bomComponent.qtyPerSet > 0) {
                         const setsFromThisComponent = log.quantity / bomComponent.qtyPerSet;
                         return Math.min(minSets, setsFromThisComponent);
@@ -151,9 +151,9 @@ export default function InventoryPage() {
                 }, Infinity);
                 
                 if (setsIssued !== Infinity && setsIssued > 0) {
-                     const current = stockMovements.get(parentBoqItem.id) || { stockIn: 0, stockOut: 0 };
+                     const current = stockMovements.get(mainItemBoq.id) || { stockIn: 0, stockOut: 0 };
                      current.stockOut += setsIssued;
-                     stockMovements.set(parentBoqItem.id, current);
+                     stockMovements.set(mainItemBoq.id, current);
                 }
             }
         });
@@ -350,3 +350,4 @@ export default function InventoryPage() {
     );
 
     
+}
