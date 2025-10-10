@@ -121,7 +121,7 @@ export default function TransactionsPage() {
     setIsViewOpen(true);
   };
   
-  const handleDeleteTransaction = async (summary: TransactionSummary) => {
+const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
     try {
         await runTransaction(db, async (transaction) => {
@@ -137,19 +137,43 @@ export default function TransactionsPage() {
                     transaction.delete(docRef);
                 }
             } else if (summary.transactionType === 'Goods Issue') {
-                for (const issueItem of summary.items) {
-                    if (issueItem.details?.sourceGrn) {
-                         // Find the original GRN item log this issue came from
+                 for (const issueItem of summary.items) {
+                    // This is a direct issue of a main item.
+                    if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
                         const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
-                        const sourceGrnItemsSnap = await getDocs(q);
+                        const sourceGrnItemsSnap = await getDocs(q); // getDocs is fine outside transaction, but we need to get it inside.
                         
                         if (!sourceGrnItemsSnap.empty) {
-                            // Assuming one GRN item log per item per GRN
-                            const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
-                            const sourceData = sourceGrnItemsSnap.docs[0].data() as InventoryLog;
-                            transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + issueItem.quantity });
+                             const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
+                             const sourceDoc = await transaction.get(sourceDocRef);
+                             if (sourceDoc.exists()){
+                                const sourceData = sourceDoc.data() as InventoryLog;
+                                transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + issueItem.quantity });
+                             }
+                        }
+                    } 
+                    // This is a component issue from breaking down a main item.
+                    else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
+                        const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
+                        const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                        const mainItemName = issueItem.description.split(' of ')[1];
+
+                        const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
+
+                        if(setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
+                            const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', mainItemBoq.id));
+                            const sourceGrnItemsSnap = await getDocs(q);
+                            if (!sourceGrnItemsSnap.empty) {
+                                const sourceDocRef = sourceGrnItemsSnap.docs[0].ref;
+                                const sourceDoc = await transaction.get(sourceDocRef);
+                                if (sourceDoc.exists()) {
+                                    const sourceData = sourceDoc.data() as InventoryLog;
+                                    transaction.update(sourceDocRef, { availableQuantity: sourceData.availableQuantity + setsBrokenDown });
+                                }
+                            }
                         }
                     }
+
                     // Finally, delete the goods issue log itself
                     transaction.delete(doc(inventoryLogsRef, issueItem.id));
                 }
@@ -178,6 +202,16 @@ export default function TransactionsPage() {
     }
   };
 
+  const getItemDescription = (item: BoqItem) => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if (item[key]) return item[key];
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? item[fallbackKey] : '';
+  };
+
+
   const handleAutoAssembly = async () => {
     setIsAutoAssembling(true);
     let setsCreatedCount = 0;
@@ -185,16 +219,17 @@ export default function TransactionsPage() {
 
     try {
         await runTransaction(db, async (transaction) => {
+            const inventoryLogsRef = collection(db, 'inventoryLogs');
+            
+            const currentProjectInventoryQuery = query(inventoryLogsRef, where('projectId', '==', projectSlug));
+            const currentProjectInventorySnap = await getDocs(currentProjectInventoryQuery);
+            const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
+
             const mainItemsWithBOM = boqItems.filter(item => item.bom && item.bom.length > 0);
             
-            // Re-fetch the latest inventory state within the transaction
-            const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug));
-            const freshInventorySnap = await getDocs(inventoryQuery);
-            const currentInventory = freshInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
-
             const componentInventory: Record<string, { totalAvailable: number; logs: {id: string, available: number}[] }> = {};
 
-            currentInventory.forEach(item => {
+            currentProjectInventory.forEach(item => {
                 if (item.itemType === 'Sub' && item.availableQuantity > 0) {
                   if (!componentInventory[item.itemId]) {
                       componentInventory[item.itemId] = { totalAvailable: 0, logs: [] };
@@ -222,7 +257,7 @@ export default function TransactionsPage() {
 
                 if (setsToCreate > 0) {
                     setsCreatedCount += setsToCreate;
-                    const mainItemDescription = mainItem.Description || mainItem.id;
+                    const mainItemDescription = getItemDescription(mainItem);
                     if (!mainItemsAffected.includes(mainItemDescription)) {
                         mainItemsAffected.push(mainItemDescription);
                     }
@@ -236,12 +271,12 @@ export default function TransactionsPage() {
                         for (const log of componentInventory[componentId].logs) {
                             if (consumedQty <= 0) break;
                             const deduction = Math.min(consumedQty, log.available);
-                            transaction.update(doc(db, 'inventoryLogs', log.id), { availableQuantity: log.available - deduction });
+                            transaction.update(doc(inventoryLogsRef, log.id), { availableQuantity: log.available - deduction });
                             log.available -= deduction;
                             consumedQty -= deduction;
                         }
 
-                        const newConsumptionLogRef = doc(collection(db, 'inventoryLogs'));
+                        const newConsumptionLogRef = doc(inventoryLogsRef);
                         transaction.set(newConsumptionLogRef, {
                              date: Timestamp.now(),
                              itemId: componentId,
@@ -256,7 +291,7 @@ export default function TransactionsPage() {
                         });
                     }
 
-                    const newMainItemLogRef = doc(collection(db, 'inventoryLogs'));
+                    const newMainItemLogRef = doc(inventoryLogsRef);
                     transaction.set(newMainItemLogRef, {
                         date: Timestamp.now(),
                         itemId: mainItem.id,
@@ -265,7 +300,7 @@ export default function TransactionsPage() {
                         transactionType: 'Goods Receipt',
                         quantity: setsToCreate,
                         availableQuantity: setsToCreate,
-                        unit: mainItem.UNIT || 'Set',
+                        unit: mainItem.UNIT || mainItem.UNITS || 'Set',
                         projectId: projectSlug,
                         description: 'Auto-assembled from BOM components',
                         details: { fromConversion: true, sourceGrn: null },
