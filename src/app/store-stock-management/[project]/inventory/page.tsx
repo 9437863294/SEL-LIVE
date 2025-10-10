@@ -32,6 +32,7 @@ interface InventoryItem {
     stockIn: number;
     stockOut: number;
     balance: number;
+    stockValue: number;
 }
 
 export default function InventoryPage() {
@@ -99,17 +100,20 @@ export default function InventoryPage() {
             })
             : inventoryLogs;
 
-        const stockMovements = new Map<string, { stockIn: number; stockOut: number }>();
+        const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
 
-        // Initialize all BOQ items
+        // Initialize all BOQ items and find their latest cost from GRNs
         boqItems.forEach(item => {
-            stockMovements.set(item.id, { stockIn: 0, stockOut: 0 });
+            const itemLogs = filteredLogs.filter(log => log.itemId === item.id && log.transactionType === 'Goods Receipt');
+            itemLogs.sort((a,b) => b.date.toMillis() - a.date.toMillis());
+            const latestCost = itemLogs.length > 0 ? (itemLogs[0].cost || 0) : 0;
+            stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost });
         });
 
         // Calculate Stock In from main item Goods Receipts
         filteredLogs.forEach(log => {
             if (log.itemType === 'Main' && log.transactionType === 'Goods Receipt') {
-                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
+                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
                 current.stockIn += log.quantity;
                 stockMovements.set(log.itemId, current);
             }
@@ -118,7 +122,7 @@ export default function InventoryPage() {
         // Calculate Stock Out from main item Goods Issues
         filteredLogs.forEach(log => {
             if (log.itemType === 'Main' && log.transactionType === 'Goods Issue') {
-                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0 };
+                const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
                 current.stockOut += log.quantity;
                 stockMovements.set(log.itemId, current);
             }
@@ -152,7 +156,7 @@ export default function InventoryPage() {
                 }, Infinity);
                 
                 if (setsIssued !== Infinity && setsIssued > 0) {
-                     const current = stockMovements.get(mainItemBoq.id) || { stockIn: 0, stockOut: 0 };
+                     const current = stockMovements.get(mainItemBoq.id) || { stockIn: 0, stockOut: 0, latestCost: 0 };
                      current.stockOut += setsIssued;
                      stockMovements.set(mainItemBoq.id, current);
                 }
@@ -162,7 +166,8 @@ export default function InventoryPage() {
         const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
         
         let calculatedData = boqWithMainItems.map(item => {
-            const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0 };
+            const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0 };
+            const balance = movements.stockIn - movements.stockOut;
             return {
                 id: item.id,
                 slNo: String(item['Sl No'] || item['SL. No.'] || ''),
@@ -171,7 +176,8 @@ export default function InventoryPage() {
                 unit: String(item['UNIT'] || item['UNITS'] || 'N/A'),
                 stockIn: movements.stockIn,
                 stockOut: movements.stockOut,
-                balance: movements.stockIn - movements.stockOut,
+                balance: balance,
+                stockValue: balance * movements.latestCost,
             };
         });
 
@@ -281,13 +287,14 @@ export default function InventoryPage() {
                                     <TableHead className="text-right">Stock In</TableHead>
                                     <TableHead className="text-right">Stock Out</TableHead>
                                     <TableHead className="text-right font-bold">Balance</TableHead>
+                                    <TableHead className="text-right font-bold">Stock item Value</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     Array.from({ length: 15 }).map((_, i) => (
                                         <TableRow key={i}>
-                                            <TableCell colSpan={8}><Skeleton className="h-6 w-full" /></TableCell>
+                                            <TableCell colSpan={9}><Skeleton className="h-6 w-full" /></TableCell>
                                         </TableRow>
                                     ))
                                 ) : inventoryData.length > 0 ? (
@@ -306,10 +313,11 @@ export default function InventoryPage() {
                                                 <TableCell className="text-right text-green-600">{item.stockIn.toLocaleString()}</TableCell>
                                                 <TableCell className="text-right text-red-600">{item.stockOut.toLocaleString()}</TableCell>
                                                 <TableCell className="text-right font-bold">{item.balance.toLocaleString()}</TableCell>
+                                                <TableCell className="text-right font-bold">{formatCurrency(item.stockValue)}</TableCell>
                                             </TableRow>
                                             {expandedRows.has(item.id) && (
                                                 <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                                    <TableCell colSpan={8} className="p-2">
+                                                    <TableCell colSpan={9} className="p-2">
                                                         <div className="p-2 bg-background rounded-md">
                                                             <h4 className="font-semibold text-sm mb-2">Transaction History</h4>
                                                             <Table>
@@ -348,7 +356,7 @@ export default function InventoryPage() {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="text-center h-24">
+                                        <TableCell colSpan={9} className="text-center h-24">
                                             No inventory data to display for this project or selected filters.
                                         </TableCell>
                                     </TableRow>
@@ -361,3 +369,5 @@ export default function InventoryPage() {
         </div>
     );
 }
+
+    
