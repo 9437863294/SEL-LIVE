@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
@@ -46,6 +46,7 @@ export default function InventoryPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
     const [showOnlyWithTransactions, setShowOnlyWithTransactions] = useState(false);
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         if (!projectSlug) return;
@@ -74,6 +75,18 @@ export default function InventoryPage() {
         };
         fetchData();
     }, [projectSlug, toast]);
+    
+    const toggleRowExpansion = (itemId: string) => {
+        setExpandedRows(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(itemId)) {
+            newSet.delete(itemId);
+          } else {
+            newSet.add(itemId);
+          }
+          return newSet;
+        });
+    };
 
     const inventoryData = useMemo((): InventoryItem[] => {
         if (isLoading) return [];
@@ -125,7 +138,7 @@ export default function InventoryPage() {
         // Calculate stock out from component issues
         componentIssuesByTime.forEach(logs => {
             const firstLog = logs[0];
-            const parentBoqItem = boqItems.find(boq => firstLog.itemName.startsWith(boq.Description || boq.id));
+            const mainItemBoq = boqItems.find(boq => firstLog.itemName.startsWith(boq.Description || boq.id));
 
             if (parentBoqItem && parentBoqItem.bom) {
                 const setsIssued = logs.reduce((minSets, log) => {
@@ -182,6 +195,10 @@ export default function InventoryPage() {
         setDateRange(undefined);
         setShowOnlyWithTransactions(false);
     }
+
+    const itemTransactionDetails = (itemId: string) => {
+        return inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
+    };
 
     return (
         <div>
@@ -250,6 +267,7 @@ export default function InventoryPage() {
                         <Table>
                             <TableHeader className="sticky top-0 bg-background z-10">
                                 <TableRow>
+                                    <TableHead className="w-12"></TableHead>
                                     <TableHead>Sl. No.</TableHead>
                                     <TableHead>Description</TableHead>
                                     <TableHead>Unit</TableHead>
@@ -263,24 +281,62 @@ export default function InventoryPage() {
                                 {isLoading ? (
                                     Array.from({ length: 15 }).map((_, i) => (
                                         <TableRow key={i}>
-                                            <TableCell colSpan={7}><Skeleton className="h-6 w-full" /></TableCell>
+                                            <TableCell colSpan={8}><Skeleton className="h-6 w-full" /></TableCell>
                                         </TableRow>
                                     ))
                                 ) : inventoryData.length > 0 ? (
                                     inventoryData.map(item => (
-                                        <TableRow key={item.id}>
-                                            <TableCell>{item.slNo}</TableCell>
-                                            <TableCell className="font-medium">{item.description}</TableCell>
-                                            <TableCell>{item.unit}</TableCell>
-                                            <TableCell className="text-right">{item.boqQty.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right text-green-600">{item.stockIn.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right text-red-600">{item.stockOut.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right font-bold">{item.balance.toLocaleString()}</TableCell>
-                                        </TableRow>
+                                        <Fragment key={item.id}>
+                                            <TableRow onClick={() => toggleRowExpansion(item.id)} className="cursor-pointer">
+                                                <TableCell>
+                                                    <Button size="icon" variant="ghost">
+                                                        {expandedRows.has(item.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>{item.slNo}</TableCell>
+                                                <TableCell className="font-medium">{item.description}</TableCell>
+                                                <TableCell>{item.unit}</TableCell>
+                                                <TableCell className="text-right">{item.boqQty.toLocaleString()}</TableCell>
+                                                <TableCell className="text-right text-green-600">{item.stockIn.toLocaleString()}</TableCell>
+                                                <TableCell className="text-right text-red-600">{item.stockOut.toLocaleString()}</TableCell>
+                                                <TableCell className="text-right font-bold">{item.balance.toLocaleString()}</TableCell>
+                                            </TableRow>
+                                            {expandedRows.has(item.id) && (
+                                                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                                    <TableCell colSpan={8} className="p-2">
+                                                        <div className="p-2 bg-background rounded-md">
+                                                            <h4 className="font-semibold text-sm mb-2">Transaction History</h4>
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow>
+                                                                        <TableHead>Date</TableHead>
+                                                                        <TableHead>Type</TableHead>
+                                                                        <TableHead>Quantity</TableHead>
+                                                                        <TableHead>Details</TableHead>
+                                                                    </TableRow>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {itemTransactionDetails(item.id).map(log => (
+                                                                        <TableRow key={log.id}>
+                                                                            <TableCell>{format(log.date.toDate(), 'dd MMM yyyy')}</TableCell>
+                                                                            <TableCell>{log.transactionType}</TableCell>
+                                                                            <TableCell className={log.transactionType === 'Goods Issue' ? 'text-red-600' : 'text-green-600'}>
+                                                                                {log.transactionType === 'Goods Issue' ? '-' : '+'}{log.quantity.toLocaleString()}
+                                                                            </TableCell>
+                                                                            <TableCell>{log.details?.issuedTo || log.details?.supplier || ''}</TableCell>
+                                                                        </TableRow>
+                                                                    ))}
+                                                                </TableBody>
+                                                            </Table>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </Fragment>
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="text-center h-24">
+                                        <TableCell colSpan={8} className="text-center h-24">
                                             No inventory data to display for this project or selected filters.
                                         </TableCell>
                                     </TableRow>
@@ -292,4 +348,5 @@ export default function InventoryPage() {
             </Card>
         </div>
     );
-}
+
+    
