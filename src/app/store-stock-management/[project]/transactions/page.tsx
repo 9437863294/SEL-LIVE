@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import {
   Card,
   CardHeader,
@@ -66,6 +66,7 @@ export interface TransactionSummary {
     date: Date;
     transactionType: string;
     totalAmount: number;
+    remainingValue: number;
     items: EnrichedLogItem[];
     details?: InventoryLog['details'];
 }
@@ -315,7 +316,7 @@ export default function TransactionsPage() {
                         });
                     }
 
-                    const newMainItemLogRef = doc(inventoryLogsRef);
+                    const newMainItemLogRef = doc(collection(db, 'inventoryLogs'));
                     transaction.set(newMainItemLogRef, {
                         date: Timestamp.now(),
                         itemId: mainItem.id,
@@ -367,44 +368,31 @@ export default function TransactionsPage() {
                 date: grnItem.date.toDate(),
                 transactionType: 'Goods Receipt',
                 totalAmount: 0,
+                remainingValue: 0,
                 items: [],
                 details: grnItem.details,
             };
         }
         
-        let issuedQty = 0;
-        // Direct issues
-        issuedQty += goodsIssues
-            .filter(issue => issue.details?.sourceGrn === grnNo && issue.itemId === grnItem.itemId)
-            .reduce((sum, issue) => sum + issue.quantity, 0);
-
-        // Component-based issues
-        const mainItemBoq = boqItems.find(b => b.id === grnItem.itemId);
-        if (mainItemBoq) {
-             const componentIssues = goodsIssues.filter(issue => 
-                issue.details?.sourceGrn === grnNo && 
-                issue.itemType === 'Sub' &&
-                issue.description?.includes(`of ${mainItemBoq.Description || getItemDescription(mainItemBoq)}`)
-            );
-            
-            const setsIssuedFromComponents = componentIssues.reduce((totalSets, compIssue) => {
-                const setsBrokenDownMatch = compIssue.description?.match(/by breaking (\d+) sets/);
-                const sets = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
-                return totalSets + sets;
-            }, 0) / (mainItemBoq.bom?.length || 1); // Avoid division by zero, average sets
-
-             issuedQty += isNaN(setsIssuedFromComponents) ? 0 : setsIssuedFromComponents;
-        }
-
+        const issuesFromThisGrnItem = goodsIssues.filter(issue => issue.details?.sourceGrn === grnNo && issue.itemId === grnItem.itemId);
+        const totalIssuedQty = issuesFromThisGrnItem.reduce((sum, issue) => sum + issue.quantity, 0);
+        
         const enrichedItem: EnrichedLogItem = {
           ...grnItem,
           originalQuantity: grnItem.quantity,
-          issuedQuantity: issuedQty,
+          issuedQuantity: totalIssuedQty,
           balanceQuantity: grnItem.availableQuantity,
         };
 
         grnSummaries[grnNo].items.push(enrichedItem);
         grnSummaries[grnNo].totalAmount += (grnItem.quantity || 0) * (grnItem.cost || 0);
+    });
+
+    Object.values(grnSummaries).forEach(summary => {
+        const issuedValue = goodsIssues
+            .filter(issue => issue.details?.sourceGrn === summary.id)
+            .reduce((sum, issue) => sum + ((issue.quantity || 0) * (issue.cost || 0)), 0);
+        summary.remainingValue = summary.totalAmount - issuedValue;
     });
     
     const issueSummaries: Record<string, TransactionSummary> = {};
@@ -419,6 +407,7 @@ export default function TransactionsPage() {
                 date: issueItem.date.toDate(),
                 transactionType: 'Goods Issue',
                 totalAmount: 0,
+                remainingValue: 0,
                 items: [],
                 details: issueItem.details,
             };
@@ -505,6 +494,7 @@ export default function TransactionsPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Total Amount</TableHead>
+                  <TableHead>Remaining Value</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -512,7 +502,7 @@ export default function TransactionsPage() {
                 {isLoading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={5}>
+                      <TableCell colSpan={6}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
@@ -531,6 +521,9 @@ export default function TransactionsPage() {
                       </TableCell>
                       <TableCell>
                         {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
+                      </TableCell>
+                       <TableCell>
+                        {summary.transactionType === 'Goods Receipt' ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.remainingValue) : 'N/A'}
                       </TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>
@@ -595,7 +588,7 @@ export default function TransactionsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
+                    <TableCell colSpan={6} className="text-center h-24">
                       No transactions found.
                     </TableCell>
                   </TableRow>
