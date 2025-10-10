@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -59,7 +58,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 export interface TransactionSummary {
@@ -124,26 +123,29 @@ export default function TransactionsPage() {
   
 const handleDeleteTransaction = async (summary: TransactionSummary) => {
     setIsDeleting(true);
+    const inventoryLogsRef = collection(db, 'inventoryLogs');
+    
     try {
-        const inventoryLogsRef = collection(db, 'inventoryLogs');
-        
-        // --- PRE-TRANSACTION READS ---
-        const sourceGrnDocsToUpdate = new Map<string, { docRef: any, newAvailableQty: number }>();
+        // Pre-read all necessary data before starting the transaction.
+        const sourceGrnUpdates = new Map<string, { docRef: any, newAvailableQty: number }>();
 
         if (summary.transactionType === 'Goods Issue') {
             for (const issueItem of summary.items) {
-                if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
+                const isMainItemIssue = issueItem.itemType === 'Main' && issueItem.details?.sourceGrn;
+                const isComponentBreakdownIssue = issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking');
+                
+                if (isMainItemIssue) {
                     const q = query(inventoryLogsRef, where('details.grnNo', '==', issueItem.details.sourceGrn), where('itemId', '==', issueItem.itemId));
                     const sourceGrnItemsSnap = await getDocs(q);
                     if (!sourceGrnItemsSnap.empty) {
                         const sourceDoc = sourceGrnItemsSnap.docs[0];
                         const sourceData = sourceDoc.data() as InventoryLog;
-                        sourceGrnDocsToUpdate.set(sourceDoc.id, {
+                        sourceGrnUpdates.set(sourceDoc.id, {
                             docRef: sourceDoc.ref,
                             newAvailableQty: sourceData.availableQuantity + issueItem.quantity
                         });
                     }
-                } else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
+                } else if (isComponentBreakdownIssue) {
                     const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
                     const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
                     const mainItemName = issueItem.description.split(' of ')[1];
@@ -154,18 +156,23 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                         const sourceGrnItemsSnap = await getDocs(q);
                         if (!sourceGrnItemsSnap.empty) {
                             const sourceDoc = sourceGrnItemsSnap.docs[0];
-                             const sourceData = sourceDoc.data() as InventoryLog;
-                            sourceGrnDocsToUpdate.set(sourceDoc.id, {
+                            const sourceData = sourceDoc.data() as InventoryLog;
+                            
+                             // If multiple components from the same GRN are reversed, accumulate the qty
+                            const existingUpdate = sourceGrnUpdates.get(sourceDoc.id);
+                            const newQty = (existingUpdate ? existingUpdate.newAvailableQty : sourceData.availableQuantity) + setsBrokenDown;
+
+                            sourceGrnUpdates.set(sourceDoc.id, {
                                 docRef: sourceDoc.ref,
-                                newAvailableQty: sourceData.availableQuantity + setsBrokenDown
+                                newAvailableQty: newQty
                             });
                         }
                     }
                 }
             }
         }
-        // --- END OF PRE-TRANSACTION READS ---
 
+        // Now run the transaction with pre-fetched data.
         await runTransaction(db, async (transaction) => {
             if (summary.transactionType === 'Goods Receipt') {
                 const hasBeenIssued = summary.items.some(item => item.issuedQuantity > 0);
@@ -178,7 +185,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                 }
             } else if (summary.transactionType === 'Goods Issue') {
                 // Update source GRN items from our pre-fetched map
-                sourceGrnDocsToUpdate.forEach(update => {
+                sourceGrnUpdates.forEach(update => {
                     transaction.update(update.docRef, { availableQuantity: update.newAvailableQty });
                 });
 
@@ -214,7 +221,9 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
   const getItemDescription = (item: BoqItem) => {
     const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
     for (const key of descriptionKeys) {
-      if (item[key]) return item[key];
+      if (item[key]) {
+        return item[key];
+      }
     }
     const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
     return fallbackKey ? item[fallbackKey] : '';
@@ -579,6 +588,3 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
     </>
   );
 }
-
-    
-
