@@ -62,7 +62,7 @@ export default function InventoryPage() {
                 ]);
 
                 const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-                const inventoryData = inventorySnapshot.docs.map(doc => doc.data() as InventoryLog);
+                const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog));
 
                 setBoqItems(boqData);
                 setInventoryLogs(inventoryData);
@@ -351,3 +351,4 @@ export default function InventoryPage() {
 
     
 }
+
