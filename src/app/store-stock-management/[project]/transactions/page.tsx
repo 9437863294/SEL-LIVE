@@ -59,6 +59,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 export interface TransactionSummary {
@@ -81,6 +82,7 @@ export default function TransactionsPage() {
   const { toast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -429,9 +431,10 @@ export default function TransactionsPage() {
     allSummaries.sort((a,b) => b.date.getTime() - a.date.getTime());
 
     return allSummaries.filter(summary =>
+      (typeFilter === 'all' || summary.transactionType === typeFilter) &&
       summary.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [transactions, searchTerm, boqItems]);
+  }, [transactions, searchTerm, typeFilter, boqItems]);
   
   const getBadgeVariant = (type: string) => {
     switch (type) {
@@ -484,6 +487,16 @@ export default function TransactionsPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Goods Receipt">Goods Receipt</SelectItem>
+                    <SelectItem value="Goods Issue">Goods Issue</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
@@ -606,3 +619,5 @@ export default function TransactionsPage() {
     </>
   );
 }
+
+    
