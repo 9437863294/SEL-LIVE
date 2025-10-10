@@ -324,7 +324,7 @@ export default function StockOutPage() {
                 const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                 transaction.set(newIssueLogRef, {
                     date: Timestamp.fromDate(data.issueDate),
-                    itemId: bomItem.id, itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                    itemId: bomItem.id, itemName: `${item.itemName}-${bomItem.markNo}`,
                     itemType: 'Sub', transactionType: 'Goods Issue',
                     quantity: deduction, availableQuantity: 0, 
                     unit: 'Kg', 
@@ -351,9 +351,10 @@ export default function StockOutPage() {
 
                       const priceKey = findBasicPriceKey(mainItemBoq);
                       const mainItemPrice = mainItemLog.cost || (priceKey ? Number(mainItemBoq[priceKey]) : 0);
+                      
                       const totalBomPieces = mainItemBoq.bom.reduce((sum, b) => sum + b.qtyPerSet, 0);
                       const pricePerPiece = totalBomPieces > 0 ? mainItemPrice / totalBomPieces : 0;
-                      const componentCost = pricePerPiece ;
+                      const componentCost = pricePerPiece * bomItem.qtyPerSet; // This seems more correct for cost of component in set
                       
                       const availableComponentsFromThisLog = mainItemLog.availableQuantity * bomItem.qtyPerSet;
                       const componentsToTakeFromThisLog = Math.min(remainingQtyToIssue, availableComponentsFromThisLog);
@@ -367,7 +368,7 @@ export default function StockOutPage() {
                           const newIssueLogRef = doc(collection(db, 'inventoryLogs'));
                           transaction.set(newIssueLogRef, {
                               date: Timestamp.fromDate(data.issueDate),
-                              itemId: bomItem.id, itemName: `${item.itemName} - ${getItemDescription(bomItem)}`,
+                              itemId: bomItem.id, itemName: `${item.itemName}-${bomItem.markNo}`,
                               itemType: 'Sub', transactionType: 'Goods Issue',
                               quantity: componentsToTakeFromThisLog, availableQuantity: 0,
                               unit: 'Kg', 
@@ -590,3 +591,4 @@ export default function StockOutPage() {
     </>
   );
 }
+
