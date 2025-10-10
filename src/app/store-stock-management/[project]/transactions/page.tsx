@@ -33,7 +33,7 @@ import {
   GitCommit,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
-import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog, EnrichedLogItem, BoqItem } from '@/lib/types';
 import { format } from 'date-fns';
@@ -121,87 +121,95 @@ export default function TransactionsPage() {
     setIsViewOpen(true);
   };
   
-const handleDeleteTransaction = async (summary: TransactionSummary) => {
-    setIsDeleting(true);
-    
-    try {
-        const issueDocIdsToDelete = new Set(summary.items.map(item => item.id));
-        const relevantIssueLogs = transactions.filter(t => issueDocIdsToDelete.has(t.id));
-
-        const inventoryLogsRef = collection(db, 'inventoryLogs');
-        const sourceGrnItemsToRead = new Set<string>();
-
-        for (const issueItem of relevantIssueLogs) {
-            if (issueItem.details?.sourceGrn) {
-                const sourceGrnItemsQuery = query(
-                    inventoryLogsRef,
-                    where('projectId', '==', projectSlug),
-                    where('details.grnNo', '==', issueItem.details.sourceGrn)
-                );
-                const sourceGrnItemsSnap = await getDocs(sourceGrnItemsQuery);
-                sourceGrnItemsSnap.forEach(doc => sourceGrnItemsToRead.add(doc.id));
-            }
-        }
-        
-        const sourceGrnDocs = await Promise.all(
-            Array.from(sourceGrnItemsToRead).map(id => getDoc(doc(inventoryLogsRef, id)))
-        );
-        const sourceGrnDataMap = new Map(sourceGrnDocs.map(doc => [doc.id, doc.data() as InventoryLog]));
-
-
-        await runTransaction(db, async (transaction) => {
-            const sourceGrnUpdates = new Map<string, number>();
-
-            for (const issueItem of relevantIssueLogs) {
-                if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
-                    const sourceGrnLog = Array.from(sourceGrnDataMap.values()).find(log => log.details?.grnNo === issueItem.details?.sourceGrn && log.itemId === issueItem.itemId);
-                    if (sourceGrnLog) {
-                        const sourceDocId = Array.from(sourceGrnDataMap.entries()).find(([id, data]) => data === sourceGrnLog)?.[0];
-                        if(sourceDocId) {
-                           const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
-                           sourceGrnUpdates.set(sourceDocId, currentUpdate + issueItem.quantity);
-                        }
-                    }
-                } else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
-                    const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
-                    const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
-                    const mainItemName = issueItem.description.split(' of ')[1];
-                    const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
-
-                    if (setsBrokenDown > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
-                       const sourceGrnLog = Array.from(sourceGrnDataMap.values()).find(log => log.details?.grnNo === issueItem.details?.sourceGrn && log.itemId === mainItemBoq.id);
-                       if(sourceGrnLog) {
-                         const sourceDocId = Array.from(sourceGrnDataMap.entries()).find(([id, data]) => data === sourceGrnLog)?.[0];
-                          if(sourceDocId) {
-                            const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
-                            sourceGrnUpdates.set(sourceDocId, currentUpdate + setsBrokenDown);
+  const handleDeleteTransaction = async (summary: TransactionSummary) => {
+      setIsDeleting(true);
+      
+      try {
+          const inventoryLogsRef = collection(db, 'inventoryLogs');
+          
+          await runTransaction(db, async (transaction) => {
+              const issueDocIdsToDelete = new Set(summary.items.map(item => item.id));
+              const relevantIssueLogs = transactions.filter(t => issueDocIdsToDelete.has(t.id));
+  
+              const sourceGrnItemsToRead = new Set<string>();
+  
+              for (const issueItem of relevantIssueLogs) {
+                  if (issueItem.details?.sourceGrn) {
+                      const sourceGrnItemsQuery = query(
+                          inventoryLogsRef,
+                          where('projectId', '==', projectSlug),
+                          where('details.grnNo', '==', issueItem.details.sourceGrn)
+                      );
+                      const sourceGrnItemsSnap = await getDocs(sourceGrnItemsQuery); // This is outside transaction, but we need the IDs first
+                      sourceGrnItemsSnap.forEach(doc => sourceGrnItemsToRead.add(doc.id));
+                  }
+              }
+  
+              const sourceGrnDocs = await Promise.all(
+                  Array.from(sourceGrnItemsToRead).map(id => transaction.get(doc(inventoryLogsRef, id)))
+              );
+              const sourceGrnDataMap = new Map(sourceGrnDocs.map(doc => [doc.id, doc.data() as InventoryLog]));
+              const sourceGrnUpdates = new Map<string, number>();
+  
+              for (const issueItem of relevantIssueLogs) {
+                  if (issueItem.itemType === 'Main' && issueItem.details?.sourceGrn) {
+                      let sourceDocId: string | undefined;
+                      for(const [id, data] of sourceGrnDataMap.entries()) {
+                          if (data.details?.grnNo === issueItem.details.sourceGrn && data.itemId === issueItem.itemId) {
+                              sourceDocId = id;
+                              break;
                           }
-                       }
-                    }
-                }
-            }
-            
-            sourceGrnUpdates.forEach((qtyToAdd, docId) => {
-                const docRef = doc(inventoryLogsRef, docId);
-                const currentData = sourceGrnDataMap.get(docId);
-                if (currentData) {
-                  transaction.update(docRef, { availableQuantity: currentData.availableQuantity + qtyToAdd });
-                }
-            });
-
-            issueDocIdsToDelete.forEach(id => {
-                transaction.delete(doc(inventoryLogsRef, id));
-            });
-        });
-
-        toast({ title: "Success", description: "Transaction and its items have been deleted, and stock has been reversed." });
-        fetchData();
-    } catch (error: any) {
-        console.error("Error deleting transaction:", error);
-        toast({ title: "Delete Failed", description: error.message || "An error occurred while deleting.", variant: "destructive" });
-    }
-    setIsDeleting(false);
+                      }
+                      
+                      if (sourceDocId) {
+                          const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
+                          sourceGrnUpdates.set(sourceDocId, currentUpdate + issueItem.quantity);
+                      }
+  
+                  } else if (issueItem.itemType === 'Sub' && issueItem.description?.includes('by breaking')) {
+                      const setsBrokenDownMatch = issueItem.description.match(/by breaking (\d+) sets/);
+                      const setsToRestore = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                      const mainItemName = issueItem.description.split(' of ')[1];
+                      const mainItemBoq = boqItems.find(b => getItemDescription(b) === mainItemName);
+  
+                      if (setsToRestore > 0 && mainItemBoq && issueItem.details?.sourceGrn) {
+                           let sourceDocId: string | undefined;
+                           for(const [id, data] of sourceGrnDataMap.entries()) {
+                               if (data.details?.grnNo === issueItem.details.sourceGrn && data.itemId === mainItemBoq.id) {
+                                   sourceDocId = id;
+                                   break;
+                               }
+                           }
+                          if (sourceDocId) {
+                              const currentUpdate = sourceGrnUpdates.get(sourceDocId) || 0;
+                              sourceGrnUpdates.set(sourceDocId, currentUpdate + setsToRestore);
+                          }
+                      }
+                  }
+              }
+              
+              sourceGrnUpdates.forEach((qtyToAdd, docId) => {
+                  const docRef = doc(inventoryLogsRef, docId);
+                  const currentData = sourceGrnDataMap.get(docId);
+                  if (currentData) {
+                      transaction.update(docRef, { availableQuantity: currentData.availableQuantity + qtyToAdd });
+                  }
+              });
+  
+              issueDocIdsToDelete.forEach(id => {
+                  transaction.delete(doc(inventoryLogsRef, id));
+              });
+          });
+  
+          toast({ title: "Success", description: "Transaction and its items have been deleted, and stock has been reversed." });
+          fetchData();
+      } catch (error: any) {
+          console.error("Error deleting transaction:", error);
+          toast({ title: "Delete Failed", description: error.message || "An error occurred while deleting.", variant: "destructive" });
+      }
+      setIsDeleting(false);
   };
+  
 
   const handleEditTransaction = (summary: TransactionSummary) => {
     if (summary.transactionType === 'Goods Receipt') {
@@ -301,6 +309,7 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
                              quantity: setsToCreate * bomComponent.qtyPerSet,
                              availableQuantity: 0,
                              unit: 'Kg',
+                             cost: 0, // Cost for conversion logs can be tricky, might need separate logic
                              projectId: projectSlug,
                              description: `Auto-assembled into ${setsToCreate} sets of ${mainItemDescription}`,
                         });
@@ -342,7 +351,6 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
   };
 
 
-
   const transactionSummaries = useMemo(() => {
     const goodsReceipts = transactions.filter(t => t.transactionType === 'Goods Receipt');
     const goodsIssues = transactions.filter(t => t.transactionType === 'Goods Issue');
@@ -372,18 +380,22 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
 
         // Component-based issues
         const mainItemBoq = boqItems.find(b => b.id === grnItem.itemId);
-        if (mainItemBoq && mainItemBoq.bom) {
-            goodsIssues.forEach(issue => {
-                if (issue.details?.sourceGrn === grnNo && issue.description?.includes('by breaking')) {
-                    const setsBrokenDownMatch = issue.description.match(/by breaking (\d+) sets/);
-                    const setsBrokenDown = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
-                    if(issue.description.includes(mainItemBoq.Description) || issue.description.includes(mainItemBoq['DESCRIPTION OF ITEMS'])){
-                        issuedQty += setsBrokenDown;
-                    }
-                }
-            });
-        }
+        if (mainItemBoq) {
+             const componentIssues = goodsIssues.filter(issue => 
+                issue.details?.sourceGrn === grnNo && 
+                issue.itemType === 'Sub' &&
+                issue.description?.includes(`of ${mainItemBoq.Description || getItemDescription(mainItemBoq)}`)
+            );
             
+            const setsIssuedFromComponents = componentIssues.reduce((totalSets, compIssue) => {
+                const setsBrokenDownMatch = compIssue.description?.match(/by breaking (\d+) sets/);
+                const sets = setsBrokenDownMatch ? parseInt(setsBrokenDownMatch[1], 10) : 0;
+                return totalSets + sets;
+            }, 0) / (mainItemBoq.bom?.length || 1); // Avoid division by zero, average sets
+
+             issuedQty += isNaN(setsIssuedFromComponents) ? 0 : setsIssuedFromComponents;
+        }
+
         const enrichedItem: EnrichedLogItem = {
           ...grnItem,
           originalQuantity: grnItem.quantity,
@@ -601,5 +613,3 @@ const handleDeleteTransaction = async (summary: TransactionSummary) => {
     </>
   );
 }
-
-    
