@@ -164,12 +164,12 @@ export default function AgeingReportPage() {
 
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-center">
                         <div>
                             <CardTitle>Ageing Summary</CardTitle>
                             <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex items-center gap-2">
                             <Label>Report Presets</Label>
                             <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
                                 <SelectTrigger className="w-[180px]">
