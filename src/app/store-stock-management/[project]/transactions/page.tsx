@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -92,10 +93,10 @@ export default function TransactionsPage() {
   const [isAutoAssembling, setIsAutoAssembling] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Projects', projectSlug);
-  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', projectSlug);
-  const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', projectSlug);
-  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', projectSlug);
+  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Projects');
+  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects');
+  const canEditTransaction = can('Edit', 'Store & Stock Management.Projects');
+  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects');
 
   const fetchData = async () => {
     setIsLoading(true);
