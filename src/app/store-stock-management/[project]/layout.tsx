@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as React from 'react';
@@ -41,18 +42,18 @@ export default function ProjectLayout({
   const { can } = useAuthorization();
 
   const navItems = [
-    { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard' },
-    { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory' },
-    { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions' },
-    { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions' },
-    { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'BOM Management' },
-    { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ' },
-    { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports' },
-    { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast' },
-    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings' },
+    { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard', permission: can('View', 'Store & Stock Management.Dashboard') },
+    { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory', permission: can('View', 'Store & Stock Management.Inventory') },
+    { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions', permission: can('View', 'Store & Stock Management.Transactions') },
+    { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions', permission: can('View', 'Store & Stock Management.Conversions') },
+    { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'BOM Management', permission: can('View', 'Store & Stock Management.BOM Management') },
+    { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ', permission: can('View', 'Store & Stock Management.BOQ') },
+    { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View', 'Store & Stock Management.Reports') },
+    { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast', permission: can('View', 'Store & Stock Management.AI Forecast') },
+    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings', permission: can('View', 'Store & Stock Management.Settings') },
   ];
   
-  const visibleNavItems = navItems; // Assuming all are visible for now
+  const visibleNavItems = navItems.filter(item => item.permission);
 
   return (
     <div className="flex w-full h-full">

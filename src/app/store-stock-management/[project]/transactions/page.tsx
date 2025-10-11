@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -62,6 +63,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 export interface TransactionSummary {
@@ -82,6 +84,7 @@ export default function TransactionsPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const { can } = useAuthorization();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -90,6 +93,11 @@ export default function TransactionsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAutoAssembling, setIsAutoAssembling] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Transactions');
+  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Transactions');
+  const canEditTransaction = can('Edit', 'Store & Stock Management.Transactions');
+  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Transactions');
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -478,12 +486,12 @@ export default function TransactionsPage() {
                     Auto-Assemble
                 </Button>
                 <Link href={`/store-stock-management/${projectSlug}/transactions/stock-in`}>
-                    <Button variant="outline">
+                    <Button variant="outline" disabled={!canCreateStockIn}>
                         <PlusCircle className="mr-2 h-4 w-4" /> Stock In
                     </Button>
                 </Link>
                 <Link href={`/store-stock-management/${projectSlug}/transactions/stock-out`}>
-                  <Button variant="outline">
+                  <Button variant="outline" disabled={!canCreateStockOut}>
                     <MinusCircle className="mr-2 h-4 w-4" /> Stock Out
                   </Button>
                 </Link>
@@ -577,7 +585,7 @@ export default function TransactionsPage() {
                                         <div>
                                             <DropdownMenuItem
                                                 onSelect={() => handleEditTransaction(summary)}
-                                                disabled={summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
+                                                disabled={!canEditTransaction || summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
                                             >
                                                 <Edit className="mr-2 h-4 w-4" /> Edit
                                             </DropdownMenuItem>
@@ -597,7 +605,7 @@ export default function TransactionsPage() {
 
                                <DropdownMenuSeparator />
                                <AlertDialogTrigger asChild>
-                                 <DropdownMenuItem className="text-destructive">
+                                 <DropdownMenuItem className="text-destructive" disabled={!canDeleteTransaction}>
                                     <Trash2 className="mr-2 h-4 w-4" /> Delete
                                  </DropdownMenuItem>
                                </AlertDialogTrigger>

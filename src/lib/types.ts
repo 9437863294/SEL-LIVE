@@ -1,6 +1,5 @@
 
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -119,7 +118,18 @@ export const permissionModules = {
       'Dashboard': ['View', 'Add', 'Edit'],
       'Reports': ['View', 'View Month-wise Status'],
     },
-    'Store & Stock Management': ['View Module'],
+    'Store & Stock Management': {
+        'View Module': true,
+        'Dashboard': ['View'],
+        'Inventory': ['View'],
+        'Transactions': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'],
+        'Conversions': ['View', 'Manage'],
+        'BOM Management': ['View', 'Manage'],
+        'BOQ': ['View', 'Import', 'Add'],
+        'Reports': ['View', 'Ageing Report'],
+        'AI Forecast': ['View'],
+        'Settings': ['View', 'Manage Projects', 'Manage Units', 'Manage GRN Entry'],
+    },
     'Insurance': {
       'View Module': true,
       'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'View History'],

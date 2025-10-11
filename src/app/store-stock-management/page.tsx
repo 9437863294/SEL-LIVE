@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -25,6 +26,7 @@ interface ProjectCardProps {
     href: string;
     description: string;
     disabled?: boolean;
+    isSettings?: boolean;
   };
 }
 
@@ -50,9 +52,12 @@ function ProjectCard({ item }: ProjectCardProps) {
                 <div className="bg-primary/10 p-3 rounded-lg">
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
+                <div className="flex-1 flex justify-between items-center">
+                    <div>
+                        <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                        <CardDescription className="text-xs">{item.description}</CardDescription>
+                    </div>
+                    {item.isSettings && <Settings className="w-5 h-5 text-muted-foreground" />}
                 </div>
             </CardHeader>
         </Card>
