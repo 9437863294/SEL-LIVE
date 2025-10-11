@@ -111,29 +111,37 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, transactio
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
-                    <TableHead>BOQ Sl. No</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Unit Cost</TableHead>
-                    {isGrn && <TableHead>Issued</TableHead>}
-                    {isGrn && <TableHead>Balance</TableHead>}
-                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                    {isGrn && <TableHead>Issued Qty</TableHead>}
+                    {isGrn && <TableHead>Balance Qty</TableHead>}
+                    {isGrn && <TableHead className="text-right">Remaining Value</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {summary.items.map(item => (
                     <TableRow key={item.id}>
                       <TableCell>{item.itemName}</TableCell>
-                      <TableCell>{item.details?.boqSlNo || 'N/A'}</TableCell>
                       <TableCell>{item.quantity} {item.unit}</TableCell>
                       <TableCell>{formatCurrency(item.cost)}</TableCell>
+                      <TableCell>{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
                       {isGrn && <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>}
                       {isGrn && <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>}
-                      <TableCell className="text-right">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                      {isGrn && (
+                          <TableCell className="text-right font-bold">
+                              {formatCurrency((item.balanceQuantity || 0) * (item.cost || 0))}
+                          </TableCell>
+                      )}
                     </TableRow>
                   ))}
                    <TableRow className="font-bold bg-muted">
-                      <TableCell colSpan={isGrn ? 6 : 4} className="text-right">Total</TableCell>
+                      <TableCell colSpan={isGrn ? 3 : 3} className="text-right">Total</TableCell>
                       <TableCell className="text-right">{formatCurrency(summary.totalAmount)}</TableCell>
+                      {isGrn && <TableCell colSpan={2}></TableCell>}
+                      {isGrn && (
+                        <TableCell className="text-right">{formatCurrency(summary.remainingValue)}</TableCell>
+                      )}
                   </TableRow>
                 </TableBody>
               </Table>
