@@ -10,12 +10,12 @@ import type { InventoryLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface AgeingBucket {
     quantity: number;
@@ -25,17 +25,36 @@ interface AgeingBucket {
 interface AgeingData {
     itemName: string;
     unit: string;
-    '0-30': AgeingBucket;
-    '31-60': AgeingBucket;
-    '61-90': AgeingBucket;
-    '91-180': AgeingBucket;
-    '181-365': AgeingBucket;
-    '365+': AgeingBucket;
+    buckets: Record<string, AgeingBucket>;
     totalQuantity: number;
     totalValue: number;
 }
 
-const ageBrackets: (keyof Omit<AgeingData, 'itemName' | 'unit' | 'totalQuantity' | 'totalValue'>)[] = ['0-30', '31-60', '61-90', '91-180', '181-365', '365+'];
+const BUCKET_PRESETS = {
+  monthly: [
+    { label: '0-30', from: 0, to: 30 },
+    { label: '31-60', from: 31, to: 60 },
+    { label: '61-90', from: 61, to: 90 },
+    { label: '91-180', from: 91, to: 180 },
+    { label: '181-365', from: 181, to: 365 },
+    { label: '365+', from: 366, to: Infinity },
+  ],
+  quarterly: [
+    { label: '0-90', from: 0, to: 90 },
+    { label: '91-180', from: 91, to: 180 },
+    { label: '181-270', from: 181, to: 270 },
+    { label: '271-365', from: 271, to: 365 },
+    { label: '365+', from: 366, to: Infinity },
+  ],
+  yearly: [
+    { label: '0-365', from: 0, to: 365 },
+    { label: '1-2 Years', from: 366, to: 730 },
+    { label: '2-3 Years', from: 731, to: 1095 },
+    { label: '3+ Years', from: 1096, to: Infinity },
+  ]
+};
+
+type Preset = keyof typeof BUCKET_PRESETS;
 
 export default function AgeingReportPage() {
     const { toast } = useToast();
@@ -43,7 +62,10 @@ export default function AgeingReportPage() {
     const projectSlug = params.project as string;
     const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    
+    const [activePreset, setActivePreset] = useState<Preset>('monthly');
+
+    const currentBuckets = BUCKET_PRESETS[activePreset];
+
     useEffect(() => {
         if (!projectSlug) return;
         const fetchData = async () => {
@@ -66,51 +88,45 @@ export default function AgeingReportPage() {
         const itemBalances: Record<string, AgeingData> = {};
         const now = new Date();
 
-        // Process only GRNs with available quantity to determine stock age and value
         inventoryLogs
           .filter(log => log.transactionType === 'Goods Receipt' && log.availableQuantity > 0)
           .forEach(log => {
             if (!itemBalances[log.itemId]) {
+                const initialBuckets: Record<string, AgeingBucket> = {};
+                currentBuckets.forEach(bucket => {
+                    initialBuckets[bucket.label] = { quantity: 0, value: 0 };
+                });
                 itemBalances[log.itemId] = {
                     itemName: log.itemName,
                     unit: log.unit,
-                    '0-30': { quantity: 0, value: 0 },
-                    '31-60': { quantity: 0, value: 0 },
-                    '61-90': { quantity: 0, value: 0 },
-                    '91-180': { quantity: 0, value: 0 },
-                    '181-365': { quantity: 0, value: 0 },
-                    '365+': { quantity: 0, value: 0 },
+                    buckets: initialBuckets,
                     totalQuantity: 0,
                     totalValue: 0,
                 };
             }
 
             const age = differenceInDays(now, log.date.toDate());
-            let bracket: keyof Omit<AgeingData, 'itemName' | 'unit' | 'totalQuantity' | 'totalValue'>;
-
-            if (age <= 30) bracket = '0-30';
-            else if (age <= 60) bracket = '31-60';
-            else if (age <= 90) bracket = '61-90';
-            else if (age <= 180) bracket = '91-180';
-            else if (age <= 365) bracket = '181-365';
-            else bracket = '365+';
+            
+            const bucket = currentBuckets.find(b => age >= b.from && age <= b.to);
+            if(!bucket) return;
+            
+            const bracket = bucket.label;
             
             const quantityInBracket = log.availableQuantity;
             const valueInBracket = quantityInBracket * (log.cost || 0);
 
-            itemBalances[log.itemId][bracket].quantity += quantityInBracket;
-            itemBalances[log.itemId][bracket].value += valueInBracket;
+            itemBalances[log.itemId].buckets[bracket].quantity += quantityInBracket;
+            itemBalances[log.itemId].buckets[bracket].value += valueInBracket;
         });
 
-        // Calculate totals for each item
         Object.values(itemBalances).forEach(item => {
-            item.totalQuantity = ageBrackets.reduce((sum, bracket) => sum + item[bracket].quantity, 0);
-            item.totalValue = ageBrackets.reduce((sum, bracket) => sum + item[bracket].value, 0);
+            item.totalQuantity = Object.values(item.buckets).reduce((sum, bucket) => sum + bucket.quantity, 0);
+            item.totalValue = Object.values(item.buckets).reduce((sum, bucket) => sum + bucket.value, 0);
         });
 
         return Object.values(itemBalances).filter(item => item.totalQuantity > 0);
 
-    }, [inventoryLogs]);
+    }, [inventoryLogs, currentBuckets]);
     
     const formatValue = (value: number) => {
       if (value === 0) return '-';
@@ -136,7 +152,24 @@ export default function AgeingReportPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Ageing Summary</CardTitle>
-                    <CardDescription>Breakdown of inventory stock by age in days.</CardDescription>
+                    <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
+                    <div className="pt-4">
+                        <Label>Report Presets</Label>
+                        <RadioGroup defaultValue="monthly" onValueChange={(value) => setActivePreset(value as Preset)} className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="monthly" id="monthly" />
+                                <Label htmlFor="monthly">Monthly</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="quarterly" id="quarterly" />
+                                <Label htmlFor="quarterly">Quarterly</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="yearly" id="yearly" />
+                                <Label htmlFor="yearly">Yearly</Label>
+                            </div>
+                        </RadioGroup>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -144,14 +177,14 @@ export default function AgeingReportPage() {
                             <TableRow>
                                 <TableHead rowSpan={2} className="align-bottom">Item Name</TableHead>
                                 <TableHead rowSpan={2} className="align-bottom">Unit</TableHead>
-                                {ageBrackets.map(bracket => (
-                                    <TableHead key={bracket} colSpan={2} className="text-center border-l">{bracket} days</TableHead>
+                                {currentBuckets.map(bucket => (
+                                    <TableHead key={bucket.label} colSpan={2} className="text-center border-l">{bucket.label}{activePreset !== 'yearly' && ' days'}</TableHead>
                                 ))}
                                 <TableHead colSpan={2} className="text-center font-bold border-l">Total Balance</TableHead>
                             </TableRow>
                             <TableRow>
-                                {ageBrackets.map(bracket => (
-                                    <Fragment key={bracket}>
+                                {currentBuckets.map(bucket => (
+                                    <Fragment key={bucket.label}>
                                         <TableHead className="text-right border-l">Qty</TableHead>
                                         <TableHead className="text-right">Value</TableHead>
                                     </Fragment>
@@ -164,7 +197,7 @@ export default function AgeingReportPage() {
                             {isLoading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        <TableCell colSpan={16}><Skeleton className="h-8 w-full" /></TableCell>
+                                        <TableCell colSpan={4 + currentBuckets.length * 2}><Skeleton className="h-8 w-full" /></TableCell>
                                     </TableRow>
                                 ))
                             ) : ageingReportData.length > 0 ? (
@@ -172,10 +205,10 @@ export default function AgeingReportPage() {
                                     <TableRow key={i}>
                                         <TableCell>{item.itemName}</TableCell>
                                         <TableCell>{item.unit}</TableCell>
-                                        {ageBrackets.map(bracket => (
-                                            <Fragment key={bracket}>
-                                                <TableCell className="text-right border-l">{formatValue(item[bracket].quantity)}</TableCell>
-                                                <TableCell className="text-right">{formatCurrency(item[bracket].value)}</TableCell>
+                                        {currentBuckets.map(bucket => (
+                                            <Fragment key={bucket.label}>
+                                                <TableCell className="text-right border-l">{formatValue(item.buckets[bucket.label].quantity)}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(item.buckets[bucket.label].value)}</TableCell>
                                             </Fragment>
                                         ))}
                                         <TableCell className="text-right font-bold border-l">{formatValue(item.totalQuantity)}</TableCell>
@@ -184,7 +217,7 @@ export default function AgeingReportPage() {
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={16} className="text-center h-24">No inventory data to display.</TableCell>
+                                    <TableCell colSpan={4 + currentBuckets.length * 2} className="text-center h-24">No inventory data to display.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
