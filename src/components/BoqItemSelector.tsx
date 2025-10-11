@@ -107,6 +107,11 @@ export function BoqItemSelector({
               {isLoading ? 'Loading...' : 'No BOQ item found.'}
             </CommandEmpty>
             <CommandGroup>
+                <div className="grid grid-cols-[1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+                    <div className="text-left">Sl. No.</div>
+                    <div className="text-left">Description</div>
+                    <div className="text-right">Rate</div>
+                </div>
               <ScrollArea className="h-72">
                 {boqItems.map((item) => {
                   const rateKey = findBasicPriceKey(item);
@@ -123,21 +128,12 @@ export function BoqItemSelector({
                         setCurrentValue(selected ? getSlNo(selected) : "");
                         setOpen(false);
                       }}
+                      className="p-2 cursor-pointer"
                     >
-                      <Check
-                        className={cn(
-                          'mr-2 h-4 w-4',
-                          currentValue === slNo
-                            ? 'opacity-100'
-                            : 'opacity-0'
-                        )}
-                      />
-                       <div className="flex-1">
-                            <p className="text-sm font-medium">{description}</p>
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Sl.No: {slNo}</span>
-                                <span>Rate: {rate} / {item['UNIT'] || item['UNITS'] || 'N/A'}</span>
-                            </div>
+                       <div className="grid grid-cols-[1fr_3fr_1fr] w-full items-center gap-2">
+                            <div className="text-sm">{slNo}</div>
+                            <div className="text-sm font-medium truncate pr-2">{description}</div>
+                            <div className="text-right text-xs text-muted-foreground">{rate} / {item['UNIT'] || item['UNITS'] || 'N/A'}</div>
                        </div>
                     </CommandItem>
                   )
