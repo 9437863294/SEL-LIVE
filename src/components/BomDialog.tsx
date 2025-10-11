@@ -49,11 +49,15 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
 
   useEffect(() => {
     if (isOpen) {
-      const initialBom = mainItem.bom?.map(item => ({ 
-        id: crypto.randomUUID(), 
-        ...initialBomItemState, // ensure all fields are present
-        ...item 
-      })) || [];
+      const initialBom = mainItem.bom?.map(item => {
+        // Correctly create the new object without overwriting id
+        const { id, ...rest } = item as FabricationBomItem;
+        return {
+          id: crypto.randomUUID(),
+          ...initialBomItemState,
+          ...rest,
+        };
+      }) || [];
 
       if(initialBom.length === 0) {
         setBomItems([{ id: crypto.randomUUID(), ...initialBomItemState }]);
