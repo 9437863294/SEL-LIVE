@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { InventoryLog } from '@/lib/types';
+import type { InventoryLog, Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
 import { Label } from '@/components/ui/label';
@@ -86,7 +86,18 @@ export default function AgeingReportPage() {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const q = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug));
+                const projectsQuery = query(collection(db, 'projects'));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+                if (!projectData) {
+                    toast({ title: "Error", description: "Project not found for ageing report.", variant: "destructive" });
+                    setIsLoading(false);
+                    return;
+                }
+
+                const q = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData.id));
                 const snapshot = await getDocs(q);
                 const logs = snapshot.docs.map(doc => ({ ...doc.data() } as InventoryLog));
                 setInventoryLogs(logs);
