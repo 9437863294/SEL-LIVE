@@ -29,6 +29,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
+import { cn } from '@/lib/utils';
+
 
 interface AgeingBucket {
     quantity: number;
@@ -45,25 +47,25 @@ interface AgeingData {
 
 const BUCKET_PRESETS = {
   monthly: [
-    { label: '0-30', from: 0, to: 30 },
-    { label: '31-60', from: 31, to: 60 },
-    { label: '61-90', from: 61, to: 90 },
-    { label: '91-180', from: 91, to: 180 },
-    { label: '181-365', from: 181, to: 365 },
-    { label: '365+', from: 366, to: Infinity },
+    { label: '0-30', from: 0, to: 30, color: 'text-green-600' },
+    { label: '31-60', from: 31, to: 60, color: 'text-blue-600' },
+    { label: '61-90', from: 61, to: 90, color: 'text-indigo-600' },
+    { label: '91-180', from: 91, to: 180, color: 'text-purple-600' },
+    { label: '181-365', from: 181, to: 365, color: 'text-orange-600' },
+    { label: '365+', from: 366, to: Infinity, color: 'text-red-600' },
   ],
   quarterly: [
-    { label: '0-90', from: 0, to: 90 },
-    { label: '91-180', from: 91, to: 180 },
-    { label: '181-270', from: 181, to: 270 },
-    { label: '271-365', from: 271, to: 365 },
-    { label: '365+', from: 366, to: Infinity },
+    { label: '0-90', from: 0, to: 90, color: 'text-green-600' },
+    { label: '91-180', from: 91, to: 180, color: 'text-blue-600' },
+    { label: '181-270', from: 181, to: 270, color: 'text-purple-600' },
+    { label: '271-365', from: 271, to: 365, color: 'text-orange-600' },
+    { label: '365+', from: 366, to: Infinity, color: 'text-red-600' },
   ],
   yearly: [
-    { label: '0-365', from: 0, to: 365 },
-    { label: '1-2 Years', from: 366, to: 730 },
-    { label: '2-3 Years', from: 731, to: 1095 },
-    { label: '3+ Years', from: 1096, to: Infinity },
+    { label: '0-1 Year', from: 0, to: 365, color: 'text-green-600' },
+    { label: '1-2 Years', from: 366, to: 730, color: 'text-orange-600' },
+    { label: '2-3 Years', from: 731, to: 1095, color: 'text-red-500' },
+    { label: '3+ Years', from: 1096, to: Infinity, color: 'text-red-700' },
   ]
 };
 
@@ -191,7 +193,7 @@ export default function AgeingReportPage() {
                                 <TableHead rowSpan={2} className="align-bottom">Item Name</TableHead>
                                 <TableHead rowSpan={2} className="align-bottom">Unit</TableHead>
                                 {currentBuckets.map(bucket => (
-                                    <TableHead key={bucket.label} colSpan={2} className="text-center border-l">{bucket.label}{activePreset !== 'yearly' && ' days'}</TableHead>
+                                    <TableHead key={bucket.label} colSpan={2} className={cn("text-center border-l", bucket.color)}>{bucket.label}{activePreset !== 'yearly' && ' days'}</TableHead>
                                 ))}
                                 <TableHead colSpan={2} className="text-center font-bold border-l">Total Balance</TableHead>
                             </TableRow>
@@ -220,8 +222,8 @@ export default function AgeingReportPage() {
                                         <TableCell>{item.unit}</TableCell>
                                         {currentBuckets.map(bucket => (
                                             <Fragment key={bucket.label}>
-                                                <TableCell className="text-right border-l">{formatValue(item.buckets[bucket.label].quantity)}</TableCell>
-                                                <TableCell className="text-right">{formatCurrency(item.buckets[bucket.label].value)}</TableCell>
+                                                <TableCell className={cn("text-right border-l", bucket.color)}>{formatValue(item.buckets[bucket.label].quantity)}</TableCell>
+                                                <TableCell className={cn("text-right", bucket.color)}>{formatCurrency(item.buckets[bucket.label].value)}</TableCell>
                                             </Fragment>
                                         ))}
                                         <TableCell className="text-right font-bold border-l">{formatValue(item.totalQuantity)}</TableCell>
