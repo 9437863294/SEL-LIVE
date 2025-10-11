@@ -95,10 +95,10 @@ export default function TransactionsPage() {
   const [isAutoAssembling, setIsAutoAssembling] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Projects', currentProject?.id);
-  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', currentProject?.id);
-  const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', currentProject?.id);
-  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', currentProject?.id);
+  const canCreateStockIn = can('Stock In', `Store & Stock Management.Projects`, currentProject?.id);
+  const canCreateStockOut = can('Stock Out', `Store & Stock Management.Projects`, currentProject?.id);
+  const canEditTransaction = can('Edit', `Store & Stock Management.Projects`, currentProject?.id);
+  const canDeleteTransaction = can('Delete', `Store & Stock Management.Projects`, currentProject?.id);
   const canViewTransactions = can('View', 'Store & Stock Management.Transactions');
 
   const fetchData = useCallback(async () => {
@@ -727,5 +727,3 @@ export default function TransactionsPage() {
     </>
   );
 }
-
-    
