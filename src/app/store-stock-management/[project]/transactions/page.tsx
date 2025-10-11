@@ -37,7 +37,7 @@ import {
 import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
-import type { InventoryLog, EnrichedLogItem, BoqItem } from '@/lib/types';
+import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ViewTransactionDialog from '@/components/ViewTransactionDialog';
@@ -81,9 +81,11 @@ export default function TransactionsPage() {
   const projectSlug = params.project as string;
   const [transactions, setTransactions] = useState<InventoryLog[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -93,43 +95,67 @@ export default function TransactionsPage() {
   const [isAutoAssembling, setIsAutoAssembling] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Projects', projectSlug);
-  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', projectSlug);
-  const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', projectSlug);
-  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', projectSlug);
+  const canCreateStockIn = can('Stock In', 'Store & Stock Management.Projects', currentProject?.id);
+  const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', currentProject?.id);
+  const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', currentProject?.id);
+  const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', currentProject?.id);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, 'inventoryLogs'),
-        where('projectId', '==', projectSlug)
-      );
-      const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '');
+        const projectData = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
-      const [transactionsSnap, boqSnap] = await Promise.all([getDocs(q), getDocs(boqQuery)]);
+        if (!projectData) {
+            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
+        setCurrentProject(projectData);
 
-      const data = transactionsSnap.docs.map(
-        (doc) => ({ ...doc.data(), id: doc.id } as InventoryLog)
-      );
-      data.sort(
-        (a, b) => b.date.toDate().getTime() - a.date.toDate().getTime()
-      );
-      setTransactions(data);
-      setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));
+        const transactionsQuery = query(collection(db, 'inventoryLogs'), where('projectSlug', '==', projectSlug));
+        const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
 
-    } catch (e) {
-      console.error(e);
+        const [transactionsSnap, boqSnap] = await Promise.all([
+            getDocs(transactionsQuery),
+            getDocs(boqQuery),
+        ]);
+
+        const data = transactionsSnap.docs.map(
+            (doc) => ({ ...doc.data(), id: doc.id } as InventoryLog)
+        );
+        data.sort(
+            (a, b) => b.date.toDate().getTime() - a.date.toDate().getTime()
+        );
+        setTransactions(data);
+        setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));
+
+    } catch (e: any) {
+       if (e.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This query requires a custom index. Please check your Firebase console for the 'inventoryLogs' collection on the 'projectSlug' field.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        } else {
+          console.error(e);
+          toast({ title: 'Error', description: 'Failed to fetch transaction data.', variant: 'destructive' });
+        }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectSlug, toast]);
 
   useEffect(() => {
     if (projectSlug) {
         fetchData();
     }
-  }, [projectSlug]);
+  }, [projectSlug, fetchData]);
   
   const handleViewDetails = (transactionSummary: TransactionSummary) => {
     setSelectedTransaction(transactionSummary);
@@ -137,6 +163,7 @@ export default function TransactionsPage() {
   };
   
   const handleDeleteTransaction = async (summary: TransactionSummary) => {
+      if(!currentProject) return;
       setIsDeleting(true);
       
       try {
@@ -152,7 +179,7 @@ export default function TransactionsPage() {
                   if (issueItem.details?.sourceGrn) {
                       const sourceGrnItemsQuery = query(
                           inventoryLogsRef,
-                          where('projectId', '==', projectSlug),
+                          where('projectId', '==', currentProject.id),
                           where('details.grnNo', '==', issueItem.details.sourceGrn)
                       );
                       const sourceGrnItemsSnap = await getDocs(sourceGrnItemsQuery); // This is outside transaction, but we need the IDs first
@@ -252,6 +279,7 @@ export default function TransactionsPage() {
 
 
   const handleAutoAssembly = async () => {
+    if(!currentProject) return;
     setIsAutoAssembling(true);
     let setsCreatedCount = 0;
     let mainItemsAffected: string[] = [];
@@ -260,7 +288,7 @@ export default function TransactionsPage() {
         await runTransaction(db, async (transaction) => {
             const inventoryLogsRef = collection(db, 'inventoryLogs');
             
-            const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
+            const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', currentProject.id)));
             const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
             const mainItemsWithBOM = boqItems.filter(item => item.bom && item.bom.length > 0);
@@ -541,9 +569,8 @@ export default function TransactionsPage() {
                     </TableRow>
                   ))
                 ) : transactionSummaries.length > 0 ? (
-                  transactionSummaries.map((summary) => (
-                    <Fragment key={summary.id}>
-                    <TableRow>
+                  transactionSummaries.map((summary) => [
+                    <TableRow key={summary.id}>
                       <TableCell>
                         <Button size="icon" variant="ghost" data-toggle-row onClick={() => toggleRowExpansion(summary.id)}>
                           {expandedRows.has(summary.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -609,7 +636,7 @@ export default function TransactionsPage() {
                                  </DropdownMenuItem>
                                </AlertDialogTrigger>
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </AlertDialog>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
@@ -627,9 +654,9 @@ export default function TransactionsPage() {
                           </AlertDialogContent>
                         </AlertDialog>
                       </TableCell>
-                    </TableRow>
-                     {expandedRows.has(summary.id) && (
-                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    </TableRow>,
+                     expandedRows.has(summary.id) && (
+                        <TableRow key={`${summary.id}-details`} className="bg-muted/30 hover:bg-muted/30">
                           <TableCell colSpan={7} className="p-0">
                             <div className="p-4">
                               <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
@@ -670,8 +697,8 @@ export default function TransactionsPage() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      )}
-                    </Fragment>
+                      )
+                    ]
                   ))
                 ) : (
                   <TableRow>
@@ -693,5 +720,3 @@ export default function TransactionsPage() {
     </>
   );
 }
-
-    
