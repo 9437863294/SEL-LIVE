@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -31,7 +32,7 @@ const reportItemsBase = [
     icon: Clock, 
     title: 'Ageing Report', 
     description: 'Analyze the age of items in your inventory.',
-    href: 'ageing-report', // Relative path
+    href: 'reports/ageing-report', // Relative path
     disabled: false,
   },
 ];
