@@ -189,22 +189,22 @@ export default function AiForecastPage() {
       
       {isLoading ? <Skeleton className="h-96 w-full" /> : selectedItemId && (
         <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <Card>
-                    <CardHeader><CardTitle>Current Stock</CardTitle></CardHeader>
-                    <CardContent><p className="text-2xl font-bold">{forecastData.stats.currentStock}</p></CardContent>
+                    <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium">Current Stock</CardTitle></CardHeader>
+                    <CardContent className="p-4 pt-0"><p className="text-xl font-bold">{forecastData.stats.currentStock}</p></CardContent>
                 </Card>
                  <Card>
-                    <CardHeader><CardTitle>Avg. Monthly Usage</CardTitle></CardHeader>
-                    <CardContent><p className="text-2xl font-bold">{forecastData.stats.avgConsumption}</p></CardContent>
+                    <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium">Avg. Monthly Usage</CardTitle></CardHeader>
+                    <CardContent className="p-4 pt-0"><p className="text-xl font-bold">{forecastData.stats.avgConsumption}</p></CardContent>
                 </Card>
                 <Card>
-                    <CardHeader><CardTitle>Predicted Stock Out</CardTitle></CardHeader>
-                    <CardContent><p className="text-2xl font-bold">{forecastData.stats.predictedStockOut}</p></CardContent>
+                    <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium">Predicted Stock Out</CardTitle></CardHeader>
+                    <CardContent className="p-4 pt-0"><p className="text-xl font-bold">{forecastData.stats.predictedStockOut}</p></CardContent>
                 </Card>
                  <Card>
-                    <CardHeader><CardTitle>Reorder Quantity</CardTitle></CardHeader>
-                    <CardContent><p className="text-2xl font-bold text-orange-600">{forecastData.stats.reorderQty}</p></CardContent>
+                    <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium">Reorder Quantity</CardTitle></CardHeader>
+                    <CardContent className="p-4 pt-0"><p className="text-xl font-bold text-orange-600">{forecastData.stats.reorderQty}</p></CardContent>
                 </Card>
             </div>
 
