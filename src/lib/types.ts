@@ -1,3 +1,4 @@
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -149,10 +150,10 @@ export const permissionModules = {
       'Reports': ['View Reports', 'View Summary'],
       'Settings': {
           'View': true,
-          'Holders': ['View', 'Add', 'Edit', 'Delete'],
-          'Companies': ['View', 'Add', 'Edit', 'Delete'],
-          'Categories': ['View', 'Add', 'Edit', 'Delete'],
-          'Assets': ['View', 'Add', 'Edit', 'Delete'],
+          'Policy Holders': ['View', 'Add', 'Edit', 'Delete'],
+          'Insurance Companies': ['View', 'Add', 'Edit', 'Delete'],
+          'Policy Category': ['View', 'Add', 'Edit', 'Delete'],
+          'Projects and Properties': ['View', 'Add', 'Edit', 'Delete'],
           'Workflow': ['View', 'Edit'],
       }
     },

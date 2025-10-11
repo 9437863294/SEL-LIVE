@@ -102,15 +102,9 @@ export default function InsuranceSettingsPage() {
   const canViewPage = can('View', 'Insurance.Settings');
   
   const settingsItems = settingsItemsBase.map(item => {
-      let moduleScope: string;
-      switch(item.text) {
-          case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
-          case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
-          case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
-          case 'Projects and Properties': moduleScope = 'Insurance.Settings.Assets'; break;
-          case 'Workflow': moduleScope = 'Insurance.Settings.Workflow'; break;
-          case 'Help': moduleScope = 'Insurance.Settings'; break;
-          default: moduleScope = 'Insurance.Settings';
+      let moduleScope = `Insurance.Settings.${item.text}`;
+      if (item.text === 'Workflow' || item.text === 'Help') {
+          moduleScope = 'Insurance.Settings';
       }
       return {
           ...item,
