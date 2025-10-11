@@ -1,6 +1,8 @@
+
 'use client';
 
-import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
   Card,
   CardHeader,
@@ -59,7 +61,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
@@ -96,8 +98,8 @@ export default function TransactionsPage() {
 
   const canCreateStockIn = can('Stock In', `Store & Stock Management.Projects`, currentProject?.id);
   const canCreateStockOut = can('Stock Out', `Store & Stock Management.Projects`, currentProject?.id);
-  const canEditTransaction = can('Edit', `Store & Stock Management.Projects`, currentProject?.id);
-  const canDeleteTransaction = can('Delete', `Store & Stock Management.Projects`, currentProject?.id);
+  const canEditTransaction = can('Edit Transaction', `Store & Stock Management.Projects`, currentProject?.id);
+  const canDeleteTransaction = can('Delete Transaction', `Store & Stock Management.Projects`, currentProject?.id);
   const canViewTransactions = can('View Transactions', `Store & Stock Management.Projects`, currentProject?.id);
 
   const fetchData = useCallback(async () => {
