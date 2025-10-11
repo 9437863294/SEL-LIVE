@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -353,7 +354,7 @@ export default function TransactionsPage() {
                              availableQuantity: 0,
                              unit: 'Kg',
                              cost: 0, // Cost for conversion logs can be tricky, might need separate logic
-                             projectId: projectSlug,
+                             projectSlug: projectSlug,
                              description: `Auto-assembled into ${setsToCreate} sets of ${mainItemDescription}`,
                         });
                     }
@@ -368,7 +369,7 @@ export default function TransactionsPage() {
                         quantity: setsToCreate,
                         availableQuantity: setsToCreate,
                         unit: mainItem.UNIT || mainItem.UNITS || 'Set',
-                        projectId: projectSlug,
+                        projectSlug: projectSlug,
                         description: 'Auto-assembled from BOM components',
                         details: { fromConversion: true, sourceGrn: null },
                     });
@@ -569,136 +570,137 @@ export default function TransactionsPage() {
                     </TableRow>
                   ))
                 ) : transactionSummaries.length > 0 ? (
-                  transactionSummaries.map((summary) => [
-                    <TableRow key={summary.id}>
-                      <TableCell>
-                        <Button size="icon" variant="ghost" data-toggle-row onClick={() => toggleRowExpansion(summary.id)}>
-                          {expandedRows.has(summary.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDetails(summary)}>
-                            {summary.id}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getBadgeVariant(summary.transactionType)}>
-                          {summary.transactionType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
-                      </TableCell>
-                       <TableCell>
-                        {summary.transactionType === 'Goods Receipt' ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.remainingValue) : 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <AlertDialog>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                               <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                               <DropdownMenuItem onSelect={() => handleViewDetails(summary)}>
-                                  <Eye className="mr-2 h-4 w-4" /> View
-                               </DropdownMenuItem>
-                               <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div>
-                                            <DropdownMenuItem
-                                                onSelect={() => handleEditTransaction(summary)}
-                                                disabled={!canEditTransaction || summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
-                                            >
-                                                <Edit className="mr-2 h-4 w-4" /> Edit
-                                            </DropdownMenuItem>
-                                        </div>
-                                    </TooltipTrigger>
-                                    {summary.transactionType === 'Goods Issue' ? (
-                                        <TooltipContent>
-                                            <p>Edit not supported for Goods Issue.</p>
-                                        </TooltipContent>
-                                    ) : (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0)) && (
-                                        <TooltipContent>
-                                            <p>Cannot edit GRN after items have been issued.</p>
-                                        </TooltipContent>
-                                    )}
-                                </Tooltip>
-                               </TooltipProvider>
-
-                               <DropdownMenuSeparator />
-                               <AlertDialogTrigger asChild>
-                                 <DropdownMenuItem className="text-destructive" disabled={!canDeleteTransaction}>
-                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  transactionSummaries.map((summary) => (
+                    <React.Fragment key={summary.id}>
+                      <TableRow>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" data-toggle-row onClick={() => toggleRowExpansion(summary.id)}>
+                            {expandedRows.has(summary.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDetails(summary)}>
+                              {summary.id}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getBadgeVariant(summary.transactionType)}>
+                            {summary.transactionType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
+                        </TableCell>
+                         <TableCell>
+                          {summary.transactionType === 'Goods Receipt' ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.remainingValue) : 'N/A'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <AlertDialog>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                 <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                 <DropdownMenuItem onSelect={() => handleViewDetails(summary)}>
+                                    <Eye className="mr-2 h-4 w-4" /> View
                                  </DropdownMenuItem>
-                               </AlertDialogTrigger>
-                            </DropdownMenuContent>
+                                 <TooltipProvider>
+                                  <Tooltip>
+                                      <TooltipTrigger asChild>
+                                          <div>
+                                              <DropdownMenuItem
+                                                  onSelect={() => handleEditTransaction(summary)}
+                                                  disabled={!canEditTransaction || summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
+                                              >
+                                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                                              </DropdownMenuItem>
+                                          </div>
+                                      </TooltipTrigger>
+                                      {summary.transactionType === 'Goods Issue' ? (
+                                          <TooltipContent>
+                                              <p>Edit not supported for Goods Issue.</p>
+                                          </TooltipContent>
+                                      ) : (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0)) && (
+                                          <TooltipContent>
+                                              <p>Cannot edit GRN after items have been issued.</p>
+                                          </TooltipContent>
+                                      )}
+                                  </Tooltip>
+                                 </TooltipProvider>
+
+                                 <DropdownMenuSeparator />
+                                 <AlertDialogTrigger asChild>
+                                   <DropdownMenuItem className="text-destructive" disabled={!canDeleteTransaction}>
+                                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                   </DropdownMenuItem>
+                                 </AlertDialogTrigger>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                      This action is irreversible. Deleting a transaction will permanently alter your inventory records. Are you sure you want to continue?
+                                  </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteTransaction(summary)} disabled={isDeleting}>
+                                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                                      Delete
+                                  </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
                           </AlertDialog>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This action is irreversible. Deleting a transaction will permanently alter your inventory records. Are you sure you want to continue?
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteTransaction(summary)} disabled={isDeleting}>
-                                    {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                                    Delete
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </TableCell>
-                    </TableRow>,
-                     expandedRows.has(summary.id) && (
-                        <TableRow key={`${summary.id}-details`} className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={7} className="p-0">
-                            <div className="p-4">
-                              <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Item Name</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Unit Cost</TableHead>
-                                    <TableHead>Total Cost</TableHead>
-                                    {summary.transactionType === 'Goods Receipt' && (
-                                      <>
-                                        <TableHead>Issued Qty</TableHead>
-                                        <TableHead>Balance Qty</TableHead>
-                                        <TableHead className="text-right">Remaining Value</TableHead>
-                                      </>
-                                    )}
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {summary.items.map(item => (
-                                    <TableRow key={item.id}>
-                                      <TableCell>{item.itemName}</TableCell>
-                                      <TableCell>{item.quantity} {item.unit}</TableCell>
-                                      <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.cost || 0)}</TableCell>
-                                      <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                        </TableCell>
+                      </TableRow>
+                       {expandedRows.has(summary.id) && (
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableCell colSpan={7} className="p-0">
+                              <div className="p-4">
+                                <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Item Name</TableHead>
+                                      <TableHead>Qty</TableHead>
+                                      <TableHead>Unit Cost</TableHead>
+                                      <TableHead>Total Cost</TableHead>
                                       {summary.transactionType === 'Goods Receipt' && (
                                         <>
-                                          <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>
-                                          <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>
-                                          <TableCell className="text-right font-bold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.balanceQuantity || 0) * (item.cost || 0))}</TableCell>
+                                          <TableHead>Issued Qty</TableHead>
+                                          <TableHead>Balance Qty</TableHead>
+                                          <TableHead className="text-right">Remaining Value</TableHead>
                                         </>
                                       )}
                                     </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    ]
+                                  </TableHeader>
+                                  <TableBody>
+                                    {summary.items.map(item => (
+                                      <TableRow key={item.id}>
+                                        <TableCell>{item.itemName}</TableCell>
+                                        <TableCell>{item.quantity} {item.unit}</TableCell>
+                                        <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.cost || 0)}</TableCell>
+                                        <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                                        {summary.transactionType === 'Goods Receipt' && (
+                                          <>
+                                            <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>
+                                            <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>
+                                            <TableCell className="text-right font-bold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.balanceQuantity || 0) * (item.cost || 0))}</TableCell>
+                                          </>
+                                        )}
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
                   ))
                 ) : (
                   <TableRow>
