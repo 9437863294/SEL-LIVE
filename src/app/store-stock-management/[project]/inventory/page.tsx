@@ -107,33 +107,29 @@ export default function InventoryPage() {
             : inventoryLogs;
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
-
-        // Ensure all items from logs are initialized
-        filteredLogs.forEach(log => {
-            if (!stockMovements.has(log.itemId)) {
-                stockMovements.set(log.itemId, { stockIn: 0, stockOut: 0, latestCost: 0 });
-            }
-        });
         
-        // Also ensure all BOQ items are initialized so they appear even without transactions
-        boqItems.forEach(item => {
-            if (!stockMovements.has(item.id)) {
-                stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost: 0 });
+        // Ensure every item from BOQ and Logs has an entry in the map
+        const allItemIds = new Set([...boqItems.map(i => i.id), ...inventoryLogs.map(l => l.itemId)]);
+        allItemIds.forEach(id => {
+            if (!stockMovements.has(id)) {
+                stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0 });
             }
         });
 
         // Now, process all logs
         filteredLogs.forEach(log => {
-            const current = stockMovements.get(log.itemId)!; // Should exist now
+            const current = stockMovements.get(log.itemId)!;
+            const updated = { ...current };
+
             if (log.transactionType === 'Goods Receipt') {
-                current.stockIn += log.quantity;
+                updated.stockIn += log.quantity;
                 if(log.cost && log.cost > 0) { 
-                    current.latestCost = log.cost;
+                    updated.latestCost = log.cost;
                 }
             } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
-                current.stockOut += log.quantity;
+                updated.stockOut += log.quantity;
             }
-            // No need to set, as we are mutating the object in the map
+            stockMovements.set(log.itemId, updated);
         });
         
         let calculatedData = boqItems.map(item => {
