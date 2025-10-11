@@ -45,14 +45,14 @@ function ReportCard({ item }: ReportCardProps) {
                 (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="items-center text-center">
-                <div className="bg-primary/10 p-4 rounded-full mb-4">
-                  <item.icon className="w-8 h-8 text-primary" />
+            <CardHeader className="items-center text-center p-4">
+                <div className="bg-primary/10 p-3 rounded-full mb-2">
+                  <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg font-semibold">{item.title}</CardTitle>
+                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="text-center">
-                <CardDescription>{item.description}</CardDescription>
+            <CardContent className="text-center p-4 pt-0">
+                <CardDescription className="text-xs">{item.description}</CardDescription>
             </CardContent>
         </Card>
     )
@@ -70,15 +70,20 @@ function ReportCard({ item }: ReportCardProps) {
 
 export default function ReportsPage() {
     const { can, isLoading } = useAuthorization();
-    const canViewPage = can('View Module', 'Store & Stock Management');
+    const canViewPage = can('View Module', 'Store & Stock Management'); 
 
+    const reportItems = reportItemsBase.map(item => ({
+        ...item,
+        // disabled: !can('View Reports', 'Store & Stock Management') // Example permission
+    }));
+    
     if (isLoading) {
         return (
              <div className="w-full max-w-lg pr-4">
                 <Skeleton className="h-10 w-48 mb-6" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <Skeleton className="h-56" />
-                    <Skeleton className="h-56" />
+                    <Skeleton className="h-40" />
+                    <Skeleton className="h-40" />
                 </div>
             </div>
         )
@@ -105,7 +110,7 @@ export default function ReportsPage() {
     <div className="w-full">
       <h1 className="text-3xl font-bold mb-6">Reports</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {reportItemsBase.map((item) => (
+        {reportItems.map((item) => (
           <ReportCard key={item.title} item={item} />
         ))}
       </div>
