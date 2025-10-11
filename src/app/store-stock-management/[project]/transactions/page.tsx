@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -102,13 +101,23 @@ export default function TransactionsPage() {
   const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', currentProject?.id);
 
   const fetchData = useCallback(async () => {
+    if (!projectSlug) return;
     setIsLoading(true);
     try {
+        const slugify = (text: string) => {
+            if (!text) return '';
+            return text.toString().toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^\w\-]+/g, '')
+              .replace(/\-\-+/g, '-')
+              .replace(/^-+/, '')
+              .replace(/-+$/, '');
+        }
+
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
         const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
         
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '');
         const projectData = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
         if (!projectData) {
@@ -153,10 +162,8 @@ export default function TransactionsPage() {
   }, [projectSlug, toast]);
 
   useEffect(() => {
-    if (projectSlug) {
-        fetchData();
-    }
-  }, [projectSlug, fetchData]);
+    fetchData();
+  }, [fetchData]);
   
   const handleViewDetails = (transactionSummary: TransactionSummary) => {
     setSelectedTransaction(transactionSummary);
