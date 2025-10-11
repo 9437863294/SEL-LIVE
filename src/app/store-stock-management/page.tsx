@@ -106,7 +106,7 @@ export default function StoreStockDashboard() {
     return projects
       .filter(project => {
         const hasStockManagement = project.stockManagementRequired === true;
-        const hasProjectViewPermission = can('View', 'Store & Stock Management.Projects', project.id);
+        const hasProjectViewPermission = can('View Dashboard', `Store & Stock Management.Projects`, project.id);
         return hasStockManagement && hasProjectViewPermission;
       })
       .map(project => ({
