@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -99,7 +98,7 @@ export default function TransactionsPage() {
   const canCreateStockOut = can('Stock Out', `Store & Stock Management.Projects`, currentProject?.id);
   const canEditTransaction = can('Edit', `Store & Stock Management.Projects`, currentProject?.id);
   const canDeleteTransaction = can('Delete', `Store & Stock Management.Projects`, currentProject?.id);
-  const canViewTransactions = can('View', 'Store & Stock Management.Transactions');
+  const canViewTransactions = can('View Transactions', `Store & Stock Management.Projects`, currentProject?.id);
 
   const fetchData = useCallback(async () => {
     if (!projectSlug) return;
@@ -107,15 +106,7 @@ export default function TransactionsPage() {
     try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => {
-          if (!text) return '';
-          return text.toString().toLowerCase()
-            .replace(/\s+/g, '-')
-            .replace(/[^\w\-]+/g, '')
-            .replace(/\-\-+/g, '-')
-            .replace(/^-+/, '')
-            .replace(/-+$/, '');
-        }
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
         const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
         
         if (!projectData) {
@@ -125,7 +116,7 @@ export default function TransactionsPage() {
         }
         setCurrentProject(projectData);
 
-        const transactionsQuery = query(collection(db, 'inventoryLogs'), where('projectSlug', '==', projectSlug));
+        const transactionsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData.id));
         const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
 
         const [transactionsSnap, boqSnap] = await Promise.all([
@@ -146,7 +137,7 @@ export default function TransactionsPage() {
        if (e.code === 'failed-precondition') {
              toast({
                 title: 'Database Index Required',
-                description: "This query requires a custom index. Please check your Firebase console for the 'inventoryLogs' collection on the 'projectSlug' field.",
+                description: "This query requires a custom index. Please check your Firebase console for the 'inventoryLogs' collection on the 'projectId' field.",
                 variant: 'destructive',
                 duration: 10000,
              });
@@ -359,6 +350,7 @@ export default function TransactionsPage() {
                              availableQuantity: 0, 
                              unit: 'Kg', 
                              cost: 0, // Cost for conversion logs can be tricky, might need separate logic
+                             projectId: currentProject.id,
                              projectSlug: projectSlug,
                              description: `Auto-assembled into ${setsToCreate} sets of ${mainItemDescription}`,
                         });
@@ -374,6 +366,7 @@ export default function TransactionsPage() {
                         quantity: setsToCreate,
                         availableQuantity: setsToCreate,
                         unit: mainItem.UNIT || mainItem.UNITS || 'Set',
+                        projectId: currentProject.id,
                         projectSlug: projectSlug,
                         description: 'Auto-assembled from BOM components',
                         details: { fromConversion: true, sourceGrn: null },
@@ -705,7 +698,7 @@ export default function TransactionsPage() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </React.Fragment>
+                    </React.Fragment>
                   ))
                 ) : (
                   <TableRow>

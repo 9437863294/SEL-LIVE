@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment, Project } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -107,6 +107,7 @@ export default function StockOutPage() {
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   const form = useForm<StockOutFormValues>({
     resolver: zodResolver(stockOutSchema),
@@ -134,23 +135,33 @@ export default function StockOutPage() {
       if (!projectSlug) return;
       setIsLoadingItems(true);
       try {
-        const inventoryQuery = query(
-          collection(db, 'inventoryLogs'),
-          where('projectId', '==', projectSlug)
-        );
-        const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        
+        if (projectData) {
+            setCurrentProject(projectData);
+            const inventoryQuery = query(
+              collection(db, 'inventoryLogs'),
+              where('projectId', '==', projectData.id)
+            );
+            const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
 
-        const [inventorySnapshot, boqSnapshot] = await Promise.all([
-          getDocs(inventoryQuery),
-          getDocs(boqQuery),
-        ]);
+            const [inventorySnapshot, boqSnapshot] = await Promise.all([
+              getDocs(inventoryQuery),
+              getDocs(boqQuery),
+            ]);
 
-        const itemsData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog))
-          .filter(item => item.availableQuantity > 0);
-        setAvailableItems(itemsData);
+            const itemsData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog))
+              .filter(item => item.availableQuantity > 0);
+            setAvailableItems(itemsData);
 
-        const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-        setBoqItems(boqData);
+            const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+            setBoqItems(boqData);
+        } else {
+            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+        }
         
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -158,7 +169,7 @@ export default function StockOutPage() {
       setIsLoadingItems(false);
     };
     fetchInventoryAndBoq();
-  }, [projectSlug]);
+  }, [projectSlug, toast]);
   
   const uniqueAvailableItems = useMemo(() => {
     const itemMap = new Map<string, InventoryLog>();
@@ -205,7 +216,7 @@ export default function StockOutPage() {
                         quantity: 0,
                         transactionType: 'Goods Receipt', // Placeholder
                         date: Timestamp.now(), // Placeholder
-                        projectId: projectSlug,
+                        projectId: currentProject?.id || '',
                     });
                 }
             }
@@ -213,7 +224,7 @@ export default function StockOutPage() {
     });
 
     return Array.from(itemMap.values());
-  }, [availableItems, boqItems, projectSlug]);
+  }, [availableItems, boqItems, currentProject]);
 
 
   const handleAddItem = () => {
@@ -269,13 +280,18 @@ export default function StockOutPage() {
 
     const onSubmit = async (data: StockOutFormValues) => {
     setIsSaving(true);
+    if (!currentProject) {
+        toast({title: "Error", description: "Project not found.", variant: "destructive"});
+        setIsSaving(false);
+        return;
+    }
     
     try {
       await runTransaction(db, async (transaction) => {
           const inventoryLogsRef = collection(db, 'inventoryLogs');
           
           // Get a fresh read of the inventory within the transaction
-          const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', projectSlug)));
+          const currentProjectInventorySnap = await getDocs(query(inventoryLogsRef, where('projectId', '==', currentProject.id)));
           const currentProjectInventory = currentProjectInventorySnap.docs.map(d => ({id: d.id, ...d.data()}) as InventoryLog);
 
         for (const item of data.items) {
@@ -329,7 +345,8 @@ export default function StockOutPage() {
                     quantity: deduction, availableQuantity: 0, 
                     unit: 'Kg', 
                     cost: log.cost, // Use the cost from the source GRN
-                    projectId: projectSlug,
+                    projectId: currentProject.id,
+                    projectSlug: projectSlug,
                     description: `Issued to ${data.issuedTo}`, 
                     details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: log.details?.grnNo }
                 });
@@ -373,7 +390,8 @@ export default function StockOutPage() {
                               quantity: componentsToTakeFromThisLog, availableQuantity: 0,
                               unit: 'Kg', 
                               cost: componentCost,
-                              projectId: projectSlug,
+                              projectId: currentProject.id,
+                              projectSlug: projectSlug,
                               description: `Issued to ${data.issuedTo} by breaking ${mainItemSetsToBreakdown} sets of ${item.itemName}`,
                               details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: mainItemLog.details?.grnNo }
                           });
@@ -415,7 +433,8 @@ export default function StockOutPage() {
                   availableQuantity: 0,
                   unit: item.itemUnit,
                   cost: logDoc.cost,
-                  projectId: projectSlug,
+                  projectId: currentProject.id,
+                  projectSlug: projectSlug,
                   description: `Issued to ${data.issuedTo}`,
                   details: { issuedTo: data.issuedTo, notes: data.notes, sourceGrn: logDoc.details?.grnNo || null }
               });
@@ -538,6 +557,7 @@ export default function StockOutPage() {
                                   </div>
                                     <Button variant="destructive" size="icon" type="button" onClick={() => handleRemoveItem(index)} className="ml-4 flex-shrink-0"><Trash2 className="h-4 w-4"/></Button>
                                 </div>
+
                                 {isComponentIssue && hasBom ? (
                                     <div className="pl-4 border-l-2 space-y-2">
                                         <p className="text-sm font-medium text-muted-foreground">Issue BOM Components:</p>
