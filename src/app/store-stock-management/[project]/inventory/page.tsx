@@ -287,22 +287,27 @@ export default function InventoryPage() {
                                                                         <TableHead className="text-right">Qty</TableHead>
                                                                         <TableHead className="text-right">Price</TableHead>
                                                                         <TableHead className="text-right">Total</TableHead>
+                                                                        <TableHead className="text-right">Remaining Value</TableHead>
                                                                     </TableRow>
                                                                 </TableHeader>
                                                                 <TableBody>
-                                                                    {itemTransactionDetails(item.id).map(log => (
-                                                                        <TableRow key={`${log.id}-${log.date.toMillis()}`}>
-                                                                            <TableCell>{format(log.date.toDate(), 'dd MMM yyyy')}</TableCell>
-                                                                            <TableCell>{log.details?.grnNo || `Issued to ${log.details?.issuedTo}`}</TableCell>
-                                                                            <TableCell>
-                                                                              <Badge variant={log.transactionType === 'Goods Receipt' ? 'default' : 'destructive'}>{log.transactionType}</Badge>
-                                                                            </TableCell>
-                                                                            <TableCell>{log.unit}</TableCell>
-                                                                            <TableCell className="text-right">{log.quantity.toLocaleString()}</TableCell>
-                                                                            <TableCell className="text-right">{formatCurrency(log.cost || 0)}</TableCell>
-                                                                            <TableCell className="text-right">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
-                                                                        </TableRow>
-                                                                    ))}
+                                                                    {itemTransactionDetails(item.id).map(log => {
+                                                                        const remainingValue = (log.availableQuantity || 0) * (log.cost || 0);
+                                                                        return (
+                                                                            <TableRow key={`${log.id}-${log.date.toMillis()}`}>
+                                                                                <TableCell>{format(log.date.toDate(), 'dd MMM yyyy')}</TableCell>
+                                                                                <TableCell>{log.details?.grnNo || `Issued to ${log.details?.issuedTo}`}</TableCell>
+                                                                                <TableCell>
+                                                                                  <Badge variant={log.transactionType === 'Goods Receipt' ? 'default' : 'destructive'}>{log.transactionType}</Badge>
+                                                                                </TableCell>
+                                                                                <TableCell>{log.unit}</TableCell>
+                                                                                <TableCell className="text-right">{log.quantity.toLocaleString()}</TableCell>
+                                                                                <TableCell className="text-right">{formatCurrency(log.cost || 0)}</TableCell>
+                                                                                <TableCell className="text-right">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
+                                                                                 <TableCell className="text-right font-semibold">{formatCurrency(remainingValue)}</TableCell>
+                                                                            </TableRow>
+                                                                        )
+                                                                    })}
                                                                 </TableBody>
                                                             </Table>
                                                         </div>
@@ -326,3 +331,5 @@ export default function InventoryPage() {
         </div>
     );
 }
+
+    
