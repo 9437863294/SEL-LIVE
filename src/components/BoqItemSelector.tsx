@@ -85,7 +85,7 @@ export function BoqItemSelector({
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[500px] p-0">
+      <PopoverContent className="w-[500px] p-0" onPointerDownOutside={(e) => e.preventDefault()}>
         <Command
             filter={(value, search) => {
                 const item = boqItems.find(i => getSlNo(i) === value);
