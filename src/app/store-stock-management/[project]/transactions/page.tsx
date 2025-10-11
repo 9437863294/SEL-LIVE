@@ -625,7 +625,6 @@ export default function TransactionsPage() {
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
                           <TableCell colSpan={7} className="p-0">
                             <div className="p-4">
-                              <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
                               <Table>
                                 <TableHeader>
                                   <TableRow>

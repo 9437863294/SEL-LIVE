@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useParams } from 'next/navigation';
 
 interface ReportCardProps {
   item: {
@@ -30,7 +31,7 @@ const reportItemsBase = [
     icon: Clock, 
     title: 'Ageing Report', 
     description: 'Analyze the age of items in your inventory.',
-    href: '/store-stock-management/reports/ageing-report',
+    href: 'ageing-report', // Relative path
     disabled: false,
   },
 ];
@@ -67,8 +68,6 @@ function ReportCard({ item }: ReportCardProps) {
 }
 
 export default function ReportsPage() {
-    // For now, assuming anyone who can see the module can see reports.
-    // This can be expanded with more granular permissions later.
     const { can, isLoading } = useAuthorization();
     const canViewPage = can('View Module', 'Store & Stock Management');
 
