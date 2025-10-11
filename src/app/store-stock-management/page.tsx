@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Folder,
@@ -102,14 +102,20 @@ export default function StoreStockDashboard() {
     fetchProjects();
   }, [isAuthLoading, canViewModule]);
 
-  const projectItems = projects
-    .filter(project => project.stockManagementRequired === true)
-    .map(project => ({
-      icon: Folder,
-      text: project.projectName,
-      href: `/store-stock-management/${slugify(project.projectName)}`,
-      description: `Manage stock for ${project.projectName}.`
-  }));
+  const projectItems = useMemo(() => {
+    return projects
+      .filter(project => {
+        const hasStockManagement = project.stockManagementRequired === true;
+        const hasProjectViewPermission = can('View', 'Store & Stock Management.Projects', project.id);
+        return hasStockManagement && hasProjectViewPermission;
+      })
+      .map(project => ({
+        icon: Folder,
+        text: project.projectName,
+        href: `/store-stock-management/${slugify(project.projectName)}`,
+        description: `Manage stock for ${project.projectName}.`
+      }));
+  }, [projects, can]);
   
   if (isAuthLoading || (isLoading && canViewModule)) {
       return (
