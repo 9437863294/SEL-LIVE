@@ -147,7 +147,14 @@ export const permissionModules = {
       'Project Insurance': ['View', 'Add', 'Edit', 'Renew', 'Mark as Not Required', 'View History'],
       'My Tasks': ['View', 'Create', 'Approve', 'Reject', 'Upload Documents'],
       'Reports': ['View Reports', 'View Summary'],
-      'Settings': ['View', 'Companies', 'Categories', 'Assets', 'Workflow'],
+      'Settings': {
+          'View': true,
+          'Holders': ['View', 'Add', 'Edit', 'Delete'],
+          'Companies': ['View', 'Add', 'Edit', 'Delete'],
+          'Categories': ['View', 'Add', 'Edit', 'Delete'],
+          'Assets': ['View', 'Add', 'Edit', 'Delete'],
+          'Workflow': ['View', 'Edit'],
+      }
     },
     'Settings': {
       'View Module': true,

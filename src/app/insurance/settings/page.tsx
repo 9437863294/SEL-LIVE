@@ -108,7 +108,7 @@ export default function InsuranceSettingsPage() {
           case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
           case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
           case 'Projects and Properties': moduleScope = 'Insurance.Settings.Assets'; break;
-          case 'Workflow': moduleScope = 'Insurance.Settings'; break; // Simplified permission for now
+          case 'Workflow': moduleScope = 'Insurance.Settings.Workflow'; break;
           case 'Help': moduleScope = 'Insurance.Settings'; break;
           default: moduleScope = 'Insurance.Settings';
       }
