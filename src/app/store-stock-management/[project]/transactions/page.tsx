@@ -31,6 +31,8 @@ import {
   Trash2,
   Loader2,
   GitCommit,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
@@ -55,7 +57,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -85,8 +86,9 @@ export default function TransactionsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionSummary | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(isDeleting);
   const [isAutoAssembling, setIsAutoAssembling] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -116,7 +118,9 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    if (projectSlug) {
+        fetchData();
+    }
   }, [projectSlug]);
   
   const handleViewDetails = (transactionSummary: TransactionSummary) => {
@@ -391,10 +395,7 @@ export default function TransactionsPage() {
     });
 
     Object.values(grnSummaries).forEach(summary => {
-        const issuedValue = goodsIssues
-            .filter(issue => issue.details?.sourceGrn === summary.id)
-            .reduce((sum, issue) => sum + ((issue.quantity || 0) * (issue.cost || 0)), 0);
-        summary.remainingValue = summary.totalAmount - issuedValue;
+        summary.remainingValue = summary.items.reduce((sum, item) => sum + ((item.balanceQuantity || 0) * (item.cost || 0)), 0);
     });
     
     const issueSummaries: Record<string, TransactionSummary> = {};
@@ -445,6 +446,16 @@ export default function TransactionsPage() {
       default:
         return 'secondary';
     }
+  };
+
+  const toggleRowExpansion = (id: string) => {
+    const newExpandedRows = new Set(expandedRows);
+    if (expandedRows.has(id)) {
+      newExpandedRows.delete(id);
+    } else {
+      newExpandedRows.add(id);
+    }
+    setExpandedRows(newExpandedRows);
   };
 
   return (
@@ -503,6 +514,7 @@ export default function TransactionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12"></TableHead>
                   <TableHead>Transaction ID</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
@@ -515,14 +527,20 @@ export default function TransactionsPage() {
                 {isLoading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={6}>
+                      <TableCell colSpan={7}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : transactionSummaries.length > 0 ? (
                   transactionSummaries.map((summary) => (
-                    <TableRow key={summary.id}>
+                    <Fragment key={summary.id}>
+                    <TableRow>
+                      <TableCell>
+                        <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(summary.id)}>
+                          {expandedRows.has(summary.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                      </TableCell>
                       <TableCell>{summary.id}</TableCell>
                       <TableCell className="text-sm">
                         {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
@@ -598,10 +616,54 @@ export default function TransactionsPage() {
                         </AlertDialog>
                       </TableCell>
                     </TableRow>
+                     {expandedRows.has(summary.id) && (
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={7} className="p-0">
+                            <div className="p-4">
+                              <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Item Name</TableHead>
+                                    <TableHead>Qty</TableHead>
+                                    <TableHead>Unit Cost</TableHead>
+                                    <TableHead>Total Cost</TableHead>
+                                    {summary.transactionType === 'Goods Receipt' && (
+                                      <>
+                                        <TableHead>Issued Qty</TableHead>
+                                        <TableHead>Balance Qty</TableHead>
+                                        <TableHead className="text-right">Remaining Value</TableHead>
+                                      </>
+                                    )}
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {summary.items.map(item => (
+                                    <TableRow key={item.id}>
+                                      <TableCell>{item.itemName}</TableCell>
+                                      <TableCell>{item.quantity} {item.unit}</TableCell>
+                                      <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.cost || 0)}</TableCell>
+                                      <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                                      {summary.transactionType === 'Goods Receipt' && (
+                                        <>
+                                          <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>
+                                          <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>
+                                          <TableCell className="text-right font-bold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.balanceQuantity || 0) * (item.cost || 0))}</TableCell>
+                                        </>
+                                      )}
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
+                    <TableCell colSpan={7} className="text-center h-24">
                       No transactions found.
                     </TableCell>
                   </TableRow>
