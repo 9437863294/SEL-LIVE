@@ -19,7 +19,7 @@ import { Calendar as CalendarIcon, Search, ChevronDown, ChevronRight } from 'luc
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import type { TransactionSummary } from '@/app/store-stock-management/[project]/transactions/page';
@@ -255,7 +255,7 @@ export default function InventoryPage() {
                             </Popover>
                         </div>
                         <div className="flex items-center space-x-2">
-                            <Checkbox id="filter-transactions" checked={showOnlyWithTransactions} onCheckedChange={(checked) => setShowOnlyWithTransactions(!!checked)} />
+                            <Switch id="filter-transactions" checked={showOnlyWithTransactions} onCheckedChange={setShowOnlyWithTransactions} />
                             <Label htmlFor="filter-transactions" className="whitespace-nowrap">Show only items with transactions</Label>
                         </div>
                         <Button onClick={clearFilters} variant="secondary">Clear</Button>
