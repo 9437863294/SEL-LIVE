@@ -2,21 +2,33 @@
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { InventoryLog } from '@/lib/types';
-import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AgeingBucket {
     quantity: number;
@@ -152,20 +164,24 @@ export default function AgeingReportPage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Ageing Summary</CardTitle>
-                    <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
-                    <div className="pt-4">
-                        <Label>Report Presets</Label>
-                        <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
-                            <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Select a preset" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="monthly">Monthly</SelectItem>
-                                <SelectItem value="quarterly">Quarterly</SelectItem>
-                                <SelectItem value="yearly">Yearly</SelectItem>
-                            </SelectContent>
-                        </Select>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <CardTitle>Ageing Summary</CardTitle>
+                            <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Report Presets</Label>
+                            <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
+                                <SelectTrigger className="w-[180px]">
+                                    <SelectValue placeholder="Select a preset" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="monthly">Monthly</SelectItem>
+                                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                                    <SelectItem value="yearly">Yearly</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent>
