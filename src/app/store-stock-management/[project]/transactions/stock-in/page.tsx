@@ -324,7 +324,7 @@ export default function StockInPage() {
 
   const onSubmit = async (data: GrnFormValues) => {
     if (!currentProject) {
-        toast({title: "Error", description: "Project could not be found.", variant: "destructive"});
+        toast({title: "Error", description: "Project not found.", variant: "destructive"});
         return;
     }
     setIsSaving(true);
@@ -544,7 +544,6 @@ export default function StockInPage() {
     );
   };
 
-
   return (
     <>
     <Form {...form}>
@@ -617,7 +616,6 @@ export default function StockInPage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle>Items Received</CardTitle>
-                            <Button type="button" variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}><Library className="mr-2 h-4 w-4" /> Add from BOM</Button>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
