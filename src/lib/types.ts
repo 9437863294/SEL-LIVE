@@ -120,16 +120,26 @@ export const permissionModules = {
     },
     'Store & Stock Management': {
         'View Module': true,
-        'Dashboard': ['View'],
-        'Inventory': ['View'],
-        'Transactions': ['View'],
-        'Conversions': ['View', 'Manage'],
-        'BOM Management': ['View', 'Manage'],
-        'BOQ': ['View', 'Import', 'Add'],
-        'Reports': ['View', 'Ageing Report'],
-        'AI Forecast': ['View'],
         'Settings': ['View', 'Manage Projects', 'Manage Units', 'Manage GRN Entry'],
-        'Projects': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'],
+        'Projects': [
+            'View Dashboard',
+            'View Inventory',
+            'View Transactions',
+            'Stock In',
+            'Stock Out',
+            'Edit Transaction',
+            'Delete Transaction',
+            'View Conversions',
+            'Manage Conversions',
+            'View BOM',
+            'Manage BOM',
+            'View BOQ',
+            'Import BOQ',
+            'Add BOQ Item',
+            'View Reports',
+            'View Ageing Report',
+            'View AI Forecast',
+        ]
     },
     'Insurance': {
       'View Module': true,
@@ -786,3 +796,4 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
+
