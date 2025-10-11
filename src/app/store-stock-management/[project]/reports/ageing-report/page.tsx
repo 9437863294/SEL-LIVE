@@ -17,19 +17,25 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+interface AgeingBucket {
+    quantity: number;
+    value: number;
+}
+
 interface AgeingData {
     itemName: string;
     unit: string;
-    '0-30': number;
-    '31-60': number;
-    '61-90': number;
-    '91-180': number;
-    '181-365': number;
-    '365+': number;
-    total: number;
+    '0-30': AgeingBucket;
+    '31-60': AgeingBucket;
+    '61-90': AgeingBucket;
+    '91-180': AgeingBucket;
+    '181-365': AgeingBucket;
+    '365+': AgeingBucket;
+    totalQuantity: number;
+    totalValue: number;
 }
 
-const ageBrackets = ['0-30', '31-60', '61-90', '91-180', '181-365', '365+'];
+const ageBrackets: (keyof Omit<AgeingData, 'itemName' | 'unit' | 'totalQuantity' | 'totalValue'>)[] = ['0-30', '31-60', '61-90', '91-180', '181-365', '365+'];
 
 export default function AgeingReportPage() {
     const { toast } = useToast();
@@ -60,23 +66,27 @@ export default function AgeingReportPage() {
         const itemBalances: Record<string, AgeingData> = {};
         const now = new Date();
 
-        inventoryLogs.forEach(log => {
+        // Process only GRNs with available quantity to determine stock age and value
+        inventoryLogs
+          .filter(log => log.transactionType === 'Goods Receipt' && log.availableQuantity > 0)
+          .forEach(log => {
             if (!itemBalances[log.itemId]) {
                 itemBalances[log.itemId] = {
                     itemName: log.itemName,
                     unit: log.unit,
-                    '0-30': 0,
-                    '31-60': 0,
-                    '61-90': 0,
-                    '91-180': 0,
-                    '181-365': 0,
-                    '365+': 0,
-                    total: 0,
+                    '0-30': { quantity: 0, value: 0 },
+                    '31-60': { quantity: 0, value: 0 },
+                    '61-90': { quantity: 0, value: 0 },
+                    '91-180': { quantity: 0, value: 0 },
+                    '181-365': { quantity: 0, value: 0 },
+                    '365+': { quantity: 0, value: 0 },
+                    totalQuantity: 0,
+                    totalValue: 0,
                 };
             }
 
             const age = differenceInDays(now, log.date.toDate());
-            let bracket: keyof Omit<AgeingData, 'itemName' | 'unit' | 'total'>;
+            let bracket: keyof Omit<AgeingData, 'itemName' | 'unit' | 'totalQuantity' | 'totalValue'>;
 
             if (age <= 30) bracket = '0-30';
             else if (age <= 60) bracket = '31-60';
@@ -84,20 +94,33 @@ export default function AgeingReportPage() {
             else if (age <= 180) bracket = '91-180';
             else if (age <= 365) bracket = '181-365';
             else bracket = '365+';
+            
+            const quantityInBracket = log.availableQuantity;
+            const valueInBracket = quantityInBracket * (log.cost || 0);
 
-            if (log.transactionType === 'Goods Receipt') {
-                itemBalances[log.itemId][bracket] += log.availableQuantity;
-            }
+            itemBalances[log.itemId][bracket].quantity += quantityInBracket;
+            itemBalances[log.itemId][bracket].value += valueInBracket;
         });
 
+        // Calculate totals for each item
         Object.values(itemBalances).forEach(item => {
-            item.total = ageBrackets.reduce((sum, bracket) => sum + item[bracket as keyof Omit<AgeingData, 'itemName' | 'unit' | 'total'>], 0);
+            item.totalQuantity = ageBrackets.reduce((sum, bracket) => sum + item[bracket].quantity, 0);
+            item.totalValue = ageBrackets.reduce((sum, bracket) => sum + item[bracket].value, 0);
         });
 
-        return Object.values(itemBalances).filter(item => item.total > 0);
+        return Object.values(itemBalances).filter(item => item.totalQuantity > 0);
 
     }, [inventoryLogs]);
-
+    
+    const formatValue = (value: number) => {
+      if (value === 0) return '-';
+      return value.toLocaleString('en-IN');
+    }
+    
+     const formatCurrency = (amount: number) => {
+        if (amount === 0) return '-';
+        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+    };
 
     return (
         <div className="w-full">
@@ -119,19 +142,29 @@ export default function AgeingReportPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Item Name</TableHead>
-                                <TableHead>Unit</TableHead>
+                                <TableHead rowSpan={2} className="align-bottom">Item Name</TableHead>
+                                <TableHead rowSpan={2} className="align-bottom">Unit</TableHead>
                                 {ageBrackets.map(bracket => (
-                                    <TableHead key={bracket} className="text-right">{bracket}</TableHead>
+                                    <TableHead key={bracket} colSpan={2} className="text-center border-l">{bracket} days</TableHead>
                                 ))}
-                                <TableHead className="text-right font-bold">Total Balance</TableHead>
+                                <TableHead colSpan={2} className="text-center font-bold border-l">Total Balance</TableHead>
+                            </TableRow>
+                            <TableRow>
+                                {ageBrackets.map(bracket => (
+                                    <Fragment key={bracket}>
+                                        <TableHead className="text-right border-l">Qty</TableHead>
+                                        <TableHead className="text-right">Value</TableHead>
+                                    </Fragment>
+                                ))}
+                                <TableHead className="text-right border-l">Qty</TableHead>
+                                <TableHead className="text-right">Value</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        <TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell>
+                                        <TableCell colSpan={16}><Skeleton className="h-8 w-full" /></TableCell>
                                     </TableRow>
                                 ))
                             ) : ageingReportData.length > 0 ? (
@@ -140,14 +173,18 @@ export default function AgeingReportPage() {
                                         <TableCell>{item.itemName}</TableCell>
                                         <TableCell>{item.unit}</TableCell>
                                         {ageBrackets.map(bracket => (
-                                            <TableCell key={bracket} className="text-right">{item[bracket as keyof typeof item]}</TableCell>
+                                            <Fragment key={bracket}>
+                                                <TableCell className="text-right border-l">{formatValue(item[bracket].quantity)}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(item[bracket].value)}</TableCell>
+                                            </Fragment>
                                         ))}
-                                        <TableCell className="text-right font-bold">{item.total}</TableCell>
+                                        <TableCell className="text-right font-bold border-l">{formatValue(item.totalQuantity)}</TableCell>
+                                        <TableCell className="text-right font-bold">{formatCurrency(item.totalValue)}</TableCell>
                                     </TableRow>
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="text-center h-24">No inventory data to display.</TableCell>
+                                    <TableCell colSpan={16} className="text-center h-24">No inventory data to display.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
