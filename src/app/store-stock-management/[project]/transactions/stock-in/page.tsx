@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -612,7 +613,7 @@ export default function StockInPage() {
                     </CardContent>
                 </Card>
                 
-                 <Card>
+                <Card>
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle>Items Received</CardTitle>
