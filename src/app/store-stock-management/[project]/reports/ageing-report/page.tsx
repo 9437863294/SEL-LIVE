@@ -16,6 +16,7 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AgeingBucket {
     quantity: number;
@@ -155,20 +156,16 @@ export default function AgeingReportPage() {
                     <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
                     <div className="pt-4">
                         <Label>Report Presets</Label>
-                        <RadioGroup defaultValue="monthly" onValueChange={(value) => setActivePreset(value as Preset)} className="flex items-center gap-4 mt-2">
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="monthly" id="monthly" />
-                                <Label htmlFor="monthly">Monthly</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="quarterly" id="quarterly" />
-                                <Label htmlFor="quarterly">Quarterly</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="yearly" id="yearly" />
-                                <Label htmlFor="yearly">Yearly</Label>
-                            </div>
-                        </RadioGroup>
+                        <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Select a preset" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="monthly">Monthly</SelectItem>
+                                <SelectItem value="quarterly">Quarterly</SelectItem>
+                                <SelectItem value="yearly">Yearly</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </CardHeader>
                 <CardContent>
