@@ -245,32 +245,46 @@ export default function AddRolePage() {
                                                             )
                                                         }
                                                         if (subModuleKey === 'Projects' && moduleName === 'Store & Stock Management') {
+                                                            const projectPermissions = permissions as string[];
                                                             return (
                                                               <div key={fullKey} className="p-3 border rounded-md mt-2">
-                                                                <h4 className="font-semibold text-sm mb-3">Project Access</h4>
+                                                                <h4 className="font-semibold text-sm mb-3">Project-specific Permissions</h4>
                                                                 {projects.map(proj => {
                                                                   const projectKey = `Store & Stock Management.Projects.${proj.id}`;
-                                                                  const projectPermissions = permissions as string[];
                                                                   const grantedInProject = newRole.permissions?.[projectKey] || [];
+                                                                  const isAllInProjectSelected = projectPermissions.length > 0 && grantedInProject.length === projectPermissions.length;
                                                                   return (
                                                                     <div key={proj.id} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
-                                                                      <div className="flex justify-between items-center">
+                                                                      <div className="flex justify-between items-center mb-2">
                                                                         <p className="text-sm font-medium">{proj.projectName}</p>
                                                                         <div className="flex items-center space-x-2">
                                                                           <Checkbox
-                                                                            id={`new-${projectKey}-View`}
-                                                                            checked={grantedInProject.includes('View')}
-                                                                            onCheckedChange={(checked) => handlePermissionChange(projectKey, 'View', !!checked)}
+                                                                            id={`select-all-project-${proj.id}`}
+                                                                            checked={isAllInProjectSelected}
+                                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(projectKey, projectPermissions, e.currentTarget.dataset.state === 'unchecked') }}
                                                                             disabled={!hasViewModulePermission}
                                                                           />
-                                                                          <Label htmlFor={`new-${projectKey}-View`} className="text-xs font-normal">View</Label>
+                                                                          <Label htmlFor={`select-all-project-${proj.id}`} className="text-xs font-medium">All</Label>
                                                                         </div>
                                                                       </div>
+                                                                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                                        {projectPermissions.map(permission => (
+                                                                          <div key={permission} className="flex items-center space-x-2">
+                                                                            <Checkbox
+                                                                              id={`new-${projectKey}-${permission}`}
+                                                                              checked={grantedInProject.includes(permission)}
+                                                                              onCheckedChange={(checked) => handlePermissionChange(projectKey, permission, !!checked)}
+                                                                              disabled={!hasViewModulePermission}
+                                                                            />
+                                                                            <Label htmlFor={`new-${projectKey}-${permission}`} className="text-xs font-normal">{permission}</Label>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
                                                                     </div>
-                                                                  )
+                                                                  );
                                                                 })}
                                                               </div>
-                                                            )
+                                                            );
                                                           }
 
                                                         const grantedInGroup = newRole.permissions?.[fullKey] || [];

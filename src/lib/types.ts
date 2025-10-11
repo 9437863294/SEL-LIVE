@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -120,10 +119,10 @@ export const permissionModules = {
     },
     'Store & Stock Management': {
         'View Module': true,
-        'Projects': ['View'],
+        'Projects': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'], // Permissions available for each project
         'Dashboard': ['View'],
         'Inventory': ['View'],
-        'Transactions': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'],
+        'Transactions': ['View'], // General view, specific actions are per-project
         'Conversions': ['View', 'Manage'],
         'BOM Management': ['View', 'Manage'],
         'BOQ': ['View', 'Import', 'Add'],
@@ -785,4 +784,3 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
-

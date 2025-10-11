@@ -50,40 +50,31 @@ export default function ModuleDashboard() {
       return [];
     }
     
+    // All modules available based on permissions
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => can('View Module', moduleName));
 
-    const availableModules = availableModuleNames.map((moduleName, index) => ({
-      id: String(index + 1),
+    const defaultModules = availableModuleNames.map((moduleName, index) => ({
+      id: moduleName, // Use name as a consistent key
       title: moduleName,
       content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
       tags: [] as string[],
       icon: moduleIcons[moduleName] || 'FileText',
     }));
-    
-    const savedChatModule = modules.find(m => m.title === 'Chat System');
-    if (savedChatModule && !availableModules.some(m => m.title === 'Chat System')) {
-        availableModules.push(savedChatModule);
-    }
 
-    const savedModulesMap = new Map(modules.map(m => [m.title, m]));
-    
-    const orderedModules = modules.map(sm => {
-        const foundModule = availableModules.find(am => am.title === sm.title);
-        if (foundModule) {
-            // Use the saved module data, but ensure it's still available based on permissions
-            return {
-                ...foundModule, // a copy with default icon/desc if needed
-                ...savedModulesMap.get(sm.title), // overlay saved data
-            };
-        }
-        return null;
-    }).filter(Boolean) as Module[];
+    // User's saved modules (which includes their custom order and potentially other saved data)
+    const savedModules = modules;
 
-    const newModules = availableModules.filter(
-        am => !orderedModules.some(om => om.title === am.title)
+    // Filter saved modules to only include those the user currently has permission to view
+    const visibleSavedModules = savedModules.filter(sm => availableModuleNames.includes(sm.title));
+
+    // Identify which default modules are new (i.e., not in the user's saved/ordered list)
+    const newModules = defaultModules.filter(
+        dm => !visibleSavedModules.some(vsm => vsm.title === dm.title)
     );
 
-    return [...orderedModules, ...newModules];
+    // Combine the ordered, visible modules with any new modules
+    return [...visibleSavedModules, ...newModules];
+
   }, [modules, isLoading, can, authLoading]);
 
 
