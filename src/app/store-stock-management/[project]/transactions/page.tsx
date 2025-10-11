@@ -538,11 +538,15 @@ export default function TransactionsPage() {
                     <Fragment key={summary.id}>
                     <TableRow>
                       <TableCell>
-                        <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(summary.id)}>
+                        <Button size="icon" variant="ghost" data-toggle-row onClick={() => toggleRowExpansion(summary.id)}>
                           {expandedRows.has(summary.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
                       </TableCell>
-                      <TableCell>{summary.id}</TableCell>
+                      <TableCell>
+                        <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDetails(summary)}>
+                            {summary.id}
+                        </Button>
+                      </TableCell>
                       <TableCell className="text-sm">
                         {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
                       </TableCell>
@@ -682,5 +686,3 @@ export default function TransactionsPage() {
     </>
   );
 }
-
-    
