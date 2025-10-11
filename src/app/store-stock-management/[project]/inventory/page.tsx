@@ -108,19 +108,18 @@ export default function InventoryPage() {
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
 
-        // Initialize all BOQ items and find their latest cost from GRNs
         boqItems.forEach(item => {
-            const itemLogs = filteredLogs.filter(log => log.itemId === item.id && log.transactionType === 'Goods Receipt');
-            itemLogs.sort((a,b) => b.date.toMillis() - a.date.toMillis());
-            const latestCost = itemLogs.length > 0 ? (itemLogs[0].cost || 0) : 0;
-            stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost });
+            stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost: 0 });
         });
 
         filteredLogs.forEach(log => {
             const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
             if (log.transactionType === 'Goods Receipt') {
                 current.stockIn += log.quantity;
-            } else if (log.transactionType === 'Goods Issue') {
+                if(log.cost && log.cost > 0) { // Update latest cost only from GRNs with cost
+                    current.latestCost = log.cost;
+                }
+            } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
                 current.stockOut += log.quantity;
             }
             stockMovements.set(log.itemId, current);
