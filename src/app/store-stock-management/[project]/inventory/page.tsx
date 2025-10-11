@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BoqItem, InventoryLog, EnrichedLogItem } from '@/lib/types';
+import type { BoqItem, InventoryLog, EnrichedLogItem, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,6 +46,7 @@ export default function InventoryPage() {
     const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
     const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [currentProject, setCurrentProject] = useState<Project | null>(null);
     
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
@@ -61,8 +62,20 @@ export default function InventoryPage() {
         const fetchData = async () => {
             setIsLoading(true);
             try {
+                const projectsQuery = query(collection(db, 'projects'));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+                if (!projectData) {
+                    toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+                    setIsLoading(false);
+                    return;
+                }
+                setCurrentProject(projectData);
+
                 const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-                const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectSlug));
+                const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData.id));
                 
                 const [boqSnapshot, inventorySnapshot] = await Promise.all([
                     getDocs(boqQuery),
@@ -108,28 +121,25 @@ export default function InventoryPage() {
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
         
-        // Ensure every item from BOQ and Logs has an entry in the map
         const allItemIds = new Set([...boqItems.map(i => i.id), ...inventoryLogs.map(l => l.itemId)]);
+
         allItemIds.forEach(id => {
-            if (!stockMovements.has(id)) {
-                stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0 });
-            }
+            stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0 });
         });
-
-        // Now, process all logs
+        
         filteredLogs.forEach(log => {
-            const current = stockMovements.get(log.itemId)!;
-            const updated = { ...current };
-
+            const current = stockMovements.get(log.itemId);
+            if (!current) return;
+        
             if (log.transactionType === 'Goods Receipt') {
-                updated.stockIn += log.quantity;
+                current.stockIn += log.quantity;
                 if(log.cost && log.cost > 0) { 
-                    updated.latestCost = log.cost;
+                    current.latestCost = log.cost;
                 }
             } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
-                updated.stockOut += log.quantity;
+                current.stockOut += log.quantity;
             }
-            stockMovements.set(log.itemId, updated);
+            stockMovements.set(log.itemId, current);
         });
         
         let calculatedData = boqItems.map(item => {
@@ -379,3 +389,5 @@ export default function InventoryPage() {
         </>
     );
 }
+
+    
