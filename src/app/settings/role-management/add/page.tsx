@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
-import type { Role, Department } from '@/lib/types';
+import type { Role, Department, Project } from '@/lib/types';
 import { permissionModules } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -52,15 +52,18 @@ export default function AddRolePage() {
 
     const [newRole, setNewRole] = useState<{name: string, permissions: Record<string, string[]>}>(JSON.parse(JSON.stringify(initialNewRoleState)));
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        const fetchDepartments = async () => {
+        const fetchDeptsAndProjects = async () => {
             const deptsSnap = await getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')));
-            const deptsData: Department[] = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
-            setDepartments(deptsData);
+            setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+
+            const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
+            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         };
-        fetchDepartments();
+        fetchDeptsAndProjects();
     }, []);
 
     const handlePermissionChange = (moduleKey: string, permission: string, isChecked: boolean) => {
@@ -205,7 +208,7 @@ export default function AddRolePage() {
                                                                     <h4 className="font-semibold text-sm mb-3">{subModuleKey}-specific Permissions</h4>
                                                                     {departments.map(dept => {
                                                                         const deptKey = `Expenses.Departments.${dept.id}`;
-                                                                        const deptPermissions = permissions;
+                                                                        const deptPermissions = permissions as string[];
                                                                         const grantedInDept = newRole.permissions?.[deptKey] || [];
                                                                         const isAllInDeptSelected = deptPermissions.length > 0 && grantedInDept.length === deptPermissions.length;
                                                                         return (
@@ -241,9 +244,37 @@ export default function AddRolePage() {
                                                                 </div>
                                                             )
                                                         }
+                                                        if (subModuleKey === 'Projects' && moduleName === 'Store & Stock Management') {
+                                                            return (
+                                                              <div key={fullKey} className="p-3 border rounded-md mt-2">
+                                                                <h4 className="font-semibold text-sm mb-3">Project Access</h4>
+                                                                {projects.map(proj => {
+                                                                  const projectKey = `Store & Stock Management.Projects.${proj.id}`;
+                                                                  const projectPermissions = permissions as string[];
+                                                                  const grantedInProject = newRole.permissions?.[projectKey] || [];
+                                                                  return (
+                                                                    <div key={proj.id} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
+                                                                      <div className="flex justify-between items-center">
+                                                                        <p className="text-sm font-medium">{proj.projectName}</p>
+                                                                        <div className="flex items-center space-x-2">
+                                                                          <Checkbox
+                                                                            id={`new-${projectKey}-View`}
+                                                                            checked={grantedInProject.includes('View')}
+                                                                            onCheckedChange={(checked) => handlePermissionChange(projectKey, 'View', !!checked)}
+                                                                            disabled={!hasViewModulePermission}
+                                                                          />
+                                                                          <Label htmlFor={`new-${projectKey}-View`} className="text-xs font-normal">View</Label>
+                                                                        </div>
+                                                                      </div>
+                                                                    </div>
+                                                                  )
+                                                                })}
+                                                              </div>
+                                                            )
+                                                          }
 
                                                         const grantedInGroup = newRole.permissions?.[fullKey] || [];
-                                                        const isAllInGroupSelected = permissions.length > 0 && grantedInGroup.length === permissions.length;
+                                                        const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
 
                                                         return (
                                                             <div key={fullKey} className="p-3 border rounded-md mt-2">
@@ -253,14 +284,14 @@ export default function AddRolePage() {
                                                                     <Checkbox
                                                                         id={`select-all-group-new-${fullKey}`}
                                                                         checked={isAllInGroupSelected}
-                                                                        onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions, e.currentTarget.dataset.state === 'unchecked')}}
-                                                                        disabled={!hasViewModulePermission}
+                                                                        onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
+                                                                        disabled={!hasViewModulePermission || !Array.isArray(permissions)}
                                                                     />
                                                                     <Label htmlFor={`select-all-group-new-${fullKey}`} className="text-xs font-medium">All</Label>
                                                                 </div>
                                                                 </div>
                                                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                                    {permissions.map(permission => (
+                                                                    {Array.isArray(permissions) && permissions.map(permission => (
                                                                         <div key={permission} className="flex items-center space-x-2">
                                                                             <Checkbox
                                                                                 id={`new-${fullKey}-${permission}`}

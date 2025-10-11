@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, updateDoc, getDocs, query, where } from 'firebase/firestore';
-import type { Role, Department } from '@/lib/types';
+import type { Role, Department, Project } from '@/lib/types';
 import { permissionModules } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -29,6 +29,7 @@ export default function EditRolePage() {
 
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -65,9 +66,18 @@ export default function EditRolePage() {
                     const deptsData = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
                     setDepartments(deptsData);
 
+                    const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
+                    const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+                    setProjects(projectsData);
+
                     deptsData.forEach(dept => {
                         const deptKey = `Expenses.Departments.${dept.id}`;
                         completePermissions[deptKey] = roleData.permissions?.[deptKey] || [];
+                    });
+                    
+                    projectsData.forEach(proj => {
+                        const projectKey = `Store & Stock Management.Projects.${proj.id}`;
+                        completePermissions[projectKey] = roleData.permissions?.[projectKey] || [];
                     });
 
                     setEditingRole({ ...roleData, permissions: completePermissions });
@@ -271,6 +281,35 @@ export default function EditRolePage() {
                                                                     </div>
                                                                 )
                                                             }
+                                                            
+                                                            if (subModuleKey === 'Projects' && moduleName === 'Store & Stock Management') {
+                                                                return (
+                                                                  <div key={fullKey} className="p-3 border rounded-md mt-2">
+                                                                    <h4 className="font-semibold text-sm mb-3">Project Access</h4>
+                                                                    {projects.map(proj => {
+                                                                      const projectKey = `Store & Stock Management.Projects.${proj.id}`;
+                                                                      const projectPermissions = permissions as string[];
+                                                                      const grantedInProject = editingRole.permissions?.[projectKey] || [];
+                                                                      return (
+                                                                        <div key={proj.id} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
+                                                                          <div className="flex justify-between items-center">
+                                                                            <p className="text-sm font-medium">{proj.projectName}</p>
+                                                                            <div className="flex items-center space-x-2">
+                                                                              <Checkbox
+                                                                                id={`edit-${projectKey}-View`}
+                                                                                checked={grantedInProject.includes('View')}
+                                                                                onCheckedChange={(checked) => handlePermissionChange(projectKey, 'View', !!checked)}
+                                                                                disabled={!hasViewModulePermission}
+                                                                              />
+                                                                              <Label htmlFor={`edit-${projectKey}-View`} className="text-xs font-normal">View</Label>
+                                                                            </div>
+                                                                          </div>
+                                                                        </div>
+                                                                      )
+                                                                    })}
+                                                                  </div>
+                                                                )
+                                                              }
 
                                                             const grantedInGroup = editingRole.permissions?.[fullKey] || [];
                                                             const isAllInGroupSelected = permissions.length > 0 && grantedInGroup.length === permissions.length;
