@@ -108,26 +108,35 @@ export default function InventoryPage() {
 
         const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
 
+        // Ensure all items from logs are initialized
+        filteredLogs.forEach(log => {
+            if (!stockMovements.has(log.itemId)) {
+                stockMovements.set(log.itemId, { stockIn: 0, stockOut: 0, latestCost: 0 });
+            }
+        });
+        
+        // Also ensure all BOQ items are initialized so they appear even without transactions
         boqItems.forEach(item => {
-            stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost: 0 });
+            if (!stockMovements.has(item.id)) {
+                stockMovements.set(item.id, { stockIn: 0, stockOut: 0, latestCost: 0 });
+            }
         });
 
+        // Now, process all logs
         filteredLogs.forEach(log => {
-            const current = stockMovements.get(log.itemId) || { stockIn: 0, stockOut: 0, latestCost: 0 };
+            const current = stockMovements.get(log.itemId)!; // Should exist now
             if (log.transactionType === 'Goods Receipt') {
                 current.stockIn += log.quantity;
-                if(log.cost && log.cost > 0) { // Update latest cost only from GRNs with cost
+                if(log.cost && log.cost > 0) { 
                     current.latestCost = log.cost;
                 }
             } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
                 current.stockOut += log.quantity;
             }
-            stockMovements.set(log.itemId, current);
+            // No need to set, as we are mutating the object in the map
         });
         
-        const boqWithMainItems = boqItems.filter(item => item['Sl No'] || item['SL. No.']);
-        
-        let calculatedData = boqWithMainItems.map(item => {
+        let calculatedData = boqItems.map(item => {
             const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0 };
             const balance = movements.stockIn - movements.stockOut;
             return {
