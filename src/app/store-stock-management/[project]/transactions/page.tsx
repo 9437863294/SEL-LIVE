@@ -99,6 +99,7 @@ export default function TransactionsPage() {
   const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', currentProject?.id);
   const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', currentProject?.id);
   const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', currentProject?.id);
+  const canViewTransactions = can('View', 'Store & Stock Management.Transactions') || can('View', 'Store & Stock Management.Projects', currentProject?.id);
 
   const fetchData = useCallback(async () => {
     if (!projectSlug) return;
@@ -359,7 +360,7 @@ export default function TransactionsPage() {
                              transactionType: 'Conversion',
                              quantity: setsToCreate * bomComponent.qtyPerSet,
                              availableQuantity: 0,
-                             unit: 'Kg',
+                             unit: 'Kg', 
                              cost: 0, // Cost for conversion logs can be tricky, might need separate logic
                              projectSlug: projectSlug,
                              description: `Auto-assembled into ${setsToCreate} sets of ${mainItemDescription}`,
@@ -729,3 +730,5 @@ export default function TransactionsPage() {
     </>
   );
 }
+
+    
