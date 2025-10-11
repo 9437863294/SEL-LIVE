@@ -99,28 +99,25 @@ export default function TransactionsPage() {
   const canCreateStockOut = can('Stock Out', 'Store & Stock Management.Projects', currentProject?.id);
   const canEditTransaction = can('Edit', 'Store & Stock Management.Projects', currentProject?.id);
   const canDeleteTransaction = can('Delete', 'Store & Stock Management.Projects', currentProject?.id);
-  const canViewTransactions = can('View', 'Store & Stock Management.Transactions') || can('View', 'Store & Stock Management.Projects', currentProject?.id);
+  const canViewTransactions = can('View', 'Store & Stock Management.Transactions');
 
   const fetchData = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-        const slugify = (text: string) => {
-            if (!text) return '';
-            return text.toString().toLowerCase()
-              .replace(/\s+/g, '-')
-              .replace(/[^\w\-]+/g, '')
-              .replace(/\-\-+/g, '-')
-              .replace(/^-+/, '')
-              .replace(/-+$/, '');
-        }
-
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        const slugify = (text: string) => {
+          if (!text) return '';
+          return text.toString().toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^\w\-]+/g, '')
+            .replace(/\-\-+/g, '-')
+            .replace(/^-+/, '')
+            .replace(/-+$/, '');
+        }
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
         
-        const projectData = allProjects.find(p => slugify(p.projectName) === projectSlug);
-
         if (!projectData) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             setIsLoading(false);
@@ -359,7 +356,7 @@ export default function TransactionsPage() {
                              itemType: 'Sub',
                              transactionType: 'Conversion',
                              quantity: setsToCreate * bomComponent.qtyPerSet,
-                             availableQuantity: 0,
+                             availableQuantity: 0, 
                              unit: 'Kg', 
                              cost: 0, // Cost for conversion logs can be tricky, might need separate logic
                              projectSlug: projectSlug,

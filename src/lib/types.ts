@@ -119,10 +119,10 @@ export const permissionModules = {
     },
     'Store & Stock Management': {
         'View Module': true,
-        'Projects': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'], // Permissions available for each project
+        'Projects': ['View', 'Stock In', 'Stock Out', 'Edit', 'Delete'],
         'Dashboard': ['View'],
         'Inventory': ['View'],
-        'Transactions': ['View'], // General view, specific actions are per-project
+        'Transactions': ['View'],
         'Conversions': ['View', 'Manage'],
         'BOM Management': ['View', 'Manage'],
         'BOQ': ['View', 'Import', 'Add'],
@@ -754,6 +754,7 @@ export interface InventoryLog {
     unit: string;
     cost?: number;
     projectId: string;
+    projectSlug?: string;
     batch?: string; // Could be GRN number
     description?: string;
     details?: {
