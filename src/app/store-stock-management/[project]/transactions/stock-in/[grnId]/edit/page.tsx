@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment } from '@/lib/types';
+import type { InventoryLog, BoqItem, SerialNumberConfig, FabricationBomItem, Attachment, Project } from '@/lib/types';
 import { collection, getDocs, query, where, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -33,7 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Textarea } from '@/components/ui/textarea';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
@@ -73,26 +73,26 @@ const itemSchema = z.object({
   bomItems: z.array(z.any()).optional(),
 });
 
-const grnSchema = z.object({
+const generateGrnSchema = (mandatoryFields: any) => z.object({
     grnNo: z.string().min(1, "GRN No. is required."),
     grnDate: z.date({ required_error: "A GRN date is required." }),
     supplier: z.string().min(1, "Supplier name is required."),
-    poNumber: z.string().min(1, "P.O. Number is required."),
-    poDate: z.date().optional(),
-    invoiceNumber: z.string().min(1, "Invoice number is required."),
-    invoiceDate: z.date().optional(),
-    invoiceAmount: z.coerce.number().nullable().optional(),
-    invoiceFiles: z.array(z.custom<File>()).optional().default([]),
-    transporterDocs: z.array(z.custom<File>()).optional().default([]),
-    vehicleNo: z.string().optional().default(''),
-    waybillNo: z.string().optional().default(''),
-    lrNo: z.string().optional().default(''),
-    lrDate: z.date().optional(),
+    poNumber: mandatoryFields.poNumber ? z.string().min(1, "P.O. Number is required.") : z.string().optional(),
+    poDate: mandatoryFields.poDate ? z.date({ required_error: "A P.O. date is required."}) : z.date().optional(),
+    invoiceNumber: mandatoryFields.invoiceNumber ? z.string().min(1, "Invoice number is required.") : z.string().optional(),
+    invoiceDate: mandatoryFields.invoiceDate ? z.date({ required_error: "An invoice date is required."}) : z.date().optional(),
+    invoiceAmount: mandatoryFields.invoiceAmount ? z.coerce.number().min(0, "Amount must be positive.") : z.coerce.number().nullable().optional(),
+    invoiceFiles: mandatoryFields.invoiceFiles ? z.array(z.custom<File>()).min(1, "Invoice file is required.") : z.array(z.custom<File>()).optional().default([]),
+    transporterDocs: mandatoryFields.transporterDocs ? z.array(z.custom<File>()).min(1, "Transporter document is required.") : z.array(z.custom<File>()).optional().default([]),
+    vehicleNo: mandatoryFields.vehicleNo ? z.string().min(1, "Vehicle No. is required.") : z.string().optional().default(''),
+    waybillNo: mandatoryFields.waybillNo ? z.string().min(1, "Waybill No. is required.") : z.string().optional().default(''),
+    lrNo: mandatoryFields.lrNo ? z.string().min(1, "LR No. is required.") : z.string().optional().default(''),
+    lrDate: mandatoryFields.lrDate ? z.date({ required_error: "An LR date is required."}) : z.date().optional(),
     notes: z.string().optional().default(''),
     items: z.array(itemSchema).min(1, { message: 'At least one item is required.' }),
 });
 
-type GrnFormValues = z.infer<typeof grnSchema>;
+type GrnFormValues = z.infer<ReturnType<typeof generateGrnSchema>>;
 
 export default function EditStockInPage() {
   const { toast } = useToast();
@@ -105,6 +105,24 @@ export default function EditStockInPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
+  
+  const [grnSchema, setGrnSchema] = useState(() => generateGrnSchema({}));
+
+  useEffect(() => {
+      const fetchSettings = async () => {
+        try {
+            const settingsDoc = await getDoc(doc(db, 'storeStockSettings', 'grnEntry'));
+            if (settingsDoc.exists()) {
+              setGrnSchema(() => generateGrnSchema(settingsDoc.data().mandatoryFields || {}));
+            } else {
+              setGrnSchema(() => generateGrnSchema({})); // fallback to default non-mandatory
+            }
+        } catch (error) {
+            console.error("Could not fetch GRN settings:", error);
+        }
+      };
+      fetchSettings();
+  }, []);
   
   const form = useForm<GrnFormValues>({
     resolver: zodResolver(grnSchema),
@@ -187,7 +205,7 @@ export default function EditStockInPage() {
       setIsLoadingItems(false);
     };
     fetchBoq();
-  }, [projectSlug]);
+  }, [projectSlug, toast]);
 
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);
@@ -246,7 +264,7 @@ export default function EditStockInPage() {
   
   const getSlNo = (item: BoqItem): string => {
     return String(item['Sl No'] || item['SL. No.'] || '');
-  }
+}
 
   const handleItemSelect = (index: number, selectedBoqItem: BoqItem | null) => {
     if (selectedBoqItem) {
@@ -285,7 +303,7 @@ export default function EditStockInPage() {
                 </Button>
               </FormControl>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
+            <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
               <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
             </PopoverContent>
           </Popover>
@@ -467,3 +485,113 @@ export default function EditStockInPage() {
     </Form>
   );
 }
+
+```
+- tailwind.config.js:
+```js
+
+const config = {
+  darkMode: ['class'],
+  content: [
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        body: ['var(--font-body)', 'sans-serif'],
+        inter: ['var(--font-inter)', 'sans-serif'],
+        roboto: ['var(--font-roboto)', 'sans-serif'],
+        headline: ['var(--font-inter)', 'sans-serif'],
+        code: ['monospace'],
+      },
+      colors: {
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+      keyframes: {
+        'accordion-down': {
+          from: {
+            height: '0',
+          },
+          to: {
+            height: 'var(--radix-accordion-content-height)',
+          },
+        },
+        'accordion-up': {
+          from: {
+            height: 'var(--radix-accordion-content-height)',
+          },
+          to: {
+            height: '0',
+          },
+        },
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
+      },
+    },
+  },
+  plugins: [require('tailwindcss-animate')],
+};
+
+export default config;
+
+```
+- tsconfig.cjs:
+```
+
+```
