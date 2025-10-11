@@ -287,6 +287,7 @@ export default function InventoryPage() {
                                                                         <TableHead className="text-right">Qty</TableHead>
                                                                         <TableHead className="text-right">Price</TableHead>
                                                                         <TableHead className="text-right">Total</TableHead>
+                                                                        <TableHead className="text-right">Remaining Qty</TableHead>
                                                                         <TableHead className="text-right">Remaining Value</TableHead>
                                                                     </TableRow>
                                                                 </TableHeader>
@@ -304,6 +305,7 @@ export default function InventoryPage() {
                                                                                 <TableCell className="text-right">{log.quantity.toLocaleString()}</TableCell>
                                                                                 <TableCell className="text-right">{formatCurrency(log.cost || 0)}</TableCell>
                                                                                 <TableCell className="text-right">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
+                                                                                <TableCell className="text-right font-semibold">{log.availableQuantity || 0}</TableCell>
                                                                                  <TableCell className="text-right font-semibold">{formatCurrency(remainingValue)}</TableCell>
                                                                             </TableRow>
                                                                         )
