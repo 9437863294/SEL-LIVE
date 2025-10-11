@@ -96,7 +96,7 @@ export default function SettingsLayout({
         </div>
 
       </aside>
-      <div className={cn("flex-1 flex flex-col transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+      <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
         <main className="flex-1">
           {children}
         </main>
