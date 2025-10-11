@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 
 interface AgeingData {
     itemName: string;
@@ -32,19 +33,11 @@ const ageBrackets = ['0-30', '31-60', '61-90', '91-180', '181-365', '365+'];
 
 export default function AgeingReportPage() {
     const { toast } = useToast();
+    const params = useParams();
+    const projectSlug = params.project as string;
     const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [projectSlug, setProjectSlug] = useState(''); // Assuming you get this from params or context
-
-    // This would typically come from URL params
-    useEffect(() => {
-        const pathParts = window.location.pathname.split('/');
-        const slug = pathParts[2];
-        if (slug) {
-            setProjectSlug(slug);
-        }
-    }, []);
-
+    
     useEffect(() => {
         if (!projectSlug) return;
         const fetchData = async () => {
@@ -95,8 +88,6 @@ export default function AgeingReportPage() {
             if (log.transactionType === 'Goods Receipt') {
                 itemBalances[log.itemId][bracket] += log.availableQuantity;
             }
-            // Note: This is a simplified calculation. A real-world scenario
-            // would require FIFO/LIFO logic to decrement from the correct age bracket.
         });
 
         Object.values(itemBalances).forEach(item => {
@@ -166,4 +157,3 @@ export default function AgeingReportPage() {
         </div>
     );
 }
-
