@@ -73,16 +73,10 @@ export default function SiteFundRequisitionSettingsPage() {
     const { can, isLoading } = useAuthorization();
     const canViewPage = can('View Module', 'Site Fund Requisition'); // General permission to see settings
 
-    const settingsItems = settingsItemsBase.map(item => {
-        let moduleScope = 'Site Fund Requisition';
-        if(item.title === 'Workflow Configuration' || item.title === 'User Rights') {
-            moduleScope = 'Site Fund Requisition.Settings';
-        }
-        return {
-            ...item,
-            disabled: !can(item.permission, moduleScope),
-        }
-    });
+    const settingsItems = settingsItemsBase.map(item => ({
+        ...item,
+        disabled: !can(item.permission, 'Site Fund Requisition'),
+    }));
 
     if (isLoading) {
         return (
