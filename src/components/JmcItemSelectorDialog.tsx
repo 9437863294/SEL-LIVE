@@ -13,17 +13,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem } from '@/lib/types';
 import { Search, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -185,18 +178,18 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
             </div>
             <ScrollArea className="h-96 border rounded-md">
                 <div className="p-1">
-                    <div className="flex items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                    <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                         <div className="w-[50px] flex justify-center">
                             <Checkbox
                                 checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
                                 onCheckedChange={handleSelectAll}
                             />
                         </div>
-                        <div className="w-1/6">JMC No.</div>
-                        <div className="w-1/6">BOQ Sl.No.</div>
-                        <div className="w-2/6">Description</div>
-                        <div className="w-1/6 text-right">Available Qty</div>
-                        <div className="w-1/6 text-right">Rate</div>
+                        <div>JMC No.</div>
+                        <div>BOQ Sl.No.</div>
+                        <div>Description</div>
+                        <div className="text-right">Available Qty</div>
+                        <div className="text-right">Rate</div>
                     </div>
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full p-8">
@@ -206,7 +199,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
                         filteredItems.map(item => (
                             <div 
                                 key={item.id} 
-                                className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
                                 onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
                             >
                                 <div className="w-[50px] flex justify-center">
@@ -215,11 +208,11 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
                                         onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                     />
                                 </div>
-                                <div className="w-1/6 truncate">{item.jmcNo}</div>
-                                <div className="w-1/6 truncate">{item.boqSlNo}</div>
-                                <div className="w-2/6 truncate">{item.description}</div>
-                                <div className="w-1/6 text-right">{item.availableQty}</div>
-                                <div className="w-1/6 text-right">{formatCurrency(item.rate)}</div>
+                                <div className="truncate pr-2">{item.jmcNo}</div>
+                                <div className="truncate pr-2">{item.boqSlNo}</div>
+                                <div className="truncate pr-2">{item.description}</div>
+                                <div className="text-right pr-2">{item.availableQty}</div>
+                                <div className="text-right pr-2">{formatCurrency(item.rate)}</div>
                             </div>
                         ))
                     ) : (
