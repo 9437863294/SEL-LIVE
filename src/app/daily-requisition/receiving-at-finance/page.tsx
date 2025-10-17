@@ -47,7 +47,7 @@ export default function ReceivingAtFinancePage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, 'dailyRequisitions')),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);

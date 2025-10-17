@@ -323,6 +323,7 @@ export default function EntrySheetPage() {
             grossAmount: parseFloat(formState.grossAmount) || 0,
             netAmount: parseFloat(formState.netAmount) || 0,
             createdAt: Timestamp.now(),
+            status: 'Pending' as const, // Set default status
             attachments: attachmentUrls,
         };
         
