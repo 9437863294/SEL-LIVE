@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -157,15 +158,6 @@ export default function ReceivingAtFinancePage() {
 
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>{type.charAt(0).toUpperCase() + type.slice(1)} Entries</CardTitle>
-          <CardDescription>
-            {type === 'pending'
-                ? 'Select entries to mark them as received by the finance department.'
-                : `List of entries that have been ${type}.`
-            }
-          </CardDescription>
-        </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between mb-4">
             <div className="relative">
