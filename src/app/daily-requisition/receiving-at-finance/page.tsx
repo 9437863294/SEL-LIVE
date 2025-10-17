@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc, query, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, writeBatch, Timestamp } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -41,13 +41,13 @@ export default function ReceivingAtFinancePage() {
   const canViewPage = can('View', 'Daily Requisition.Receiving at Finance');
   const canMarkAsReceived = can('Mark as Received', 'Daily Requisition.Receiving at Finance');
   const canReturnToPending = can('Return to Pending', 'Daily Requisition.Receiving at Finance');
-  const canCancel = can('Cancel', 'Daily Requisition.Receiving at Finance');
+  const canCancel = can('Reject', 'Daily Requisition.Receiving at Finance');
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
+        getDocs(collection(db, 'dailyRequisitions')),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -168,7 +168,7 @@ export default function ReceivingAtFinancePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                {type === 'pending' && <TableHead className="w-[50px]"><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.size === filteredData.length && filteredData.length > 0} onCheckedChange={handleSelectAll} /></TableHead>}
+                {type === 'pending' && <TableHead className="w-[50px]"><Checkbox disabled={!canMarkAsReceived} checked={selectedIds.size > 0 && selectedIds.size === filteredData.length} onCheckedChange={handleSelectAll} /></TableHead>}
                 <TableHead>Reception No.</TableHead>
                 {type === 'pending' ? <TableHead>Date</TableHead> : <TableHead>Received At</TableHead>}
                 <TableHead>Project</TableHead>
@@ -258,7 +258,7 @@ export default function ReceivingAtFinancePage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
             <Link href="/daily-requisition"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Receiving at Finance</h1>
+            <h1 className="text-xl font-bold">Receiving at Finance</h1>
         </div>
         <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
