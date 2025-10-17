@@ -21,9 +21,9 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
     const { user } = useAuth();
     if (!entry) return null;
 
-    const entryDate = entry.date && (entry.date as any).toDate 
+    const entryDate = (entry.date && (entry.date as any).toDate)
         ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
-        : entry.date as string;
+        : String(entry.date);
 
     return (
         <div ref={ref} className="p-8 bg-white text-black font-sans">
@@ -163,13 +163,6 @@ export default function PrintChecklistPage() {
         fetchData();
     }, [id, router]);
 
-    const PrintTrigger = React.forwardRef<HTMLButtonElement>((props, ref) => (
-        <Button ref={ref} disabled={isLoading || !entry} variant="outline" {...props}>
-          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-          Print / Download PDF
-        </Button>
-      ));
-    PrintTrigger.displayName = 'PrintTrigger';
 
     return (
         <div className="p-4 md:p-8">
@@ -193,3 +186,4 @@ export default function PrintChecklistPage() {
         </div>
     );
 }
+
