@@ -905,7 +905,7 @@ export default function EntrySheetPage() {
                 </DialogClose>
                 <Button onClick={handleAddEntry} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Entry & View Checklist
+                  Add Entry
                 </Button>
               </DialogFooter>
             </>
