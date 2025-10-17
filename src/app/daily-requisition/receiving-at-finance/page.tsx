@@ -2,36 +2,48 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Search, MoreHorizontal, RotateCcw, XCircle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer, File as FileIcon, X, RotateCcw, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc, query, where, writeBatch, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, query, where, orderBy, writeBatch, Timestamp } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
-import { format } from 'date-fns';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { format, parseISO, isSameDay } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/components/auth/AuthProvider';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Checkbox } from '@/components/ui/checkbox';
+
 
 interface EnrichedEntry extends DailyRequisitionEntry {
   projectName: string;
   receivedBy?: string;
+  receivedAt?: string;
 }
 
 export default function ReceivingAtFinancePage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-
+  
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,11 +55,11 @@ export default function ReceivingAtFinancePage() {
   const canReturnToPending = can('Return to Pending', 'Daily Requisition.Receiving at Finance');
   const canCancel = can('Reject', 'Daily Requisition.Receiving at Finance');
 
-  const fetchData = async () => {
+  const fetchData = React.useCallback(async () => {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
+        getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -84,7 +96,7 @@ export default function ReceivingAtFinancePage() {
         }
     }
     setIsLoading(false);
-  };
+  }, [toast]);
 
   useEffect(() => {
     if (!isAuthLoading && canViewPage) {
@@ -92,7 +104,7 @@ export default function ReceivingAtFinancePage() {
     } else if (!isAuthLoading && !canViewPage) {
         setIsLoading(false);
     }
-  }, [isAuthLoading, canViewPage]);
+  }, [isAuthLoading, canViewPage, fetchData]);
 
   const handleStatusUpdate = async (ids: string[], newStatus: 'Pending' | 'Received' | 'Rejected') => {
       if (ids.length === 0) return;
@@ -102,7 +114,7 @@ export default function ReceivingAtFinancePage() {
             const docRef = doc(db, 'dailyRequisitions', id);
             const updateData: any = { status: newStatus };
             if (newStatus === 'Received') {
-              updateData.receivedAt = new Date();
+              updateData.receivedAt = Timestamp.now();
               updateData.receivedById = user?.id;
             }
             if(newStatus === 'Pending') {
@@ -240,9 +252,9 @@ export default function ReceivingAtFinancePage() {
     );
   };
   
-  const pendingEntries = useMemo(() => entries.filter(e => e.status === 'Pending'), [entries]);
-  const receivedEntries = useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
-  const rejectedEntries = useMemo(() => entries.filter(e => e.status === 'Rejected'), [entries]);
+  const pendingEntries = React.useMemo(() => entries.filter(e => e.status === 'Pending'), [entries]);
+  const receivedEntries = React.useMemo(() => entries.filter(e => e.status === 'Received'), [entries]);
+  const rejectedEntries = React.useMemo(() => entries.filter(e => e.status === 'Rejected'), [entries]);
 
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (

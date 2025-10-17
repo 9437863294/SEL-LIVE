@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer, File as FileIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -154,36 +154,36 @@ export default function EntrySheetPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [entries, setEntries] = useState<EnrichedDailyRequisitionEntry[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [filterText, setFilterText] = useState('');
-  const [dateFilter, setDateFilter] = useState<Date>();
+  const [entries, setEntries] = React.useState<EnrichedDailyRequisitionEntry[]>([]);
+  const [sortKey, setSortKey] = React.useState<SortKey>('createdAt');
+  const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
+  const [filterText, setFilterText] = React.useState('');
+  const [dateFilter, setDateFilter] = React.useState<Date>();
   
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<EnrichedDailyRequisitionEntry | null>(null);
+  const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [editingEntry, setEditingEntry] = React.useState<EnrichedDailyRequisitionEntry | null>(null);
   
-  const [formState, setFormState] = useState(initialFormState);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [formState, setFormState] = React.useState(initialFormState);
+  const [projects, setProjects] = React.useState<Project[]>([]);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [expenseRequests, setExpenseRequests] = React.useState<ExpenseRequest[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [itemsPerPage] = React.useState(25);
 
-  const [selectedEntry, setSelectedEntry] = useState<DailyRequisitionEntry | null>(null);
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
   
-  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
-  const [checklistData, setChecklistData] = useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
+  const [isChecklistOpen, setIsChecklistOpen] = React.useState(false);
+  const [checklistData, setChecklistData] = React.useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
   
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const printComponentRef = useRef<HTMLDivElement>(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = React.useState(false);
+  const printComponentRef = React.useRef<HTMLDivElement>(null);
   
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
   const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
@@ -192,7 +192,7 @@ export default function EntrySheetPage() {
   const canViewChecklist = can('View Checklist', 'Daily Requisition.Entry Sheet');
 
 
-  const fetchAllData = async () => {
+  const fetchAllData = React.useCallback(async () => {
       setIsLoading(true);
       try {
         const [projectsSnap, deptsSnap, configSnap, expensesSnap, requisitionsSnap] = await Promise.all([
@@ -232,9 +232,9 @@ export default function EntrySheetPage() {
         toast({ title: 'Error', description: 'Failed to load necessary data.', variant: 'destructive' });
       }
       setIsLoading(false);
-  };
+  }, [toast]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!isAuthLoading) {
         if(canViewPage) {
             fetchAllData();
@@ -242,9 +242,9 @@ export default function EntrySheetPage() {
             setIsLoading(false);
         }
     }
-  }, [isAuthLoading, canViewPage]);
+  }, [isAuthLoading, canViewPage, fetchAllData]);
   
-  const unassignedExpenseRequests = useMemo(() => {
+  const unassignedExpenseRequests = React.useMemo(() => {
     return expenseRequests.filter(req => !req.receptionNo);
   }, [expenseRequests]);
 
@@ -323,7 +323,7 @@ export default function EntrySheetPage() {
             grossAmount: parseFloat(formState.grossAmount) || 0,
             netAmount: parseFloat(formState.netAmount) || 0,
             createdAt: Timestamp.now(),
-            status: 'Pending' as const, // Set default status
+            status: 'Pending' as const,
             attachments: attachmentUrls,
         };
         
@@ -456,7 +456,7 @@ export default function EntrySheetPage() {
       }
   }
   
-  const filteredEntries = useMemo(() => {
+  const filteredEntries = React.useMemo(() => {
     let sortedEntries = [...entries];
     if (sortKey) {
       sortedEntries.sort((a, b) => {
@@ -479,7 +479,7 @@ export default function EntrySheetPage() {
 
   }, [entries, sortKey, sortDirection, filterText, dateFilter]);
   
-  const paginatedEntries = useMemo(() => {
+  const paginatedEntries = React.useMemo(() => {
       const startIndex = (currentPage - 1) * itemsPerPage;
       return filteredEntries.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredEntries, currentPage, itemsPerPage]);
@@ -525,7 +525,7 @@ export default function EntrySheetPage() {
     setSelectedIds(new Set());
   }
 
-  const selectedEntriesToPrint = useMemo(() => {
+  const selectedEntriesToPrint = React.useMemo(() => {
     return entries.filter(entry => selectedIds.has(entry.id));
   }, [entries, selectedIds]);
 
@@ -690,7 +690,7 @@ export default function EntrySheetPage() {
                         <Printer className="mr-2 h-4 w-4" /> Print Checklists
                     </Button>
                     <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
-                        <Plus className="mr-2 h-4 w-4" /> Add New Entry
+                        <Plus className="mr-2 h-4 w-4" /> Add Entry
                     </Button>
                 </>
             )}
@@ -999,3 +999,4 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
