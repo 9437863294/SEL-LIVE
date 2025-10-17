@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { db } from '@/lib/firebase';
@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
+import { useParams } from 'next/navigation';
+
 
 const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
@@ -167,12 +169,10 @@ export default function PrintChecklistPage() {
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                 <div onClick={handlePrint}>
-                    <Button variant="outline" disabled={isLoading || !entry}>
-                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                        Print / Download PDF
-                    </Button>
-                 </div>
+                 <Button onClick={handlePrint} variant="outline" disabled={isLoading || !entry}>
+                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                    Print / Download PDF
+                </Button>
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (
@@ -186,4 +186,3 @@ export default function PrintChecklistPage() {
         </div>
     );
 }
-
