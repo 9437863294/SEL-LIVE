@@ -32,14 +32,20 @@ import { SwitchUserDialog } from './auth/SwitchUserDialog';
 
 function ImpersonationBanner() {
     const { user, originalUser } = useAuth();
+    const [isClient, setIsClient] = useState(false);
+
+    useEffect(() => {
+        setIsClient(true);
+    }, []);
 
     const handleSwitchBack = () => {
         sessionStorage.removeItem('impersonationUserId');
         sessionStorage.removeItem('originalAdminUser');
         window.location.reload();
     };
-
-    if (!originalUser) return null;
+    
+    // Only render on the client-side after hydration, and only if an originalUser exists.
+    if (!isClient || !originalUser) return null;
 
     return (
         <div className="bg-yellow-500 text-yellow-900 text-center py-2 px-4 text-sm font-semibold">
