@@ -21,7 +21,9 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
     const { user } = useAuth();
     if (!entry) return null;
 
-    const entryDate = entry.date ? String(entry.date) : 'N/A';
+    const entryDate = entry.date && (entry.date as any).toDate 
+        ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
+        : entry.date as string;
 
     return (
         <div ref={ref} className="p-8 bg-white text-black font-sans">
@@ -161,18 +163,23 @@ export default function PrintChecklistPage() {
         fetchData();
     }, [id, router]);
 
+    const PrintTrigger = React.forwardRef<HTMLButtonElement>((props, ref) => (
+        <Button ref={ref} disabled={isLoading || !entry} variant="outline" {...props}>
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+          Print / Download PDF
+        </Button>
+      ));
+    PrintTrigger.displayName = 'PrintTrigger';
 
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                 <Button
-                    onClick={handlePrint}
-                    disabled={isLoading || !entry}
-                    variant="outline"
-                >
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                    Print / Download PDF
-                </Button>
+                 <div onClick={handlePrint}>
+                    <Button variant="outline" disabled={isLoading || !entry}>
+                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                        Print / Download PDF
+                    </Button>
+                 </div>
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (
