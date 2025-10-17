@@ -93,12 +93,7 @@
 @media print {
   @page {
     size: A4;
-    margin: 0;
-  }
-  body,
-  html {
-    background-color: white !important;
-    -webkit-print-color-adjust: exact;
+    margin: 1in;
   }
   body * {
     visibility: hidden;
