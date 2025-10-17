@@ -145,7 +145,8 @@ export function ChecklistDialog({ isOpen, onOpenChange, entry, expenseRequest, p
   }, [isOpen]);
 
   const handlePrint = () => {
-    window.print();
+    if (!entry) return;
+    window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   };
 
   if (!entry) return null;

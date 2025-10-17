@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import React, from 'react';
+import React, { Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Upload, Plus, ArrowUpDown, MoreHorizontal, Calendar as CalendarIcon, Loader2, Search, Eye, FileText, Edit, Trash2, ShieldAlert, Printer, File as FileIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -495,15 +494,10 @@ export default function EntrySheetPage() {
   
   const handlePrintSelected = () => {
     if (printComponentRef.current) {
-      const printWindow = window.open('', '', 'height=800,width=800');
-      printWindow?.document.write('<html><head><title>Print Checklists</title>');
-      printWindow?.document.write('<style>@media print { body { -webkit-print-color-adjust: exact; } .no-print { display: none; } .printable-area { margin: 20mm; } .break-after-page { page-break-after: always; } }</style>');
-      printWindow?.document.write('</head><body>');
-      printWindow?.document.write(printComponentRef.current.innerHTML);
-      printWindow?.document.write('</body></html>');
-      printWindow?.document.close();
-      printWindow?.focus();
-      printWindow?.print();
+        const printWindow = window.open(`/daily-requisition/entry-sheet/${selectedIds.values().next().value}/print`, '_blank');
+        printWindow?.addEventListener('load', () => {
+            printWindow?.print();
+        });
     }
     setIsSelectionMode(false);
     setSelectedIds(new Set());
@@ -974,12 +968,6 @@ export default function EntrySheetPage() {
             expenseRequest={checklistData.expenseRequest}
         />
       )}
-      
-      <div className="hidden">
-        <div ref={printComponentRef}>
-          <PrintableChecklists entries={selectedEntriesToPrint} projects={projects} expenses={expenseRequests} user={user} />
-        </div>
-      </div>
     </>
   );
 }
