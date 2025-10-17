@@ -75,7 +75,7 @@ export default function ReceivingAtFinancePage() {
        if (error.code === 'failed-precondition') {
              toast({
                 title: 'Database Index Required',
-                description: "This query may require a composite index. Please check the Firebase console for instructions.",
+                description: "This query requires a custom index. Please check the Firebase console for instructions.",
                 variant: 'destructive',
                 duration: 10000,
              });
