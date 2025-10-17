@@ -95,6 +95,10 @@
     size: A4;
     margin: 1in;
   }
+  body, html {
+    background: white;
+    margin: 0;
+  }
   body * {
     visibility: hidden;
   }
@@ -107,6 +111,8 @@
     top: 0 !important;
     width: 100%;
     transform: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
   .no-print {
     display: none;
