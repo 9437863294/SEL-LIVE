@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, writeBatch } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -47,7 +47,7 @@ export default function ReceivingAtFinancePage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, 'dailyRequisitions')),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -70,9 +70,18 @@ export default function ReceivingAtFinancePage() {
       });
 
       setEntries(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching finance entries: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
+       if (error.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This query may require a composite index. Please check the Firebase console for instructions.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        } else {
+            toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
+        }
     }
     setIsLoading(false);
   };
@@ -88,8 +97,9 @@ export default function ReceivingAtFinancePage() {
   const handleStatusUpdate = async (ids: string[], newStatus: 'Pending' | 'Received' | 'Rejected') => {
       if (ids.length === 0) return;
       try {
-        await Promise.all(
-          ids.map(id => {
+        const batch = writeBatch(db);
+        ids.forEach(id => {
+            const docRef = doc(db, 'dailyRequisitions', id);
             const updateData: any = { status: newStatus };
             if (newStatus === 'Received') {
               updateData.receivedAt = new Date();
@@ -99,9 +109,11 @@ export default function ReceivingAtFinancePage() {
               updateData.receivedAt = null;
               updateData.receivedById = null;
             }
-            return updateDoc(doc(db, 'dailyRequisitions', id), updateData);
-          })
-        );
+            batch.update(docRef, updateData);
+        });
+
+        await batch.commit();
+
         toast({
           title: 'Success',
           description: `${ids.length} entries marked as ${newStatus.toLowerCase()}.`,
