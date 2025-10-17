@@ -351,24 +351,8 @@ export default function EntrySheetPage() {
             },
         });
 
-        const finalEntryData = {
-            id: newEntryRef.id,
-            ...newEntryData,
-            date: format(newEntryData.date.toDate(), 'MMMM do, yyyy'),
-            createdAt: format(newEntryData.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
-        } as DailyRequisitionEntry;
-        
         toast({ title: 'Success', description: 'New entry added to the database.' });
         setIsAddDialogOpen(false);
-        
-        if (finalEntryData) {
-            setChecklistData({
-                entry: finalEntryData,
-                project: projects.find(p => p.id === finalEntryData!.projectId),
-                expenseRequest: selectedExpenseRequest,
-            });
-            setIsChecklistOpen(true);
-        }
         
         setFormState(initialFormState);
         setSelectedFiles([]);
@@ -999,4 +983,3 @@ export default function EntrySheetPage() {
     </>
   );
 }
-
