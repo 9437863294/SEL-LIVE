@@ -455,10 +455,10 @@ export default function EntrySheetPage() {
       }
   }
   
-  const paginatedEntries = useMemo(() => {
-    let sortableEntries = [...entries];
+  const filteredEntries = useMemo(() => {
+    let sortedEntries = [...entries];
     if (sortKey) {
-      sortableEntries.sort((a, b) => {
+      sortedEntries.sort((a, b) => {
         const valA = a[sortKey];
         const valB = b[sortKey];
         if (typeof valA === 'number' && typeof valB === 'number') {
@@ -469,19 +469,21 @@ export default function EntrySheetPage() {
         return 0;
       });
     }
-    const filtered = sortableEntries.filter(entry => 
+    return sortedEntries.filter(entry => 
       Object.values(entry).some(value => 
         String(value).toLowerCase().includes(filterText.toLowerCase())
       ) &&
       (!dateFilter || isSameDay(new Date(entry.originalDate), dateFilter))
     );
 
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(startIndex, startIndex + itemsPerPage);
+  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
+  
+  const paginatedEntries = useMemo(() => {
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      return filteredEntries.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredEntries, currentPage, itemsPerPage]);
 
-  }, [entries, sortKey, sortDirection, filterText, dateFilter, currentPage, itemsPerPage]);
-
-  const totalPages = Math.ceil(entries.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -695,7 +697,7 @@ export default function EntrySheetPage() {
         </div>
         
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Total Entries: {entries.length}</h2>
+          <h2 className="text-lg font-semibold">Total Entries: {filteredEntries.length}</h2>
           <div className="flex items-center gap-2">
               <Popover>
                   <PopoverTrigger asChild>
