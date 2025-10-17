@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, query, where, orderBy, writeBatch, Timestamp } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
-import { format, parseISO, isSameDay } from 'date-fns';
+import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -58,28 +58,35 @@ export default function ReceivingAtFinancePage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
 
-      const projects = new Map(projectsSnap.docs.map(doc => [doc.id, (doc.data() as Project).projectName]));
+      const projectsMap = new Map(projectsSnap.docs.map(doc => [doc.id, (doc.data() as Project).projectName]));
       const fetchedUsers = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       const usersMap = new Map(fetchedUsers.map(u => [u.id, u.name]));
       setUsers(fetchedUsers);
 
       const data = reqsSnap.docs.map(doc => {
-        const entry = doc.data() as DailyRequisitionEntry;
+        const entry = doc.data() as DailyRequisitionEntry & { receivedById?: string, receivedAt?: any };
         return {
           ...entry,
           id: doc.id,
           date: entry.date && (entry.date as any).toDate ? format((entry.date as any).toDate(), 'dd MMM, yyyy') : String(entry.date),
           receivedAt: entry.receivedAt && (entry.receivedAt as any).toDate ? format((entry.receivedAt as any).toDate(), 'PPpp') : undefined,
-          projectName: projects.get(entry.projectId) || 'N/A',
+          projectName: projectsMap.get(entry.projectId) || 'N/A',
           receivedBy: entry.receivedById ? usersMap.get(entry.receivedById) : undefined,
         };
       });
 
+      // Sort client-side to ensure descending order of received date or creation date
+      data.sort((a, b) => {
+          const dateA = a.receivedAt ? new Date(a.receivedAt).getTime() : a.createdAt.toDate().getTime();
+          const dateB = b.receivedAt ? new Date(b.receivedAt).getTime() : b.createdAt.toDate().getTime();
+          return dateB - dateA;
+      });
+      
       setEntries(data);
     } catch (error: any) {
       console.error("Error fetching finance entries: ", error);
@@ -309,5 +316,3 @@ export default function ReceivingAtFinancePage() {
     </div>
   );
 }
-
-    
