@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { Fragment } from 'react';
@@ -11,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, User, Attachment } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, Attachment } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogDescription as DialogDescriptionShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -104,14 +105,16 @@ export default function EntrySheetPage() {
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
         setEntries(requisitionsSnap.docs.map(doc => {
-            const data = doc.data();
-            const dateObject = data.date.toDate();
+            const data = doc.data() as DailyRequisitionEntry;
+            const dateObject = data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date);
+            const createdAtObject = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt);
+            
             return {
-                id: doc.id,
                 ...data,
+                id: doc.id,
                 date: format(dateObject, 'MMMM do, yyyy'),
-                originalDate: dateObject.toISOString(), // Store original date
-                createdAt: format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
+                originalDate: dateObject.toISOString(),
+                createdAt: format(createdAtObject, 'dd MMM, yyyy HH:mm'),
             } as EnrichedDailyRequisitionEntry
         }));
 
@@ -386,12 +389,14 @@ export default function EntrySheetPage() {
   }
   
   const handlePrintSelected = () => {
-    if (printComponentRef.current) {
-        const printWindow = window.open(`/daily-requisition/entry-sheet/${selectedIds.values().next().value}/print`, '_blank');
-        printWindow?.addEventListener('load', () => {
-            printWindow?.print();
-        });
-    }
+    if (selectedIds.size === 0) return;
+  
+    const ids = Array.from(selectedIds);
+    const queryParams = new URLSearchParams(ids.map(id => ['id', id]));
+    
+    const printUrl = `/daily-requisition/entry-sheet/print?${queryParams.toString()}`;
+    window.open(printUrl, '_blank');
+  
     setIsSelectionMode(false);
     setSelectedIds(new Set());
   }
@@ -640,9 +645,9 @@ export default function EntrySheetPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell>{entry.createdAt}</TableCell>
+                      <TableCell>{entry.createdAt as React.ReactNode}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
-                      <TableCell>{entry.date}</TableCell>
+                      <TableCell>{entry.date as React.ReactNode}</TableCell>
                       <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                       <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
@@ -791,7 +796,7 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-           {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
+            {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
                   <div className="space-y-2">
@@ -804,24 +809,24 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label>Reception Date</Label>
-                       <Popover>
-                          <PopoverTrigger asChild>
+                      <Popover>
+                        <PopoverTrigger asChild>
                           <Button
                               variant={"outline"}
                               className={cn("w-full justify-start text-left font-normal", !formState.date && "text-muted-foreground")}
                           >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
                           </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
                           <Calendar
                               mode="single"
                               selected={formState.date}
                               onSelect={(date) => date && handleFormChange('date', date)}
                               initialFocus
                           />
-                          </PopoverContent>
+                        </PopoverContent>
                       </Popover>
                   </div>
                    {renderFormFields(true)}
@@ -836,7 +841,7 @@ export default function EntrySheetPage() {
                 </Button>
               </DialogFooter>
             </>
-          )}
+            )}
         </DialogContent>
       </Dialog>
       
