@@ -99,24 +99,20 @@
     background-color: white !important;
     -webkit-print-color-adjust: exact;
   }
+  body * {
+    visibility: hidden;
+  }
   .printable-area, .printable-area * {
     visibility: visible;
   }
   .printable-area {
-    display: block !important;
-    width: 100%;
-    height: auto;
     position: absolute;
     left: 0;
     top: 0;
-    overflow: visible !important;
-    float: none !important;
+    width: 100%;
+    height: auto;
   }
-  .no-print,
-  .no-print * {
-    display: none !important;
-  }
-  .max-h-\[70vh\] {
-    max-height: none !important;
+  .no-print {
+    display: none;
   }
 }
