@@ -40,7 +40,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                 </div>
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                    <span>{entry.date ? format(new Date(entry.date as string), 'MMMM do, yyyy') : 'N/A'}</span>
+                    <span>{entryDate}</span>
                 </div>
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
