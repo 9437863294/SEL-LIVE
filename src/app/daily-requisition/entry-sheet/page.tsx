@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, User, Attachment } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, Department, SerialNumberConfig, ExpenseRequest, Attachment } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogDescription as DialogDescriptionShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,10 +31,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Separator } from '@/components/ui/separator';
+import ChecklistDialog from '@/components/ChecklistDialog';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
-  originalDate: string;
+  originalDate: string | Timestamp;
 }
 
 const initialFormState = {
@@ -79,6 +80,7 @@ export default function EntrySheetPage() {
 
   const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
+  const [isChecklistOpen, setIsChecklistOpen] = React.useState(false);
   
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = React.useState(false);
@@ -104,16 +106,16 @@ export default function EntrySheetPage() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
+        
         setEntries(requisitionsSnap.docs.map(doc => {
-            const data = doc.data();
-            const dateObject = data.date.toDate();
+            const data = doc.data() as Omit<DailyRequisitionEntry, 'id'>;
             return {
                 id: doc.id,
                 ...data,
-                date: format(dateObject, 'MMMM do, yyyy'),
-                originalDate: dateObject.toISOString(), // Store original date
-                createdAt: format(data.createdAt.toDate(), 'dd MMM, yyyy HH:mm'),
-            } as EnrichedDailyRequisitionEntry
+                date: data.date, 
+                createdAt: data.createdAt,
+                originalDate: data.date,
+            } as EnrichedDailyRequisitionEntry;
         }));
 
         if (configSnap.exists()) {
@@ -266,10 +268,11 @@ export default function EntrySheetPage() {
 
   const handleOpenEditDialog = (entry: EnrichedDailyRequisitionEntry) => {
     setEditingEntry(entry);
+    const entryDate = entry.originalDate instanceof Timestamp ? entry.originalDate.toDate() : parseISO(entry.originalDate as string);
     setFormState({
         receptionNo: entry.receptionNo,
         depNo: entry.depNo,
-        date: parseISO(entry.originalDate),
+        date: entryDate,
         description: entry.description,
         partyName: entry.partyName,
         projectId: entry.projectId,
@@ -341,25 +344,36 @@ export default function EntrySheetPage() {
   const filteredEntries = React.useMemo(() => {
     let sortedEntries = [...entries];
     if (sortKey) {
-      sortedEntries.sort((a, b) => {
-        const valA = a[sortKey];
-        const valB = b[sortKey];
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - a;
-        }
-        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
+        sortedEntries.sort((a, b) => {
+            const valA = a[sortKey];
+            const valB = b[sortKey];
+            
+            if (valA === undefined || valA === null) return 1;
+            if (valB === undefined || valB === null) return -1;
+    
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return sortDirection === 'asc' ? valA - valB : valB - valA;
+            }
+            
+            if (valA instanceof Timestamp && valB instanceof Timestamp) {
+                return sortDirection === 'asc' ? valA.toMillis() - valB.toMillis() : valB.toMillis() - valA.toMillis();
+            }
+            
+            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
     }
-    return sortedEntries.filter(entry => 
-      Object.values(entry).some(value => 
-        String(value).toLowerCase().includes(filterText.toLowerCase())
-      ) &&
-      (!dateFilter || isSameDay(new Date(entry.originalDate), dateFilter))
-    );
-
-  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
+    return sortedEntries.filter(entry => {
+        const originalDate = entry.originalDate instanceof Timestamp ? entry.originalDate.toDate() : new Date(entry.originalDate);
+        return (
+            Object.values(entry).some(value => 
+                String(value).toLowerCase().includes(filterText.toLowerCase())
+            ) &&
+            (!dateFilter || isSameDay(originalDate, dateFilter))
+        );
+    });
+}, [entries, sortKey, sortDirection, filterText, dateFilter]);
   
   const paginatedEntries = React.useMemo(() => {
       const startIndex = (currentPage - 1) * itemsPerPage;
@@ -383,24 +397,10 @@ export default function EntrySheetPage() {
   };
   
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
-    window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
+    setSelectedEntry(entry);
+    setIsChecklistOpen(true);
   }
   
-  const handlePrintSelected = () => {
-    if (printComponentRef.current) {
-        const printWindow = window.open(`/daily-requisition/entry-sheet/${selectedIds.values().next().value}/print`, '_blank');
-        printWindow?.addEventListener('load', () => {
-            printWindow?.print();
-        });
-    }
-    setIsSelectionMode(false);
-    setSelectedIds(new Set());
-  }
-
-  const selectedEntriesToPrint = React.useMemo(() => {
-    return entries.filter(entry => selectedIds.has(entry.id));
-  }, [entries, selectedIds]);
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
@@ -641,9 +641,9 @@ export default function EntrySheetPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell>{entry.createdAt}</TableCell>
+                       <TableCell>{entry.createdAt instanceof Timestamp ? format(entry.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : entry.createdAt}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
-                      <TableCell>{entry.date}</TableCell>
+                      <TableCell>{entry.date instanceof Timestamp ? format(entry.date.toDate(), 'dd MMM, yyyy') : entry.date}</TableCell>
                       <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                       <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
@@ -792,7 +792,7 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-           {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
+            {isLoading ? <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" /> : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
                   <div className="space-y-2">
@@ -837,7 +837,7 @@ export default function EntrySheetPage() {
                 </Button>
               </DialogFooter>
             </>
-          )}
+            )}
         </DialogContent>
       </Dialog>
       
@@ -851,6 +851,16 @@ export default function EntrySheetPage() {
             expenseRequest={expenseRequests.find(req => req.requestNo === selectedEntry.depNo)}
             onActionComplete={fetchAllData}
         />
+      )}
+      
+      {selectedEntry && isChecklistOpen && (
+          <ChecklistDialog
+            isOpen={isChecklistOpen}
+            onOpenChange={setIsChecklistOpen}
+            entry={selectedEntry}
+            project={projects.find(p => p.id === selectedEntry.projectId)}
+            expenseRequest={expenseRequests.find(req => req.requestNo === selectedEntry.depNo)}
+          />
       )}
     </>
   );
