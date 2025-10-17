@@ -24,7 +24,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
-import { ChecklistDialog } from '@/components/ChecklistDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,102 +50,6 @@ const initialFormState = {
 };
 
 type SortKey = keyof DailyRequisitionEntry | '';
-
-const PrintableChecklists = React.forwardRef<HTMLDivElement, { entries: EnrichedDailyRequisitionEntry[], projects: Project[], expenses: ExpenseRequest[], user: User | null }>((props, ref) => {
-    const { entries, projects, expenses, user } = props;
-    if (!entries || entries.length === 0) return null;
-    
-    return (
-        <div ref={ref} className="printable-area">
-            {entries.map((entry, index) => {
-                const project = projects.find(p => p.id === entry.projectId);
-                const expenseRequest = expenses.find(e => e.requestNo === entry.depNo);
-                const entryDate = entry.date && (entry.date as any).toDate 
-                    ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
-                    : String(entry.date);
-                return (
-                    <div key={entry.id} className="p-6 border rounded-lg break-after-page bg-white text-black" style={{ pageBreakAfter: index < entries.length - 1 ? 'always' : 'auto' }}>
-                        <div className="text-center mb-4">
-                            <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
-                            <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
-                        </div>
-                        <h3 className="text-lg font-semibold text-center mb-4 underline">Check List for Payment</h3>
-                        
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-4">
-                            <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Reception No:</span>
-                                <span>{entry.receptionNo}</span>
-                            </div>
-                             <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                                <span>{entryDate}</span>
-                            </div>
-                            <div className="flex">
-                                <span className="font-medium w-32 shrink-0">DEP No:</span>
-                                <span>{entry.depNo}</span>
-                            </div>
-                            <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Project Name:</span>
-                                <span>{project?.projectName || 'N/A'}</span>
-                            </div>
-                        </div>
-
-                        <Separator className="my-4 bg-gray-400" />
-
-                        <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
-                            <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Name of the party:</span>
-                                <span className="font-semibold">{entry.partyName}</span>
-                            </div>
-                             <div className="flex gap-x-4">
-                                <div className="flex"><span className="font-medium w-24 shrink-0">Gross Amount:</span><span>{entry.grossAmount.toLocaleString()}</span></div>
-                                <div className="flex"><span className="font-medium w-24 shrink-0">Net Amount:</span><span>{entry.netAmount.toLocaleString()}</span></div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
-                            <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Head of A/c:</span>
-                                <span>{expenseRequest?.headOfAccount || 'N/A'}</span>
-                            </div>
-                             <div className="flex">
-                                <span className="font-medium w-32 shrink-0">Sub-Head of A/c:</span>
-                                <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2 text-sm mb-8">
-                            <p className="font-medium">Description:</p>
-                            <p className="pl-4 min-h-[50px]">{entry.description}</p>
-                        </div>
-                        
-                        <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
-                            <div className="border-t border-black pt-1">Prepared by</div>
-                            <div className="border-t border-black pt-1">Authorised by</div>
-                            <div className="border-t border-black pt-1">Checked by</div>
-                            <div className="border-t border-black pt-1">Approved by</div>
-                            <div className="border-t border-black pt-1">Verified by</div>
-                            <div className="border-t border-black pt-1">A/c Dept</div>
-                        </div>
-
-                        <div className="mt-24 flex justify-between text-xs text-gray-500">
-                            <div>
-                                <span className="font-medium">Printed By:</span>
-                                <span> {user?.name || 'N/A'}</span>
-                            </div>
-                             <div>
-                                <span className="font-medium">Timestamp:</span>
-                                <span> {format(new Date(), 'dd-MMM-yyyy HH:mm:ss')}</span>
-                            </div>
-                        </div>
-                    </div>
-                )
-            })}
-        </div>
-    )
-});
-PrintableChecklists.displayName = 'PrintableChecklists';
-
 
 export default function EntrySheetPage() {
   const { toast } = useToast();
@@ -177,12 +80,8 @@ export default function EntrySheetPage() {
   const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
   
-  const [isChecklistOpen, setIsChecklistOpen] = React.useState(false);
-  const [checklistData, setChecklistData] = React.useState<{entry: DailyRequisitionEntry, project?: Project, expenseRequest?: ExpenseRequest} | null>(null);
-  
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = React.useState(false);
-  const printComponentRef = React.useRef<HTMLDivElement>(null);
   
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
   const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
@@ -484,12 +383,7 @@ export default function EntrySheetPage() {
   };
   
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
-      setChecklistData({
-          entry: entry,
-          project: projects.find(p => p.id === entry.projectId),
-          expenseRequest: expenseRequests.find(req => req.requestNo === entry.depNo),
-      });
-      setIsChecklistOpen(true);
+    window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   }
   
   const handlePrintSelected = () => {
@@ -956,16 +850,6 @@ export default function EntrySheetPage() {
             department={departments.find(d => d.id === selectedEntry.departmentId)}
             expenseRequest={expenseRequests.find(req => req.requestNo === selectedEntry.depNo)}
             onActionComplete={fetchAllData}
-        />
-      )}
-
-      {checklistData && (
-        <ChecklistDialog
-            isOpen={isChecklistOpen}
-            onOpenChange={setIsChecklistOpen}
-            entry={checklistData.entry}
-            project={checklistData.project}
-            expenseRequest={checklistData.expenseRequest}
         />
       )}
     </>
