@@ -158,22 +158,13 @@ export default function ReceivingAtFinancePage() {
 
     return (
       <Card>
-        <CardContent>
+        <CardContent className="p-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search entries..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            {type === 'pending' && (
+            {type === 'pending' ? (
                 <Button onClick={() => handleStatusUpdate(Array.from(selectedIds), 'Received')} disabled={selectedIds.size === 0 || !canMarkAsReceived}>
                     Mark as Received
                 </Button>
-            )}
+            ) : <div />}
           </div>
           <Table>
             <TableHeader>
@@ -295,6 +286,17 @@ export default function ReceivingAtFinancePage() {
           <TabsTrigger value="received">Received</TabsTrigger>
           <TabsTrigger value="rejected">Rejected</TabsTrigger>
         </TabsList>
+        <div className="mt-4">
+             <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search all lists by Reception No, Project, or Party Name..."
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+          </div>
         <TabsContent value="pending" className="mt-4">
           {renderTable(pendingEntries, 'pending')}
         </TabsContent>
