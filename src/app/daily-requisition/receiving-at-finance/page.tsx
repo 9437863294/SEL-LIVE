@@ -174,7 +174,7 @@ export default function ReceivingAtFinancePage() {
                 {type === 'pending' ? <TableHead>Date</TableHead> : <TableHead>Received At</TableHead>}
                 <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
-                {type !== 'pending' && <TableHead>Action Taken By</TableHead>}
+                {type !== 'pending' && <TableHead>Received By</TableHead>}
                 <TableHead className="text-right">Net Amount</TableHead>
                 {type !== 'pending' && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
