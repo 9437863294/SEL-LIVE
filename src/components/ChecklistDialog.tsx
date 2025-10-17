@@ -341,31 +341,25 @@ export default function EntrySheetPage() {
   const filteredEntries = React.useMemo(() => {
     let sortedEntries = [...entries];
     if (sortKey) {
-      sortedEntries.sort((a, b) => {
-        const valA = a[sortKey];
-        const valB = b[sortKey];
-        
-        // Handle undefined or null values
-        if (valA == null || valB == null) {
-          if (valA == null && valB != null) return sortDirection === 'asc' ? -1 : 1;
-          if (valA != null && valB == null) return sortDirection === 'asc' ? 1 : -1;
-          return 0;
-        }
-
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - valA;
-        }
-        
-        // For date or timestamp objects, compare their time values
-        if (valA instanceof Timestamp && valB instanceof Timestamp) {
-            return sortDirection === 'asc' ? valA.toMillis() - valB.toMillis() : valB.toMillis() - valA.toMillis();
-        }
-        
-        // Fallback to string comparison
-        if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
-        if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
+        sortedEntries.sort((a, b) => {
+            const valA = a[sortKey];
+            const valB = b[sortKey];
+            
+            if (valA === undefined || valA === null) return 1;
+            if (valB === undefined || valB === null) return -1;
+    
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return sortDirection === 'asc' ? valA - valB : valB - valA;
+            }
+            
+            if (valA instanceof Timestamp && valB instanceof Timestamp) {
+                return sortDirection === 'asc' ? valA.toMillis() - valB.toMillis() : valB.toMillis() - valA.toMillis();
+            }
+            
+            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
     }
     return sortedEntries.filter(entry => 
       Object.values(entry).some(value => 
@@ -872,3 +866,5 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
+    
