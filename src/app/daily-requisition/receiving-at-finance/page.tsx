@@ -59,7 +59,7 @@ export default function ReceivingAtFinancePage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'))),
+        getDocs(collection(db, 'dailyRequisitions')),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -281,7 +281,7 @@ export default function ReceivingAtFinancePage() {
       </div>
 
       <Tabs defaultValue="pending">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pending">Pending</TabsTrigger>
           <TabsTrigger value="received">Received</TabsTrigger>
           <TabsTrigger value="rejected">Rejected</TabsTrigger>
