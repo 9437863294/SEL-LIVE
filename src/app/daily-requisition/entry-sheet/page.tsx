@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { Fragment } from 'react';
@@ -35,7 +36,7 @@ import ChecklistDialog from '@/components/ChecklistDialog';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
-  originalDate: string | Timestamp;
+  originalDate: string;
 }
 
 const initialFormState = {
@@ -108,13 +109,18 @@ export default function EntrySheetPage() {
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
         
         setEntries(requisitionsSnap.docs.map(doc => {
-            const data = doc.data() as Omit<DailyRequisitionEntry, 'id'>;
+            const data = doc.data();
             return {
                 id: doc.id,
                 ...data,
-                date: data.date, 
-                createdAt: data.createdAt,
-                originalDate: data.date,
+                date: (data.date as Timestamp)?.toDate().toISOString(), 
+                createdAt: (data.createdAt as Timestamp)?.toDate().toISOString(),
+                originalDate: (data.date as Timestamp)?.toDate().toISOString(),
+                // Ensure nested timestamps are also converted if they exist
+                receivedAt: data.receivedAt ? (data.receivedAt as Timestamp).toDate().toISOString() : undefined,
+                verifiedAt: data.verifiedAt ? (data.verifiedAt as Timestamp).toDate().toISOString() : undefined,
+                paidAt: data.paidAt ? (data.paidAt as Timestamp).toDate().toISOString() : undefined,
+                documentStatusUpdatedAt: data.documentStatusUpdatedAt ? (data.documentStatusUpdatedAt as Timestamp).toDate().toISOString() : undefined,
             } as EnrichedDailyRequisitionEntry;
         }));
 
@@ -351,12 +357,15 @@ export default function EntrySheetPage() {
             if (valA === undefined || valA === null) return 1;
             if (valB === undefined || valB === null) return -1;
     
+            // Handle both string and Timestamp for date fields
+            const dateA = valA instanceof Timestamp ? valA.toMillis() : (typeof valA === 'string' ? new Date(valA).getTime() : valA as number);
+            const dateB = valB instanceof Timestamp ? valB.toMillis() : (typeof valB === 'string' ? new Date(valB).getTime() : valB as number);
+             if (!isNaN(dateA) && !isNaN(dateB) && (sortKey === 'createdAt' || sortKey === 'date')) {
+              return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+
             if (typeof valA === 'number' && typeof valB === 'number') {
                 return sortDirection === 'asc' ? valA - valB : valB - valA;
-            }
-            
-            if (valA instanceof Timestamp && valB instanceof Timestamp) {
-                return sortDirection === 'asc' ? valA.toMillis() - valB.toMillis() : valB.toMillis() - valA.toMillis();
             }
             
             if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
@@ -365,7 +374,7 @@ export default function EntrySheetPage() {
         });
     }
     return sortedEntries.filter(entry => {
-        const originalDate = entry.originalDate instanceof Timestamp ? entry.originalDate.toDate() : new Date(entry.originalDate);
+        const originalDate = new Date(entry.originalDate);
         return (
             Object.values(entry).some(value => 
                 String(value).toLowerCase().includes(filterText.toLowerCase())
@@ -399,6 +408,13 @@ export default function EntrySheetPage() {
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
     setSelectedEntry(entry);
     setIsChecklistOpen(true);
+  }
+  
+  const handlePrintSelected = () => {
+    // Logic to handle printing multiple checklists
+    // This could open a new tab with all selected checklists formatted for print
+    const idsToPrint = Array.from(selectedIds).join(',');
+    window.open(`/daily-requisition/entry-sheet/print?ids=${idsToPrint}`, '_blank');
   }
   
   const formatCurrency = (amount: number) => {
@@ -641,9 +657,9 @@ export default function EntrySheetPage() {
                           />
                         </TableCell>
                       )}
-                       <TableCell>{entry.createdAt instanceof Timestamp ? format(entry.createdAt.toDate(), 'dd MMM, yyyy HH:mm') : entry.createdAt}</TableCell>
+                       <TableCell>{format(new Date(entry.createdAt), 'dd MMM, yyyy HH:mm')}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
-                      <TableCell>{entry.date instanceof Timestamp ? format(entry.date.toDate(), 'dd MMM, yyyy') : entry.date}</TableCell>
+                      <TableCell>{format(new Date(entry.date), 'dd MMM, yyyy')}</TableCell>
                       <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                       <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
