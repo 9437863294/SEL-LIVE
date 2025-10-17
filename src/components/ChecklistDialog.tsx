@@ -34,7 +34,7 @@ import { Separator } from '@/components/ui/separator';
 
 
 interface EnrichedDailyRequisitionEntry extends DailyRequisitionEntry {
-  originalDate: string;
+  originalDate: string | Timestamp;
 }
 
 const initialFormState = {
@@ -106,13 +106,13 @@ export default function EntrySheetPage() {
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
         
         setEntries(requisitionsSnap.docs.map(doc => {
-            const data = doc.data() as DailyRequisitionEntry;
-            const dateObject = data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date);
+            const data = doc.data() as Omit<DailyRequisitionEntry, 'id'>;
             return {
-                ...data,
                 id: doc.id,
-                date: dateObject.toISOString(), // Keep as ISO string for consistency
-                originalDate: dateObject.toISOString(),
+                ...data,
+                date: data.date, // Keep as Timestamp or string
+                createdAt: data.createdAt, // Keep as Timestamp
+                originalDate: data.date, // Keep original format
             } as EnrichedDailyRequisitionEntry;
         }));
 
@@ -266,10 +266,11 @@ export default function EntrySheetPage() {
 
   const handleOpenEditDialog = (entry: EnrichedDailyRequisitionEntry) => {
     setEditingEntry(entry);
+    const entryDate = entry.originalDate instanceof Timestamp ? entry.originalDate.toDate() : parseISO(entry.originalDate as string);
     setFormState({
         receptionNo: entry.receptionNo,
         depNo: entry.depNo,
-        date: parseISO(entry.originalDate),
+        date: entryDate,
         description: entry.description,
         partyName: entry.partyName,
         projectId: entry.projectId,
@@ -361,14 +362,16 @@ export default function EntrySheetPage() {
             return 0;
         });
     }
-    return sortedEntries.filter(entry => 
-      Object.values(entry).some(value => 
-        String(value).toLowerCase().includes(filterText.toLowerCase())
-      ) &&
-      (!dateFilter || isSameDay(new Date(entry.originalDate), dateFilter))
-    );
-
-  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
+    return sortedEntries.filter(entry => {
+        const originalDate = entry.originalDate instanceof Timestamp ? entry.originalDate.toDate() : new Date(entry.originalDate);
+        return (
+            Object.values(entry).some(value => 
+                String(value).toLowerCase().includes(filterText.toLowerCase())
+            ) &&
+            (!dateFilter || isSameDay(originalDate, dateFilter))
+        );
+    });
+}, [entries, sortKey, sortDirection, filterText, dateFilter]);
   
   const paginatedEntries = React.useMemo(() => {
       const startIndex = (currentPage - 1) * itemsPerPage;
@@ -654,7 +657,7 @@ export default function EntrySheetPage() {
                       )}
                       <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
-                      <TableCell>{format(new Date(entry.date), 'dd MMM, yyyy')}</TableCell>
+                      <TableCell>{entry.date instanceof Timestamp ? format(entry.date.toDate(), 'dd MMM, yyyy') : entry.date}</TableCell>
                       <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                       <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
@@ -816,24 +819,24 @@ export default function EntrySheetPage() {
                   </div>
                   <div className="space-y-2">
                       <Label>Reception Date</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
+                       <Popover>
+                          <PopoverTrigger asChild>
                           <Button
                               variant={"outline"}
                               className={cn("w-full justify-start text-left font-normal", !formState.date && "text-muted-foreground")}
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formState.date ? format(formState.date, "PPP") : <span>Pick a date</span>}
                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
                           <Calendar
                               mode="single"
                               selected={formState.date}
                               onSelect={(date) => date && handleFormChange('date', date)}
                               initialFocus
                           />
-                        </PopoverContent>
+                          </PopoverContent>
                       </Popover>
                   </div>
                    {renderFormFields(true)}
@@ -868,3 +871,4 @@ export default function EntrySheetPage() {
 }
 
     
+```
