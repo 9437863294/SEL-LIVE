@@ -104,18 +104,16 @@ export default function EntrySheetPage() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setExpenseRequests(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
+        
         setEntries(requisitionsSnap.docs.map(doc => {
             const data = doc.data() as DailyRequisitionEntry;
             const dateObject = data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date);
-            const createdAtObject = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt);
-            
             return {
                 ...data,
                 id: doc.id,
-                date: format(dateObject, 'MMMM do, yyyy'),
+                date: dateObject.toISOString(), // Keep as ISO string for consistency
                 originalDate: dateObject.toISOString(),
-                createdAt: format(createdAtObject, 'dd MMM, yyyy HH:mm'),
-            } as EnrichedDailyRequisitionEntry
+            } as EnrichedDailyRequisitionEntry;
         }));
 
         if (configSnap.exists()) {
@@ -346,11 +344,26 @@ export default function EntrySheetPage() {
       sortedEntries.sort((a, b) => {
         const valA = a[sortKey];
         const valB = b[sortKey];
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortDirection === 'asc' ? valA - valB : valB - a;
+        
+        // Handle undefined or null values
+        if (valA == null || valB == null) {
+          if (valA == null && valB != null) return sortDirection === 'asc' ? -1 : 1;
+          if (valA != null && valB == null) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
         }
-        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        }
+        
+        // For date or timestamp objects, compare their time values
+        if (valA instanceof Timestamp && valB instanceof Timestamp) {
+            return sortDirection === 'asc' ? valA.toMillis() - valB.toMillis() : valB.toMillis() - valA.toMillis();
+        }
+        
+        // Fallback to string comparison
+        if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+        if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
     }
@@ -645,9 +658,9 @@ export default function EntrySheetPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell>{entry.createdAt as React.ReactNode}</TableCell>
+                      <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
                       <TableCell>{entry.receptionNo}</TableCell>
-                      <TableCell>{entry.date as React.ReactNode}</TableCell>
+                      <TableCell>{format(new Date(entry.date), 'dd MMM, yyyy')}</TableCell>
                       <TableCell>{projects.find(p => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                       <TableCell>{departments.find(d => d.id === entry.departmentId)?.name || entry.departmentId}</TableCell>
                       <TableCell>{entry.partyName}</TableCell>
