@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Suspense } from 'react';
@@ -242,6 +243,7 @@ function NewExpenseRequestForm() {
   const selectedDepartmentName = departments.find(d => d.id === form.getValues('departmentId'))?.name || '';
   
   const formatAsCurrency = (value: number) => {
+    if (isNaN(value) || value === null) return '';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -315,12 +317,11 @@ function NewExpenseRequestForm() {
                       render={({ field }) => (
                         <FormItem className="space-y-2">
                           <FormLabel>Amount</FormLabel>
-                          <FormControl>
+                           <FormControl>
                             <Input
-                              type="text"
+                              type="number"
                               placeholder="Enter Amount"
-                              value={field.value ? formatAsCurrency(field.value) : ''}
-                              onChange={(e) => field.onChange(parseCurrency(e.target.value) || 0)}
+                              {...field}
                             />
                           </FormControl>
                           <FormMessage />
