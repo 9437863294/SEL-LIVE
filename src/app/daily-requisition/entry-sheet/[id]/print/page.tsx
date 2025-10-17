@@ -21,9 +21,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
     const { user } = useAuth();
     if (!entry) return null;
 
-    const entryDate = entry.date && (entry.date as any).toDate 
-        ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
-        : String(entry.date);
+    const entryDate = entry.date ? String(entry.date) : 'N/A';
 
     return (
         <div ref={ref} className="p-8 bg-white text-black font-sans">
@@ -167,14 +165,14 @@ export default function PrintChecklistPage() {
     return (
         <div className="p-4 md:p-8">
             <div className="flex justify-end gap-2 mb-4 no-print">
-                 <button
+                 <Button
                     onClick={handlePrint}
                     disabled={isLoading || !entry}
-                    className={cn(buttonVariants({ variant: 'outline' }))}
+                    variant="outline"
                 >
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                     Print / Download PDF
-                </button>
+                </Button>
             </div>
             <div className="bg-white border rounded-lg max-w-4xl mx-auto">
                  {isLoading ? (
