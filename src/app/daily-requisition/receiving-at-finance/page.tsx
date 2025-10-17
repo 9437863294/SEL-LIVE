@@ -59,7 +59,7 @@ export default function ReceivingAtFinancePage() {
     setIsLoading(true);
     try {
       const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', ['Pending', 'Received', 'Rejected']))),
+        getDocs(query(collection(db, 'dailyRequisitions'))),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'users')),
       ]);
@@ -159,12 +159,12 @@ export default function ReceivingAtFinancePage() {
     return (
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-end mb-4">
             {type === 'pending' ? (
                 <Button onClick={() => handleStatusUpdate(Array.from(selectedIds), 'Received')} disabled={selectedIds.size === 0 || !canMarkAsReceived}>
                     Mark as Received
                 </Button>
-            ) : <div />}
+            ) : null}
           </div>
           <Table>
             <TableHeader>
