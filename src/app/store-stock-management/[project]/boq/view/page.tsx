@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -79,6 +78,7 @@ export default function ViewBoqPage() {
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isClient, setIsClient] = useState(false);
   
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
 
@@ -103,6 +103,10 @@ export default function ViewBoqPage() {
         return acc;
     }, {} as Record<string, string>)
   );
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -454,12 +458,13 @@ export default function ViewBoqPage() {
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
                 <ScrollArea className="h-96 pr-4">
+                  {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns" isDropDisabled={false}>
+                        <Droppable droppableId="columns">
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
-                                        <Draggable key={header} draggableId={header} index={index} isDragDisabled={false}>
+                                        <Draggable key={header} draggableId={header} index={index}>
                                             {(provided) => (
                                                 <div
                                                     ref={provided.innerRef}
@@ -488,6 +493,7 @@ export default function ViewBoqPage() {
                             )}
                         </Droppable>
                     </DragDropContext>
+                  )}
                 </ScrollArea>
                 <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
