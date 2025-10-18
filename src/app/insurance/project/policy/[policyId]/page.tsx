@@ -17,7 +17,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function AssetPoliciesPage() {
-  const { policyId: assetId } = useParams() as { policyId: string };
+  const params = useParams();
+  const assetId = params.policyId as string;
   const router = useRouter();
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
