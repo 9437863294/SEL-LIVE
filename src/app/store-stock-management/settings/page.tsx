@@ -21,7 +21,7 @@ interface SettingsCardProps {
 const settingsItemsBase = [
   { 
     icon: Construction,
-    text: 'Projects & Sites',
+    text: 'Project',
     href: '/store-stock-management/settings/projects', 
     description: 'Configure which projects require stock management.'
   },
