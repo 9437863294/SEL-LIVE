@@ -461,7 +461,7 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                   {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns" isDropDisabled={false}>
+                        <Droppable droppableId="columns" isDropDisabled={false} isCombineEnabled={false}>
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
@@ -514,4 +514,5 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
 
