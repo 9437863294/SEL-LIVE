@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -460,7 +461,7 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                   {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
+                        <Droppable droppableId="columns" isDropDisabled={false}>
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
@@ -513,3 +514,4 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
