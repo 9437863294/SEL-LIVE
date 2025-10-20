@@ -46,9 +46,15 @@ export default function UserLogsPage() {
                     setUser({ id: userDocSnap.id, ...userDocSnap.data() } as User);
                 }
 
-                const logsQuery = query(collection(db, 'userLogs'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+                // Removed orderBy from the query
+                const logsQuery = query(collection(db, 'userLogs'), where('userId', '==', userId));
                 const logsSnapshot = await getDocs(logsQuery);
+                
                 const logsData = logsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserLog));
+
+                // Sort the data on the client side
+                logsData.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+
                 setLogs(logsData);
 
             } catch (error: any) {
