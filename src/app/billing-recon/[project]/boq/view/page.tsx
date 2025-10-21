@@ -289,7 +289,7 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col h-[calc(100vh-8rem)]">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
@@ -351,11 +351,11 @@ export default function ViewBoqPage() {
               </AlertDialog>
           </div>
         </div>
-        <Card className="flex-grow flex flex-col">
-          <CardContent className="p-0 flex-grow">
-              <ScrollArea className="h-full">
+        <Card>
+          <CardContent className="p-0">
+              <div className="overflow-x-auto rounded-lg border">
                   <Table>
-                      <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableHeader>
                           <TableRow>
                               <TableHead className="w-[50px]">
                                   <Checkbox 
@@ -408,7 +408,7 @@ export default function ViewBoqPage() {
                           )}
                       </TableBody>
                   </Table>
-              </ScrollArea>
+              </div>
           </CardContent>
         </Card>
       </div>
@@ -422,7 +422,7 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                   {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
+                        <Droppable droppableId="columns" isDropDisabled={false}>
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
@@ -474,5 +474,6 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
 
 
