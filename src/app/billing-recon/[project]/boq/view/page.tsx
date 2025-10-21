@@ -79,7 +79,7 @@ export default function ViewBoqPage() {
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: ['BOQ SL No', 'Description', 'Unit', 'QTY'].includes(h) }), {})
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: ['BOQ SL No', 'Description', 'Unit', 'QTY', 'ERP SL NO'].includes(h) }), {})
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
@@ -377,93 +377,95 @@ export default function ViewBoqPage() {
               </AlertDialog>
           </div>
         </div>
-        <Card className="flex-1 overflow-hidden">
-          <CardContent className="p-0 h-full">
-              <div className="h-full overflow-auto">
-                <TooltipProvider>
-                  <Table>
-                      <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
-                          <TableRow>
-                              <TableHead className="w-[50px]">
-                                  <Checkbox 
-                                      checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
-                                      onCheckedChange={handleSelectAll}
-                                  />
-                              </TableHead>
-                              {columnOrder.filter(h => columnVisibility[h]).map((header) => (
-                                  <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
-                                    <div className="flex items-center">
-                                      {columnNames[header] || header}
-                                      {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                                    </div>
-                                  </TableHead>
-                              ))}
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                          {isLoading ? (
-                              Array.from({ length: 5 }).map((_, i) => (
-                              <TableRow key={i}>
-                                  <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                  {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
-                                      <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                  ))}
-                              </TableRow>
-                              ))
-                          ) : sortedBoqItems.length > 0 ? (
-                              sortedBoqItems.map((item) => (
-                                  <TableRow 
-                                    key={item.id} 
-                                    data-state={selectedItemIds.includes(item.id) && "selected"}
-                                    onClick={() => handleRowClick(item)}
-                                    className="cursor-pointer"
-                                  >
-                                      <TableCell onClick={(e) => e.stopPropagation()}>
-                                          <Checkbox 
-                                              checked={selectedItemIds.includes(item.id)}
-                                              onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                          />
-                                      </TableCell>
-                                      {columnOrder.filter(h => columnVisibility[h]).map(header => {
-                                          const cellData = item[header];
-                                          const isDescription = (columnNames[header] || header).toLowerCase().includes('description');
-                                          
-                                          if (isDescription && typeof cellData === 'string' && cellData.length > 50) {
+        <div className="flex-1 overflow-hidden">
+          <Card className="h-full flex flex-col">
+              <CardContent className="p-0 flex-1 overflow-hidden">
+                <div className="h-full overflow-auto">
+                  <TooltipProvider>
+                    <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+                            <TableRow>
+                                <TableHead className="w-[50px]">
+                                    <Checkbox 
+                                        checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
+                                        onCheckedChange={handleSelectAll}
+                                    />
+                                </TableHead>
+                                {columnOrder.filter(h => columnVisibility[h]).map((header) => (
+                                    <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
+                                      <div className="flex items-center">
+                                        {columnNames[header] || header}
+                                        {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                                      </div>
+                                    </TableHead>
+                                ))}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isLoading ? (
+                                Array.from({ length: 5 }).map((_, i) => (
+                                <TableRow key={i}>
+                                    <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                    {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
+                                        <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                    ))}
+                                </TableRow>
+                                ))
+                            ) : sortedBoqItems.length > 0 ? (
+                                sortedBoqItems.map((item) => (
+                                    <TableRow 
+                                      key={item.id} 
+                                      data-state={selectedItemIds.includes(item.id) && "selected"}
+                                      onClick={() => handleRowClick(item)}
+                                      className="cursor-pointer"
+                                    >
+                                        <TableCell onClick={(e) => e.stopPropagation()}>
+                                            <Checkbox 
+                                                checked={selectedItemIds.includes(item.id)}
+                                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                            />
+                                        </TableCell>
+                                        {columnOrder.filter(h => columnVisibility[h]).map(header => {
+                                            const cellData = item[header];
+                                            const isDescription = (columnNames[header] || header).toLowerCase().includes('description');
+                                            
+                                            if (isDescription && typeof cellData === 'string' && cellData.length > 50) {
+                                              return (
+                                                <TableCell key={`${item.id}-${header}`}>
+                                                  <Tooltip>
+                                                    <TooltipTrigger>
+                                                      <p className="truncate max-w-xs">{cellData}</p>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      <p className="max-w-md">{cellData}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TableCell>
+                                              );
+                                            }
+                                            
                                             return (
-                                              <TableCell key={`${item.id}-${header}`}>
-                                                <Tooltip>
-                                                  <TooltipTrigger>
-                                                    <p className="truncate max-w-xs">{cellData}</p>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    <p className="max-w-md">{cellData}</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </TableCell>
-                                            );
-                                          }
-                                          
-                                          return (
-                                              <TableCell key={`${item.id}-${header}`}>
-                                                  {cellData || 'N/A'}
-                                              </TableCell>
-                                          )
-                                      })}
-                                  </TableRow>
-                              ))
-                          ) : (
-                              <TableRow>
-                                  <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
-                                      No BOQ items found.
-                                  </TableCell>
-                              </TableRow>
-                          )}
-                      </TableBody>
-                  </Table>
-                </TooltipProvider>
-              </div>
-          </CardContent>
-        </Card>
+                                                <TableCell key={`${item.id}-${header}`}>
+                                                    {cellData || 'N/A'}
+                                                </TableCell>
+                                            )
+                                        })}
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
+                                        No BOQ items found.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                  </TooltipProvider>
+                </div>
+              </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
@@ -473,42 +475,42 @@ export default function ViewBoqPage() {
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
                 <ScrollArea className="h-96 pr-4">
-                    {isClient && (
-                        <DragDropContext onDragEnd={onDragEnd}>
-                            <Droppable droppableId="columns">
-                                {(provided) => (
-                                    <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                                        {columnOrder.map((header, index) => (
-                                            <Draggable key={header} draggableId={header} index={index}>
-                                                {(provided) => (
-                                                    <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        {...provided.dragHandleProps}
-                                                        className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
-                                                    >
-                                                        <Checkbox
-                                                            checked={columnVisibility[header]}
-                                                            onCheckedChange={(checked) =>
-                                                                setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
-                                                            }
-                                                        />
-                                                        <Input
-                                                            value={columnNames[header] || header}
-                                                            onChange={(e) =>
-                                                                setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
-                                                            }
-                                                        />
-                                                    </div>
-                                                )}
-                                            </Draggable>
-                                        ))}
-                                        {provided.placeholder}
-                                    </div>
-                                )}
-                            </Droppable>
-                        </DragDropContext>
-                    )}
+                  {isClient && (
+                    <DragDropContext onDragEnd={onDragEnd}>
+                        <Droppable droppableId="columns">
+                            {(provided) => (
+                                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                    {columnOrder.map((header, index) => (
+                                        <Draggable key={header} draggableId={header} index={index}>
+                                            {(provided) => (
+                                                <div
+                                                    ref={provided.innerRef}
+                                                    {...provided.draggableProps}
+                                                    {...provided.dragHandleProps}
+                                                    className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                                >
+                                                    <Checkbox
+                                                        checked={columnVisibility[header]}
+                                                        onCheckedChange={(checked) =>
+                                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                                        }
+                                                    />
+                                                    <Input
+                                                        value={columnNames[header] || header}
+                                                        onChange={(e) =>
+                                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </Draggable>
+                                    ))}
+                                    {provided.placeholder}
+                                </div>
+                            )}
+                        </Droppable>
+                    </DragDropContext>
+                  )}
                 </ScrollArea>
                 <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
