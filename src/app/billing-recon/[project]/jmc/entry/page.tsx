@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BoqItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
-import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import { JmcItemSelectorDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -83,7 +83,7 @@ export default function JmcEntryPage() {
   };
   
   const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate'];
+    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
     for (const key of knownPriceKeys) {
         if (boqItem.hasOwnProperty(key)) {
             return key;
@@ -118,11 +118,11 @@ export default function JmcEntryPage() {
     const itemToUpdate = newItems[index];
 
     if (boqItem) {
-        const rateKey = findBasicPriceKey(boqItem) || 'BASIC PRICE';
+        const rateKey = findBasicPriceKey(boqItem);
         itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
         itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
         itemToUpdate.unit = boqItem['UNITS'] || '';
-        itemToUpdate.rate = Number(boqItem[rateKey] || '0');
+        itemToUpdate.rate = rateKey ? Number(boqItem[rateKey] || '0') : 0;
         
         if (itemToUpdate.executedQty) {
             const qty = itemToUpdate.executedQty;
@@ -140,12 +140,12 @@ export default function JmcEntryPage() {
   
   const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
       const newJmcItems = selectedBoqItems.map(boqItem => {
-          const rateKey = findBasicPriceKey(boqItem) || 'BASIC PRICE';
+          const rateKey = findBasicPriceKey(boqItem);
           return {
               boqSlNo: boqItem['SL. No.'] || '',
               description: boqItem['DESCRIPTION OF ITEMS'] || '',
               unit: boqItem['UNITS'] || '',
-              rate: Number(boqItem[rateKey] || '0'),
+              rate: rateKey ? Number(boqItem[rateKey] || '0') : 0,
               executedQty: 0,
               totalAmount: 0,
           };
@@ -332,11 +332,11 @@ export default function JmcEntryPage() {
         </CardContent>
       </Card>
     </div>
-    <BoqMultiSelectDialog
+    <JmcItemSelectorDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
-        boqItems={boqItems}
-        onConfirm={handleMultiBoqSelect}
+        onConfirm={() => {}}
+        alreadyAddedItems={[]}
     />
     </>
   );
