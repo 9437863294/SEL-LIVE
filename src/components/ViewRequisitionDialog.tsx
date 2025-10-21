@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog, User } from '@/lib/types';
+import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -145,18 +145,19 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     }
    }, [requisition, workflow, users, isOpen]);
   
-  const handleAction = async (action: string) => {
+  const handleAction = async (action: string | ActionConfig) => {
     if (!user || !requisition || !workflow || !currentStep) return;
     
     setIsLoading(true);
+    const actionName = typeof action === 'string' ? action : action.name;
     
-    if (action === 'Create Expense Request') {
+    if (actionName === 'Create Expense Request') {
       try {
-        const financeDept = departments.find(d => d.name === 'Finance');
-        if (!financeDept) throw new Error("Finance department not found in settings.");
-
+        const targetDepartmentId = (action as ActionConfig).departmentId;
+        if (!targetDepartmentId) throw new Error("Department not specified for expense request creation.");
+        
         const result = await createExpenseRequest({
-            departmentId: financeDept.id,
+            departmentId: targetDepartmentId,
             projectId: requisition.projectId,
             amount: requisition.amount,
             description: requisition.description,
@@ -169,7 +170,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
         if (result.success && result.requestNo) {
             const newActionLog: ActionLog = {
-                action,
+                action: actionName,
                 comment: `Created Expense Request: ${result.requestNo}`,
                 userId: user.id,
                 userName: user.name,
@@ -197,7 +198,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         const requisitionRef = doc(db, 'requisitions', requisition.id);
         
         const newActionLog: ActionLog = {
-            action,
+            action: actionName,
             comment: actionComment,
             userId: user.id,
             userName: user.name,
@@ -223,7 +224,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
 
-            if (action === 'Approve' || action === 'Complete' || action === 'Verified' || action === 'Update Approved Amount') {
+            if (actionName === 'Approve' || actionName === 'Complete' || actionName === 'Verified' || actionName === 'Update Approved Amount') {
                 const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
                 nextStep = workflow[currentStepIndex + 1];
 
@@ -242,7 +243,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     newAssignees = []; 
                     newDeadline = null;
                 }
-            } else if (action === 'Reject') {
+            } else if (actionName === 'Reject') {
                  newStage = 'Rejected';
                  newStatus = 'Rejected';
                  newCurrentStepId = null;
@@ -265,7 +266,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             transaction.update(requisitionRef, updatedData);
         });
         
-        toast({ title: 'Success', description: `Requisition has been successfully ${action.toLowerCase()}ed.` });
+        toast({ title: 'Success', description: `Requisition has been successfully ${actionName.toLowerCase()}ed.` });
         onRequisitionUpdate();
         onOpenChange(false);
 
@@ -280,9 +281,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
   if (!requisition) return null;
 
-  const projectName = projects.find(p => p.id === requisition.projectId)?.projectName || 'N/A';
-  const departmentName = departments.find(d => d.id === requisition.departmentId)?.name || 'N/A';
-
+  const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || 'N/A';
+  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || 'N/A';
+  
   const isActionAllowed = user && requisition.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
   return (
@@ -294,8 +295,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
           <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div><Label>Project</Label><p className="font-medium">{projectName}</p></div>
-                  <div><Label>Department</Label><p className="font-medium">{departmentName}</p></div>
+                  <div><Label>Project</Label><p className="font-medium">{getProjectName(requisition.projectId)}</p></div>
+                  <div><Label>Department</Label><p className="font-medium">{getDepartmentName(requisition.departmentId)}</p></div>
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
               </div>
@@ -344,9 +345,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                       </div>
                       <div className="flex flex-wrap gap-2">
                           {currentStep?.actions.map(action => (
-                              <Button key={action} onClick={() => handleAction(action)} disabled={isLoading}>
+                              <Button key={(typeof action === 'string' ? action : action.name)} onClick={() => handleAction(action)} disabled={isLoading}>
                                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                  {action}
+                                  {typeof action === 'string' ? action : action.name}
                               </Button>
                           ))}
                       </div>
@@ -416,3 +417,4 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </Dialog>
   );
 }
+
