@@ -84,7 +84,6 @@ export default function ViewBoqPage() {
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
   );
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setIsClient(true);
@@ -314,7 +313,7 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full h-[calc(100vh-8rem)] flex flex-col px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col h-full w-full px-4 sm:px-6 lg:px-8">
         <div className="py-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
@@ -377,9 +376,8 @@ export default function ViewBoqPage() {
           </div>
         </div>
         
-        <div className="flex-1 min-h-0">
-          <Card className="h-full flex flex-col">
-            <CardContent className="p-0 flex-1 overflow-hidden">
+        <Card className="flex-1 min-h-0">
+            <CardContent className="p-0 h-full">
                 <ScrollArea className="h-full">
                   <Table>
                       <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
@@ -462,7 +460,6 @@ export default function ViewBoqPage() {
               </ScrollArea>
             </CardContent>
           </Card>
-        </div>
       </div>
 
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
@@ -530,6 +527,7 @@ export default function ViewBoqPage() {
     
 
     
+
 
 
 
