@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -72,6 +72,9 @@ export default function ViewBoqPage() {
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
+
+  const [sortKey, setSortKey] = useState<string>('BOQ SL No');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
@@ -174,17 +177,8 @@ export default function ViewBoqPage() {
             'Balance Qty': boqQty - jmcQty,
         } as BoqItem;
       });
-      
-      const sortedItems = items.sort((a, b) => {
-        const slNoA = Number(a['BOQ SL No']);
-        const slNoB = Number(b['BOQ SL No']);
-        if (isNaN(slNoA) || isNaN(slNoB)) {
-          return 0; 
-        }
-        return slNoA - slNoB;
-      });
 
-      setBoqItems(sortedItems);
+      setBoqItems(items);
       
     } catch (error) {
       console.error("Error fetching BOQ items: ", error);
@@ -196,6 +190,28 @@ export default function ViewBoqPage() {
     }
     setIsLoading(false);
   };
+  
+  const sortedBoqItems = useMemo(() => {
+    let sortedItems = [...boqItems];
+    if (sortKey) {
+        sortedItems.sort((a, b) => {
+            const valA = a[sortKey];
+            const valB = b[sortKey];
+            
+            if (valA === undefined || valA === null) return 1;
+            if (valB === undefined || valB === null) return -1;
+    
+            if (!isNaN(Number(valA)) && !isNaN(Number(valB))) {
+              return sortDirection === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+            }
+
+            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+    return sortedItems;
+  }, [boqItems, sortKey, sortDirection]);
 
   useEffect(() => {
     fetchBoqItems();
@@ -204,6 +220,15 @@ export default function ViewBoqPage() {
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
     setIsDetailsDialogOpen(true);
+  };
+  
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
   };
   
   const handleClearBoq = async () => {
@@ -366,7 +391,12 @@ export default function ViewBoqPage() {
                                   />
                               </TableHead>
                               {columnOrder.filter(h => columnVisibility[h]).map((header) => (
-                                  <TableHead key={header} className="whitespace-nowrap px-4">{columnNames[header] || header}</TableHead>
+                                  <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
+                                    <div className="flex items-center">
+                                      {columnNames[header] || header}
+                                      {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                                    </div>
+                                  </TableHead>
                               ))}
                           </TableRow>
                       </TableHeader>
@@ -380,8 +410,8 @@ export default function ViewBoqPage() {
                                   ))}
                               </TableRow>
                               ))
-                          ) : boqItems.length > 0 ? (
-                              boqItems.map((item) => (
+                          ) : sortedBoqItems.length > 0 ? (
+                              sortedBoqItems.map((item) => (
                                   <TableRow 
                                     key={item.id} 
                                     data-state={selectedItemIds.includes(item.id) && "selected"}
