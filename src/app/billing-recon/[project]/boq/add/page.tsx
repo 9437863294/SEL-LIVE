@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,11 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import type { Project } from '@/lib/types';
 
 const initialBoqItem = {
     'Project Name': '',
@@ -39,6 +40,25 @@ export default function AddBoqItemPage() {
   const projectSlug = params.project as string;
   const [boqItem, setBoqItem] = useState(initialBoqItem);
   const [isSaving, setIsSaving] = useState(false);
+  const [projectName, setProjectName] = useState('');
+
+
+  useEffect(() => {
+    const fetchProjectName = async () => {
+      if (!projectSlug) return;
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      
+      if (projectData) {
+        setProjectName(projectData.projectName);
+        setBoqItem(prev => ({ ...prev, 'Project Name': projectData.projectName }));
+      }
+    };
+    fetchProjectName();
+  }, [projectSlug]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -79,7 +99,11 @@ export default function AddBoqItemPage() {
             title: 'Item Added',
             description: 'The new BOQ item has been successfully saved.',
         });
-        setBoqItem(initialBoqItem); // Reset form
+        setBoqItem({
+          ...initialBoqItem,
+          'Project Name': projectName // Keep project name after reset
+        });
+
     } catch (error) {
         console.error("Error adding BOQ item: ", error);
         toast({
@@ -124,6 +148,7 @@ export default function AddBoqItemPage() {
                             name={key}
                             value={boqItem[key as keyof typeof boqItem]}
                             onChange={handleInputChange}
+                            readOnly={key === 'Project Name'}
                         />
                     </div>
                 ))}
