@@ -208,6 +208,10 @@ export default function AllExpensesPage() {
   };
 
   const getCellContent = (header: string, expense: ExpenseRequest) => {
+    const formatCurrency = (amount: number) => {
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
+    }
+
     switch (header) {
       case 'Request No':
         return expense.requestNo;
@@ -218,7 +222,7 @@ export default function AllExpensesPage() {
       case 'Project Name':
         return getProjectName(expense.projectId);
       case 'Amount':
-        return `₹ ${(expense.amount || 0).toLocaleString()}`;
+        return formatCurrency(expense.amount || 0);
       case 'Head of A/c':
         return expense.headOfAccount;
       case 'Sub-Head of A/c':

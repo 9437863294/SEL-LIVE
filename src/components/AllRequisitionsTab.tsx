@@ -923,7 +923,7 @@ export default function AllRequisitionsTab() {
                                       </Tooltip>
                                     ); 
                                     break;
-                                  case 'Amount': content = req.amount.toLocaleString(); break;
+                                  case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
                                   case 'Stage': content = req.stage; break;
                                   case 'Status': content = req.status; break;
                                   case 'Attachments': content = req.attachments?.length || 0; break;
@@ -993,4 +993,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-

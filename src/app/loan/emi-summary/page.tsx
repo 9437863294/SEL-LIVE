@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -307,7 +308,7 @@ export default function EmiSummaryPage() {
     };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
   };
   
   const formatDate = (date: any) => {
@@ -578,7 +579,7 @@ export default function EmiSummaryPage() {
                     <div className="space-y-1">
                         <Label>Sub-Head of A/c</Label>
                          <Select value={expenseToCreate.subHeadOfAccount} onValueChange={handleSubHeadChange}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder="Select Sub-Head"/></SelectTrigger>
                             <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
