@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -9,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -564,3 +563,5 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </>
   );
 }
+
+    
