@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -24,12 +23,12 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { BoqItem as BoqItemType, JmcEntry, Bill } from '@/lib/types';
+import type { BoqItem as BoqItemType, JmcEntry, Bill, FabricationBomItem } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -86,7 +85,7 @@ export default function ViewBoqPage() {
     try {
       const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
       const [boqSnapshot] = await Promise.all([getDocs(boqItemsRef)]);
-      const items = boqSnapshot.docs.map(doc => ({
+      const items = boqSnapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data(),
       })) as BoqItem[];
@@ -276,7 +275,7 @@ export default function ViewBoqPage() {
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {item.bom!.map((bomItem, index) => (
+                                        {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
                                           <TableRow key={index}>
                                             <TableCell>{bomItem.markNo}</TableCell>
                                             <TableCell>{bomItem.section}</TableCell>
@@ -341,42 +340,47 @@ export default function ViewBoqPage() {
             <DialogTitle>Customize Columns</DialogTitle>
           </DialogHeader>
           <div className="max-h-96 overflow-auto space-y-2 mt-2">
-            {isClient && (
-              <DragDropContext onDragEnd={() => {}}>
-                <Droppable droppableId="columns" isDropDisabled={false}>
-                  {(provided) => (
-                    <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                      {columnOrder.map((header, index) => (
-                        <Draggable key={header} draggableId={header} index={index}>
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
-                            >
-                              <Checkbox
-                                checked={columnVisibility[header]}
-                                onCheckedChange={(checked) =>
-                                  setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
-                                }
-                              />
-                              <Input
-                                value={columnNames[header] || header}
-                                onChange={(e) =>
-                                  setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
-                                }
-                              />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              </DragDropContext>
-            )}
+          {isClient && (
+                        <DragDropContext onDragEnd={() => {}}>
+                          <Droppable
+                            droppableId="columns"
+                            isDropDisabled={false}
+                            isCombineEnabled={false}
+                          >
+                            {(provided) => (
+                              <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                {columnOrder.map((header, index) => (
+                                  <Draggable key={header} draggableId={header} index={index}>
+                                    {(provided) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                      >
+                                        <Checkbox
+                                          checked={columnVisibility[header]}
+                                          onCheckedChange={(checked) =>
+                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                          }
+                                        />
+                                        <Input
+                                          value={columnNames[header] || header}
+                                          onChange={(e) =>
+                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                          }
+                                        />
+                                      </div>
+                                    )}
+                                  </Draggable>
+                                ))}
+                                {provided.placeholder}
+                              </div>
+                            )}
+                          </Droppable>
+                        </DragDropContext>
+                      )}
+
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
@@ -387,3 +391,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
