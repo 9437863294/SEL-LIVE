@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -30,13 +29,42 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
 
+  const getBoqSlNo = (item: BoqItem): string =>
+    String(item['SL. No.'] || item['Sl No'] || '');
+
+  const getErpSlNo = (item: BoqItem): string =>
+    String(item['ERP SL. No.'] || item['ERP Sl No'] || item['ERP_SL_NO'] || '');
+
+  const getDescription = (item: BoqItem): string => {
+    const descKey =
+      Object.keys(item).find(k => k.toLowerCase().includes('description')) || '';
+    return descKey ? String(item[descKey]) : '';
+  };
+
+  const getUnit = (item: BoqItem): string =>
+    String(item['UNIT'] || item['UNITS'] || '');
+
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const keys = Object.keys(item);
+    const specificKey = 'UNIT PRICE';
+    if (keys.includes(specificKey)) return specificKey;
+    return keys.find(
+      key =>
+        key.toLowerCase().includes('price') &&
+        !key.toLowerCase().includes('total')
+    );
+  };
+
+  // Filter items by both SL No. and Description
   const filteredItems = useMemo(() => {
     if (!searchTerm) return boqItems;
-    const lowercasedFilter = searchTerm.toLowerCase();
-    return boqItems.filter(item =>
-      (item['SL. No.'] && item['SL. No.'].toLowerCase().includes(lowercasedFilter)) ||
-      (item['DESCRIPTION OF ITEMS'] && item['DESCRIPTION OF ITEMS'].toLowerCase().includes(lowercasedFilter))
-    );
+    const term = searchTerm.toLowerCase();
+    return boqItems.filter(item => {
+      const slNo = getBoqSlNo(item).toLowerCase();
+      const erpSl = getErpSlNo(item).toLowerCase();
+      const desc = getDescription(item).toLowerCase();
+      return slNo.includes(term) || erpSl.includes(term) || desc.includes(term);
+    });
   }, [boqItems, searchTerm]);
 
   const handleSelectAll = (checked: boolean) => {
@@ -48,13 +76,10 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
   };
 
   const handleSelectRow = (id: string, checked: boolean) => {
-    const newSelectedIds = new Set(selectedIds);
-    if (checked) {
-      newSelectedIds.add(id);
-    } else {
-      newSelectedIds.delete(id);
-    }
-    setSelectedIds(newSelectedIds);
+    const newSelected = new Set(selectedIds);
+    if (checked) newSelected.add(id);
+    else newSelected.delete(id);
+    setSelectedIds(newSelected);
   };
 
   const handleConfirm = () => {
@@ -65,69 +90,74 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
     setSearchTerm('');
   };
 
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Select BOQ Items</DialogTitle>
           <DialogDescription>
             Search and select multiple items to add to the JMC entry.
           </DialogDescription>
         </DialogHeader>
+
         <div className="py-4">
-            <div className="relative mb-4">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                    placeholder="Search by Sl. No. or Description..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
-                />
-            </div>
-            <ScrollArea className="h-96 border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-[50px]">
-                                <Checkbox
-                                    checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
-                                    onCheckedChange={handleSelectAll}
-                                />
-                            </TableHead>
-                            <TableHead>Sl. No.</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Unit</TableHead>
-                            <TableHead>Rate</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredItems.map(item => {
-                            const rateKey = findBasicPriceKey(item);
-                            const rate = rateKey ? item[rateKey] : 'N/A';
-                            return (
-                                <TableRow key={item.id} data-state={selectedIds.has(item.id) && "selected"}>
-                                    <TableCell>
-                                        <Checkbox
-                                            checked={selectedIds.has(item.id)}
-                                            onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                        />
-                                    </TableCell>
-                                    <TableCell>{item['SL. No.']}</TableCell>
-                                    <TableCell>{item['DESCRIPTION OF ITEMS']}</TableCell>
-                                    <TableCell>{item['UNITS']}</TableCell>
-                                    <TableCell>{rate}</TableCell>
-                                </TableRow>
-                            )
-                        })}
-                    </TableBody>
-                </Table>
-            </ScrollArea>
+          {/* Search Bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by ERP Sl. No., BOQ Sl. No., or Description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+
+          {/* Table */}
+          <ScrollArea className="h-96 border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[50px]">
+                    <Checkbox
+                      checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </TableHead>
+                  <TableHead>ERP Sl. No.</TableHead>
+                  <TableHead>BOQ Sl. No.</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead>Rate</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {filteredItems.map((item) => {
+                  const rateKey = findBasicPriceKey(item);
+                  const rate = rateKey ? item[rateKey] : 'N/A';
+                  return (
+                    <TableRow key={item.id} data-state={selectedIds.has(item.id) && "selected"}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(item.id)}
+                          onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                        />
+                      </TableCell>
+                      <TableCell>{getErpSlNo(item) || '—'}</TableCell>
+                      <TableCell>{getBoqSlNo(item) || '—'}</TableCell>
+                      <TableCell className="max-w-[300px] truncate">
+                        {getDescription(item)}
+                      </TableCell>
+                      <TableCell>{getUnit(item)}</TableCell>
+                      <TableCell>{rate}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         </div>
+
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>

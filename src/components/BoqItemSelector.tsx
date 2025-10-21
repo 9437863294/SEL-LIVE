@@ -41,9 +41,8 @@ export function BoqItemSelector({
     setCurrentValue(selectedSlNo || '');
   }, [selectedSlNo]);
 
-  // ✅ Field helpers
   const getItemDescription = (item: BoqItem): string => {
-    const possibleKeys = ['Description', 'Item Description'];
+    const possibleKeys = ['Description', 'DESCRIPTION OF ITEMS'];
     for (const key of possibleKeys) {
       if (item[key]) return String(item[key]);
     }
@@ -52,12 +51,25 @@ export function BoqItemSelector({
     );
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
-
-  const getSlNo = (item: BoqItem): string => {
-    return String(item['BOQ SL No'] || item['ERP SL NO'] || '');
+  
+  const getCombinedSlNo = (item: BoqItem): string => {
+      const erpSlNo = item['ERP SL NO'] || '';
+      const boqSlNo = item['BOQ SL No'] || item['SL. No.'] || '';
+      if (erpSlNo && boqSlNo) {
+          return `${erpSlNo} / ${boqSlNo}`;
+      }
+      return erpSlNo || boqSlNo || '';
   };
 
-  const selectedItem = boqItems.find(item => getSlNo(item) === currentValue);
+  const getBoqSlNo = (item: BoqItem): string => {
+    return String(item['BOQ SL No'] || item['SL. No.'] || '');
+  };
+  
+  const getErpSlNo = (item: BoqItem): string => {
+    return String(item['ERP SL NO'] || '');
+  }
+
+  const selectedItem = boqItems.find(item => getBoqSlNo(item) === currentValue);
 
   const findRateKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
@@ -78,32 +90,33 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {currentValue && selectedItem
-            ? `${getSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 25)}...`
+            ? `${getCombinedSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 25)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[520px] p-0">
+      <PopoverContent className="w-[600px] p-0">
         <Command
           filter={(value, search) => {
-            const item = boqItems.find(i => getSlNo(i) === value);
+            const item = boqItems.find(i => getBoqSlNo(i) === value);
             if (!item) return 0;
-            const slNo = getSlNo(item).toLowerCase();
+            const boqSlNo = getBoqSlNo(item).toLowerCase();
+            const erpSlNo = getErpSlNo(item).toLowerCase();
             const desc = getItemDescription(item).toLowerCase();
             const searchTerm = search.toLowerCase();
-            return slNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
+            return boqSlNo.includes(searchTerm) || erpSlNo.includes(searchTerm) || desc.includes(searchTerm) ? 1 : 0;
           }}
         >
-          <CommandInput placeholder="Search by BOQ SL No or Description..." />
+          <CommandInput placeholder="Search by BOQ SL No, ERP SL No or Description..." />
           <CommandList>
             <CommandEmpty>
               {isLoading ? 'Loading...' : 'No BOQ item found.'}
             </CommandEmpty>
 
             <CommandGroup>
-              {/* Header */}
-              <div className="grid grid-cols-[1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="grid grid-cols-[1fr_1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+                <div className="text-left">ERP SL No</div>
                 <div className="text-left">BOQ SL No</div>
                 <div className="text-left">Description</div>
                 <div className="text-right">Rate</div>
@@ -113,21 +126,22 @@ export function BoqItemSelector({
                 {boqItems.map(item => {
                   const rateKey = findRateKey(item);
                   const rate = rateKey ? item[rateKey] : 'N/A';
-                  const slNo = getSlNo(item);
+                  const boqSlNo = getBoqSlNo(item);
+                  const erpSlNo = getErpSlNo(item);
                   const description = getItemDescription(item);
-                  const isSelected = currentValue === slNo;
+                  const isSelected = currentValue === boqSlNo;
                   const unit = item['Unit'] || item['Units'] || item['UNIT'] || '';
 
                   return (
                     <CommandItem
                       key={item.id}
-                      value={slNo}
+                      value={boqSlNo}
                       onSelect={(value) => {
                         const selected = boqItems.find(
-                          i => getSlNo(i).toLowerCase() === value.toLowerCase()
+                          i => getBoqSlNo(i).toLowerCase() === value.toLowerCase()
                         );
                         onSelect(selected || null);
-                        setCurrentValue(selected ? getSlNo(selected) : '');
+                        setCurrentValue(selected ? getBoqSlNo(selected) : '');
                         setOpen(false);
                       }}
                       className={cn(
@@ -135,11 +149,12 @@ export function BoqItemSelector({
                         isSelected && 'bg-accent text-accent-foreground'
                       )}
                     >
-                      <div className="grid grid-cols-[1fr_3fr_1fr] w-full items-center gap-2">
+                      <div className="grid grid-cols-[1fr_1fr_3fr_1fr] w-full items-center gap-2">
                         <div className="text-sm flex items-center gap-2">
                           {isSelected && <Check className="h-4 w-4 text-primary" />}
-                          {slNo}
+                          {erpSlNo}
                         </div>
+                        <div className="text-sm">{boqSlNo}</div>
                         <div className="text-sm font-medium truncate pr-2">
                           {description}
                         </div>
