@@ -16,18 +16,18 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 
 const initialBoqItem = {
-    'ITEMS SPECS': '',
-    'SL. No.': '',
-    'Amended SL No': '',
-    'Activity Description': '',
-    'Description': '',
-    'UNITS': '',
-    'Total Qty': '',
-    'BASIC PRICE': '',
-    'TOTAL AMOUNT': '',
-    'GST @ 18% PER UNIT': '',
-    'TOTAL PRICE PER UNIT ( In Rs)': '',
-    'TOTAL PRICE FOR THE TENDER QUANTITY': ''
+    'Site': '',
+    'Scope 1': '',
+    'Scope': '',
+    'Category 1': '',
+    'Category 2': '',
+    'Category 3': '',
+    'BOQ SL No': '',
+    'Item Spec': '',
+    'Unit': '',
+    'qty': '',
+    'Unit Rate': '',
+    'total amount': ''
 };
 
 export default function AddBoqItemPage() {
@@ -50,10 +50,10 @@ export default function AddBoqItemPage() {
     }
     setIsSaving(true);
     // Basic validation
-    if (!boqItem['SL. No.'] || !boqItem['Description']) {
+    if (!boqItem['BOQ SL No'] || !boqItem['Item Spec']) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please fill in at least "SL. No." and "Description".',
+            description: 'Please fill in at least "BOQ SL No" and "Item Spec".',
             variant: 'destructive',
         });
         setIsSaving(false);
@@ -68,8 +68,8 @@ export default function AddBoqItemPage() {
             action: 'Add BOQ Item',
             details: {
                 project: projectSlug,
-                itemSlNo: boqItem['SL. No.'],
-                itemDescription: boqItem['Description'],
+                itemSlNo: boqItem['BOQ SL No'],
+                itemDescription: boqItem['Item Spec'],
             }
         });
 
