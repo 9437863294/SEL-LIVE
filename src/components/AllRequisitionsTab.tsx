@@ -59,7 +59,7 @@ import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from './ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from './ui/scroll-area';
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from './ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 
 
@@ -122,14 +122,18 @@ export default function AllRequisitionsTab() {
     if (!user) return;
     const fetchSettings = async () => {
       const settingsRef = doc(db, 'userSettings', user.id);
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
-        const settings = settingsSnap.data() as UserSettings;
-        const pageSettings = settings.columnPreferences?.[settingsKey];
-        if (pageSettings) {
-          setColumnVisibility(pageSettings.visibility);
-          setColumnOrder(pageSettings.order);
+      try {
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const settings = settingsSnap.data() as UserSettings;
+          const pageSettings = settings.columnPreferences?.[settingsKey];
+          if (pageSettings) {
+            setColumnVisibility(pageSettings.visibility);
+            setColumnOrder(pageSettings.order);
+          }
         }
+      } catch (e) {
+          console.error("Failed to load user settings", e);
       }
     };
     fetchSettings();
@@ -138,22 +142,28 @@ export default function AllRequisitionsTab() {
   const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
     if (!user) return;
     const settingsRef = doc(db, 'userSettings', user.id);
-    const settingsSnap = await getDoc(settingsRef);
-    const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
-    const newPreferences = {
-        ...currentSettings.columnPreferences,
-        [settingsKey]: { order, visibility }
-    };
-    await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+    try {
+        const settingsSnap = await getDoc(settingsRef);
+        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
+
+        const newPreferences = {
+            ...currentSettings.columnPreferences,
+            [settingsKey]: { order, visibility }
+        };
+        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+    } catch(e) {
+        console.error("Failed to save settings", e);
+        toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
+    }
   };
   
   useEffect(() => {
       if (isInitialMount.current) {
           isInitialMount.current = false;
-      } else {
-          if (user) {
-              saveColumnSettings(columnOrder, columnVisibility);
-          }
+          return;
+      }
+      if (user) {
+          saveColumnSettings(columnOrder, columnVisibility);
       }
   }, [columnOrder, columnVisibility, user]);
 
@@ -753,7 +763,7 @@ export default function AllRequisitionsTab() {
                         </FormItem>
                     )}
                 />
-                 <FormField
+                <FormField
                     control={form.control}
                     name="partyName"
                     render={({ field }) => (
@@ -983,3 +993,4 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
+
