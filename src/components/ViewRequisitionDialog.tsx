@@ -207,7 +207,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             headOfAccount: defaultHead || 'Liability',
             subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}` || '',
-            requestNo: previewRequestNo || '',
+            requestNo: previewRequestNo,
         });
         setIsConfirmExpenseOpen(true);
         return;
@@ -299,16 +299,23 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   };
 
   const handleConfirmCreateExpense = async () => {
-    if (!expenseToCreate || !requisition || !user || !currentStep) return;
+    if (!expenseToCreate || !requisition || !user || !workflow || !currentStep) return;
     setIsCreatingExpense(true);
     try {
         const { requestNo, ...dataToSave } = expenseToCreate;
 
+        // 1. Create Expense Request
         const result = await createExpenseRequest(dataToSave);
-        if (result.success && result.requestNo) {
-            const requisitionRef = doc(db, 'requisitions', requisition.id);
+        if (!result.success || !result.requestNo) {
+            throw new Error(result.message || 'Failed to create expense request.');
+        }
 
-            const batch = writeBatch(db);
+        // 2. Update Requisition and move to next step in a single transaction
+        const requisitionRef = doc(db, 'requisitions', requisition.id);
+
+        await runTransaction(db, async (transaction) => {
+            const reqDoc = await transaction.get(requisitionRef);
+            if (!reqDoc.exists()) throw new Error("Requisition document not found!");
 
             // Log action in requisition history
             const newActionLog: ActionLog = {
@@ -319,32 +326,57 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 timestamp: Timestamp.now(),
                 stepName: currentStep.name,
             };
+
+            // Determine next workflow step
+            const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
+            const nextStep = workflow[currentStepIndex + 1];
+
+            let newStatus: Requisition['status'] = 'In Progress';
+            let newStage = currentStep.name;
+            let newCurrentStepId: string | null = currentStep.id;
+            let newAssignees: string[] = [];
+            let newDeadline: Timestamp | null = null;
             
+            if (nextStep) {
+                newStage = nextStep.name;
+                newCurrentStepId = nextStep.id;
+                newAssignees = await getAssigneeForStep(nextStep, { ...requisition, ...dataToSave });
+                if (newAssignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
+                newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
+            } else {
+                newStage = 'Completed';
+                newStatus = 'Completed';
+                newCurrentStepId = null;
+            }
+
             const requisitionUpdateData: Partial<Requisition> = {
                 history: arrayUnion(newActionLog),
                 expenseRequestNo: result.requestNo,
+                status: newStatus,
+                stage: newStage,
+                currentStepId: newCurrentStepId,
+                assignees: newAssignees,
+                deadline: newDeadline,
             };
-            
-            batch.update(requisitionRef, requisitionUpdateData);
+
+            transaction.update(requisitionRef, requisitionUpdateData);
 
             // Also update the daily requisition if one exists
             const dailyReqQuery = query(collection(db, 'dailyRequisitions'), where('depNo', '==', requisition.requisitionId));
             const dailyReqSnap = await getDocs(dailyReqQuery);
             if (!dailyReqSnap.empty) {
                 const dailyReqDocRef = dailyReqSnap.docs[0].ref;
-                batch.update(dailyReqDocRef, { depNo: result.requestNo });
+                transaction.update(dailyReqDocRef, { depNo: result.requestNo });
             }
-            
-            await batch.commit();
+        });
 
-            toast({
-                title: 'Expense Record Created',
-                description: `Request No: ${result.requestNo}`,
-            });
-            onRequisitionUpdate();
-        } else {
-            throw new Error(result.message);
-        }
+        toast({
+            title: 'Expense Record Created & Workflow Advanced',
+            description: `Request No: ${result.requestNo}`,
+        });
+        onRequisitionUpdate();
+        onOpenChange(false);
+
     } catch (error: any) {
         toast({
             title: 'Error',
@@ -356,7 +388,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setIsConfirmExpenseOpen(false);
         setExpenseToCreate(null);
     }
-  };
+};
+
   
   const handleSubHeadChange = (subHeadName: string) => {
     if(!expenseToCreate) return;
@@ -552,7 +585,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Request No.</Label>
-                        <Input value={expenseToCreate.requestNo} disabled />
+                        <Input value={expenseToCreate.requestNo || ''} disabled />
                     </div>
                     <div className="space-y-1">
                         <Label>Project</Label>
@@ -561,7 +594,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   </div>
                    <div className="space-y-1">
                       <Label>Party Name</Label>
-                      <Input value={expenseToCreate.partyName} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
+                      <Input value={expenseToCreate.partyName || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                       <Label>Amount</Label>
@@ -577,7 +610,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Head of A/c</Label>
-                         <Select value={expenseToCreate.headOfAccount} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value })} disabled>
+                         <Select value={expenseToCreate.headOfAccount || ''} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value })} disabled>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                              <SelectContent>
                                 {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
@@ -586,7 +619,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     </div>
                     <div className="space-y-1">
                         <Label>Sub-Head of A/c</Label>
-                         <Select value={expenseToCreate.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                         <Select value={expenseToCreate.subHeadOfAccount || ''} onValueChange={handleSubHeadChange}>
                             <SelectTrigger><SelectValue placeholder="Select Sub-Head"/></SelectTrigger>
                             <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
@@ -594,7 +627,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   </div>
                   <div className="space-y-1">
                       <Label>Description:</Label>
-                      <Textarea value={expenseToCreate.description} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
+                      <Textarea value={expenseToCreate.description || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
                   </div>
               </div>
               <DialogFooter>
