@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -12,10 +11,11 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { ScrollArea } from './ui/scroll-area';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 
 interface BoqItemDetailsDialogProps {
