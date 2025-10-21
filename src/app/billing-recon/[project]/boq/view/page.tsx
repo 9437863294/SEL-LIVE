@@ -80,7 +80,7 @@ export default function ViewBoqPage() {
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: ['BOQ SL No', 'Description', 'Unit', 'QTY', 'ERP SL NO'].includes(h) }), {})
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: ['BOQ SL No', 'Description', 'Unit', 'QTY', 'ERP SL NO', 'Category 1'].includes(h) }), {})
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
@@ -472,29 +472,24 @@ export default function ViewBoqPage() {
           </ResizablePanel>
           <ResizableHandle withHandle />
             <ResizablePanel defaultSize={25} collapsible minSize={15}>
-                {selectedBoqItem && (
-                    <BoqItemDetailsDialog
-                        isOpen={isDetailsDialogOpen}
-                        onOpenChange={setIsDetailsDialogOpen}
-                        item={selectedBoqItem}
-                        jmcEntries={jmcEntries}
-                        bills={bills}
-                    />
-                )}
-                 <div className="h-full p-4">
-                    {selectedBoqItem ? (
-                        <BoqItemDetailsDialog
-                            isOpen={true}
-                            onOpenChange={() => {}}
-                            item={selectedBoqItem}
-                            jmcEntries={jmcEntries}
-                            bills={bills}
-                        />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                            <p>Select a row to see details here.</p>
+                <div className="h-full p-0">
+                    <ScrollArea className="h-full">
+                        <div className="p-4">
+                            {selectedBoqItem ? (
+                                <BoqItemDetailsDialog
+                                    isOpen={true}
+                                    onOpenChange={() => {}}
+                                    item={selectedBoqItem}
+                                    jmcEntries={jmcEntries}
+                                    bills={bills}
+                                />
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <p>Select a row to see details here.</p>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </ScrollArea>
                 </div>
             </ResizablePanel>
         </ResizablePanelGroup>
@@ -565,6 +560,7 @@ export default function ViewBoqPage() {
     
 
     
+
 
 
 
