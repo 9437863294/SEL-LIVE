@@ -42,7 +42,6 @@ import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 type BoqItem = {
     id: string;
@@ -250,8 +249,6 @@ export default function ViewBoqPage() {
             batch.delete(doc.ref);
         });
 
-        await batch.commit();
-
         await logUserActivity({
             userId: user.id,
             action: 'Clear BOQ',
@@ -317,8 +314,8 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full h-screen flex flex-col">
-        <div className="py-6 flex items-center justify-between flex-shrink-0 px-4 sm:px-6 lg:px-8">
+      <div className="w-full h-[calc(100vh-8rem)] flex flex-col px-4 sm:px-6 lg:px-8">
+        <div className="py-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
                   <Button variant="ghost" size="icon">
@@ -380,114 +377,92 @@ export default function ViewBoqPage() {
           </div>
         </div>
         
-        <ResizablePanelGroup direction="vertical" className="flex-1 px-4 sm:px-6 lg:px-8 pb-6">
-            <ResizablePanel defaultSize={70}>
-                <Card className="h-full flex flex-col">
-                    <CardContent className="p-0 flex-1 overflow-hidden">
-                        <ScrollArea className="h-full">
-                            <Table>
-                                <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
-                                    <TableRow>
-                                        <TableHead className="w-[50px]">
-                                            <Checkbox 
-                                                checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
-                                                onCheckedChange={handleSelectAll}
-                                            />
-                                        </TableHead>
-                                        {columnOrder.filter(h => columnVisibility[h]).map((header) => (
-                                            <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
-                                              <div className="flex items-center">
-                                                {columnNames[header] || header}
-                                                {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                                              </div>
-                                            </TableHead>
-                                        ))}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isLoading ? (
-                                        Array.from({ length: 5 }).map((_, i) => (
-                                        <TableRow key={i}>
-                                            <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                            {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
-                                                <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                            ))}
-                                        </TableRow>
-                                        ))
-                                    ) : sortedBoqItems.length > 0 ? (
-                                        sortedBoqItems.map((item) => (
-                                            <TableRow 
-                                              key={item.id} 
-                                              data-state={selectedItemIds.includes(item.id) && "selected"}
-                                              onClick={() => handleRowClick(item)}
-                                              className="cursor-pointer"
-                                            >
-                                                <TableCell onClick={(e) => e.stopPropagation()}>
-                                                    <Checkbox 
-                                                        checked={selectedItemIds.includes(item.id)}
-                                                        onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                                    />
-                                                </TableCell>
-                                                {columnOrder.filter(h => columnVisibility[h]).map(header => {
-                                                    const cellData = item[header];
-                                                    const normalizedHeader = (columnNames[header] || header).toLowerCase();
-                                                    const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
-                                                    
-                                                    return (
-                                                        <TableCell key={`${item.id}-${header}`}>
-                                                          {isTruncated ? (
-                                                              <TooltipProvider>
-                                                                  <Tooltip>
-                                                                      <TooltipTrigger asChild>
-                                                                        <p className="truncate max-w-xs">{cellData}</p>
-                                                                      </TooltipTrigger>
-                                                                      <TooltipContent>
-                                                                        <p className="max-w-md">{cellData}</p>
-                                                                      </TooltipContent>
-                                                                  </Tooltip>
-                                                              </TooltipProvider>
-                                                          ) : (
-                                                              cellData || 'N/A'
-                                                          )}
-                                                        </TableCell>
-                                                    )
-                                                })}
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
-                                                No BOQ items found.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={30} collapsible minSize={15}>
-                 <ScrollArea className="h-full">
-                    <div className="p-4">
-                        {selectedBoqItem ? (
-                            <BoqItemDetailsDialog
-                                isOpen={true}
-                                onOpenChange={() => {}}
-                                item={selectedBoqItem}
-                                jmcEntries={jmcEntries}
-                                bills={bills}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>Select a row to see details here.</p>
-                            </div>
-                        )}
-                    </div>
-                </ScrollArea>
-            </ResizablePanel>
-        </ResizablePanelGroup>
+        <div className="flex-1 min-h-0">
+          <Card className="h-full flex flex-col">
+            <CardContent className="p-0 flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+                          <TableRow>
+                              <TableHead className="w-[50px]">
+                                  <Checkbox 
+                                      checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
+                                      onCheckedChange={handleSelectAll}
+                                  />
+                              </TableHead>
+                              {columnOrder.filter(h => columnVisibility[h]).map((header) => (
+                                  <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
+                                    <div className="flex items-center">
+                                      {columnNames[header] || header}
+                                      {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                                    </div>
+                                  </TableHead>
+                              ))}
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {isLoading ? (
+                              Array.from({ length: 5 }).map((_, i) => (
+                              <TableRow key={i}>
+                                  <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                  {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
+                                      <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                  ))}
+                              </TableRow>
+                              ))
+                          ) : sortedBoqItems.length > 0 ? (
+                              sortedBoqItems.map((item) => (
+                                  <TableRow 
+                                    key={item.id} 
+                                    data-state={selectedItemIds.includes(item.id) && "selected"}
+                                    onClick={() => handleRowClick(item)}
+                                    className="cursor-pointer"
+                                  >
+                                      <TableCell onClick={(e) => e.stopPropagation()}>
+                                          <Checkbox 
+                                              checked={selectedItemIds.includes(item.id)}
+                                              onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                          />
+                                      </TableCell>
+                                      {columnOrder.filter(h => columnVisibility[h]).map(header => {
+                                          const cellData = item[header];
+                                          const normalizedHeader = (columnNames[header] || header).toLowerCase();
+                                          const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
+                                          
+                                          return (
+                                              <TableCell key={`${item.id}-${header}`}>
+                                                {isTruncated ? (
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              <p className="truncate max-w-xs">{cellData}</p>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                              <p className="max-w-md">{cellData}</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+                                                ) : (
+                                                    cellData || 'N/A'
+                                                )}
+                                              </TableCell>
+                                          )
+                                      })}
+                                  </TableRow>
+                              ))
+                          ) : (
+                              <TableRow>
+                                  <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
+                                      No BOQ items found.
+                                  </TableCell>
+                              </TableRow>
+                          )}
+                      </TableBody>
+                  </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
@@ -555,6 +530,8 @@ export default function ViewBoqPage() {
     
 
     
+
+
 
 
 
