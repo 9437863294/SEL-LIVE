@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -309,8 +310,8 @@ export default function ViewBoqPage() {
             <ScrollArea className="h-full">
                 {selectedBoqItem ? (
                   <BoqItemDetailsDialog
-                    isOpen={true} // This dialog is always "open" inside the panel
-                    onOpenChange={() => {}} // This can be a no-op
+                    isOpen={isDetailsDialogOpen}
+                    onOpenChange={setIsDetailsDialogOpen}
                     item={selectedBoqItem}
                     jmcEntries={jmcEntries}
                     bills={bills}
@@ -318,12 +319,20 @@ export default function ViewBoqPage() {
                   />
                 ) : (
                   <div className="h-full p-4 flex items-center justify-center text-muted-foreground">
-                    Select a row to see details here.
+                    now keep scroll bar here
                   </div>
                 )}
             </ScrollArea>
           </ResizablePanel>
         </ResizablePanelGroup>
+
+      <BoqItemDetailsDialog
+        isOpen={isDetailsDialogOpen}
+        onOpenChange={setIsDetailsDialogOpen}
+        item={selectedBoqItem}
+        jmcEntries={jmcEntries}
+        bills={bills}
+      />
 
       {/* Column Editor Dialog */}
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
