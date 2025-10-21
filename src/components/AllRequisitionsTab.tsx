@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -111,7 +110,7 @@ export default function AllRequisitionsTab() {
 
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
-  
+
   useEffect(() => {
     if (!user) return;
     const fetchSettings = async () => {
@@ -127,7 +126,7 @@ export default function AllRequisitionsTab() {
       }
     };
     fetchSettings();
-  }, [user]);
+  }, [user, settingsKey]);
 
   const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
     if (!user) return;
@@ -151,6 +150,7 @@ export default function AllRequisitionsTab() {
     }
   }, [columnOrder, columnVisibility, user]);
 
+  
   useEffect(() => {
     if (!canViewAll) {
       setShowMyRequests(true);
@@ -760,49 +760,49 @@ export default function AllRequisitionsTab() {
                 </DialogContent>
             </Dialog>
             <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
-              <DialogTrigger asChild>
-                  <Button variant="outline">
-                      <Shuffle className="mr-2 h-4 w-4" /> Sequence
-                  </Button>
-              </DialogTrigger>
-              <DialogContent>
-                  <DialogHeader>
-                      <DialogTitle>Edit Column Sequence</DialogTitle>
-                      <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
-                  </DialogHeader>
-                  <div className="py-4 space-y-2">
-                      {columnOrder.map((header, index) => (
-                          <div key={header} className="flex items-center justify-between p-2 border rounded-md">
-                              <span className="font-medium">{header}</span>
-                          </div>
-                      ))}
-                  </div>
-              </DialogContent>
-          </Dialog>
-          <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
-                      <View className="mr-2 h-4 w-4" />
-                      Columns
-                  </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {baseTableHeaders.map((header) => (
-                      <DropdownMenuCheckboxItem
-                          key={header}
-                          className="capitalize"
-                          checked={columnVisibility[header]}
-                          onCheckedChange={(value) =>
-                              setColumnVisibility(prev => ({...prev, [header]: !!value}))
-                          }
-                      >
-                          {header}
-                      </DropdownMenuCheckboxItem>
-                  ))}
-              </DropdownMenuContent>
-          </DropdownMenu>
+                <DialogTrigger asChild>
+                    <Button variant="outline">
+                        <Shuffle className="mr-2 h-4 w-4" /> Sequence
+                    </Button>
+                </DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Column Sequence</DialogTitle>
+                        <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-2">
+                        {columnOrder.map((header, index) => (
+                            <div key={header} className="flex items-center justify-between p-2 border rounded-md">
+                                <span className="font-medium">{header}</span>
+                            </div>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                        <View className="mr-2 h-4 w-4" />
+                        Columns
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {baseTableHeaders.map((header) => (
+                        <DropdownMenuCheckboxItem
+                            key={header}
+                            className="capitalize"
+                            checked={columnVisibility[header]}
+                            onCheckedChange={(value) =>
+                                setColumnVisibility(prev => ({...prev, [header]: !!value}))
+                            }
+                        >
+                            {header}
+                        </DropdownMenuCheckboxItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
         <div className="border rounded-lg flex-grow relative">
           <ScrollArea className="absolute inset-0">
