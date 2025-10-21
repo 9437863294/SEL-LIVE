@@ -41,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown } from 'lucide-react';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -56,10 +56,11 @@ import { cn } from '@/lib/utils';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from './ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from './ui/tooltip';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 
 
 const formSchema = z.object({
@@ -90,6 +91,7 @@ export default function AllRequisitionsTab() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
+  const [partyNames, setPartyNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
@@ -109,6 +111,9 @@ export default function AllRequisitionsTab() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
   );
+
+  const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
+  const [partySearch, setPartySearch] = useState("");
 
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
@@ -194,6 +199,9 @@ export default function AllRequisitionsTab() {
       const expenseRequestsData = expReqSnapshot.docs.map(doc => doc.data() as ExpenseRequest);
       setExpenseRequests(expenseRequestsData);
 
+      const existingParties = new Set(requisitionsData.map(r => r.partyName));
+      setPartyNames(Array.from(existingParties).sort());
+
     } catch (error) {
       console.error("Error fetching data: ", error);
       toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
@@ -244,6 +252,7 @@ export default function AllRequisitionsTab() {
         description: '',
         date: new Date(),
       });
+      setPartySearch('');
       setSelectedFiles([]);
     }
   }, [isNewRequestOpen, form]);
@@ -527,19 +536,72 @@ export default function AllRequisitionsTab() {
                         </FormItem>
                     )}
                 />
-                 <FormField
-                    control={form.control}
-                    name="partyName"
-                    render={({ field }) => (
-                        <FormItem className="lg:col-span-3 space-y-2">
-                            <FormLabel>Party Name</FormLabel>
-                            <FormControl>
-                                <Input placeholder="Enter the name of the party" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
+                <FormField
+                  control={form.control}
+                  name="partyName"
+                  render={({ field }) => (
+                    <FormItem className="lg:col-span-3 space-y-2">
+                      <FormLabel>Party Name</FormLabel>
+                      <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              className={cn("w-full justify-between font-normal", !field.value && "text-muted-foreground")}
+                            >
+                              {field.value ? partyNames.find(p => p === field.value) || field.value : "Select or type party name..."}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                          <Command>
+                            <CommandInput 
+                              placeholder="Search party name..."
+                              value={partySearch}
+                              onValueChange={setPartySearch}
+                            />
+                            <CommandList>
+                              <CommandEmpty>No party found.</CommandEmpty>
+                              <CommandGroup>
+                                {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
+                                  <CommandItem
+                                    value={name}
+                                    key={name}
+                                    onSelect={() => {
+                                      form.setValue("partyName", name);
+                                      setPartySearch(name);
+                                      setPartyPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className={cn("mr-2 h-4 w-4", name === field.value ? "opacity-100" : "opacity-0")} />
+                                    {name}
+                                  </CommandItem>
+                                ))}
+                                {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
+                                  <CommandItem
+                                    value={partySearch}
+                                    onSelect={() => {
+                                      form.setValue("partyName", partySearch);
+                                      setPartyNames(prev => [...prev, partySearch].sort());
+                                      setPartyPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className="mr-2 h-4 w-4 opacity-0" />
+                                    Create "{partySearch}"
+                                  </CommandItem>
+                                )}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
+
                 <FormField
                     control={form.control}
                     name="description"
