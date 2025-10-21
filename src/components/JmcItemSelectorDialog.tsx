@@ -17,8 +17,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { JmcEntry, JmcItem, Bill, BillItem } from '@/lib/types';
-import { Search, Loader2 } from 'lucide-react';
+import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
+import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
 
@@ -46,6 +46,18 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
   const [searchTerm, setSearchTerm] = useState('');
   const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  
+  const getItemDescription = (item: BoqItem): string => {
+    const possibleKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of possibleKeys) {
+      if ((item as any)[key]) return String((item as any)[key]);
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as any)[fallbackKey]) : 'No Description';
+};
+
 
   useEffect(() => {
     if (!isOpen || !projectSlug) return;
@@ -106,18 +118,38 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
   }, [isOpen, projectSlug, toast]);
 
   const filteredItems = useMemo(() => {
-    const lowercasedFilter = searchTerm.toLowerCase();
-    const addedItemIds = new Set(alreadyAddedItems.map(item => item.jmcItemId));
+    let items = jmcItems.filter(item => {
+        const lowercasedFilter = searchTerm.toLowerCase();
+        const addedItemIds = new Set(alreadyAddedItems.map(item => item.jmcItemId));
+        return !addedItemIds.has(item.id) &&
+            (
+                item.jmcNo.toLowerCase().includes(lowercasedFilter) ||
+                item.boqSlNo.toLowerCase().includes(lowercasedFilter) ||
+                item.description.toLowerCase().includes(lowercasedFilter)
+            );
+    });
 
-    return jmcItems.filter(item =>
-      !addedItemIds.has(item.id) &&
-      (
-        item.jmcNo.toLowerCase().includes(lowercasedFilter) ||
-        item.boqSlNo.toLowerCase().includes(lowercasedFilter) ||
-        item.description.toLowerCase().includes(lowercasedFilter)
-      )
-    );
-  }, [jmcItems, searchTerm, alreadyAddedItems]);
+    if (sortKey) {
+        items.sort((a, b) => {
+            const valA = a[sortKey as keyof JmcItemWithDetails];
+            const valB = b[sortKey as keyof JmcItemWithDetails];
+
+            if (valA === undefined || valA === null) return 1;
+            if (valB === undefined || valB === null) return -1;
+            
+            if (!isNaN(Number(valA)) && !isNaN(Number(valB))) {
+                return sortDirection === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+            }
+
+            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+            
+            return 0;
+        });
+    }
+
+    return items;
+  }, [jmcItems, searchTerm, alreadyAddedItems, sortKey, sortDirection]);
 
   const handleSelectAll = (checked: boolean) => {
     setSelectedIds(checked ? new Set(filteredItems.map(item => item.id)) : new Set());
@@ -132,6 +164,15 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
     }
     setSelectedIds(newSelectedIds);
   };
+  
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+        setSortKey(key);
+        setSortDirection('asc');
+    }
+  }
 
   const handleConfirm = () => {
     const selectedJmcItems = jmcItems.filter(item => selectedIds.has(item.id));
@@ -156,6 +197,26 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
+  
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
+    for (const key of knownPriceKeys) {
+        if (item.hasOwnProperty(key)) {
+            return key;
+        }
+    }
+    return Object.keys(item).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
+};
+
+  const getCombinedSlNo = (item: BoqItem): string => {
+      const erpSlNo = item['ERP SL NO'] || '';
+      const boqSlNo = item['BOQ SL No'] || item['SL. No.'] || '';
+      if (erpSlNo && boqSlNo) {
+          return `${erpSlNo} / ${boqSlNo}`;
+      }
+      return erpSlNo || boqSlNo || '';
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -185,36 +246,50 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, already
                                 onCheckedChange={handleSelectAll}
                             />
                         </div>
-                        <div>JMC No.</div>
-                        <div>BOQ Sl.No.</div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('jmcNo')}>
+                            JMC No.
+                            {sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('boqSlNo')}>
+                            BOQ Sl.No.
+                             {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
                         <div>Description</div>
-                        <div className="text-right">Available Qty</div>
-                        <div className="text-right">Rate</div>
+                        <div className="text-right cursor-pointer flex items-center justify-end" onClick={() => handleSort('availableQty')}>
+                           Available Qty
+                            {sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
+                        <div className="text-right cursor-pointer flex items-center justify-end" onClick={() => handleSort('rate')}>
+                            Unit Rate
+                            {sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
                     </div>
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full p-8">
                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                         </div>
                     ) : filteredItems.length > 0 ? (
-                        filteredItems.map(item => (
-                            <div 
-                                key={item.id} 
-                                className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
-                                onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
-                            >
-                                <div className="w-[50px] flex justify-center">
-                                    <Checkbox
-                                        checked={selectedIds.has(item.id)}
-                                        onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                    />
+                        filteredItems.map(item => {
+                             return (
+                                <div 
+                                    key={item.id} 
+                                    className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                    onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
+                                >
+                                    <div className="w-[50px] flex justify-center">
+                                        <Checkbox
+                                            checked={selectedIds.has(item.id)}
+                                            onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                        />
+                                    </div>
+                                    <div className="truncate pr-2">{item.jmcNo}</div>
+                                    <div className="truncate pr-2">{item.boqSlNo}</div>
+                                    <div className="truncate pr-2">{item.description}</div>
+                                    <div className="text-right pr-2">{item.availableQty}</div>
+                                    <div className="text-right pr-2">{formatCurrency(item.rate)}</div>
                                 </div>
-                                <div className="truncate pr-2">{item.jmcNo}</div>
-                                <div className="truncate pr-2">{item.boqSlNo}</div>
-                                <div className="truncate pr-2">{item.description}</div>
-                                <div className="text-right pr-2">{item.availableQty}</div>
-                                <div className="text-right pr-2">{formatCurrency(item.rate)}</div>
-                            </div>
-                        ))
+                             )
+                        })
                     ) : (
                         <div className="text-center p-8 text-muted-foreground">
                             No available items found.
