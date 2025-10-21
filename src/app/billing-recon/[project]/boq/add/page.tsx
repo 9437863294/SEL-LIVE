@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -121,6 +121,7 @@ export default function AddBoqItemPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [existingBoqItems, setExistingBoqItems] = useState<BoqItemType[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   useEffect(() => {
     const fetchProjectAndBoqData = async () => {
@@ -132,12 +133,14 @@ export default function AddBoqItemPage() {
       
       if (projectData) {
         setProjectName(projectData.projectName);
+        setCurrentProject(projectData);
         setBoqItem(prev => ({ ...prev, 'Project Name': projectData.projectName }));
-      }
 
-      const boqQuery = query(collection(db, 'projects', projectData?.id || '', 'boqItems'));
-      const boqSnapshot = await getDocs(boqQuery);
-      setExistingBoqItems(boqSnapshot.docs.map(doc => doc.data() as BoqItemType));
+        // Now that we have the project, fetch its BOQ items
+        const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
+        const boqSnapshot = await getDocs(boqQuery);
+        setExistingBoqItems(boqSnapshot.docs.map(doc => doc.data() as BoqItemType));
+      }
     };
     fetchProjectAndBoqData();
   }, [projectSlug]);
@@ -150,6 +153,10 @@ export default function AddBoqItemPage() {
   const handleSave = async () => {
     if (!user) {
         toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+        return;
+    }
+    if (!currentProject) {
+        toast({ title: 'Project Error', description: 'Could not determine the current project.', variant: 'destructive'});
         return;
     }
     setIsSaving(true);
@@ -165,7 +172,7 @@ export default function AddBoqItemPage() {
     }
     
     try {
-        await addDoc(collection(db, 'projects', projectSlug, 'boqItems'), boqItem);
+        await addDoc(collection(db, 'projects', currentProject.id, 'boqItems'), boqItem);
 
         await logUserActivity({
             userId: user.id,
@@ -187,7 +194,7 @@ export default function AddBoqItemPage() {
         });
         
         // Refetch to get new suggestions
-        const boqQuery = query(collection(db, 'projects', projectSlug, 'boqItems'));
+        const boqQuery = query(collection(db, 'projects', currentProject.id, 'boqItems'));
         const boqSnapshot = await getDocs(boqQuery);
         setExistingBoqItems(boqSnapshot.docs.map(doc => doc.data() as BoqItemType));
 
