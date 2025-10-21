@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -296,6 +297,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
         const result = await createExpenseRequest(dataToSave);
         if (result.success && result.requestNo) {
+            const requisitionRef = doc(db, 'requisitions', requisition.id);
+
+            const batch = writeBatch(db);
+
+            // Log action in requisition history
             const newActionLog: ActionLog = {
                 action: 'Create Expense Request',
                 comment: `Created Expense Request: ${result.requestNo}`,
@@ -304,18 +310,35 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 timestamp: Timestamp.now(),
                 stepName: currentStep.name,
             };
-            const requisitionRef = doc(db, 'requisitions', requisition.id);
-            await updateDoc(requisitionRef, {
-                history: arrayUnion(newActionLog)
+            batch.update(requisitionRef, {
+                history: arrayUnion(newActionLog),
+                expenseRequestNo: result.requestNo
             });
 
-            toast({ title: 'Expense Record Created', description: `Request No: ${result.requestNo}` });
+            // Also update the daily requisition if one exists
+            const dailyReqQuery = query(collection(db, 'dailyRequisitions'), where('depNo', '==', requisition.requisitionId));
+            const dailyReqSnap = await getDocs(dailyReqQuery);
+            if (!dailyReqSnap.empty) {
+                const dailyReqDocRef = dailyReqSnap.docs[0].ref;
+                batch.update(dailyReqDocRef, { depNo: result.requestNo });
+            }
+            
+            await batch.commit();
+
+            toast({
+                title: 'Expense Record Created',
+                description: `Request No: ${result.requestNo}`,
+            });
             onRequisitionUpdate();
         } else {
             throw new Error(result.message);
         }
     } catch (error: any) {
-        toast({ title: 'Error', description: `Failed to create expense record: ${error.message}`, variant: 'destructive' });
+        toast({
+            title: 'Error',
+            description: `Failed to create expense record: ${error.message}`,
+            variant: 'destructive',
+        });
     } finally {
         setIsCreatingExpense(false);
         setIsConfirmExpenseOpen(false);

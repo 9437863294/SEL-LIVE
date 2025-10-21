@@ -199,6 +199,7 @@ export interface Requisition {
     deadline: Timestamp | null;
     history: ActionLog[];
     attachments?: Attachment[];
+    expenseRequestNo?: string;
 }
 
 export interface Attachment {

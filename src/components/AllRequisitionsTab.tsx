@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -76,7 +77,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 const baseTableHeaders = [
     'Request ID', 'Date', 'Project', 'Department', 'Entered By', 'Party Name',
-    'Description', 'Amount', 'Stage', 'Status', 'Attachments',
+    'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No'
 ];
 
 export default function AllRequisitionsTab() {
@@ -302,6 +303,7 @@ export default function AllRequisitionsTab() {
             status: 'Pending' as const,
             stage: firstStep.name,
             requisitionId: 'temp', 
+            partyName: values.partyName,
         };
 
         const assignees = await getAssigneeForStep(firstStep, tempRequisition);
@@ -839,6 +841,7 @@ export default function AllRequisitionsTab() {
                               case 'Stage': content = req.stage; break;
                               case 'Status': content = req.status; break;
                               case 'Attachments': content = req.attachments?.length || 0; break;
+                              case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
                           }
                           return <TableCell key={header}>{content}</TableCell>
                       })}
