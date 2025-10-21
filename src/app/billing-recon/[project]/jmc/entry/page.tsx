@@ -335,8 +335,8 @@ export default function JmcEntryPage() {
     <JmcItemSelectorDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
-        onConfirm={() => {}}
-        alreadyAddedItems={[]}
+        boqItems={boqItems}
+        onConfirm={handleMultiBoqSelect}
     />
     </>
   );

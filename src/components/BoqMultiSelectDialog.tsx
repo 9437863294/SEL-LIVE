@@ -18,19 +18,19 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { BoqItem } from '@/lib/types';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
 
 
-interface BoqMultiSelectDialogProps {
+interface JmcItemSelectorDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
   boqItems: BoqItem[];
 }
 
-export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems }: BoqMultiSelectDialogProps) {
+export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItems }: JmcItemSelectorDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
@@ -44,7 +44,8 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
   const filteredItems = useMemo(() => {
     let items = boqItems.filter(item =>
         (item['DESCRIPTION OF ITEMS']?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         (item['SL. No.'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()))
+         (item['SL. No.'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+         (item['ERP SL NO'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     if (sortKey) {
@@ -145,16 +146,26 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
             </div>
             <ScrollArea className="h-96 border rounded-md">
                 <div className="p-1">
-                    <div className="grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                    <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                         <div className="w-[50px] flex justify-center">
                             <Checkbox
                                 checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
                                 onCheckedChange={handleSelectAll}
                             />
                         </div>
-                        <div className="cursor-pointer" onClick={() => handleSort('ERP SL NO')}>ERP Sl. No.</div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('ERP SL NO')}>
+                            ERP Sl. No.
+                            {sortKey === 'ERP SL NO' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('BOQ SL No')}>
+                            BOQ Sl. No.
+                             {sortKey === 'BOQ SL No' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
                         <div>Description</div>
-                        <div className="text-right cursor-pointer" onClick={() => handleSort(findBasicPriceKey(filteredItems[0] || {}) || 'rate')}>Unit Rate</div>
+                        <div className="text-right cursor-pointer" onClick={() => handleSort(findBasicPriceKey(filteredItems[0] || {}) || 'rate')}>
+                            Unit Rate
+                            {sortKey === (findBasicPriceKey(filteredItems[0] || {}) || 'rate') && <ArrowUpDown className="ml-1 h-3 w-3 inline-flex" />}
+                        </div>
                         <div className="text-right">Unit</div>
                     </div>
                     {isLoading ? (
@@ -168,7 +179,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
                              return (
                                 <div 
                                     key={item.id} 
-                                    className={`grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                    className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
                                     onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
                                 >
                                     <div className="w-[50px] flex justify-center">
@@ -177,7 +188,8 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
                                             onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                         />
                                     </div>
-                                    <div className="truncate pr-2">{getCombinedSlNo(item)}</div>
+                                    <div className="truncate pr-2">{item['ERP SL NO']}</div>
+                                    <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
                                     <div className="truncate pr-2">{item['DESCRIPTION OF ITEMS']}</div>
                                     <div className="text-right pr-2">{formatCurrency(rate)}</div>
                                     <div className="text-right pr-2">{item['UNITS']}</div>
