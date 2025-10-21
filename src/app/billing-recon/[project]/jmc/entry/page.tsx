@@ -46,7 +46,7 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
-  const [isMultiSelectOpen, setIsMultiSelectOpen] = useState(false);
+  const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
   useEffect(() => {
     const fetchBoqItems = async () => {
@@ -279,7 +279,7 @@ export default function JmcEntryPage() {
                     <CardTitle>JMC Items</CardTitle>
                     <CardDescription>Add one or more items executed under this JMC.</CardDescription>
                 </div>
-                <Button variant="outline" onClick={() => setIsMultiSelectOpen(true)}>
+                <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}>
                     <Library className="mr-2 h-4 w-4" /> Add Multiple Items
                 </Button>
             </div>
@@ -334,7 +334,7 @@ export default function JmcEntryPage() {
     </div>
     <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}
-        onOpenChange={setIsMultiSelectOpen}
+        onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
     />
