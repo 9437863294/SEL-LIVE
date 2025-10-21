@@ -1,9 +1,8 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray, type FieldArrayWithId } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -399,6 +398,18 @@ export default function AllRequisitionsTab() {
     setIsViewDialogOpen(true);
   };
 
+  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
+  
+  const moveColumn = (index: number, direction: 'up' | 'down') => {
+      const newOrder = [...columnOrder];
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      
+      if (newIndex >= 0 && newIndex < newOrder.length) {
+          [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+          setColumnOrder(newOrder);
+      }
+  };
+
   const renderNewForm = () => (
      <Form {...form}>
         <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
@@ -746,18 +757,50 @@ export default function AllRequisitionsTab() {
                     {renderNewForm()}
                 </DialogContent>
             </Dialog>
-
-            <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
-                <DialogContent className="sm:max-w-4xl">
-                    <DialogHeader>
-                        <DialogTitle>Edit Site Fund Requisition</DialogTitle>
-                        <DialogDescription>
-                            Make changes to the fund request below.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {renderEditForm()}
-                </DialogContent>
-            </Dialog>
+            <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
+              <DialogTrigger asChild>
+                  <Button variant="outline">
+                      <Shuffle className="mr-2 h-4 w-4" /> Sequence
+                  </Button>
+              </DialogTrigger>
+              <DialogContent>
+                  <DialogHeader>
+                      <DialogTitle>Edit Column Sequence</DialogTitle>
+                      <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4 space-y-2">
+                      {columnOrder.map((header, index) => (
+                          <div key={header} className="flex items-center justify-between p-2 border rounded-md">
+                              <span className="font-medium">{header}</span>
+                          </div>
+                      ))}
+                  </div>
+              </DialogContent>
+          </Dialog>
+          <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                      <View className="mr-2 h-4 w-4" />
+                      Columns
+                  </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {baseTableHeaders.map((header) => (
+                      <DropdownMenuCheckboxItem
+                          key={header}
+                          className="capitalize"
+                          checked={columnVisibility[header]}
+                          onCheckedChange={(value) =>
+                              setColumnVisibility(prev => ({...prev, [header]: !!value}))
+                          }
+                      >
+                          {header}
+                      </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="border rounded-lg flex-grow relative">
           <ScrollArea className="absolute inset-0">
@@ -765,17 +808,9 @@ export default function AllRequisitionsTab() {
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableHead>Request ID</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Entered By</TableHead>
-                  <TableHead>Party Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Attachments</TableHead>
+                  {visibleHeaders.map(header => (
+                    <TableHead key={header}>{header}</TableHead>
+                  ))}
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -783,26 +818,30 @@ export default function AllRequisitionsTab() {
                 {displayedRequisitions.length > 0 ? (
                   displayedRequisitions.map((req) => (
                     <TableRow key={req.id}>
-                      <TableCell className="font-medium">{req.requisitionId}</TableCell>
-                      <TableCell>{format(new Date(req.date), 'dd MMM, yyyy')}</TableCell>
-                      <TableCell>{getProjectName(req.projectId)}</TableCell>
-                      <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
-                      <TableCell>{req.raisedBy}</TableCell>
-                      <TableCell>{req.partyName}</TableCell>
-                      <TableCell>
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <p className="truncate max-w-[200px]">{req.description}</p>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p className="max-w-sm">{req.description}</p>
-                            </TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>{req.amount.toLocaleString()}</TableCell>
-                      <TableCell>{req.stage}</TableCell>
-                      <TableCell>{req.status}</TableCell>
-                      <TableCell>{req.attachments?.length || 0}</TableCell>
+                      {visibleHeaders.map(header => {
+                          let content: React.ReactNode = 'N/A';
+                          switch(header) {
+                              case 'Request ID': content = req.requisitionId; break;
+                              case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
+                              case 'Project': content = getProjectName(req.projectId); break;
+                              case 'Department': content = getDepartmentName(req.departmentId); break;
+                              case 'Entered By': content = req.raisedBy; break;
+                              case 'Party Name': content = req.partyName; break;
+                              case 'Description': 
+                                content = (
+                                  <Tooltip>
+                                    <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                    <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                  </Tooltip>
+                                ); 
+                                break;
+                              case 'Amount': content = req.amount.toLocaleString(); break;
+                              case 'Stage': content = req.stage; break;
+                              case 'Status': content = req.status; break;
+                              case 'Attachments': content = req.attachments?.length || 0; break;
+                          }
+                          return <TableCell key={header}>{content}</TableCell>
+                      })}
                       <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -828,7 +867,7 @@ export default function AllRequisitionsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center h-24">
+                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
                       No requisitions found.
                     </TableCell>
                   </TableRow>
@@ -848,6 +887,17 @@ export default function AllRequisitionsTab() {
             onRequisitionUpdate={fetchRequisitions}
         />
       )}
+      <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
+        <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+                <DialogTitle>Edit Site Fund Requisition</DialogTitle>
+                <DialogDescription>
+                    Make changes to the fund request below.
+                </DialogDescription>
+            </DialogHeader>
+            {renderEditForm()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
