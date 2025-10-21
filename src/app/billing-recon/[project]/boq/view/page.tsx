@@ -42,6 +42,7 @@ import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 type BoqItem = {
     id: string;
@@ -380,90 +381,90 @@ export default function ViewBoqPage() {
         <div className="flex-1 overflow-hidden">
           <Card className="h-full flex flex-col">
               <CardContent className="p-0 flex-1 overflow-hidden">
-                <div className="h-full overflow-auto">
-                  <TooltipProvider>
-                    <Table>
-                        <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
-                            <TableRow>
-                                <TableHead className="w-[50px]">
-                                    <Checkbox 
-                                        checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
-                                        onCheckedChange={handleSelectAll}
-                                    />
-                                </TableHead>
-                                {columnOrder.filter(h => columnVisibility[h]).map((header) => (
-                                    <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
-                                      <div className="flex items-center">
-                                        {columnNames[header] || header}
-                                        {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                                      </div>
-                                    </TableHead>
-                                ))}
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                <TableRow key={i}>
-                                    <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                    {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
-                                        <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                    ))}
-                                </TableRow>
-                                ))
-                            ) : sortedBoqItems.length > 0 ? (
-                                sortedBoqItems.map((item) => (
-                                    <TableRow 
-                                      key={item.id} 
-                                      data-state={selectedItemIds.includes(item.id) && "selected"}
-                                      onClick={() => handleRowClick(item)}
-                                      className="cursor-pointer"
-                                    >
-                                        <TableCell onClick={(e) => e.stopPropagation()}>
-                                            <Checkbox 
-                                                checked={selectedItemIds.includes(item.id)}
-                                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                            />
-                                        </TableCell>
-                                        {columnOrder.filter(h => columnVisibility[h]).map(header => {
-                                            const cellData = item[header];
-                                            const normalizedHeader = (columnNames[header] || header).toLowerCase();
-                                            const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
-                                            
-                                            if (isTruncated) {
-                                              return (
-                                                <TableCell key={`${item.id}-${header}`}>
-                                                  <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                      <p className="truncate max-w-xs">{cellData}</p>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>
-                                                      <p className="max-w-md">{cellData}</p>
-                                                    </TooltipContent>
-                                                  </Tooltip>
-                                                </TableCell>
-                                              );
-                                            }
-                                            
-                                            return (
-                                                <TableCell key={`${item.id}-${header}`}>
-                                                    {cellData || 'N/A'}
-                                                </TableCell>
-                                            )
-                                        })}
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
-                                        No BOQ items found.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                  </TooltipProvider>
-                </div>
+                  <ScrollArea className="h-full">
+                      <TooltipProvider>
+                          <Table>
+                              <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+                                  <TableRow>
+                                      <TableHead className="w-[50px]">
+                                          <Checkbox 
+                                              checked={selectedItemIds.length === boqItems.length && boqItems.length > 0}
+                                              onCheckedChange={handleSelectAll}
+                                          />
+                                      </TableHead>
+                                      {columnOrder.filter(h => columnVisibility[h]).map((header) => (
+                                          <TableHead key={header} className="whitespace-nowrap px-4 cursor-pointer" onClick={() => handleSort(header)}>
+                                            <div className="flex items-center">
+                                              {columnNames[header] || header}
+                                              {sortKey === header && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                                            </div>
+                                          </TableHead>
+                                      ))}
+                                  </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                  {isLoading ? (
+                                      Array.from({ length: 5 }).map((_, i) => (
+                                      <TableRow key={i}>
+                                          <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                                          {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
+                                              <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                                          ))}
+                                      </TableRow>
+                                      ))
+                                  ) : sortedBoqItems.length > 0 ? (
+                                      sortedBoqItems.map((item) => (
+                                          <TableRow 
+                                            key={item.id} 
+                                            data-state={selectedItemIds.includes(item.id) && "selected"}
+                                            onClick={() => handleRowClick(item)}
+                                            className="cursor-pointer"
+                                          >
+                                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                                  <Checkbox 
+                                                      checked={selectedItemIds.includes(item.id)}
+                                                      onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                                  />
+                                              </TableCell>
+                                              {columnOrder.filter(h => columnVisibility[h]).map(header => {
+                                                  const cellData = item[header];
+                                                  const normalizedHeader = (columnNames[header] || header).toLowerCase();
+                                                  const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
+                                                  
+                                                  if (isTruncated) {
+                                                    return (
+                                                      <TableCell key={`${item.id}-${header}`}>
+                                                        <Tooltip>
+                                                          <TooltipTrigger asChild>
+                                                            <p className="truncate max-w-xs">{cellData}</p>
+                                                          </TooltipTrigger>
+                                                          <TooltipContent>
+                                                            <p className="max-w-md">{cellData}</p>
+                                                          </TooltipContent>
+                                                        </Tooltip>
+                                                      </TableCell>
+                                                    );
+                                                  }
+                                                  
+                                                  return (
+                                                      <TableCell key={`${item.id}-${header}`}>
+                                                          {cellData || 'N/A'}
+                                                      </TableCell>
+                                                  )
+                                              })}
+                                          </TableRow>
+                                      ))
+                                  ) : (
+                                      <TableRow>
+                                          <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
+                                              No BOQ items found.
+                                          </TableCell>
+                                      </TableRow>
+                                  )}
+                              </TableBody>
+                          </Table>
+                      </TooltipProvider>
+                  </ScrollArea>
               </CardContent>
           </Card>
         </div>
@@ -478,7 +479,7 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                   {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns" >
+                        <Droppable droppableId="columns">
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
@@ -534,5 +535,6 @@ export default function ViewBoqPage() {
     
 
     
+
 
 
