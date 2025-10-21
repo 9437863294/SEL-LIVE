@@ -309,10 +309,13 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 timestamp: Timestamp.now(),
                 stepName: currentStep.name,
             };
-            batch.update(requisitionRef, {
+            
+            const requisitionUpdateData: Partial<Requisition> = {
                 history: arrayUnion(newActionLog),
-                expenseRequestNo: result.requestNo
-            });
+                expenseRequestNo: result.requestNo,
+            };
+            
+            batch.update(requisitionRef, requisitionUpdateData);
 
             // Also update the daily requisition if one exists
             const dailyReqQuery = query(collection(db, 'dailyRequisitions'), where('depNo', '==', requisition.requisitionId));
@@ -380,7 +383,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Party Name</Label>
                     <p className="font-medium">{requisition.partyName}</p>
@@ -430,12 +433,31 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                           />
                       </div>
                       <div className="flex flex-wrap gap-2">
-                          {currentStep?.actions.map(action => (
-                              <Button key={(typeof action === 'string' ? action : action.name)} onClick={() => handleAction(action)} disabled={isLoading}>
-                                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                  {typeof action === 'string' ? action : action.name}
-                              </Button>
-                          ))}
+                          {currentStep?.actions.map(action => {
+                              const actionName = typeof action === 'string' ? action : action.name;
+                              const isCreateExpenseAction = actionName === 'Create Expense Request';
+                              const isDisabled = isLoading || (isCreateExpenseAction && !!requisition.expenseRequestNo);
+                              
+                              return (
+                                  <TooltipProvider key={actionName}>
+                                      <Tooltip>
+                                          <TooltipTrigger asChild>
+                                             <div className="inline-block">
+                                                 <Button onClick={() => handleAction(action)} disabled={isDisabled}>
+                                                      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                                      {actionName}
+                                                  </Button>
+                                             </div>
+                                          </TooltipTrigger>
+                                          {isDisabled && isCreateExpenseAction && (
+                                              <TooltipContent>
+                                                  <p>An expense request has already been created for this item.</p>
+                                              </TooltipContent>
+                                          )}
+                                      </Tooltip>
+                                  </TooltipProvider>
+                              );
+                          })}
                       </div>
                   </div>
               )}
@@ -563,5 +585,3 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </>
   );
 }
-
-    
