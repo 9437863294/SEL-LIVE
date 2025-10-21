@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -432,7 +433,7 @@ export default function ViewBoqPage() {
                                               return (
                                                 <TableCell key={`${item.id}-${header}`}>
                                                   <Tooltip>
-                                                    <TooltipTrigger>
+                                                    <TooltipTrigger asChild>
                                                       <p className="truncate max-w-xs">{cellData}</p>
                                                     </TooltipTrigger>
                                                     <TooltipContent>
@@ -532,3 +533,4 @@ export default function ViewBoqPage() {
     
 
     
+
