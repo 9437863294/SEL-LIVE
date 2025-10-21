@@ -5,9 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc } from 'firebase/firestore';
@@ -22,6 +20,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import Link from 'next/link';
 import { createExpenseRequest } from '@/ai';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface ViewRequisitionDialogProps {
@@ -194,7 +193,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             amount: requisition.amount,
             description: requisition.description,
             headOfAccount: defaultHead,
-            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
+            subHeadOfAccount: '',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
             partyName: requisition.partyName,
             requestNo: previewRequestNo,
@@ -515,7 +514,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                     <div className="space-y-1">
                         <Label>Sub-Head of A/c</Label>
                          <Select value={expenseToCreate.subHeadOfAccount} onValueChange={handleSubHeadChange}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder="Select Sub-Head"/></SelectTrigger>
                             <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
