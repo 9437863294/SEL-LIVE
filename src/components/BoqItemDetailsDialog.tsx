@@ -61,12 +61,19 @@ export default function BoqItemDetailsDialog({
 
   const content = (
     <>
-      <DialogHeader>
-        <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
-        <DialogDescription>
-          {item['Description'] || item['Item Spec']}
-        </DialogDescription>
-      </DialogHeader>
+      {isPanel ? (
+        <div className="p-4">
+          <h3 className="text-lg font-semibold">Item Breakdown: Sl. No. {boqSlNo}</h3>
+          <p className="text-sm text-muted-foreground">{item['Description'] || item['Item Spec']}</p>
+        </div>
+      ) : (
+        <DialogHeader>
+          <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
+          <DialogDescription>
+            {item['Description'] || item['Item Spec']}
+          </DialogDescription>
+        </DialogHeader>
+      )}
       <div className="space-y-6 pr-4">
         <div>
           <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
