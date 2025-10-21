@@ -2,13 +2,13 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig } from '@/lib/types';
+import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +21,8 @@ import { ScrollArea } from './ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import Link from 'next/link';
 import { createExpenseRequest } from '@/ai';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -47,6 +49,12 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
   const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+  
+  const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
+  const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
+  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
+  const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
 
   const currentStep = useMemo(() => {
     if (!requisition || !workflow) return null;
@@ -59,9 +67,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       if (!requisition) return;
       setIsLoading(true);
       try {
-        const [workflowSnap, usersSnap] = await Promise.all([
+        const [workflowSnap, usersSnap, headsSnap, subHeadsSnap] = await Promise.all([
           getDoc(doc(db, 'workflows', 'site-fund-requisition')),
-          getDocs(collection(db, 'users'))
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'accountHeads')),
+          getDocs(collection(db, 'subAccountHeads')),
         ]);
         
         if (workflowSnap.exists()) {
@@ -73,6 +83,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         
         const usersData = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
         setUsers(usersData);
+        setAccountHeads(headsSnap.docs.map(d => ({id: d.id, ...d.data()} as AccountHead)));
+        setSubAccountHeads(subHeadsSnap.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
 
       } catch (error) {
         console.error("Error fetching workflow/users:", error);
@@ -89,6 +101,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setActionComment('');
         setEnrichedSteps([]);
         setIsWorkflowOpen(false);
+        setExpenseToCreate(null);
     }
   }, [requisition, isOpen, toast]);
 
@@ -147,52 +160,50 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const handleAction = async (action: string | ActionConfig) => {
     if (!user || !requisition || !workflow || !currentStep) return;
     
-    setIsLoading(true);
     const actionName = typeof action === 'string' ? action : action.name;
     
     if (actionName === 'Create Expense Request') {
-      try {
         const targetDepartmentId = (action as ActionConfig).departmentId;
-        if (!targetDepartmentId) throw new Error("Department not specified for expense request creation.");
-        
-        const result = await createExpenseRequest({
+        if (!targetDepartmentId) {
+            toast({ title: "Configuration Error", description: "Department not specified for expense request creation.", variant: "destructive" });
+            return;
+        }
+
+        const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
+        const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
+
+        let previewRequestNo = 'Generating...';
+        try {
+            const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
+            const configDoc = await getDoc(configRef);
+            if (configDoc.exists()) {
+                const configData = configDoc.data() as any;
+                const newIndex = configData.startingIndex;
+                const formattedIndex = String(newIndex).padStart(4, '0');
+                previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+            } else {
+                previewRequestNo = 'Config not found';
+            }
+        } catch (error) {
+            previewRequestNo = 'Error generating ID';
+        }
+
+        setExpenseToCreate({
             departmentId: targetDepartmentId,
             projectId: requisition.projectId,
             amount: requisition.amount,
             description: requisition.description,
-            // Assuming default/placeholder values for these fields as they are not on the requisition
-            headOfAccount: 'Other Expenses',
-            subHeadOfAccount: 'Other Misc. Expenses',
+            headOfAccount: defaultHead,
+            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
             partyName: `Project Site: ${getProjectName(requisition.projectId)}`,
+            requestNo: previewRequestNo,
         });
-
-        if (result.success && result.requestNo) {
-            const newActionLog: ActionLog = {
-                action: actionName,
-                comment: `Created Expense Request: ${result.requestNo}`,
-                userId: user.id,
-                userName: user.name,
-                timestamp: Timestamp.now(),
-                stepName: currentStep.name,
-            };
-            const requisitionRef = doc(db, 'requisitions', requisition.id);
-            await updateDoc(requisitionRef, {
-                history: arrayUnion(newActionLog)
-            });
-            toast({ title: 'Success', description: `Expense Request ${result.requestNo} created.` });
-            onRequisitionUpdate();
-        } else {
-            throw new Error(result.message);
-        }
-      } catch (error: any) {
-        toast({ title: 'Expense Creation Failed', description: error.message, variant: 'destructive' });
-      } finally {
-        setIsLoading(false);
-      }
-      return;
+        setIsConfirmExpenseOpen(true);
+        return;
     }
     
+    setIsLoading(true);
     try {
         const requisitionRef = doc(db, 'requisitions', requisition.id);
         
@@ -277,6 +288,53 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     }
   };
 
+  const handleConfirmCreateExpense = async () => {
+    if (!expenseToCreate || !requisition || !user || !currentStep) return;
+    setIsCreatingExpense(true);
+    try {
+        const { requestNo, ...dataToSave } = expenseToCreate;
+
+        const result = await createExpenseRequest(dataToSave);
+        if (result.success && result.requestNo) {
+            const newActionLog: ActionLog = {
+                action: 'Create Expense Request',
+                comment: `Created Expense Request: ${result.requestNo}`,
+                userId: user.id,
+                userName: user.name,
+                timestamp: Timestamp.now(),
+                stepName: currentStep.name,
+            };
+            const requisitionRef = doc(db, 'requisitions', requisition.id);
+            await updateDoc(requisitionRef, {
+                history: arrayUnion(newActionLog)
+            });
+
+            toast({ title: 'Expense Record Created', description: `Request No: ${result.requestNo}` });
+            onRequisitionUpdate();
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error: any) {
+        toast({ title: 'Error', description: `Failed to create expense record: ${error.message}`, variant: 'destructive' });
+    } finally {
+        setIsCreatingExpense(false);
+        setIsConfirmExpenseOpen(false);
+        setExpenseToCreate(null);
+    }
+  };
+  
+  const handleSubHeadChange = (subHeadName: string) => {
+    if(!expenseToCreate) return;
+    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
+    const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
+  
+    setExpenseToCreate({
+      ...expenseToCreate,
+      subHeadOfAccount: subHeadName,
+      headOfAccount: parentHead ? parentHead.name : '',
+    });
+  };
+
 
   if (!requisition) return null;
 
@@ -286,6 +344,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const isActionAllowed = user && requisition.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
@@ -414,6 +473,65 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         </DialogFooter>
       </DialogContent>
     </Dialog>
+     {expenseToCreate && (
+        <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Confirm Expense Creation</DialogTitle>
+                  <DialogDescription>Review and edit the details below before creating the expense request.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Request No.</Label>
+                        <Input value={expenseToCreate.requestNo} disabled />
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Project</Label>
+                        <Input value={getProjectName(expenseToCreate.projectId)} disabled />
+                    </div>
+                  </div>
+                   <div className="space-y-1">
+                      <Label>Party Name</Label>
+                      <Input value={expenseToCreate.partyName} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                      <Label>Amount</Label>
+                      <Input type="number" value={expenseToCreate.amount} onChange={(e) => setExpenseToCreate({...expenseToCreate, amount: e.target.valueAsNumber || 0})} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Head of A/c</Label>
+                         <Select value={expenseToCreate.headOfAccount} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value })} disabled>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                             <SelectContent>
+                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Sub-Head of A/c</Label>
+                         <Select value={expenseToCreate.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                      <Label>Description:</Label>
+                      <Textarea value={expenseToCreate.description} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
+                  </div>
+              </div>
+              <DialogFooter>
+                  <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                  <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
+                      {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Confirm & Create
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }
-
