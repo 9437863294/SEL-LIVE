@@ -81,7 +81,7 @@ export default function ViewBoqPage() {
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: ['BOQ SL No', 'Description', 'Unit', 'QTY'].includes(h) }), {})
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
@@ -295,8 +295,8 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col h-[calc(100vh-8rem)]">
+        <div className="mb-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
                   <Button variant="ghost" size="icon">
@@ -357,11 +357,11 @@ export default function ViewBoqPage() {
               </AlertDialog>
           </div>
         </div>
-        <Card>
-          <CardContent className="p-0">
-              <div className="overflow-x-auto rounded-lg border">
+        <Card className="flex-grow flex flex-col">
+          <CardContent className="p-0 flex-grow">
+              <ScrollArea className="h-full">
                   <Table>
-                      <TableHeader>
+                      <TableHeader className="sticky top-0 bg-background z-10">
                           <TableRow>
                               <TableHead className="w-[50px]">
                                   <Checkbox 
@@ -414,7 +414,7 @@ export default function ViewBoqPage() {
                           )}
                       </TableBody>
                   </Table>
-              </div>
+              </ScrollArea>
           </CardContent>
         </Card>
       </div>
