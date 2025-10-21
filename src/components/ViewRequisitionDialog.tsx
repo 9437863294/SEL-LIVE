@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -131,26 +130,26 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       
       const allStepsWithDetails = workflow.map((wfStep, index) => {
           const historyEntries = history.filter(h => h.stepName === wfStep.name);
-          const completionEntry = historyEntries.find(h => ['Complete', 'Approve', 'Verified', 'Update Approved Amount'].includes(h.action));
+          const completionEntry = historyEntries.find(h => ['Complete', 'Approve', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(h.action));
           
           let status: EnrichedStep['status'] = 'Pending';
-          if (wfStep.id === requisition.currentStepId) {
-            status = 'Current';
-          } else if (completionEntry) {
-            status = 'Completed';
-          } else if (currentStepIndex > -1 && index < currentStepIndex) {
-            // Steps before the current one must be completed.
-            status = 'Completed';
-          }
+           if (requisition.status === 'Completed' || requisition.status === 'Rejected') {
+                if (historyEntries.length > 0) { // If there's any history for the step, it's completed in a final state
+                    status = 'Completed';
+                }
+            } else if (wfStep.id === requisition.currentStepId) {
+                status = 'Current';
+            } else if (completionEntry || (currentStepIndex > -1 && index < currentStepIndex)) {
+                status = 'Completed';
+            }
 
           let assignedUserName = 'N/A';
-          if (status === 'Current' || status === 'Pending') {
-            // Simplified: This logic needs to be robust like getAssigneeForStep
-             assignedUserName = getStepAssigneeName(wfStep);
-          } else if (completionEntry) {
-              assignedUserName = completionEntry.userName;
+          const completionUser = completionEntry ? completionEntry.userName : null;
+          if(completionUser) {
+              assignedUserName = completionUser;
+          } else if (status === 'Current' && requisition.assignees) {
+              assignedUserName = requisition.assignees.map(id => users.find(u => u.id === id)?.name || 'Unknown').join(', ');
           } else {
-            // Fallback for completed steps without a clear completion action in history
             const lastEntry = historyEntries[historyEntries.length -1];
             if(lastEntry) assignedUserName = lastEntry.userName;
           }
@@ -335,7 +334,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
             
-            if (nextStep) {
+             if (nextStep) {
                 newStage = nextStep.name;
                 newStatus = 'In Progress';
                 newCurrentStepId = nextStep.id;
@@ -584,11 +583,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Request No.</Label>
-                        <Input value={expenseToCreate.requestNo} disabled />
+                        <Input value={expenseToCreate.requestNo || ''} disabled />
                     </div>
                     <div className="space-y-1">
                         <Label>Project</Label>
-                        <Input value={getProjectName(expenseToCreate.projectId)} disabled />
+                        <Input value={getProjectName(expenseToCreate.projectId) || ''} disabled />
                     </div>
                   </div>
                    <div className="space-y-1">
@@ -646,5 +645,3 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </>
   );
 }
-
-    
