@@ -25,6 +25,7 @@ const initialBoqItem = {
     'Category 1': '',
     'Category 2': '',
     'Category 3': '',
+    'ERP SL NO': '',
     'BOQ SL No': '',
     'Description': '',
     'Unit': '',
@@ -75,7 +76,7 @@ export default function AddBoqItemPage() {
     if (!boqItem['BOQ SL No'] || !boqItem['Description']) {
         toast({
             title: 'Missing Required Fields',
-            description: 'Please fill in at least "BOQ SL No" and "Item Spec".',
+            description: 'Please fill in at least "BOQ SL No" and "Description".',
             variant: 'destructive',
         });
         setIsSaving(false);
