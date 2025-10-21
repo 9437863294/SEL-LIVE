@@ -335,7 +335,7 @@ export default function ViewBoqPage() {
           <div className="max-h-96 overflow-auto space-y-2 mt-2">
             {isClient && (
               <DragDropContext onDragEnd={() => {}}>
-                <Droppable droppableId="columns">
+                <Droppable droppableId="columns" isDropDisabled={false}>
                   {(provided) => (
                     <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                       {columnOrder.map((header, index) => (
@@ -379,6 +379,7 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
 
 
 
