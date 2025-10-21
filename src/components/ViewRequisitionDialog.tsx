@@ -2,7 +2,15 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -23,7 +31,7 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 interface ViewRequisitionDialogProps {
@@ -173,7 +181,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
         const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
         const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
-
+        
         let previewRequestNo = 'Generating...';
         try {
             const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
@@ -193,10 +201,10 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setExpenseToCreate({
             departmentId: targetDepartmentId,
             projectId: requisition.projectId,
-            amount: requisition.amount,
-            description: requisition.description,
-            headOfAccount: defaultHead,
-            subHeadOfAccount: 'Site Expenses',
+            amount: requisition.amount || 0,
+            description: requisition.description || '',
+            headOfAccount: defaultHead || '',
+            subHeadOfAccount: unsecuredLoanSubHead?.name || '',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
             partyName: requisition.partyName,
             requestNo: previewRequestNo,
@@ -362,6 +370,19 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     });
   };
 
+  const formatAsCurrency = (value: number) => {
+    if (isNaN(value) || value === null) return '';
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+  
+  const parseCurrency = (value: string): number => {
+    return Number(value.replace(/[^0-9.-]+/g, ''));
+  };
 
   if (!requisition) return null;
 
@@ -549,7 +570,14 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   </div>
                   <div className="space-y-1">
                       <Label>Amount</Label>
-                      <Input type="number" value={expenseToCreate.amount} onChange={(e) => setExpenseToCreate({...expenseToCreate, amount: e.target.valueAsNumber || 0})} />
+                      <Input
+                        type="text"
+                        value={expenseToCreate.amount ? formatAsCurrency(expenseToCreate.amount) : ''}
+                        onChange={(e) => {
+                          const numericValue = parseCurrency(e.target.value);
+                          setExpenseToCreate({...expenseToCreate, amount: numericValue });
+                        }}
+                      />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
