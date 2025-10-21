@@ -20,7 +20,7 @@ import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2, ChevronDown, Paperclip, Download, Eye } from 'lucide-react';
+import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
@@ -199,15 +199,15 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         }
 
         setExpenseToCreate({
-            departmentId: targetDepartmentId,
-            projectId: requisition.projectId,
+            departmentId: targetDepartmentId || '',
+            projectId: requisition.projectId || '',
             amount: requisition.amount || 0,
+            partyName: requisition.partyName || '',
             description: requisition.description || '',
-            headOfAccount: defaultHead || '',
-            subHeadOfAccount: unsecuredLoanSubHead?.name || '',
-            remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
-            partyName: requisition.partyName,
-            requestNo: previewRequestNo,
+            headOfAccount: defaultHead || 'Liability',
+            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
+            remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}` || '',
+            requestNo: previewRequestNo || '',
         });
         setIsConfirmExpenseOpen(true);
         return;
@@ -405,12 +405,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div><Label>Department</Label><p className="font-medium">{getDepartmentName(requisition.departmentId)}</p></div>
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Party Name</Label>
-                    <p className="font-medium">{requisition.partyName}</p>
-                  </div>
+                  <div><Label>Party Name</Label><p className="font-medium">{requisition.partyName}</p></div>
               </div>
               <div>
                   <Label>Description</Label>
@@ -456,7 +451,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                           />
                       </div>
                       <div className="flex flex-wrap gap-2">
-                          {currentStep?.actions.map(action => {
+                         {currentStep?.actions.map(action => {
                               const actionName = typeof action === 'string' ? action : action.name;
                               const isCreateExpenseAction = actionName === 'Create Expense Request';
                               const isDisabled = isLoading || (isCreateExpenseAction && !!requisition.expenseRequestNo);
