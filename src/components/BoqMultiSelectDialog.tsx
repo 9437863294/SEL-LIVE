@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -16,7 +17,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { BoqItem } from '@/lib/types';
-import { Search } from 'lucide-react';
+import { Search, ArrowUpDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface BoqMultiSelectDialogProps {
   isOpen: boolean;
@@ -28,6 +30,9 @@ interface BoqMultiSelectDialogProps {
 export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm }: BoqMultiSelectDialogProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortKey, setSortKey] = useState<string>('erpSlNo');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
 
   const getBoqSlNo = (item: BoqItem): string =>
     String(item['SL. No.'] || item['BOQ SL No'] || '');
@@ -55,21 +60,61 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
     );
   };
 
-  // Filter items by both SL No. and Description
-  const filteredItems = useMemo(() => {
-    if (!searchTerm) return boqItems;
-    const term = searchTerm.toLowerCase();
-    return boqItems.filter(item => {
-      const slNo = getBoqSlNo(item).toLowerCase();
-      const erpSl = getErpSlNo(item).toLowerCase();
-      const desc = getDescription(item).toLowerCase();
-      return slNo.includes(term) || erpSl.includes(term) || desc.includes(term);
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedAndFilteredItems = useMemo(() => {
+    let items = [...boqItems];
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      items = items.filter(item => {
+        const slNo = getBoqSlNo(item).toLowerCase();
+        const erpSl = getErpSlNo(item).toLowerCase();
+        const desc = getDescription(item).toLowerCase();
+        return slNo.includes(term) || erpSl.includes(term) || desc.includes(term);
+      });
+    }
+    
+    items.sort((a, b) => {
+        let valA: string | number = '';
+        let valB: string | number = '';
+
+        if (sortKey === 'erpSlNo') {
+            valA = getErpSlNo(a);
+            valB = getErpSlNo(b);
+        } else if (sortKey === 'boqSlNo') {
+            valA = getBoqSlNo(a);
+            valB = getBoqSlNo(b);
+        } else if (sortKey === 'description') {
+            valA = getDescription(a);
+            valB = getDescription(b);
+        }
+
+        const numA = parseFloat(String(valA));
+        const numB = parseFloat(String(valB));
+
+        if (!isNaN(numA) && !isNaN(numB)) {
+             return sortDirection === 'asc' ? numA - numB : numB - numA;
+        }
+
+        if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+        if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
     });
-  }, [boqItems, searchTerm]);
+
+    return items;
+  }, [boqItems, searchTerm, sortKey, sortDirection]);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(new Set(filteredItems.map(item => item.id)));
+      setSelectedIds(new Set(sortedAndFilteredItems.map(item => item.id)));
     } else {
       setSelectedIds(new Set());
     }
@@ -119,20 +164,35 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
                 <TableRow>
                   <TableHead className="w-[50px]">
                     <Checkbox
-                      checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
+                      checked={selectedIds.size === sortedAndFilteredItems.length && sortedAndFilteredItems.length > 0}
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead>ERP Sl. No.</TableHead>
-                  <TableHead>BOQ Sl. No.</TableHead>
-                  <TableHead>Description</TableHead>
+                  <TableHead onClick={() => handleSort('erpSlNo')} className="cursor-pointer">
+                    <div className="flex items-center">
+                      ERP Sl. No.
+                      {sortKey === 'erpSlNo' && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                    </div>
+                  </TableHead>
+                   <TableHead onClick={() => handleSort('boqSlNo')} className="cursor-pointer">
+                    <div className="flex items-center">
+                      BOQ Sl. No.
+                      {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                    </div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('description')} className="cursor-pointer">
+                    <div className="flex items-center">
+                      Description
+                      {sortKey === 'description' && <ArrowUpDown className="ml-2 h-4 w-4" />}
+                    </div>
+                  </TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead>Rate</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
-                {filteredItems.map((item) => {
+                {sortedAndFilteredItems.map((item) => {
                   const rateKey = findBasicPriceKey(item);
                   const rate = rateKey ? item[rateKey] : 'N/A';
                   return (
