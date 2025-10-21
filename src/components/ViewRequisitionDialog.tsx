@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -11,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
