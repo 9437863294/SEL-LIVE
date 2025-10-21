@@ -3,7 +3,6 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  assetPrefix: '',
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -34,6 +33,11 @@ const nextConfig: NextConfig = {
   },
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
+  },
+  modularizeImports: {
+    "lucide-react": {
+        transform: "lucide-react/dist/esm/icons/{{member}}",
+    },
   },
 };
 
