@@ -66,6 +66,7 @@ const formSchema = z.object({
   projectId: z.string().min(1, { message: 'Project is required.' }),
   departmentId: z.string().min(1, { message: 'Department is required.' }),
   amount: z.coerce.number().min(1, { message: 'Amount must be greater than 0.' }),
+  partyName: z.string().min(1, { message: 'Party name is required.' }),
   description: z.string(),
   date: z.date({ required_error: "A date is required."}),
   attachments: z.custom<FileList>().optional(),
@@ -110,6 +111,7 @@ export default function AllRequisitionsTab() {
       projectId: '',
       departmentId: '',
       amount: 0,
+      partyName: '',
       description: '',
       date: new Date(),
     },
@@ -174,6 +176,7 @@ export default function AllRequisitionsTab() {
         projectId: '',
         departmentId: '',
         amount: 0,
+        partyName: '',
         description: '',
         date: new Date(),
       });
@@ -187,6 +190,7 @@ export default function AllRequisitionsTab() {
         projectId: editingRequisition.projectId,
         departmentId: editingRequisition.departmentId,
         amount: editingRequisition.amount,
+        partyName: editingRequisition.partyName,
         description: editingRequisition.description,
         date: parseISO(editingRequisition.date),
       });
@@ -446,6 +450,19 @@ export default function AllRequisitionsTab() {
                         </FormItem>
                     )}
                 />
+                 <FormField
+                    control={form.control}
+                    name="partyName"
+                    render={({ field }) => (
+                        <FormItem className="lg:col-span-3 space-y-2">
+                            <FormLabel>Party Name</FormLabel>
+                            <FormControl>
+                                <Input placeholder="Enter the name of the party" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
                 <FormField
                     control={form.control}
                     name="description"
@@ -592,6 +609,19 @@ export default function AllRequisitionsTab() {
                             <FormLabel>Amount</FormLabel>
                             <FormControl>
                                 <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                 <FormField
+                    control={form.control}
+                    name="partyName"
+                    render={({ field }) => (
+                        <FormItem className="lg:col-span-3 space-y-2">
+                            <FormLabel>Party Name</FormLabel>
+                            <FormControl>
+                                <Input placeholder="Enter the name of the party" {...field} />
                             </FormControl>
                             <FormMessage />
                         </FormItem>

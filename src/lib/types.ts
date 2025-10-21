@@ -186,6 +186,7 @@ export interface Requisition {
     projectId: string;
     departmentId: string;
     amount: number;
+    partyName: string;
     description: string;
     date: string; // Stored as ISO string
     raisedBy: string;
