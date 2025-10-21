@@ -317,7 +317,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             const reqDoc = await transaction.get(requisitionRef);
             if (!reqDoc.exists()) throw new Error("Requisition document not found!");
 
-            // Log action in requisition history
             const newActionLog: ActionLog = {
                 action: 'Create Expense Request',
                 comment: `Created Expense Request: ${result.requestNo}`,
@@ -327,18 +326,18 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 stepName: currentStep.name,
             };
 
-            // Determine next workflow step
             const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
             const nextStep = workflow[currentStepIndex + 1];
 
-            let newStatus: Requisition['status'] = 'In Progress';
-            let newStage = currentStep.name;
-            let newCurrentStepId: string | null = currentStep.id;
+            let newStatus: Requisition['status'];
+            let newStage: string;
+            let newCurrentStepId: string | null;
             let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
             
             if (nextStep) {
                 newStage = nextStep.name;
+                newStatus = 'In Progress';
                 newCurrentStepId = nextStep.id;
                 newAssignees = await getAssigneeForStep(nextStep, { ...requisition, ...dataToSave });
                 if (newAssignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
@@ -347,9 +346,11 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                 newStage = 'Completed';
                 newStatus = 'Completed';
                 newCurrentStepId = null;
+                newAssignees = [];
+                newDeadline = null;
             }
 
-            const requisitionUpdateData: Partial<Requisition> = {
+            const requisitionUpdateData: any = {
                 history: arrayUnion(newActionLog),
                 expenseRequestNo: result.requestNo,
                 status: newStatus,
@@ -361,7 +362,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
             transaction.update(requisitionRef, requisitionUpdateData);
 
-            // Also update the daily requisition if one exists
             const dailyReqQuery = query(collection(db, 'dailyRequisitions'), where('depNo', '==', requisition.requisitionId));
             const dailyReqSnap = await getDocs(dailyReqQuery);
             if (!dailyReqSnap.empty) {
@@ -389,7 +389,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
         setExpenseToCreate(null);
     }
 };
-
   
   const handleSubHeadChange = (subHeadName: string) => {
     if(!expenseToCreate) return;
@@ -403,8 +402,8 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     });
   };
 
-  const formatAsCurrency = (value: number) => {
-    if (isNaN(value) || value === null) return '';
+  const formatAsCurrency = (value: number | undefined) => {
+    if (value === undefined || isNaN(value)) return '';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -594,7 +593,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   </div>
                    <div className="space-y-1">
                       <Label>Party Name</Label>
-                      <Input value={expenseToCreate.partyName} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
+                      <Input value={expenseToCreate.partyName || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                       <Label>Amount</Label>
@@ -647,3 +646,5 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </>
   );
 }
+
+    
