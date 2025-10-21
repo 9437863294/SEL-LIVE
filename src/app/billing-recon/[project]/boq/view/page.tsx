@@ -32,7 +32,6 @@ import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from '@hell
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 type BoqItem = {
   id: string;
@@ -191,9 +190,9 @@ export default function ViewBoqPage() {
           </Button>
         </div>
       </div>
-       <ResizablePanelGroup direction="vertical" className="flex-1 border rounded-lg">
-          <ResizablePanel defaultSize={70} minSize={30}>
-            <ScrollArea className="h-full">
+      
+        <div className="flex-1 min-h-0">
+             <ScrollArea className="h-full border rounded-lg">
                 <Table className="min-w-full text-sm">
                     <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                     <TableRow>
@@ -303,27 +302,7 @@ export default function ViewBoqPage() {
                     </TableBody>
                 </Table>
                 </ScrollArea>
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize={0} collapsible minSize={20} className={cn(selectedBoqItem ? 'block' : 'hidden')}>
-            <ScrollArea className="h-full">
-                {selectedBoqItem ? (
-                  <BoqItemDetailsDialog
-                    isOpen={isDetailsDialogOpen}
-                    onOpenChange={setIsDetailsDialogOpen}
-                    item={selectedBoqItem}
-                    jmcEntries={jmcEntries}
-                    bills={bills}
-                    isPanel
-                  />
-                ) : (
-                  <div className="h-full p-4 flex items-center justify-center text-muted-foreground">
-                    now keep scroll bar here
-                  </div>
-                )}
-            </ScrollArea>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        </div>
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
@@ -391,4 +370,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-

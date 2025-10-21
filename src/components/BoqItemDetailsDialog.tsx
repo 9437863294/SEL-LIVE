@@ -175,7 +175,7 @@ export default function BoqItemDetailsDialog({
   );
 
   if (isPanel) {
-    return content;
+    return <>{content}</>;
   }
 
   return (
