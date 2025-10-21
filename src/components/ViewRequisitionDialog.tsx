@@ -358,6 +358,9 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label>Party Name</Label><p className="font-medium">{requisition.partyName}</p></div>
+              </div>
               <div>
                   <Label>Description</Label>
                   <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
