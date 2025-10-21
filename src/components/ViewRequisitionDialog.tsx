@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead } from '@/lib/types';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
@@ -585,7 +585,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label>Request No.</Label>
-                        <Input value={expenseToCreate.requestNo || ''} disabled />
+                        <Input value={expenseToCreate.requestNo} disabled />
                     </div>
                     <div className="space-y-1">
                         <Label>Project</Label>
@@ -594,13 +594,13 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   </div>
                    <div className="space-y-1">
                       <Label>Party Name</Label>
-                      <Input value={expenseToCreate.partyName || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
+                      <Input value={expenseToCreate.partyName} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                       <Label>Amount</Label>
                       <Input
                         type="text"
-                        value={expenseToCreate.amount ? formatAsCurrency(expenseToCreate.amount) : ''}
+                        value={formatAsCurrency(expenseToCreate.amount || 0)}
                         onChange={(e) => {
                           const numericValue = parseCurrency(e.target.value);
                           setExpenseToCreate({...expenseToCreate, amount: numericValue });
@@ -628,6 +628,10 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div className="space-y-1">
                       <Label>Description:</Label>
                       <Textarea value={expenseToCreate.description || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
+                  </div>
+                   <div className="space-y-1">
+                      <Label>Remarks:</Label>
+                      <Textarea value={expenseToCreate.remarks || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, remarks: e.target.value})} />
                   </div>
               </div>
               <DialogFooter>
