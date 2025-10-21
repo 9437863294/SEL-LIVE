@@ -16,6 +16,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 
 const initialBoqItem = {
+    'Project Name': '',
+    'Sub-Division': '',
     'Site': '',
     'Scope 1': '',
     'Scope': '',
