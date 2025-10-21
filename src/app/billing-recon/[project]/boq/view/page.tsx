@@ -1,14 +1,14 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, deleteDoc, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -23,23 +23,29 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
   DropdownMenuItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import type { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu"
-import { cn } from '@/lib/utils';
+import type { BoqItem as BoqItemType, JmcEntry, Bill } from '@/lib/types';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { JmcEntry, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react-beautiful-dnd';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 type BoqItem = {
     id: string;
@@ -50,21 +56,9 @@ type BoqItem = {
 };
 
 const baseTableHeaders = [
-    'ITEMS SPECS',
-    'SL. No.',
-    'Amended SL No',
-    'Activity Description',
-    'Description',
-    'UNITS',
-    'Total Qty',
-    'JMC Executed Qty',
-    'Billed Qty',
-    'Balance Qty',
-    'BASIC PRICE',
-    'TOTAL AMOUNT',
-    'GST @ 18% PER UNIT',
-    'TOTAL PRICE PER UNIT ( In Rs)',
-    'TOTAL PRICE FOR THE TENDER QUANTITY'
+    'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope', 'Category 1', 
+    'Category 2', 'Category 3', 'BOQ SL No', 'Item Spec', 'Unit', 'qty', 
+    'Unit Rate', 'total amount'
 ];
 
 
@@ -78,47 +72,59 @@ export default function ViewBoqPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
-    // Initialize state from localStorage or default to all visible
-    if (typeof window === 'undefined') {
-        return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {});
-    }
-    try {
-      const saved = window.localStorage.getItem('boqColumnVisibility');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (error) {
-      console.error("Failed to parse column visibility from localStorage", error);
-    }
-    // Default value if nothing is in localStorage or if it fails
-    const defaults: Record<string, boolean> = {
-        'SL. No.': true,
-        'Description': true,
-        'UNITS': true,
-        'Total Qty': true,
-        'JMC Executed Qty': true,
-        'Billed Qty': true,
-        'Balance Qty': true,
-        'BASIC PRICE': true
-    };
-    return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] ?? false }), {});
-  });
-  
-  // Save to localStorage whenever column visibility changes
+  const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
+  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
+  );
+  const [columnNames, setColumnNames] = useState<Record<string, string>>(
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: h }), {})
+  );
+
   useEffect(() => {
-    try {
-      window.localStorage.setItem('boqColumnVisibility', JSON.stringify(columnVisibility));
-    } catch (error) {
-      console.error("Failed to save column visibility to localStorage", error);
-    }
-  }, [columnVisibility]);
+    setIsClient(true);
+  }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedOrder = localStorage.getItem(`billingReconBoqColumnOrder_${projectSlug}`);
+        const savedVisibility = localStorage.getItem(`billingReconBoqColumnVisibility_${projectSlug}`);
+        const savedNames = localStorage.getItem(`billingReconBoqColumnNames_${projectSlug}`);
+
+        if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
+        if (savedVisibility) setColumnVisibility(JSON.parse(savedVisibility));
+        if (savedNames) setColumnNames(JSON.parse(savedNames));
+
+      } catch (error) {
+        console.error("Failed to parse column preferences from localStorage", error);
+      }
+    }
+  }, [projectSlug]);
+
+  const saveColumnPrefs = () => {
+    try {
+      localStorage.setItem(`billingReconBoqColumnOrder_${projectSlug}`, JSON.stringify(columnOrder));
+      localStorage.setItem(`billingReconBoqColumnVisibility_${projectSlug}`, JSON.stringify(columnVisibility));
+      localStorage.setItem(`billingReconBoqColumnNames_${projectSlug}`, JSON.stringify(columnNames));
+      toast({ title: 'Success', description: 'Column preferences saved.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
+    }
+  };
+  
+  const onDragEnd: OnDragEndResponder = (result) => {
+    if (!result.destination) return;
+    const items = Array.from(columnOrder);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+    setColumnOrder(items);
+  };
 
   const fetchBoqItems = async () => {
     if (!projectSlug) return;
@@ -152,7 +158,7 @@ export default function ViewBoqPage() {
       fetchedBills.forEach(bill => {
         bill.items.forEach(item => {
             if (item.boqSlNo) {
-                billedQuantities[item.boqSlNo] = (billedQuantities[item.boqSlNo] || 0) + item.billedQty;
+                billedQuantities[item.boqSlNo] = (billedQuantities[item.boqSlNo] || 0) + parseFloat(item.billedQty);
             }
         });
       });
@@ -276,52 +282,7 @@ export default function ViewBoqPage() {
     }
     setIsDeleting(false);
   };
-  
-  const handleDeleteSingle = async (id: string) => {
-    if (!user) return;
-    setIsDeleting(true);
-    try {
-        await deleteDoc(doc(db, 'projects', projectSlug, 'boqItems', id));
 
-        await logUserActivity({
-            userId: user.id,
-            action: 'Delete BOQ Item',
-            details: { project: projectSlug, itemId: id }
-        });
-
-        toast({
-            title: 'Success',
-            description: 'Item deleted successfully.',
-        });
-        fetchBoqItems();
-    } catch (error) {
-        console.error("Error deleting item:", error);
-        toast({ title: 'Error', description: 'Failed to delete item.', variant: 'destructive' });
-    }
-    setIsDeleting(false);
-  };
-
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
-  };
-
-  const formatNumber = (value: any) => {
-    if (typeof value === 'number') {
-      return new Intl.NumberFormat('en-IN', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(value);
-    }
-    return value;
-  };
-  
-  const isNumeric = (value: any) => {
-    return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
-  }
-
-  const visibleHeaders = baseTableHeaders.filter(header => columnVisibility[header]);
-  
   const handleSelectAll = (checked: boolean | 'indeterminate') => {
       setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
   };
@@ -366,30 +327,9 @@ export default function ViewBoqPage() {
                       </AlertDialogContent>
                   </AlertDialog>
               )}
-              <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                      <Button variant="outline">
-                          <View className="mr-2 h-4 w-4" />
-                          Columns
-                      </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {baseTableHeaders.map(header => (
-                          <DropdownMenuCheckboxItem
-                              key={header}
-                              className="capitalize"
-                              checked={columnVisibility[header]}
-                              onCheckedChange={(value) =>
-                                  setColumnVisibility(prev => ({...prev, [header]: !!value}))
-                              }
-                          >
-                              {header}
-                          </DropdownMenuCheckboxItem>
-                      ))}
-                  </DropdownMenuContent>
-              </DropdownMenu>
+                <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
+                    <Settings className="mr-2 h-4 w-4" /> Columns
+                </Button>
 
               <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -428,10 +368,9 @@ export default function ViewBoqPage() {
                                       onCheckedChange={handleSelectAll}
                                   />
                               </TableHead>
-                              {visibleHeaders.map((header) => (
-                                  <TableHead key={header} className="whitespace-nowrap px-4">{header}</TableHead>
+                              {columnOrder.filter(h => columnVisibility[h]).map((header) => (
+                                  <TableHead key={header} className="whitespace-nowrap px-4">{columnNames[header] || header}</TableHead>
                               ))}
-                              <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -439,10 +378,9 @@ export default function ViewBoqPage() {
                               Array.from({ length: 5 }).map((_, i) => (
                               <TableRow key={i}>
                                   <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                                  {visibleHeaders.map((header, j) => (
+                                  {columnOrder.filter(h => columnVisibility[h]).map((header, j) => (
                                       <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
                                   ))}
-                                  <TableCell><Skeleton className="h-5 w-10" /></TableCell>
                               </TableRow>
                               ))
                           ) : boqItems.length > 0 ? (
@@ -459,53 +397,16 @@ export default function ViewBoqPage() {
                                               onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                           />
                                       </TableCell>
-                                      {visibleHeaders.map(header => {
-                                          let cellData = item[header];
-                                          if(header === 'BASIC PRICE') {
-                                            const priceKey = findBasicPriceKey(item);
-                                            cellData = priceKey ? item[priceKey] : 'N/A';
-                                          }
-                                          const formattedData = formatNumber(cellData);
-                                          const numeric = isNumeric(cellData);
-                                          return (
-                                              <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
-                                                  {formattedData}
-                                              </TableCell>
-                                          )
-                                      })}
-                                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                          <AlertDialog>
-                                              <DropdownMenu>
-                                                  <DropdownMenuTrigger asChild>
-                                                      <Button variant="ghost" className="h-8 w-8 p-0">
-                                                          <span className="sr-only">Open menu</span>
-                                                          <MoreHorizontal className="h-4 w-4" />
-                                                      </Button>
-                                                  </DropdownMenuTrigger>
-                                                  <DropdownMenuContent align="end">
-                                                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                                                      <AlertDialogTrigger asChild>
-                                                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                                                      </AlertDialogTrigger>
-                                                  </DropdownMenuContent>
-                                              </DropdownMenu>
-                                              <AlertDialogContent>
-                                                  <AlertDialogHeader>
-                                                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                                      <AlertDialogDescription>This will permanently delete the item. This action cannot be undone.</AlertDialogDescription>
-                                                  </AlertDialogHeader>
-                                                  <AlertDialogFooter>
-                                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                      <AlertDialogAction onClick={() => handleDeleteSingle(item.id)}>Delete</AlertDialogAction>
-                                                  </AlertDialogFooter>
-                                              </AlertDialogContent>
-                                          </AlertDialog>
-                                      </TableCell>
+                                      {columnOrder.filter(h => columnVisibility[h]).map(header => (
+                                          <TableCell key={`${item.id}-${header}`}>
+                                              {item[header] || 'N/A'}
+                                          </TableCell>
+                                      ))}
                                   </TableRow>
                               ))
                           ) : (
                               <TableRow>
-                                  <TableCell colSpan={visibleHeaders.length + 2} className="text-center h-24">
+                                  <TableCell colSpan={columnOrder.filter(h => columnVisibility[h]).length + 1} className="text-center h-24">
                                       No BOQ items found.
                                   </TableCell>
                               </TableRow>
@@ -516,6 +417,58 @@ export default function ViewBoqPage() {
           </CardContent>
         </Card>
       </div>
+
+       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+            <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>Customize Columns</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
+                <ScrollArea className="h-96 pr-4">
+                  {isClient && (
+                    <DragDropContext onDragEnd={onDragEnd}>
+                        <Droppable droppableId="columns" isDropDisabled={false} isCombineEnabled={false}>
+                            {(provided) => (
+                                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                    {columnOrder.map((header, index) => (
+                                        <Draggable key={header} draggableId={header} index={index}>
+                                            {(provided) => (
+                                                <div
+                                                    ref={provided.innerRef}
+                                                    {...provided.draggableProps}
+                                                    {...provided.dragHandleProps}
+                                                    className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                                >
+                                                    <Checkbox
+                                                        checked={columnVisibility[header]}
+                                                        onCheckedChange={(checked) =>
+                                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                                        }
+                                                    />
+                                                    <Input
+                                                        value={columnNames[header] || header}
+                                                        onChange={(e) =>
+                                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </Draggable>
+                                    ))}
+                                    {provided.placeholder}
+                                </div>
+                            )}
+                        </Droppable>
+                    </DragDropContext>
+                  )}
+                </ScrollArea>
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
+                    <Button onClick={() => { saveColumnPrefs(); setIsColumnEditorOpen(false); }}>Save Preferences</Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+        
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
@@ -526,3 +479,4 @@ export default function ViewBoqPage() {
     </>
   );
 }
+

@@ -16,7 +16,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
 import { format } from 'date-fns';
-import { Card, CardContent } from './ui/card';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -35,7 +34,7 @@ export default function BoqItemDetailsDialog({
 }: BoqItemDetailsDialogProps) {
   if (!item) return null;
 
-  const boqSlNo = item['SL. No.'];
+  const boqSlNo = item['SL. No.'] || item['BOQ SL No'];
 
   const relevantJmcItems = jmcEntries
     .flatMap(entry => 
@@ -63,7 +62,7 @@ export default function BoqItemDetailsDialog({
         <DialogHeader>
           <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
           <DialogDescription>
-            {item['DESCRIPTION OF ITEMS']}
+            {item['Description'] || item['Item Spec']}
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh] p-1">
@@ -82,10 +81,10 @@ export default function BoqItemDetailsDialog({
                         </TableHeader>
                         <TableBody>
                             <TableRow>
-                                <TableCell>{item['Total Qty'] || 0}</TableCell>
+                                <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
                                 <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
                                 <TableCell>{item['Billed Qty'] || 0}</TableCell>
-                                <TableCell>{item['Balance Qty'] || 0}</TableCell>
+                                <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
                             </TableRow>
                         </TableBody>
                     </Table>
