@@ -196,7 +196,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             headOfAccount: defaultHead,
             subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
-            partyName: `Project Site: ${getProjectName(requisition.projectId)}`,
+            partyName: requisition.partyName,
             requestNo: previewRequestNo,
         });
         setIsConfirmExpenseOpen(true);
