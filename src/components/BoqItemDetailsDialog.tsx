@@ -61,111 +61,113 @@ export default function BoqItemDetailsDialog({
 
   const content = (
     <>
-      {isPanel ? (
-        <div className="p-4">
-          <h3 className="text-lg font-semibold">Item Breakdown: Sl. No. {boqSlNo}</h3>
-          <p className="text-sm text-muted-foreground">{item['Description'] || item['Item Spec']}</p>
-        </div>
-      ) : (
-        <DialogHeader>
-          <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
-          <DialogDescription>
-            {item['Description'] || item['Item Spec']}
-          </DialogDescription>
-        </DialogHeader>
-      )}
-      <div className="space-y-6 pr-4">
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
-            <div className="border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>BOQ Quantity</TableHead>
-                            <TableHead>JMC Executed Qty</TableHead>
-                            <TableHead>Billed Qty</TableHead>
-                            <TableHead>Balance Qty</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
-                            <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
-                            <TableCell>{item['Billed Qty'] || 0}</TableCell>
-                            <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            </div>
-        </div>
-
-        <Separator />
-
-        <div>
-          <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
-          <div className="border rounded-md">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>JMC No.</TableHead>
-                        <TableHead>JMC Date</TableHead>
-                        <TableHead>Executed Qty</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {relevantJmcItems.length > 0 ? (
-                        relevantJmcItems.map((jmcItem, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{jmcItem.jmcNo}</TableCell>
-                            <TableCell>{format(new Date(jmcItem.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                            <TableCell>{jmcItem.executedQty}</TableCell>
-                          </TableRow>
-                        ))
-                    ) : (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-center h-24">
-                            No JMC entries found for this item.
-                          </TableCell>
-                        </TableRow>
-                    )}
-                </TableBody>
-            </Table>
+      <div className={isPanel ? "p-4" : ""}>
+        {isPanel ? (
+          <div>
+            <h3 className="text-lg font-semibold">Item Breakdown: Sl. No. {boqSlNo}</h3>
+            <p className="text-sm text-muted-foreground">{item['Description'] || item['Item Spec']}</p>
           </div>
-        </div>
-        
-        <Separator />
-
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Billing Breakdown</h3>
-          <div className="border rounded-md">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Bill No.</TableHead>
-                        <TableHead>Bill Date</TableHead>
-                        <TableHead>Billed Qty</TableHead>
-                        <TableHead>Total Amount</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {relevantBillItems.length > 0 ? (
-                        relevantBillItems.map((billItem, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{billItem.billNo}</TableCell>
-                            <TableCell>{format(new Date(billItem.billDate), 'dd MMM, yyyy')}</TableCell>
-                            <TableCell>{billItem.billedQty}</TableCell>
-                            <TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
+        ) : (
+          <DialogHeader>
+            <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
+            <DialogDescription>
+              {item['Description'] || item['Item Spec']}
+            </DialogDescription>
+          </DialogHeader>
+        )}
+        <div className="space-y-6 mt-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
+              <div className="border rounded-md">
+                  <Table>
+                      <TableHeader>
+                          <TableRow>
+                              <TableHead>BOQ Quantity</TableHead>
+                              <TableHead>JMC Executed Qty</TableHead>
+                              <TableHead>Billed Qty</TableHead>
+                              <TableHead>Balance Qty</TableHead>
                           </TableRow>
-                        ))
-                    ) : (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center h-24">
-                            No bills found for this item.
-                          </TableCell>
-                        </TableRow>
-                    )}
-                </TableBody>
-            </Table>
+                      </TableHeader>
+                      <TableBody>
+                          <TableRow>
+                              <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
+                              <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
+                              <TableCell>{item['Billed Qty'] || 0}</TableCell>
+                              <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
+                          </TableRow>
+                      </TableBody>
+                  </Table>
+              </div>
+          </div>
+
+          <Separator />
+
+          <div>
+            <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
+            <div className="border rounded-md">
+              <Table>
+                  <TableHeader>
+                      <TableRow>
+                          <TableHead>JMC No.</TableHead>
+                          <TableHead>JMC Date</TableHead>
+                          <TableHead>Executed Qty</TableHead>
+                      </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                      {relevantJmcItems.length > 0 ? (
+                          relevantJmcItems.map((jmcItem, index) => (
+                            <TableRow key={index}>
+                              <TableCell>{jmcItem.jmcNo}</TableCell>
+                              <TableCell>{format(new Date(jmcItem.jmcDate), 'dd MMM, yyyy')}</TableCell>
+                              <TableCell>{jmcItem.executedQty}</TableCell>
+                            </TableRow>
+                          ))
+                      ) : (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center h-24">
+                              No JMC entries found for this item.
+                            </TableCell>
+                          </TableRow>
+                      )}
+                  </TableBody>
+              </Table>
+            </div>
+          </div>
+          
+          <Separator />
+
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Billing Breakdown</h3>
+            <div className="border rounded-md">
+              <Table>
+                  <TableHeader>
+                      <TableRow>
+                          <TableHead>Bill No.</TableHead>
+                          <TableHead>Bill Date</TableHead>
+                          <TableHead>Billed Qty</TableHead>
+                          <TableHead>Total Amount</TableHead>
+                      </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                      {relevantBillItems.length > 0 ? (
+                          relevantBillItems.map((billItem, index) => (
+                            <TableRow key={index}>
+                              <TableCell>{billItem.billNo}</TableCell>
+                              <TableCell>{format(new Date(billItem.billDate), 'dd MMM, yyyy')}</TableCell>
+                              <TableCell>{billItem.billedQty}</TableCell>
+                              <TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
+                            </TableRow>
+                          ))
+                      ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center h-24">
+                              No bills found for this item.
+                            </TableCell>
+                          </TableRow>
+                      )}
+                  </TableBody>
+              </Table>
+            </div>
           </div>
         </div>
       </div>
@@ -173,7 +175,7 @@ export default function BoqItemDetailsDialog({
   );
 
   if (isPanel) {
-    return <div className="p-4">{content}</div>;
+    return content;
   }
 
   return (
