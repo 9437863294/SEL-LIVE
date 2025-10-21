@@ -23,6 +23,8 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -194,7 +196,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             amount: requisition.amount,
             description: requisition.description,
             headOfAccount: defaultHead,
-            subHeadOfAccount: '',
+            subHeadOfAccount: 'Site Expenses',
             remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
             partyName: requisition.partyName,
             requestNo: previewRequestNo,
@@ -383,7 +385,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Party Name</Label>
                     <p className="font-medium">{requisition.partyName}</p>
