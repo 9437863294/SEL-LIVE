@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -119,7 +120,7 @@ export function BoqItemSelector({
 
                   return (
                     <CommandItem
-                      key={slNo}
+                      key={item.id}
                       value={slNo}
                       onSelect={(value) => {
                         const selected = boqItems.find(
