@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,216 +13,221 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { BoqItem } from '@/lib/types';
-import { Search, ArrowUpDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import type { JmcEntry, JmcItem, Bill, BillItem } from '@/lib/types';
+import { Search, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useParams } from 'next/navigation';
 
-interface BoqMultiSelectDialogProps {
+
+interface JmcItemSelectorDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  boqItems: BoqItem[];
-  onConfirm: (selectedItems: BoqItem[]) => void;
+  onConfirm: (selectedItems: BillItem[]) => void;
+  alreadyAddedItems: BillItem[];
 }
 
-export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm }: BoqMultiSelectDialogProps) {
+interface JmcItemWithDetails extends JmcItem {
+    id: string; // Unique ID for each JMC item
+    jmcEntryId: string;
+    jmcNo: string;
+    billedQty: number;
+    availableQty: number;
+}
+
+export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, alreadyAddedItems }: JmcItemSelectorDialogProps) {
+  const { toast } = useToast();
+  const params = useParams();
+  const projectSlug = params.project as string;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortKey, setSortKey] = useState<string>('erpSlNo');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen || !projectSlug) return;
 
-  const getBoqSlNo = (item: BoqItem): string =>
-    String(item['SL. No.'] || item['BOQ SL No'] || '');
+    const fetchJmcAndBillData = async () => {
+        setIsLoading(true);
+        try {
+            const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+            const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
 
-  const getErpSlNo = (item: BoqItem): string =>
-    String(item['ERP SL NO'] || '');
+            const [jmcSnapshot, billsSnapshot] = await Promise.all([
+                getDocs(jmcCollectionRef),
+                getDocs(billsCollectionRef)
+            ]);
 
-  const getDescription = (item: BoqItem): string => {
-    const descKey =
-      Object.keys(item).find(k => k.toLowerCase().includes('description')) || '';
-    return descKey ? String(item[descKey]) : '';
-  };
+            const allJmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
+            const allBills = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
+            
+            const billedQuantities: { [jmcItemId: string]: number } = {};
 
-  const getUnit = (item: BoqItem): string =>
-    String(item['UNIT'] || item['UNITS'] || '');
+            allBills.forEach(bill => {
+                bill.items.forEach(item => {
+                    billedQuantities[item.jmcItemId] = (billedQuantities[item.jmcItemId] || 0) + parseFloat(item.billedQty);
+                });
+            });
 
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    const specificKey = 'UNIT PRICE';
-    if (keys.includes(specificKey)) return specificKey;
-    return keys.find(
-      key =>
-        key.toLowerCase().includes('price') &&
-        !key.toLowerCase().includes('total')
+            const processedJmcItems: JmcItemWithDetails[] = [];
+            allJmcEntries.forEach(entry => {
+                entry.items.forEach((item, index) => {
+                    const jmcItemId = `${entry.id}-${index}`; // Create a unique ID for each JMC item
+                    const executedQty = parseFloat(item.executedQty || '0');
+                    const billedQty = billedQuantities[jmcItemId] || 0;
+                    const availableQty = executedQty - billedQty;
+
+                    if (availableQty > 0) {
+                        processedJmcItems.push({
+                            ...item,
+                            id: jmcItemId,
+                            jmcEntryId: entry.id,
+                            jmcNo: entry.jmcNo,
+                            billedQty,
+                            availableQty,
+                        });
+                    }
+                });
+            });
+
+            setJmcItems(processedJmcItems);
+
+        } catch (error) {
+            console.error("Error fetching data for item selection:", error);
+            toast({ title: "Error", description: "Could not load available JMC items for this project.", variant: "destructive" });
+        }
+        setIsLoading(false);
+    };
+
+    fetchJmcAndBillData();
+  }, [isOpen, projectSlug, toast]);
+
+  const filteredItems = useMemo(() => {
+    const lowercasedFilter = searchTerm.toLowerCase();
+    const addedItemIds = new Set(alreadyAddedItems.map(item => item.jmcItemId));
+
+    return jmcItems.filter(item =>
+      !addedItemIds.has(item.id) &&
+      (
+        item.jmcNo.toLowerCase().includes(lowercasedFilter) ||
+        item.boqSlNo.toLowerCase().includes(lowercasedFilter) ||
+        item.description.toLowerCase().includes(lowercasedFilter)
+      )
     );
-  };
-
-  const handleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortDirection('asc');
-    }
-  };
-
-  const sortedAndFilteredItems = useMemo(() => {
-    let items = [...boqItems];
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      items = items.filter(item => {
-        const slNo = getBoqSlNo(item).toLowerCase();
-        const erpSl = getErpSlNo(item).toLowerCase();
-        const desc = getDescription(item).toLowerCase();
-        return slNo.includes(term) || erpSl.includes(term) || desc.includes(term);
-      });
-    }
-    
-    items.sort((a, b) => {
-        let valA: string | number = '';
-        let valB: string | number = '';
-
-        if (sortKey === 'erpSlNo') {
-            valA = getErpSlNo(a);
-            valB = getErpSlNo(b);
-        } else if (sortKey === 'boqSlNo') {
-            valA = getBoqSlNo(a);
-            valB = getBoqSlNo(b);
-        } else if (sortKey === 'description') {
-            valA = getDescription(a);
-            valB = getDescription(b);
-        }
-
-        const numA = parseFloat(String(valA));
-        const numB = parseFloat(String(valB));
-
-        if (!isNaN(numA) && !isNaN(numB)) {
-             return sortDirection === 'asc' ? numA - numB : numB - numA;
-        }
-
-        if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
-        if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-    });
-
-    return items;
-  }, [boqItems, searchTerm, sortKey, sortDirection]);
+  }, [jmcItems, searchTerm, alreadyAddedItems]);
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(sortedAndFilteredItems.map(item => item.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
+    setSelectedIds(checked ? new Set(filteredItems.map(item => item.id)) : new Set());
   };
 
   const handleSelectRow = (id: string, checked: boolean) => {
-    const newSelected = new Set(selectedIds);
-    if (checked) newSelected.add(id);
-    else newSelected.delete(id);
-    setSelectedIds(newSelected);
+    const newSelectedIds = new Set(selectedIds);
+    if (checked) {
+      newSelectedIds.add(id);
+    } else {
+      newSelectedIds.delete(id);
+    }
+    setSelectedIds(newSelectedIds);
   };
 
   const handleConfirm = () => {
-    const selectedItems = boqItems.filter(item => selectedIds.has(item.id));
-    onConfirm(selectedItems);
+    const selectedJmcItems = jmcItems.filter(item => selectedIds.has(item.id));
+    const billItems: BillItem[] = selectedJmcItems.map(item => ({
+        jmcItemId: item.id,
+        jmcEntryId: item.jmcEntryId,
+        jmcNo: item.jmcNo,
+        boqSlNo: item.boqSlNo,
+        description: item.description,
+        unit: item.unit,
+        rate: String(item.rate),
+        executedQty: String(item.availableQty), // Available qty for billing
+        billedQty: '', // User will fill this
+        totalAmount: ''
+    }));
+    onConfirm(billItems);
     onOpenChange(false);
     setSelectedIds(new Set());
     setSearchTerm('');
   };
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Select BOQ Items</DialogTitle>
+          <DialogTitle>Select Items to Add to Bill</DialogTitle>
           <DialogDescription>
-            Search and select multiple items to add to the JMC entry.
+            Only items with a remaining quantity to be billed are shown.
           </DialogDescription>
         </DialogHeader>
-
         <div className="py-4">
-          {/* Search Bar */}
-          <div className="relative mb-4">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by ERP Sl. No., BOQ Sl. No., or Description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-
-          {/* Table */}
-          <ScrollArea className="h-96 border rounded-md">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]">
-                    <Checkbox
-                      checked={selectedIds.size === sortedAndFilteredItems.length && sortedAndFilteredItems.length > 0}
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </TableHead>
-                  <TableHead onClick={() => handleSort('erpSlNo')} className="cursor-pointer">
-                    <div className="flex items-center">
-                      ERP Sl. No.
-                      {sortKey === 'erpSlNo' && <ArrowUpDown className="ml-2 h-4 w-4" />}
+            <div className="relative mb-4">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search by JMC No, Sl. No. or Description..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                />
+            </div>
+            <ScrollArea className="h-96 border rounded-md">
+                <div className="p-1">
+                    <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                        <div className="w-[50px] flex justify-center">
+                            <Checkbox
+                                checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                                onCheckedChange={handleSelectAll}
+                            />
+                        </div>
+                        <div>JMC No.</div>
+                        <div>BOQ Sl.No.</div>
+                        <div>Description</div>
+                        <div className="text-right">Available Qty</div>
+                        <div className="text-right">Unit Rate</div>
                     </div>
-                  </TableHead>
-                   <TableHead onClick={() => handleSort('boqSlNo')} className="cursor-pointer">
-                    <div className="flex items-center">
-                      BOQ Sl. No.
-                      {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                    </div>
-                  </TableHead>
-                  <TableHead onClick={() => handleSort('description')} className="cursor-pointer">
-                    <div className="flex items-center">
-                      Description
-                      {sortKey === 'description' && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                    </div>
-                  </TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>Rate</TableHead>
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {sortedAndFilteredItems.map((item) => {
-                  const rateKey = findBasicPriceKey(item);
-                  const rate = rateKey ? item[rateKey] : 'N/A';
-                  return (
-                    <TableRow key={item.id} data-state={selectedIds.has(item.id) && "selected"}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedIds.has(item.id)}
-                          onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                        />
-                      </TableCell>
-                      <TableCell>{getErpSlNo(item) || '—'}</TableCell>
-                      <TableCell>{getBoqSlNo(item) || '—'}</TableCell>
-                      <TableCell className="max-w-[300px] truncate">
-                        {getDescription(item)}
-                      </TableCell>
-                      <TableCell>{getUnit(item)}</TableCell>
-                      <TableCell>{rate}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </ScrollArea>
+                    {isLoading ? (
+                        <div className="flex items-center justify-center h-full p-8">
+                            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                        </div>
+                    ) : filteredItems.length > 0 ? (
+                        filteredItems.map(item => (
+                            <div 
+                                key={item.id} 
+                                className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
+                            >
+                                <div className="w-[50px] flex justify-center">
+                                    <Checkbox
+                                        checked={selectedIds.has(item.id)}
+                                        onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                    />
+                                </div>
+                                <div className="truncate pr-2">{item.jmcNo}</div>
+                                <div className="truncate pr-2">{item.boqSlNo}</div>
+                                <div className="truncate pr-2">{item.description}</div>
+                                <div className="text-right pr-2">{item.availableQty}</div>
+                                <div className="text-right pr-2">{formatCurrency(item.rate)}</div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center p-8 text-muted-foreground">
+                            No available items found.
+                        </div>
+                    )}
+                </div>
+            </ScrollArea>
         </div>
-
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button type="button" onClick={handleConfirm}>
+          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
             Add {selectedIds.size} Selected Item(s)
           </Button>
         </DialogFooter>
