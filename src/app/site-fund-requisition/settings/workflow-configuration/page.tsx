@@ -55,7 +55,7 @@ const initialSteps: WorkflowStep[] = [
     },
 ];
 
-const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified', 'Update Approved Amount'];
+const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified', 'Update Approved Amount', 'Create Expense Request'];
 
 export default function WorkflowConfigurationPage() {
     const { toast } = useToast();

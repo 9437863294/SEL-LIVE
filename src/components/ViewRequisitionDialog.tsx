@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -14,12 +15,13 @@ import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2, ChevronDown, Paperclip, Download } from 'lucide-react';
+import { Loader2, ChevronDown, Paperclip, Download, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import Link from 'next/link';
+import { createExpenseRequest } from '@/ai';
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -147,6 +149,49 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     if (!user || !requisition || !workflow || !currentStep) return;
     
     setIsLoading(true);
+    
+    if (action === 'Create Expense Request') {
+      try {
+        const financeDept = departments.find(d => d.name === 'Finance');
+        if (!financeDept) throw new Error("Finance department not found in settings.");
+
+        const result = await createExpenseRequest({
+            departmentId: financeDept.id,
+            projectId: requisition.projectId,
+            amount: requisition.amount,
+            description: requisition.description,
+            // Assuming default/placeholder values for these fields as they are not on the requisition
+            headOfAccount: 'Other Expenses',
+            subHeadOfAccount: 'Other Misc. Expenses',
+            remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}`,
+            partyName: `Project Site: ${getProjectName(requisition.projectId)}`,
+        });
+
+        if (result.success && result.requestNo) {
+            const newActionLog: ActionLog = {
+                action,
+                comment: `Created Expense Request: ${result.requestNo}`,
+                userId: user.id,
+                userName: user.name,
+                timestamp: Timestamp.now(),
+                stepName: currentStep.name,
+            };
+            const requisitionRef = doc(db, 'requisitions', requisition.id);
+            await updateDoc(requisitionRef, {
+                history: arrayUnion(newActionLog)
+            });
+            toast({ title: 'Success', description: `Expense Request ${result.requestNo} created.` });
+            onRequisitionUpdate();
+        } else {
+            throw new Error(result.message);
+        }
+      } catch (error: any) {
+        toast({ title: 'Expense Creation Failed', description: error.message, variant: 'destructive' });
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
     
     try {
         const requisitionRef = doc(db, 'requisitions', requisition.id);
