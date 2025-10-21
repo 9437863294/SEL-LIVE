@@ -58,7 +58,7 @@ type BoqItem = {
 
 const baseTableHeaders = [
     'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2', 'Category 1', 
-    'Category 2', 'Category 3', 'BOQ SL No', 'Description', 'Unit', 'QTY', 
+    'Category 2', 'Category 3', 'ERP SL NO', 'BOQ SL No', 'Description', 'Unit', 'QTY', 
     'Unit Rate', 'Total Amount'
 ];
 
@@ -480,5 +480,6 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
 
 
