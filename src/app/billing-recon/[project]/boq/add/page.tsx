@@ -3,18 +3,22 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ChevronsUpDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import type { Project } from '@/lib/types';
+import type { Project, BoqItem as BoqItemType } from '@/lib/types';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+
 
 const initialBoqItem = {
     'Project Name': '',
@@ -34,6 +38,80 @@ const initialBoqItem = {
     'Total Amount': ''
 };
 
+const SuggestionField = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
+        >
+          {value || placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start">
+        <Command>
+          <CommandInput
+            placeholder={placeholder}
+            value={inputValue}
+            onValueChange={setInputValue}
+          />
+          <CommandList>
+            <CommandEmpty>
+                {inputValue && !options.some(opt => opt.toLowerCase() === inputValue.toLowerCase()) ? (
+                    <CommandItem
+                        value={inputValue}
+                        onSelect={() => {
+                            onChange(inputValue);
+                            setOpen(false);
+                        }}
+                    >
+                        Create "{inputValue}"
+                    </CommandItem>
+                ) : 'No matches found.'}
+            </CommandEmpty>
+            <CommandGroup>
+              {options.filter(opt => opt.toLowerCase().includes(inputValue.toLowerCase())).map((option) => (
+                <CommandItem
+                  key={option}
+                  value={option}
+                  onSelect={(currentValue) => {
+                    onChange(currentValue === value ? '' : currentValue);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === option ? "opacity-100" : "opacity-0")} />
+                  {option}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+
 export default function AddBoqItemPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -42,10 +120,10 @@ export default function AddBoqItemPage() {
   const [boqItem, setBoqItem] = useState(initialBoqItem);
   const [isSaving, setIsSaving] = useState(false);
   const [projectName, setProjectName] = useState('');
-
+  const [existingBoqItems, setExistingBoqItems] = useState<BoqItemType[]>([]);
 
   useEffect(() => {
-    const fetchProjectName = async () => {
+    const fetchProjectAndBoqData = async () => {
       if (!projectSlug) return;
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
@@ -56,14 +134,17 @@ export default function AddBoqItemPage() {
         setProjectName(projectData.projectName);
         setBoqItem(prev => ({ ...prev, 'Project Name': projectData.projectName }));
       }
+
+      const boqQuery = query(collection(db, 'projects', projectData?.id || '', 'boqItems'));
+      const boqSnapshot = await getDocs(boqQuery);
+      setExistingBoqItems(boqSnapshot.docs.map(doc => doc.data() as BoqItemType));
     };
-    fetchProjectName();
+    fetchProjectAndBoqData();
   }, [projectSlug]);
 
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setBoqItem(prev => ({ ...prev, [name]: value }));
+  const handleInputChange = (key: keyof typeof boqItem, value: string) => {
+    setBoqItem(prev => ({ ...prev, [key]: value }));
   };
 
   const handleSave = async () => {
@@ -104,6 +185,12 @@ export default function AddBoqItemPage() {
           ...initialBoqItem,
           'Project Name': projectName // Keep project name after reset
         });
+        
+        // Refetch to get new suggestions
+        const boqQuery = query(collection(db, 'projects', projectSlug, 'boqItems'));
+        const boqSnapshot = await getDocs(boqQuery);
+        setExistingBoqItems(boqSnapshot.docs.map(doc => doc.data() as BoqItemType));
+
 
     } catch (error) {
         console.error("Error adding BOQ item: ", error);
@@ -116,6 +203,28 @@ export default function AddBoqItemPage() {
         setIsSaving(false);
     }
   };
+
+  const getUniqueOptions = (field: keyof typeof boqItem) => {
+    return [...new Set(existingBoqItems.map(item => item[field]).filter(Boolean) as string[])];
+  };
+
+  const fieldsConfig: { key: keyof typeof initialBoqItem; type: 'input' | 'suggestion'; placeholder?: string }[] = [
+    { key: 'Project Name', type: 'input' },
+    { key: 'Sub-Division', type: 'suggestion', placeholder: 'Select or type Sub-Division' },
+    { key: 'Site', type: 'suggestion', placeholder: 'Select or type Site' },
+    { key: 'Scope 1', type: 'suggestion', placeholder: 'Select or type Scope 1' },
+    { key: 'Scope 2', type: 'suggestion', placeholder: 'Select or type Scope 2' },
+    { key: 'Category 1', type: 'suggestion', placeholder: 'Select or type Category 1' },
+    { key: 'Category 2', type: 'suggestion', placeholder: 'Select or type Category 2' },
+    { key: 'Category 3', type: 'suggestion', placeholder: 'Select or type Category 3' },
+    { key: 'ERP SL NO', type: 'input' },
+    { key: 'BOQ SL No', type: 'input' },
+    { key: 'Description', type: 'input' },
+    { key: 'Unit', type: 'suggestion', placeholder: 'Select or type Unit' },
+    { key: 'QTY', type: 'input' },
+    { key: 'Unit Rate', type: 'input' },
+    { key: 'Total Amount', type: 'input' },
+  ];
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -141,16 +250,25 @@ export default function AddBoqItemPage() {
         </CardHeader>
         <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Object.keys(initialBoqItem).map(key => (
+                {fieldsConfig.map(({ key, type, placeholder }) => (
                     <div className="space-y-2" key={key}>
                         <Label htmlFor={key}>{key}</Label>
-                        <Input
-                            id={key}
-                            name={key}
-                            value={boqItem[key as keyof typeof boqItem]}
-                            onChange={handleInputChange}
-                            readOnly={key === 'Project Name'}
-                        />
+                        {type === 'input' ? (
+                            <Input
+                                id={key}
+                                name={key}
+                                value={boqItem[key]}
+                                onChange={(e) => handleInputChange(key, e.target.value)}
+                                readOnly={key === 'Project Name'}
+                            />
+                        ) : (
+                            <SuggestionField
+                                value={boqItem[key]}
+                                onChange={(value) => handleInputChange(key, value)}
+                                options={getUniqueOptions(key)}
+                                placeholder={placeholder || `Enter ${key}`}
+                            />
+                        )}
                     </div>
                 ))}
             </div>
