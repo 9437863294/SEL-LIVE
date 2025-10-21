@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -234,7 +233,7 @@ export default function ViewBoqPage() {
             title: 'BOQ Cleared',
             description: 'All items have been successfully deleted.',
         });
-        fetchBoqItems(); // Refresh the table
+        fetchBoqItems();
     } catch (error) {
         console.error("Error clearing BOQ: ", error);
         toast({
@@ -245,7 +244,7 @@ export default function ViewBoqPage() {
     } finally {
         setIsDeleting(false);
     }
-  }
+  };
 
   const handleDeleteSelected = async () => {
     if (!user) return;
@@ -289,8 +288,8 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col h-full">
-        <div className="mb-6 flex items-center justify-between flex-shrink-0">
+      <div className="w-full h-screen px-4 sm:px-6 lg:px-8 flex flex-col">
+        <div className="py-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
                   <Button variant="ghost" size="icon">
@@ -335,27 +334,27 @@ export default function ViewBoqPage() {
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                       <AlertDialogHeader>
-                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
-                      </AlertDialogDescription>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                              This action cannot be undone. This will permanently delete all {boqItems.length} items from the BOQ.
+                          </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleClearBoq} disabled={isDeleting}>
-                        {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Continue
-                      </AlertDialogAction>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleClearBoq} disabled={isDeleting}>
+                              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              Continue
+                          </AlertDialogAction>
                       </AlertDialogFooter>
                   </AlertDialogContent>
               </AlertDialog>
           </div>
         </div>
-        <Card className="flex-grow flex flex-col">
-          <CardContent className="flex-grow flex flex-col p-0">
-              <ScrollArea className="flex-grow">
+        <Card className="flex-1 overflow-hidden">
+          <CardContent className="p-0 h-full">
+              <div className="h-full overflow-auto">
                   <Table>
-                      <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                           <TableRow>
                               <TableHead className="w-[50px]">
                                   <Checkbox 
@@ -408,54 +407,54 @@ export default function ViewBoqPage() {
                           )}
                       </TableBody>
                   </Table>
-              </ScrollArea>
+              </div>
           </CardContent>
         </Card>
       </div>
 
-       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-            <DialogContent className="max-w-2xl">
+      <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+          <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>Customize Columns</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
                 <ScrollArea className="h-96 pr-4">
-                  {isClient && (
-                    <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
-                            {(provided) => (
-                                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                                    {columnOrder.map((header, index) => (
-                                        <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided) => (
-                                                <div
-                                                    ref={provided.innerRef}
-                                                    {...provided.draggableProps}
-                                                    {...provided.dragHandleProps}
-                                                    className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
-                                                >
-                                                    <Checkbox
-                                                        checked={columnVisibility[header]}
-                                                        onCheckedChange={(checked) =>
-                                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
-                                                        }
-                                                    />
-                                                    <Input
-                                                        value={columnNames[header] || header}
-                                                        onChange={(e) =>
-                                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
-                                                        }
-                                                    />
-                                                </div>
-                                            )}
-                                        </Draggable>
-                                    ))}
-                                    {provided.placeholder}
-                                </div>
-                            )}
-                        </Droppable>
-                    </DragDropContext>
-                  )}
+                    {isClient && (
+                        <DragDropContext onDragEnd={onDragEnd}>
+                            <Droppable droppableId="columns">
+                                {(provided) => (
+                                    <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                        {columnOrder.map((header, index) => (
+                                            <Draggable key={header} draggableId={header} index={index}>
+                                                {(provided) => (
+                                                    <div
+                                                        ref={provided.innerRef}
+                                                        {...provided.draggableProps}
+                                                        {...provided.dragHandleProps}
+                                                        className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                                    >
+                                                        <Checkbox
+                                                            checked={columnVisibility[header]}
+                                                            onCheckedChange={(checked) =>
+                                                                setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                                            }
+                                                        />
+                                                        <Input
+                                                            value={columnNames[header] || header}
+                                                            onChange={(e) =>
+                                                                setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                                            }
+                                                        />
+                                                    </div>
+                                                )}
+                                            </Draggable>
+                                        ))}
+                                        {provided.placeholder}
+                                    </div>
+                                )}
+                            </Droppable>
+                        </DragDropContext>
+                    )}
                 </ScrollArea>
                 <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
@@ -475,3 +474,4 @@ export default function ViewBoqPage() {
   );
 }
 
+    
