@@ -46,7 +46,7 @@ import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ExpenseRequest } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format, parseISO } from 'date-fns';
@@ -76,7 +76,8 @@ type FormValues = z.infer<typeof formSchema>;
 
 const baseTableHeaders = [
     'Request ID', 'Date', 'Project', 'Department', 'Entered By', 'Party Name',
-    'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No'
+    'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No',
+    'Reception No', 'Reception Date'
 ];
 
 export default function AllRequisitionsTab() {
@@ -88,6 +89,7 @@ export default function AllRequisitionsTab() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
@@ -141,18 +143,18 @@ export default function AllRequisitionsTab() {
   };
   
   useEffect(() => {
-    if (isInitialMount.current) {
-        isInitialMount.current = false;
-    } else {
-        if (user) {
-            saveColumnSettings(columnOrder, columnVisibility);
-        }
-    }
+      if (isInitialMount.current) {
+          isInitialMount.current = false;
+      } else {
+          if (user) {
+              saveColumnSettings(columnOrder, columnVisibility);
+          }
+      }
   }, [columnOrder, columnVisibility, user]);
 
   
   useEffect(() => {
-    if (!canViewAll) {
+      if (!canViewAll) {
       setShowMyRequests(true);
     }
   }, [canViewAll]);
@@ -172,9 +174,15 @@ export default function AllRequisitionsTab() {
   const fetchRequisitions = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const requisitionsData = querySnapshot.docs.map(doc => {
+      const reqQuery = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
+      const expReqQuery = query(collection(db, 'expenseRequests'));
+      
+      const [reqSnapshot, expReqSnapshot] = await Promise.all([
+          getDocs(reqQuery),
+          getDocs(expReqQuery)
+      ]);
+
+      const requisitionsData = reqSnapshot.docs.map(doc => {
         const data = doc.data();
         return { 
           id: doc.id, 
@@ -182,9 +190,13 @@ export default function AllRequisitionsTab() {
         } as Requisition;
       });
       setRequisitions(requisitionsData);
+      
+      const expenseRequestsData = expReqSnapshot.docs.map(doc => doc.data() as ExpenseRequest);
+      setExpenseRequests(expenseRequestsData);
+
     } catch (error) {
-      console.error("Error fetching requisitions: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch requisitions.', variant: 'destructive' });
+      console.error("Error fetching data: ", error);
+      toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
@@ -818,56 +830,61 @@ export default function AllRequisitionsTab() {
               </TableHeader>
               <TableBody>
                 {displayedRequisitions.length > 0 ? (
-                  displayedRequisitions.map((req) => (
-                    <TableRow key={req.id}>
-                      {visibleHeaders.map(header => {
-                          let content: React.ReactNode = 'N/A';
-                          switch(header) {
-                              case 'Request ID': content = req.requisitionId; break;
-                              case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
-                              case 'Project': content = getProjectName(req.projectId); break;
-                              case 'Department': content = getDepartmentName(req.departmentId); break;
-                              case 'Entered By': content = req.raisedBy; break;
-                              case 'Party Name': content = req.partyName; break;
-                              case 'Description': 
-                                content = (
-                                  <Tooltip>
-                                    <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                    <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                  </Tooltip>
-                                ); 
-                                break;
-                              case 'Amount': content = req.amount.toLocaleString(); break;
-                              case 'Stage': content = req.stage; break;
-                              case 'Status': content = req.status; break;
-                              case 'Attachments': content = req.attachments?.length || 0; break;
-                              case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                          }
-                          return <TableCell key={header}>{content}</TableCell>
-                      })}
-                      <TableCell className="text-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              View Details
-                            </DropdownMenuItem>
-                            {req.stage === 'Request Receiving' && (
-                              <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  displayedRequisitions.map((req) => {
+                      const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                      return (
+                        <TableRow key={req.id}>
+                          {visibleHeaders.map(header => {
+                              let content: React.ReactNode = 'N/A';
+                              switch(header) {
+                                  case 'Request ID': content = req.requisitionId; break;
+                                  case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
+                                  case 'Project': content = getProjectName(req.projectId); break;
+                                  case 'Department': content = getDepartmentName(req.departmentId); break;
+                                  case 'Entered By': content = req.raisedBy; break;
+                                  case 'Party Name': content = req.partyName; break;
+                                  case 'Description': 
+                                    content = (
+                                      <Tooltip>
+                                        <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                        <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                      </Tooltip>
+                                    ); 
+                                    break;
+                                  case 'Amount': content = req.amount.toLocaleString(); break;
+                                  case 'Stage': content = req.stage; break;
+                                  case 'Status': content = req.status; break;
+                                  case 'Attachments': content = req.attachments?.length || 0; break;
+                                  case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                                  case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                                  case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                              }
+                              return <TableCell key={header}>{content}</TableCell>
+                          })}
+                          <TableCell className="text-center">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Details
+                                </DropdownMenuItem>
+                                {req.stage === 'Request Receiving' && (
+                                  <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                  })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
