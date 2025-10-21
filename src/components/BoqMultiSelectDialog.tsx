@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -43,7 +42,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItem
 
   const filteredItems = useMemo(() => {
     let items = boqItems.filter(item =>
-        (item['DESCRIPTION OF ITEMS']?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()) ||
          (item['SL. No.'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
          (item['ERP SL NO'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()))
     );
@@ -190,9 +189,9 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItem
                                     </div>
                                     <div className="truncate pr-2">{item['ERP SL NO']}</div>
                                     <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
-                                    <div className="truncate pr-2">{item['DESCRIPTION OF ITEMS']}</div>
+                                    <div className="truncate pr-2">{item['Description']}</div>
                                     <div className="text-right pr-2">{formatCurrency(rate)}</div>
-                                    <div className="text-right pr-2">{item['UNITS']}</div>
+                                    <div className="text-right pr-2">{item['Unit']}</div>
                                 </div>
                              )
                         })

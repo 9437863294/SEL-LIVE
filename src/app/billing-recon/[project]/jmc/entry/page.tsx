@@ -120,8 +120,8 @@ export default function JmcEntryPage() {
     if (boqItem) {
         const rateKey = findBasicPriceKey(boqItem);
         itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
-        itemToUpdate.description = boqItem['DESCRIPTION OF ITEMS'] || '';
-        itemToUpdate.unit = boqItem['UNITS'] || '';
+        itemToUpdate.description = boqItem['Description'] || '';
+        itemToUpdate.unit = boqItem['Unit'] || '';
         itemToUpdate.rate = rateKey ? Number(boqItem[rateKey] || '0') : 0;
         
         if (itemToUpdate.executedQty) {
@@ -143,8 +143,8 @@ export default function JmcEntryPage() {
           const rateKey = findBasicPriceKey(boqItem);
           return {
               boqSlNo: boqItem['SL. No.'] || '',
-              description: boqItem['DESCRIPTION OF ITEMS'] || '',
-              unit: boqItem['UNITS'] || '',
+              description: boqItem['Description'] || '',
+              unit: boqItem['Unit'] || '',
               rate: rateKey ? Number(boqItem[rateKey] || '0') : 0,
               executedQty: 0,
               totalAmount: 0,

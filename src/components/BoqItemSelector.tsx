@@ -52,15 +52,6 @@ export function BoqItemSelector({
     return fallbackKey ? String(item[fallbackKey]) : '';
   };
   
-  const getCombinedSlNo = (item: BoqItem): string => {
-      const erpSlNo = item['ERP SL NO'] || '';
-      const boqSlNo = item['BOQ SL No'] || item['SL. No.'] || '';
-      if (erpSlNo && boqSlNo) {
-          return `${erpSlNo} / ${boqSlNo}`;
-      }
-      return erpSlNo || boqSlNo || '';
-  };
-
   const getBoqSlNo = (item: BoqItem): string => {
     return String(item['BOQ SL No'] || item['SL. No.'] || '');
   };
@@ -90,7 +81,7 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {currentValue && selectedItem
-            ? `${getCombinedSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 25)}...`
+            ? `${getBoqSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 25)}...`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
