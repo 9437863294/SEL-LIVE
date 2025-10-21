@@ -243,7 +243,7 @@ export default function AllExpensesPage() {
       case 'Reception No':
         return expense.receptionNo || 'N/A';
       case 'Reception Date':
-        return expense.receptionDate || 'N/A';
+        return expense.receptionDate ? format(new Date(expense.receptionDate), 'dd MMM, yyyy') : 'N/A';
       default:
         return '';
     }
