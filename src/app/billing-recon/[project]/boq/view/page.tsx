@@ -481,9 +481,3 @@ export default function ViewBoqPage() {
   );
 }
 
-
-
-
-
-
-
