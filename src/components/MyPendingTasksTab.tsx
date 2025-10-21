@@ -129,7 +129,7 @@ export default function MyPendingTasksTab() {
                 <TableRow key={task.id}>
                   <TableCell className="font-medium">{task.requisitionId}</TableCell>
                   <TableCell>{getProjectName(task.projectId)}</TableCell>
-                  <TableCell>{task.amount.toLocaleString()}</TableCell>
+                  <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(task.amount)}</TableCell>
                   <TableCell>{task.stage}</TableCell>
                   <TableCell>
                     {task.deadline ? (
