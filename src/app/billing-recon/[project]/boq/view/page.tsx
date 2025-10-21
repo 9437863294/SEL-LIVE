@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -254,7 +255,9 @@ export default function ViewBoqPage() {
                                   )}
                               </TableCell>
                               {columnOrder.filter(h => columnVisibility[h]).map(header => (
-                                <TableCell key={`${item.id}-${header}`}>
+                                <TableCell key={`${item.id}-${header}`} className={cn(
+                                    (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
+                                )}>
                                   {item[header] || 'N/A'}
                                 </TableCell>
                               ))}
@@ -368,3 +371,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
