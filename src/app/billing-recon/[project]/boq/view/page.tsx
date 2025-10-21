@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -305,8 +304,8 @@ export default function ViewBoqPage() {
                 </Table>
                 </ScrollArea>
           </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={30} collapsible minSize={20} className={cn(selectedBoqItem ? 'block' : 'hidden')}>
+          <ResizableHandle />
+          <ResizablePanel defaultSize={0} collapsible minSize={20} className={cn(selectedBoqItem ? 'block' : 'hidden')}>
             <ScrollArea className="h-full">
                 {selectedBoqItem ? (
                   <BoqItemDetailsDialog
@@ -379,7 +378,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-
-
-
