@@ -90,6 +90,27 @@
   }
 }
 
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: #e0f2f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4db6ac;
+    border-radius: 10px;
+    border: 2px solid #e0f2f1;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #26a69a;
+}
+
+
 @media print {
   body {
     margin: 0;
