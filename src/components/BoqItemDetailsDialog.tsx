@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -11,8 +12,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { ScrollArea } from './ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
 import { format } from 'date-fns';
@@ -23,6 +24,7 @@ interface BoqItemDetailsDialogProps {
   item: BoqItem | null;
   jmcEntries: JmcEntry[];
   bills: Bill[];
+  isPanel?: boolean; // New prop
 }
 
 export default function BoqItemDetailsDialog({ 
@@ -30,7 +32,8 @@ export default function BoqItemDetailsDialog({
     onOpenChange, 
     item,
     jmcEntries,
-    bills 
+    bills,
+    isPanel = false,
 }: BoqItemDetailsDialogProps) {
   if (!item) return null;
 
@@ -56,111 +59,121 @@ export default function BoqItemDetailsDialog({
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
+  const content = (
+    <>
+      <DialogHeader>
+        <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
+        <DialogDescription>
+          {item['Description'] || item['Item Spec']}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-6 pr-4">
+        <div>
+          <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
+            <div className="border rounded-md">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>BOQ Quantity</TableHead>
+                            <TableHead>JMC Executed Qty</TableHead>
+                            <TableHead>Billed Qty</TableHead>
+                            <TableHead>Balance Qty</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow>
+                            <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
+                            <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
+                            <TableCell>{item['Billed Qty'] || 0}</TableCell>
+                            <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            </div>
+        </div>
+
+        <Separator />
+
+        <div>
+          <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
+          <div className="border rounded-md">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>JMC No.</TableHead>
+                        <TableHead>JMC Date</TableHead>
+                        <TableHead>Executed Qty</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {relevantJmcItems.length > 0 ? (
+                        relevantJmcItems.map((jmcItem, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{jmcItem.jmcNo}</TableCell>
+                            <TableCell>{format(new Date(jmcItem.jmcDate), 'dd MMM, yyyy')}</TableCell>
+                            <TableCell>{jmcItem.executedQty}</TableCell>
+                          </TableRow>
+                        ))
+                    ) : (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center h-24">
+                            No JMC entries found for this item.
+                          </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+          </div>
+        </div>
+        
+        <Separator />
+
+        <div>
+          <h3 className="text-lg font-semibold mb-2">Billing Breakdown</h3>
+          <div className="border rounded-md">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Bill No.</TableHead>
+                        <TableHead>Bill Date</TableHead>
+                        <TableHead>Billed Qty</TableHead>
+                        <TableHead>Total Amount</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {relevantBillItems.length > 0 ? (
+                        relevantBillItems.map((billItem, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{billItem.billNo}</TableCell>
+                            <TableCell>{format(new Date(billItem.billDate), 'dd MMM, yyyy')}</TableCell>
+                            <TableCell>{billItem.billedQty}</TableCell>
+                            <TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
+                          </TableRow>
+                        ))
+                    ) : (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center h-24">
+                            No bills found for this item.
+                          </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  if (isPanel) {
+    return <div className="p-4">{content}</div>;
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
-          <DialogDescription>
-            {item['Description'] || item['Item Spec']}
-          </DialogDescription>
-        </DialogHeader>
         <ScrollArea className="max-h-[70vh] p-1">
-          <div className="space-y-6 pr-4">
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
-               <div className="border rounded-md">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>BOQ Quantity</TableHead>
-                                <TableHead>JMC Executed Qty</TableHead>
-                                <TableHead>Billed Qty</TableHead>
-                                <TableHead>Balance Qty</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            <TableRow>
-                                <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
-                                <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
-                                <TableCell>{item['Billed Qty'] || 0}</TableCell>
-                                <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
-                            </TableRow>
-                        </TableBody>
-                    </Table>
-               </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
-              <div className="border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>JMC No.</TableHead>
-                            <TableHead>JMC Date</TableHead>
-                            <TableHead>Executed Qty</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {relevantJmcItems.length > 0 ? (
-                           relevantJmcItems.map((jmcItem, index) => (
-                             <TableRow key={index}>
-                                <TableCell>{jmcItem.jmcNo}</TableCell>
-                                <TableCell>{format(new Date(jmcItem.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                                <TableCell>{jmcItem.executedQty}</TableCell>
-                             </TableRow>
-                           ))
-                        ) : (
-                           <TableRow>
-                              <TableCell colSpan={3} className="text-center h-24">
-                                No JMC entries found for this item.
-                              </TableCell>
-                           </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-              </div>
-            </div>
-            
-            <Separator />
-
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Billing Breakdown</h3>
-              <div className="border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Bill No.</TableHead>
-                            <TableHead>Bill Date</TableHead>
-                            <TableHead>Billed Qty</TableHead>
-                            <TableHead>Total Amount</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {relevantBillItems.length > 0 ? (
-                           relevantBillItems.map((billItem, index) => (
-                             <TableRow key={index}>
-                                <TableCell>{billItem.billNo}</TableCell>
-                                <TableCell>{format(new Date(billItem.billDate), 'dd MMM, yyyy')}</TableCell>
-                                <TableCell>{billItem.billedQty}</TableCell>
-                                <TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
-                             </TableRow>
-                           ))
-                        ) : (
-                           <TableRow>
-                              <TableCell colSpan={4} className="text-center h-24">
-                                No bills found for this item.
-                              </TableCell>
-                           </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-              </div>
-            </div>
-          </div>
+            {content}
         </ScrollArea>
         <DialogFooter className="mt-4 pr-4">
           <DialogClose asChild>

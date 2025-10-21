@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -32,6 +33,7 @@ import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 type BoqItem = {
   id: string;
@@ -190,12 +192,9 @@ export default function ViewBoqPage() {
           </Button>
         </div>
       </div>
-
-      {/* Table Container */}
-      <div className="flex-1 min-h-0">
-        <Card className="h-full">
-            <CardContent className="p-0 h-full">
-                <ScrollArea className="h-full">
+       <ResizablePanelGroup direction="vertical" className="flex-1 border rounded-lg">
+          <ResizablePanel defaultSize={70} minSize={30}>
+            <ScrollArea className="h-full">
                 <Table className="min-w-full text-sm">
                     <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                     <TableRow>
@@ -305,9 +304,27 @@ export default function ViewBoqPage() {
                     </TableBody>
                 </Table>
                 </ScrollArea>
-            </CardContent>
-        </Card>
-      </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={30} collapsible minSize={20} className={cn(selectedBoqItem ? 'block' : 'hidden')}>
+            <ScrollArea className="h-full">
+                {selectedBoqItem ? (
+                  <BoqItemDetailsDialog
+                    isOpen={true} // This dialog is always "open" inside the panel
+                    onOpenChange={() => {}} // This can be a no-op
+                    item={selectedBoqItem}
+                    jmcEntries={jmcEntries}
+                    bills={bills}
+                    isPanel
+                  />
+                ) : (
+                  <div className="h-full p-4 flex items-center justify-center text-muted-foreground">
+                    Select a row to see details here.
+                  </div>
+                )}
+            </ScrollArea>
+          </ResizablePanel>
+        </ResizablePanelGroup>
 
       {/* Column Editor Dialog */}
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
@@ -359,16 +376,9 @@ export default function ViewBoqPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Details Dialog */}
-      <BoqItemDetailsDialog
-        isOpen={isDetailsDialogOpen}
-        onOpenChange={setIsDetailsDialogOpen}
-        item={selectedBoqItem}
-        jmcEntries={jmcEntries}
-        bills={bills}
-      />
     </div>
   );
 }
+
+
 
