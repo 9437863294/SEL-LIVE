@@ -317,8 +317,8 @@ export default function ViewBoqPage() {
 
   return (
     <>
-      <div className="w-full h-screen px-4 sm:px-6 lg:px-8 flex flex-col">
-        <div className="py-6 flex items-center justify-between flex-shrink-0">
+      <div className="w-full h-screen flex flex-col">
+        <div className="py-6 flex items-center justify-between flex-shrink-0 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
               <Link href={`/billing-recon/${projectSlug}/boq`}>
                   <Button variant="ghost" size="icon">
@@ -379,12 +379,12 @@ export default function ViewBoqPage() {
               </AlertDialog>
           </div>
         </div>
-        <ResizablePanelGroup direction="vertical">
-          <ResizablePanel defaultSize={75}>
-            <Card className="h-full flex flex-col">
-                <CardContent className="p-0 flex-1 overflow-hidden">
-                    <ScrollArea className="h-full">
-                        <TooltipProvider>
+        
+        <ResizablePanelGroup direction="vertical" className="flex-1 px-4 sm:px-6 lg:px-8 pb-6">
+            <ResizablePanel defaultSize={70}>
+                <Card className="h-full flex flex-col">
+                    <CardContent className="p-0 flex-1 overflow-hidden">
+                        <ScrollArea className="h-full">
                             <Table>
                                 <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                                     <TableRow>
@@ -433,24 +433,22 @@ export default function ViewBoqPage() {
                                                     const normalizedHeader = (columnNames[header] || header).toLowerCase();
                                                     const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
                                                     
-                                                    if (isTruncated) {
-                                                      return (
-                                                        <TableCell key={`${item.id}-${header}`}>
-                                                          <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                              <p className="truncate max-w-xs">{cellData}</p>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                              <p className="max-w-md">{cellData}</p>
-                                                            </TooltipContent>
-                                                          </Tooltip>
-                                                        </TableCell>
-                                                      );
-                                                    }
-                                                    
                                                     return (
                                                         <TableCell key={`${item.id}-${header}`}>
-                                                            {cellData || 'N/A'}
+                                                          {isTruncated ? (
+                                                              <TooltipProvider>
+                                                                  <Tooltip>
+                                                                      <TooltipTrigger asChild>
+                                                                        <p className="truncate max-w-xs">{cellData}</p>
+                                                                      </TooltipTrigger>
+                                                                      <TooltipContent>
+                                                                        <p className="max-w-md">{cellData}</p>
+                                                                      </TooltipContent>
+                                                                  </Tooltip>
+                                                              </TooltipProvider>
+                                                          ) : (
+                                                              cellData || 'N/A'
+                                                          )}
                                                         </TableCell>
                                                     )
                                                 })}
@@ -465,32 +463,29 @@ export default function ViewBoqPage() {
                                     )}
                                 </TableBody>
                             </Table>
-                        </TooltipProvider>
-                    </ScrollArea>
-                </CardContent>
-            </Card>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={25} collapsible minSize={15}>
-                <div className="h-full p-0">
-                    <ScrollArea className="h-full">
-                        <div className="p-4">
-                            {selectedBoqItem ? (
-                                <BoqItemDetailsDialog
-                                    isOpen={true}
-                                    onOpenChange={() => {}}
-                                    item={selectedBoqItem}
-                                    jmcEntries={jmcEntries}
-                                    bills={bills}
-                                />
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                    <p>Select a row to see details here.</p>
-                                </div>
-                            )}
-                        </div>
-                    </ScrollArea>
-                </div>
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={30} collapsible minSize={15}>
+                 <ScrollArea className="h-full">
+                    <div className="p-4">
+                        {selectedBoqItem ? (
+                            <BoqItemDetailsDialog
+                                isOpen={true}
+                                onOpenChange={() => {}}
+                                item={selectedBoqItem}
+                                jmcEntries={jmcEntries}
+                                bills={bills}
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                <p>Select a row to see details here.</p>
+                            </div>
+                        )}
+                    </div>
+                </ScrollArea>
             </ResizablePanel>
         </ResizablePanelGroup>
       </div>
@@ -560,6 +555,7 @@ export default function ViewBoqPage() {
     
 
     
+
 
 
 
