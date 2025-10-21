@@ -30,10 +30,10 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, boqItems, onConfirm
   const [searchTerm, setSearchTerm] = useState('');
 
   const getBoqSlNo = (item: BoqItem): string =>
-    String(item['SL. No.'] || item['Sl No'] || '');
+    String(item['SL. No.'] || item['BOQ SL No'] || '');
 
   const getErpSlNo = (item: BoqItem): string =>
-    String(item['ERP SL. No.'] || item['ERP Sl No'] || item['ERP_SL_NO'] || '');
+    String(item['ERP SL NO'] || '');
 
   const getDescription = (item: BoqItem): string => {
     const descKey =
