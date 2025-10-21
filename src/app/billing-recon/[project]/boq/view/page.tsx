@@ -427,9 +427,10 @@ export default function ViewBoqPage() {
                                         </TableCell>
                                         {columnOrder.filter(h => columnVisibility[h]).map(header => {
                                             const cellData = item[header];
-                                            const isDescription = (columnNames[header] || header).toLowerCase().includes('description');
+                                            const normalizedHeader = (columnNames[header] || header).toLowerCase();
+                                            const isTruncated = (normalizedHeader.includes('description') || normalizedHeader.includes('category 1')) && typeof cellData === 'string' && cellData.length > 50;
                                             
-                                            if (isDescription && typeof cellData === 'string' && cellData.length > 50) {
+                                            if (isTruncated) {
                                               return (
                                                 <TableCell key={`${item.id}-${header}`}>
                                                   <Tooltip>
@@ -477,7 +478,7 @@ export default function ViewBoqPage() {
                 <ScrollArea className="h-96 pr-4">
                   {isClient && (
                     <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns">
+                        <Droppable droppableId="columns" >
                             {(provided) => (
                                 <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                                     {columnOrder.map((header, index) => (
@@ -533,4 +534,5 @@ export default function ViewBoqPage() {
     
 
     
+
 
