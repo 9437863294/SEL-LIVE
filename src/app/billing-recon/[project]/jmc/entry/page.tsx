@@ -83,9 +83,15 @@ export default function JmcEntryPage() {
   };
   
   const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const keys = Object.keys(boqItem);
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
-  };
+    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate'];
+    for (const key of knownPriceKeys) {
+        if (boqItem.hasOwnProperty(key)) {
+            return key;
+        }
+    }
+    // Fallback for other possible rate columns
+    return Object.keys(boqItem).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
+};
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -327,7 +333,7 @@ export default function JmcEntryPage() {
       </Card>
     </div>
     <BoqMultiSelectDialog
-        isOpen={isMultiSelectOpen}
+        isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
