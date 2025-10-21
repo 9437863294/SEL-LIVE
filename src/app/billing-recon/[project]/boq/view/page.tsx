@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -73,7 +72,7 @@ export default function ViewBoqPage() {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
 
-  const [sortKey, setSortKey] = useState<string>('BOQ SL No');
+  const [sortKey, setSortKey] = useState<string>('ERP SL NO');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
@@ -529,5 +528,7 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
+    
 
     
