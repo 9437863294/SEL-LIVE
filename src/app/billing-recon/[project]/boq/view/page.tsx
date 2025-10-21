@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -40,6 +41,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react-beautiful-dnd';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type BoqItem = {
     id: string;
@@ -353,6 +355,7 @@ export default function ViewBoqPage() {
         <Card className="flex-1 overflow-hidden">
           <CardContent className="p-0 h-full">
               <div className="h-full overflow-auto">
+                <TooltipProvider>
                   <Table>
                       <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                           <TableRow>
@@ -391,11 +394,31 @@ export default function ViewBoqPage() {
                                               onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
                                           />
                                       </TableCell>
-                                      {columnOrder.filter(h => columnVisibility[h]).map(header => (
-                                          <TableCell key={`${item.id}-${header}`}>
-                                              {item[header] || 'N/A'}
-                                          </TableCell>
-                                      ))}
+                                      {columnOrder.filter(h => columnVisibility[h]).map(header => {
+                                          const cellData = item[header];
+                                          const isDescription = (columnNames[header] || header).toLowerCase().includes('description');
+                                          
+                                          if (isDescription && typeof cellData === 'string' && cellData.length > 50) {
+                                            return (
+                                              <TableCell key={`${item.id}-${header}`}>
+                                                <Tooltip>
+                                                  <TooltipTrigger>
+                                                    <p className="truncate max-w-xs">{cellData}</p>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                    <p className="max-w-md">{cellData}</p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </TableCell>
+                                            );
+                                          }
+                                          
+                                          return (
+                                              <TableCell key={`${item.id}-${header}`}>
+                                                  {cellData || 'N/A'}
+                                              </TableCell>
+                                          )
+                                      })}
                                   </TableRow>
                               ))
                           ) : (
@@ -407,6 +430,7 @@ export default function ViewBoqPage() {
                           )}
                       </TableBody>
                   </Table>
+                </TooltipProvider>
               </div>
           </CardContent>
         </Card>
