@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -134,7 +135,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
           
           let status: EnrichedStep['status'] = 'Pending';
            if (requisition.status === 'Completed' || requisition.status === 'Rejected') {
-                if (historyEntries.length > 0) { // If there's any history for the step, it's completed in a final state
+                if (historyEntries.length > 0 || (index <= currentStepIndex && currentStepIndex !== -1)) { 
                     status = 'Completed';
                 }
             } else if (wfStep.id === requisition.currentStepId) {
@@ -360,13 +361,6 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             };
 
             transaction.update(requisitionRef, requisitionUpdateData);
-
-            const dailyReqQuery = query(collection(db, 'dailyRequisitions'), where('depNo', '==', requisition.requisitionId));
-            const dailyReqSnap = await getDocs(dailyReqQuery);
-            if (!dailyReqSnap.empty) {
-                const dailyReqDocRef = dailyReqSnap.docs[0].ref;
-                transaction.update(dailyReqDocRef, { depNo: result.requestNo });
-            }
         });
 
         toast({
