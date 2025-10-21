@@ -166,8 +166,8 @@ export default function ViewBoqPage() {
 
       const items = boqSnapshot.docs.map(doc => {
         const data = doc.data();
-        const slNo = data['SL. No.'];
-        const boqQty = parseFloat(data['Total Qty'] || '0');
+        const slNo = data['BOQ SL No'];
+        const boqQty = parseFloat(data['QTY'] || '0');
         const jmcQty = jmcQuantities[slNo] || 0;
         const billedQty = billedQuantities[slNo] || 0;
 
@@ -181,8 +181,8 @@ export default function ViewBoqPage() {
       });
       
       const sortedItems = items.sort((a, b) => {
-        const slNoA = Number(a['SL. No.']);
-        const slNoB = Number(b['SL. No.']);
+        const slNoA = Number(a['BOQ SL No']);
+        const slNoB = Number(b['BOQ SL No']);
         if (isNaN(slNoA) || isNaN(slNoB)) {
           return 0; 
         }
@@ -480,6 +480,7 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
 
 
 
