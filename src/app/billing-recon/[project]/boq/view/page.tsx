@@ -30,14 +30,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu";
-import type { BoqItem as BoqItemType, JmcEntry, Bill } from '@/lib/types';
+import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import type { BoqItem as BoqItemType, JmcEntry, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -45,7 +40,6 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react-beautiful-dnd';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 type BoqItem = {
@@ -480,4 +474,5 @@ export default function ViewBoqPage() {
     </>
   );
 }
+
 
