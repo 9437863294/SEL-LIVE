@@ -1,7 +1,8 @@
 
+
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -41,12 +42,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle } from 'lucide-react';
 import { Textarea } from './ui/textarea';
-import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format, parseISO } from 'date-fns';
@@ -54,7 +55,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from '@/components/ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -74,6 +75,10 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+const baseTableHeaders = [
+    'Request ID', 'Date', 'Project', 'Department', 'Entered By', 'Party Name',
+    'Description', 'Amount', 'Stage', 'Status', 'Attachments',
+];
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -94,12 +99,59 @@ export default function AllRequisitionsTab() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [showMyRequests, setShowMyRequests] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
   
+  const settingsKey = 'requisitions_all';
+  const isInitialMount = useRef(true);
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {})
+  );
+
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
+  
+  useEffect(() => {
+    if (!user) return;
+    const fetchSettings = async () => {
+      const settingsRef = doc(db, 'userSettings', user.id);
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const settings = settingsSnap.data() as UserSettings;
+        const pageSettings = settings.columnPreferences?.[settingsKey];
+        if (pageSettings) {
+          setColumnVisibility(pageSettings.visibility);
+          setColumnOrder(pageSettings.order);
+        }
+      }
+    };
+    fetchSettings();
+  }, [user]);
+
+  const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
+    if (!user) return;
+    const settingsRef = doc(db, 'userSettings', user.id);
+    const settingsSnap = await getDoc(settingsRef);
+    const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
+    const newPreferences = {
+        ...currentSettings.columnPreferences,
+        [settingsKey]: { order, visibility }
+    };
+    await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+  };
+  
+  useEffect(() => {
+    if (isInitialMount.current) {
+        isInitialMount.current = false;
+    } else {
+        if (user) {
+            saveColumnSettings(columnOrder, columnVisibility);
+        }
+    }
+  }, [columnOrder, columnVisibility, user]);
 
   useEffect(() => {
-    // If user CANNOT view all, they MUST only see their requests.
     if (!canViewAll) {
       setShowMyRequests(true);
     }
@@ -718,6 +770,7 @@ export default function AllRequisitionsTab() {
                   <TableHead>Project</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Entered By</TableHead>
+                  <TableHead>Party Name</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Stage</TableHead>
@@ -735,6 +788,7 @@ export default function AllRequisitionsTab() {
                       <TableCell>{getProjectName(req.projectId)}</TableCell>
                       <TableCell>{getDepartmentName(req.departmentId)}</TableCell>
                       <TableCell>{req.raisedBy}</TableCell>
+                      <TableCell>{req.partyName}</TableCell>
                       <TableCell>
                         <Tooltip>
                             <TooltipTrigger>
@@ -774,7 +828,7 @@ export default function AllRequisitionsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center h-24">
+                    <TableCell colSpan={12} className="text-center h-24">
                       No requisitions found.
                     </TableCell>
                   </TableRow>

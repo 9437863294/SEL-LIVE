@@ -322,6 +322,10 @@ export interface UserSettings {
     [pageKey: string]: {
       order: string[];
       visibility: Record<string, boolean>;
+    },
+    requisitions_all?: {
+      order: string[];
+      visibility: Record<string, boolean>;
     }
   },
   pivotPreferences?: {
