@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -148,17 +149,21 @@ export default function JmcEntryPage() {
 
     if (boqItem) {
       const anyRow = boqItem as unknown as Record<string, unknown>;
-      const rateKey = findBasicPriceKey(anyRow);
-      const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
+      
+      const boqSlNo =
+        ((anyRow['SL. No.'] as string) ??
+          (anyRow['BOQ SL No'] as string) ??
+          '') as string;
+      
       const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
       const boqQty = parseNum(anyRow[boqQtyKey]);
+          
+      const rateKey = findBasicPriceKey(anyRow);
+      const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
 
       const updated: JmcItem = recalcRow({
         ...next[index],
-        boqSlNo:
-          ((anyRow['SL. No.'] as string) ??
-            (anyRow['BOQ SL No'] as string) ??
-            '') as string,
+        boqSlNo: boqSlNo,
         description: ((anyRow['Description'] as string) ?? '') as string,
         unit: ((anyRow['Unit'] as string) ?? '') as string,
         boqQty: boqQty,
@@ -349,74 +354,72 @@ export default function JmcEntryPage() {
           </CardHeader>
 
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[240px]">BOQ Sl. No.</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-[110px]">Unit</TableHead>
-                    <TableHead className="w-[110px]">BOQ Qty</TableHead>
-                    <TableHead className="w-[130px]">Rate</TableHead>
-                    <TableHead className="w-[150px]">Executed Qty</TableHead>
-                    <TableHead className="w-[160px]">Total Amount</TableHead>
-                    <TableHead className="w-[60px]">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
+              <div className="overflow-x-auto">
+                  <Table>
+                      <TableHeader>
+                          <TableRow>
+                              <TableHead className="w-[240px]">BOQ Sl. No.</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead className="w-[110px]">Unit</TableHead>
+                              <TableHead className="w-[110px]">BOQ Qty</TableHead>
+                              <TableHead className="w-[130px]">Rate</TableHead>
+                              <TableHead className="w-[150px]">Executed Qty</TableHead>
+                              <TableHead className="w-[160px]">Total Amount</TableHead>
+                              <TableHead className="w-[60px]">Action</TableHead>
+                          </TableRow>
+                      </TableHeader>
 
-                <TableBody>
-                  {items.map((item, index) => (
-                    <TableRow key={`${item.boqSlNo || 'row'}-${index}`}>
-                      <TableCell>
-                        <BoqItemSelector
-                          boqItems={boqItems}
-                          selectedSlNo={item.boqSlNo}
-                          onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
-                          isLoading={isBoqLoading}
-                        />
-                      </TableCell>
+                      <TableBody>
+                          {items.map((item, index) => (
+                              <TableRow key={`${item.boqSlNo || 'row'}-${index}`}>
+                                  <TableCell>
+                                      <BoqItemSelector
+                                        boqItems={boqItems}
+                                        selectedSlNo={item.boqSlNo}
+                                        onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
+                                        isLoading={isBoqLoading}
+                                      />
+                                  </TableCell>
 
-                      <TableCell className="align-top">{item.description}</TableCell>
-                      <TableCell className="align-top">{item.unit}</TableCell>
-                      <TableCell className="align-top">{item.boqQty}</TableCell>
-                      <TableCell className="align-top">{formatCurrency(item.rate)}</TableCell>
+                                  <TableCell className="align-top">{item.description}</TableCell>
+                                  <TableCell className="align-top">{item.unit}</TableCell>
+                                  <TableCell className="align-top">{item.boqQty}</TableCell>
+                                  <TableCell className="align-top">{formatCurrency(item.rate)}</TableCell>
 
-                      <TableCell className="align-top">
-                        <Input
-                          inputMode="decimal"
-                          name="executedQty"
-                          value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
-                          onChange={(e) => handleItemQtyChange(index, e)}
-                          type="number"
-                          step="any"
-                          min={0}
-                        />
-                      </TableCell>
+                                  <TableCell className="align-top">
+                                      <Input
+                                        inputMode="decimal"
+                                        name="executedQty"
+                                        value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
+                                        onChange={(e) => handleItemQtyChange(index, e)}
+                                        type="number"
+                                        step="any"
+                                        min={0}
+                                      />
+                                  </TableCell>
 
-                      <TableCell className="align-top font-medium">{formatCurrency(item.totalAmount)}</TableCell>
+                                  <TableCell className="align-top font-medium">{formatCurrency(item.totalAmount)}</TableCell>
 
-                      <TableCell className="align-top">
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove item">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                                  <TableCell className="align-top">
+                                      <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove item">
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                  </TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                  </Table>
+              </div>
 
-                  {/* Footer row with grand total */}
-                  <TableRow>
-                    <TableCell colSpan={5} />
-                    <TableCell className="font-semibold text-right">Grand Total</TableCell>
-                    <TableCell className="font-bold">{formatCurrency(grandTotal)}</TableCell>
-                    <TableCell />
-                  </TableRow>
-                </TableBody>
-              </Table>
+            <div className="flex justify-between items-center mt-4">
+              <Button variant="outline" onClick={addItem} className="mt-4">
+                <Plus className="mr-2 h-4 w-4" /> Add Item
+              </Button>
+              <div className="text-right">
+                <p className="text-muted-foreground">Grand Total</p>
+                <p className="text-xl font-bold">{formatCurrency(grandTotal)}</p>
+              </div>
             </div>
-
-            <Button variant="outline" onClick={addItem} className="mt-4">
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -425,7 +428,7 @@ export default function JmcEntryPage() {
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
-        onConfirm={handleMultiBoqSelect} // now typed as (selectedItems: BillItem[]) => void
+        onConfirm={handleMultiBoqSelect}
       />
     </>
   );
