@@ -40,8 +40,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 
 type BoqItem = Record<string, any>;
-
-const MAX_BATCH_WRITES = 500; // Firestore limit
+const MAX_BATCH_WRITES = 500;
 
 function toSnakeCase(s: string): string {
   return s
@@ -61,7 +60,6 @@ function normalizeHeaders(row: BoqItem): [BoqItem, string[]] {
 
   Object.keys(row).forEach((k) => {
     const nk = toSnakeCase(k || 'col');
-    // Prevent collisions by suffixing with _2, _3, ...
     let final = nk || 'col';
     let i = 2;
     while (final in map || final in normalized) {
@@ -187,14 +185,12 @@ export default function ImportBoqPage() {
         return;
       }
 
-      // Normalize headers from first row
       const [firstNormalized, hdrs] = normalizeHeaders(rawJson[0]);
       const normalizedRows: BoqItem[] = [
         firstNormalized,
         ...rawJson.slice(1).map((r) => {
           const mapped: BoqItem = {};
           Object.keys(r).forEach((origKey, idx) => {
-            // TS5076-safe precedence fix:
             const safeKey =
               (hdrs[idx] ?? toSnakeCase(origKey)) || `col_${idx + 1}`;
             mapped[safeKey] = (r as any)[origKey];
@@ -268,12 +264,7 @@ export default function ImportBoqPage() {
       }));
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(
-        db,
-        'projects',
-        projectSlug,
-        'boqItems'
-      );
+      const boqCollectionRef = collection(db, 'projects', projectSlug, 'boqItems');
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);
@@ -302,7 +293,6 @@ export default function ImportBoqPage() {
         description: `${jsonData.length} items have been imported to the BOQ for this project.`,
       });
 
-      // Reset UI
       handleClear();
     } catch (error) {
       console.error('Error importing data: ', error);
@@ -336,9 +326,9 @@ export default function ImportBoqPage() {
   }, [totalRows]);
 
   return (
-    // Lock page height; only preview/table area scrolls
-    <div className="h-[100dvh] overflow-hidden flex flex-col px-4 sm:px-6 lg:px-8">
-      {/* Top bar */}
+    // ✅ Only the preview/table area scrolls
+    <div className="h-screen flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 lg:px-8">
+      {/* Top bar (no scroll) */}
       <div className="mb-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Link href={`/billing-recon/${projectSlug}/boq`}>
@@ -366,13 +356,12 @@ export default function ImportBoqPage() {
         )}
       </div>
 
-      {/* Upload card (non-scrolling) */}
+      {/* Upload card (no scroll) */}
       <Card className="shrink-0">
         <CardHeader>
           <CardTitle>Upload File</CardTitle>
           <CardDescription>
-            Select an Excel file (.xlsx or .xls). The data will be previewed below
-            before import.
+            Select an Excel file (.xlsx or .xls). The data will be previewed below before import.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -423,25 +412,25 @@ export default function ImportBoqPage() {
         </CardContent>
       </Card>
 
-      {/* Preview card fills remaining height and scrolls */}
+      {/* Preview card fills remaining space; only this area scrolls */}
       {jsonData.length > 0 && (
-        <Card className="mt-6 flex-1 min-h-0">
+        <Card className="mt-6 flex-1 min-h-0 flex flex-col">
           <CardHeader className="shrink-0">
             <CardTitle>Preview Data</CardTitle>
             <CardDescription>
-              {`Found ${jsonData.length} row${jsonData.length === 1 ? '' : 's'}. `}
-              {previewNote}
+              {`Found ${jsonData.length} row${jsonData.length === 1 ? '' : 's'}. `}{previewNote}
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="p-0 h-full">
-            {/* This is the only vertical scroller */}
+          {/* Make content take the remaining height and enable scroll */}
+          <CardContent className="flex-1 min-h-0 p-0">
             <div
               className="h-full overflow-auto overscroll-contain scrollbar-gutter-stable"
               style={{ scrollbarGutter: 'stable' }}
             >
               <div className="w-full overflow-x-auto">
-                <Table className="min-w-full">
+                {/* table-fixed helps column width + sticky header stability */}
+                <Table className="min-w-full table-fixed">
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       {headers.map((header) => (
