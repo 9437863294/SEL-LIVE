@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, where, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, where, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -38,7 +38,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, Project, JmcEntry } from '@/lib/types';
+import type { FabricationBomItem, Project, JmcEntry, UserSettings } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -120,6 +120,8 @@ export default function ViewBoqPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  const isInitialMount = React.useRef(true);
 
 
   /*** CLIENT FLAG ***/
@@ -127,67 +129,70 @@ export default function ViewBoqPage() {
     setIsClient(true);
   }, []);
 
-  /*** PERSISTENCE KEYS ***/
-  const userKey = useMemo(() => {
-    if (!user) return 'guest';
-    if (typeof user === 'object' && 'uid' in user && (user as any).uid) return (user as any).uid as string;
-    if (typeof user === 'object' && 'id' in user && (user as any).id) return (user as any).id as string;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('auth:uid');
-      if (stored) return stored;
-    }
-    return 'guest';
-  }, [user]);
+  const settingsKey = useMemo(() => {
+    if (!projectSlug) return '';
+    return `boqTable:${projectSlug}`;
+  }, [projectSlug]);
 
-  const prefKey = useMemo(() => (projectSlug ? `boqTable:${projectSlug}:${userKey}` : ''), [projectSlug, userKey]);
 
   /*** LOAD/SAVE PREFERENCES ***/
-  useEffect(() => {
-    if (!prefKey) return;
-    try {
-      const raw = localStorage.getItem(prefKey);
-      if (!raw) return;
-      const { order, visibility, names, sort } = JSON.parse(raw);
-      if (Array.isArray(order)) setColumnOrder(order);
-      if (visibility) setColumnVisibility(visibility);
-      if (names) setColumnNames(names);
-      if (sort?.key && sort?.direction) {
-        setSortKey(sort.key);
-        setSortDirection(sort.direction);
-      }
-    } catch (e) {
-      console.warn('Failed to load prefs', e);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefKey]);
+    useEffect(() => {
+    if (!user || !settingsKey) return;
 
-  const savePrefs = useCallback(
-    (
-      next?: Partial<{
-        order: string[];
-        visibility: Record<string, boolean>;
-        names: Record<string, string>;
-        sort: { key: string; direction: 'asc' | 'desc' };
-      }>
-    ) => {
-      if (!prefKey) return;
-      try {
-        const current = localStorage.getItem(prefKey);
-        const payload = {
-          order: columnOrder,
-          visibility: columnVisibility,
-          names: columnNames,
-          sort: { key: sortKey, direction: sortDirection },
-          ...(current ? JSON.parse(current) : {}),
-          ...(next || {}),
-        };
-        localStorage.setItem(prefKey, JSON.stringify(payload));
-      } catch (e) {
-        console.warn('Failed to save prefs', e);
+    const fetchSettings = async () => {
+      const settingsRef = doc(db, 'userSettings', user.id);
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const settings = settingsSnap.data() as UserSettings;
+        const pageSettings = settings.columnPreferences?.[settingsKey];
+        if (pageSettings) {
+          setColumnOrder(pageSettings.order || [...baseTableHeaders]);
+          setColumnVisibility(pageSettings.visibility || {});
+          setColumnNames(pageSettings.names || {});
+          if (pageSettings.sort) {
+            setSortKey(pageSettings.sort.key);
+            setSortDirection(pageSettings.sort.direction);
+          }
+        }
       }
-    },
-    [prefKey, columnOrder, columnVisibility, columnNames, sortKey, sortDirection]
-  );
+    };
+    
+    fetchSettings();
+  }, [user, settingsKey]);
+  
+  const saveColumnSettings = useCallback(async () => {
+    if (!user || !settingsKey) return;
+    try {
+        const settingsRef = doc(db, 'userSettings', user.id);
+        const currentSettingsSnap = await getDoc(settingsRef);
+        const currentSettings = currentSettingsSnap.exists() ? currentSettingsSnap.data() : { columnPreferences: {} };
+
+        const newPreferences = {
+            ...currentSettings.columnPreferences,
+            [settingsKey]: {
+                order: columnOrder,
+                visibility: columnVisibility,
+                names: columnNames,
+                sort: { key: sortKey, direction: sortDirection },
+            }
+        };
+
+        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+    } catch (e) {
+        console.warn('Failed to save column settings to Firestore', e);
+        toast({ title: "Error", description: "Could not save your column preferences.", variant: "destructive" });
+    }
+  }, [user, settingsKey, columnOrder, columnVisibility, columnNames, sortKey, sortDirection, toast]);
+  
+  useEffect(() => {
+      if (isInitialMount.current) {
+          isInitialMount.current = false;
+          return;
+      }
+      if (user) {
+          saveColumnSettings();
+      }
+  }, [columnOrder, columnVisibility, columnNames, sortKey, sortDirection, user, saveColumnSettings]);
 
   /*** NORMALIZE KEYS FROM FIRESTORE ***/
   const normalizeKey = (obj: any, targetKey: string): string | undefined => {
@@ -379,11 +384,9 @@ export default function ViewBoqPage() {
     if (sortKey === key) {
       const next = sortDirection === 'asc' ? 'desc' : 'asc';
       setSortDirection(next);
-      savePrefs({ sort: { key, direction: next } });
     } else {
       setSortKey(key);
       setSortDirection('asc');
-      savePrefs({ sort: { key, direction: 'asc' } });
     }
   };
 
@@ -439,7 +442,6 @@ export default function ViewBoqPage() {
       const next = [...prev];
       const [moved] = next.splice(source.index, 1);
       next.splice(destination.index, 0, moved);
-      savePrefs({ order: next });
       return next;
     });
   };
@@ -452,8 +454,7 @@ export default function ViewBoqPage() {
       : String(v ?? 'N/A');
   };
 
-  // Reusable class for sticky header cells
-  const stickyHead = 'sticky top-0 bg-background z-20';
+  const visibleHeaders = columnOrder.filter((h) => columnVisibility[h]);
 
   const dialogFields: (keyof BoqItem)[] = [
     'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2',
@@ -540,21 +541,20 @@ export default function ViewBoqPage() {
                 <TableHeader>
                   <TableRow>
                     {/* Make every header cell sticky */}
-                    <TableHead className={`${stickyHead} w-[50px]`}>
+                    <TableHead className="sticky top-0 bg-background z-20 w-[50px]">
                       <Checkbox
                         checked={allSelected ? true : someSelected ? 'indeterminate' : false}
                         onCheckedChange={handleSelectAll}
                         aria-label="Select all rows"
                       />
                     </TableHead>
-                    <TableHead className={`${stickyHead} w-12`}></TableHead>
+                    <TableHead className="sticky top-0 bg-background z-20 w-12"></TableHead>
 
-                    {columnOrder
-                      .filter((h) => columnVisibility[h])
+                    {visibleHeaders
                       .map((header) => (
                         <TableHead
                           key={header}
-                          className={`${stickyHead} whitespace-nowrap px-4 cursor-pointer select-none`}
+                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
                           onClick={() => handleSort(header)}
                         >
                           <div className="flex items-center gap-1">
@@ -571,7 +571,7 @@ export default function ViewBoqPage() {
                           </div>
                         </TableHead>
                       ))}
-                      <TableHead className={`${stickyHead}`}>Actions</TableHead>
+                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -585,8 +585,7 @@ export default function ViewBoqPage() {
                         <TableCell className="px-2">
                           <Skeleton className="h-5 w-5" />
                         </TableCell>
-                        {columnOrder
-                          .filter((h) => columnVisibility[h])
+                        {visibleHeaders
                           .map((header, j) => (
                             <TableCell key={`${i}-${j}`}>
                               <Skeleton className="h-5 w-full" />
@@ -630,9 +629,7 @@ export default function ViewBoqPage() {
                                 </Button>
                               )}
                             </TableCell>
-                            {columnOrder
-                              .filter((h) => columnVisibility[h])
-                              .map((header) => {
+                            {visibleHeaders.map((header) => {
                                 let raw = item[header];
                                 if (header === 'JMC Executed Qty') {
                                   raw = jmcQuantities[item['BOQ SL No'] as string] || 0;
@@ -643,8 +640,8 @@ export default function ViewBoqPage() {
                                     const qty = Number(item['QTY']);
                                     const rate = Number(item['Unit Rate']);
                                     const explicit = Number(raw);
-                                    if (Number.is.finite(explicit)) return fmtNum(explicit);
-                                    if (Number.is.finite(qty) && Number.is.finite(rate)) return fmtNum(qty * rate);
+                                    if (Number.isFinite(explicit)) return fmtNum(explicit);
+                                    if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
                                   if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty' || header === 'JMC Executed Qty') return fmtNum(raw);
@@ -673,7 +670,7 @@ export default function ViewBoqPage() {
                           {isExpanded && hasBom && (
                             <TableRow className="bg-muted/50 hover:bg-muted/50">
                               <TableCell
-                                colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 3}
+                                colSpan={visibleHeaders.length + 3}
                                 className="p-0"
                               >
                                 <div className="p-4">
@@ -708,7 +705,7 @@ export default function ViewBoqPage() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 3}
+                        colSpan={visibleHeaders.length + 3}
                         className="text-center h-24"
                       >
                         No BOQ items found.
@@ -726,7 +723,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
-        jmcEntries={jmcEntries}
+        jmcEntries={[]}
         bills={[]}
       />
       
@@ -787,7 +784,6 @@ export default function ViewBoqPage() {
                                 onCheckedChange={(checked) => {
                                   const next = { ...columnVisibility, [header]: !!checked };
                                   setColumnVisibility(next);
-                                  savePrefs({ visibility: next });
                                 }}
                               />
                               <Input
@@ -795,7 +791,6 @@ export default function ViewBoqPage() {
                                 onChange={(e) => {
                                   const next = { ...columnNames, [header]: e.target.value };
                                   setColumnNames(next);
-                                  savePrefs({ names: next });
                                 }}
                               />
                             </div>
@@ -813,7 +808,6 @@ export default function ViewBoqPage() {
             <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>
               Close
             </Button>
-            <Button onClick={() => setIsColumnEditorOpen(false)}>Save</Button>
           </div>
         </DialogContent>
       </Dialog>
