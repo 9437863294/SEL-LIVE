@@ -1,25 +1,25 @@
 
+"use client";
 
-'use client';
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, getDocs } from "firebase/firestore";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { BoqItem, BillItem } from "@/lib/types";
+import { BoqItemSelector } from "@/components/BoqItemSelector";
+import { JmcItemSelectorDialog } from "@/components/BoqMultiSelectDialog";
+import { useParams } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { logUserActivity } from "@/lib/activity-logger";
 
-import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem, BillItem } from '@/lib/types';
-import { BoqItemSelector } from '@/components/BoqItemSelector';
-import { JmcItemSelectorDialog } from '@/components/BoqMultiSelectDialog';
-import { useParams } from 'next/navigation';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
-
+// ---------------------- Types ----------------------
 type JmcDetails = {
   jmcNo: string;
   woNo: string;
@@ -36,16 +36,17 @@ type JmcItem = {
   totalAmount: number;
 };
 
+// ---------------------- Constants ----------------------
 const initialJmcDetails: JmcDetails = {
-  jmcNo: '',
-  woNo: '',
-  jmcDate: new Date().toISOString().split('T')[0],
+  jmcNo: "",
+  woNo: "",
+  jmcDate: new Date().toISOString().split("T")[0],
 };
 
 const initialItem: JmcItem = {
-  boqSlNo: '',
-  description: '',
-  unit: '',
+  boqSlNo: "",
+  description: "",
+  unit: "",
   boqQty: 0,
   rate: 0,
   executedQty: 0,
@@ -66,35 +67,36 @@ export default function JmcEntryPage() {
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
+  // ---------------------- Effects ----------------------
   useEffect(() => {
     const fetchBoqItems = async () => {
       if (!projectSlug) return;
       setIsBoqLoading(true);
       try {
-        const boqSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'boqItems'));
+        const boqSnapshot = await getDocs(collection(db, "projects", projectSlug, "boqItems"));
         const boqData = boqSnapshot.docs
           .map((d) => {
             const data = d.data() as Record<string, unknown>;
             return {
               ...data,
               id: d.id,
-              ['SL. No.']: String((data as any)['SL. No.'] ?? ''),
+              ["SL. No."]: String((data as any)["SL. No."] ?? ""),
             } as BoqItem;
           })
           .sort((a, b) => {
-            const slNoA = parseFloat((a as any)['SL. No.']);
-            const slNoB = parseFloat((b as any)['SL. No.']);
+            const slNoA = parseFloat((a as any)["SL. No."]);
+            const slNoB = parseFloat((b as any)["SL. No."]);
             if (Number.isNaN(slNoA) || Number.isNaN(slNoB)) return 0;
             return slNoA - slNoB;
           });
 
         setBoqItems(boqData);
       } catch (error) {
-        console.error('Error fetching BOQ items:', error);
+        console.error("Error fetching BOQ items:", error);
         toast({
-          title: 'Error',
-          description: 'Could not fetch BOQ items for this project.',
-          variant: 'destructive',
+          title: "Error",
+          description: "Could not fetch BOQ items for this project.",
+          variant: "destructive",
         });
       } finally {
         setIsBoqLoading(false);
@@ -104,6 +106,7 @@ export default function JmcEntryPage() {
     fetchBoqItems();
   }, [projectSlug, toast]);
 
+  // ---------------------- Helpers ----------------------
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setDetails((prev) => ({ ...prev, [name]: value }));
@@ -111,28 +114,26 @@ export default function JmcEntryPage() {
 
   // generic price-key finder (works for BoqItem or BillItem)
   const findBasicPriceKey = (row: Record<string, unknown>): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate'];
+    const knownPriceKeys = ["UNIT PRICE", "Unit Rate", "Rate"];
     for (const key of knownPriceKeys) {
       if (Object.prototype.hasOwnProperty.call(row, key)) return key;
     }
-    return Object.keys(row).find(
-      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'),
-    );
+    return Object.keys(row).find((k) => k.toLowerCase().includes("rate") && !k.toLowerCase().includes("total"));
   };
 
   // parse numbers from string/number (handles commas/spaces)
   const parseNum = (v: unknown): number => {
-    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    if (typeof v === 'string') {
-      const n = Number(v.replace(/[, ]/g, ''));
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    if (typeof v === "string") {
+      const n = Number(v.replace(/[, ]/g, ""));
       return Number.isFinite(n) ? n : 0;
     }
     return 0;
   };
 
   const recalcRow = (row: JmcItem): JmcItem => {
-    const qty = typeof row.executedQty === 'number' ? row.executedQty : Number(row.executedQty ?? 0);
-    const rate = typeof row.rate === 'number' ? row.rate : Number(row.rate ?? 0);
+    const qty = typeof row.executedQty === "number" ? row.executedQty : Number(row.executedQty ?? 0);
+    const rate = typeof row.rate === "number" ? row.rate : Number(row.rate ?? 0);
     const total = !Number.isFinite(qty * rate) ? 0 : qty * rate;
     return { ...row, totalAmount: total };
   };
@@ -149,24 +150,22 @@ export default function JmcEntryPage() {
 
     if (boqItem) {
       const anyRow = boqItem as unknown as Record<string, unknown>;
-      
+
       const boqSlNo =
-        ((anyRow['SL. No.'] as string) ??
-          (anyRow['BOQ SL No'] as string) ??
-          '') as string;
-      
-      const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
+        ((anyRow["SL. No."] as string) ?? (anyRow["BOQ SL No"] as string) ?? "") as string;
+
+      const boqQtyKey = Object.keys(anyRow).find((k) => k.toLowerCase().includes("qty")) || "QTY";
       const boqQty = parseNum(anyRow[boqQtyKey]);
-          
+
       const rateKey = findBasicPriceKey(anyRow);
       const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
 
       const updated: JmcItem = recalcRow({
         ...next[index],
-        boqSlNo: boqSlNo,
-        description: ((anyRow['Description'] as string) ?? '') as string,
-        unit: ((anyRow['Unit'] as string) ?? '') as string,
-        boqQty: boqQty,
+        boqSlNo,
+        description: ((anyRow["Description"] as string) ?? "") as string,
+        unit: ((anyRow["Unit"] as string) ?? "") as string,
+        boqQty,
         rate: Number.isFinite(rate) ? rate : 0,
       });
 
@@ -177,34 +176,32 @@ export default function JmcEntryPage() {
 
     setItems(next);
   };
+  
+  const handleMultiBoqSelect = (selectedItems: BoqItem[]) => {
+    const mapped: JmcItem[] = selectedItems.map((row) => {
+      const anyRow = row as unknown as Record<string, unknown>;
 
-  // IMPORTANT: dialog emits BillItem[], so the handler must accept BillItem[]
-  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
-    const mapped: JmcItem[] = selectedBoqItems.map((boqItem) => {
-        const anyRow = boqItem as unknown as Record<string, unknown>;
-        const rateKey = findBasicPriceKey(anyRow);
-        const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
-        const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
-        const boqQty = parseNum(anyRow[boqQtyKey]);
-  
-        const boqSlNo =
-          (anyRow['SL. No.'] as string) ??
-          (anyRow['BOQ SL No'] as string) ??
-          '';
-  
-        const description = (anyRow['Description'] as string) ?? '';
-        const unit = (anyRow['Unit'] as string) ?? '';
-  
-        return recalcRow({
-          boqSlNo,
-          description,
-          unit,
-          boqQty,
-          rate: Number.isFinite(rate) ? rate : 0,
-          executedQty: 0,
-          totalAmount: 0,
-        });
+      const rateKey = findBasicPriceKey(anyRow);
+      const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
+
+      const boqQtyKey = Object.keys(anyRow).find((k) => k.toLowerCase().includes("qty")) || "QTY";
+      const boqQty = parseNum(anyRow[boqQtyKey]);
+
+      const boqSlNo = (anyRow["SL. No."] as string) ?? (anyRow["BOQ SL No"] as string) ?? "";
+
+      const description = (anyRow["Description"] as string) ?? "";
+      const unit = (anyRow["Unit"] as string) ?? "";
+
+      return recalcRow({
+        boqSlNo,
+        description,
+        unit,
+        boqQty,
+        rate: Number.isFinite(rate) ? rate : 0,
+        executedQty: 0,
+        totalAmount: 0,
       });
+    });
 
     const base = items.length === 1 && !items[0].boqSlNo ? [] : items;
     setItems([...base, ...mapped]);
@@ -221,33 +218,36 @@ export default function JmcEntryPage() {
   };
 
   const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(
-      Number.isFinite(amount) ? amount : 0,
-    );
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2,
+    }).format(Number.isFinite(amount) ? amount : 0);
 
   const grandTotal = useMemo(
     () => items.reduce((acc, it) => acc + (Number.isFinite(it.totalAmount) ? it.totalAmount : 0), 0),
-    [items],
+    [items]
   );
 
   const hasMissingFields =
     !details.jmcNo.trim() || !details.woNo.trim() || items.some((it) => !it.boqSlNo.trim());
 
+  // ---------------------- Save ----------------------
   const handleSave = async () => {
     if (!user) {
       toast({
-        title: 'Authentication Error',
-        description: 'You must be logged in.',
-        variant: 'destructive',
+        title: "Authentication Error",
+        description: "You must be logged in.",
+        variant: "destructive",
       });
       return;
     }
 
     if (hasMissingFields) {
       toast({
-        title: 'Missing Required Fields',
-        description: 'Please fill JMC No, WO No, and ensure all items have a BOQ Sl. No.',
-        variant: 'destructive',
+        title: "Missing Required Fields",
+        description: "Please fill JMC No, WO No, and ensure all items have a BOQ Sl. No.",
+        variant: "destructive",
       });
       return;
     }
@@ -264,11 +264,11 @@ export default function JmcEntryPage() {
         createdAt: new Date().toISOString(),
       };
 
-      await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), payload);
+      await addDoc(collection(db, "projects", projectSlug, "jmcEntries"), payload);
 
       await logUserActivity({
-        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
-        action: 'Create JMC Entry',
+        userId: (user as any).id ?? (user as any).uid ?? "unknown",
+        action: "Create JMC Entry",
         details: {
           project: projectSlug,
           jmcNo: details.jmcNo,
@@ -279,24 +279,25 @@ export default function JmcEntryPage() {
       });
 
       toast({
-        title: 'JMC Entry Created',
-        description: 'The new JMC entry has been successfully saved.',
+        title: "JMC Entry Created",
+        description: "The new JMC entry has been successfully saved.",
       });
 
       setDetails(initialJmcDetails);
       setItems([initialItem]);
     } catch (error) {
-      console.error('Error creating JMC entry: ', error);
+      console.error("Error creating JMC entry: ", error);
       toast({
-        title: 'Save Failed',
-        description: 'An error occurred while saving the JMC entry.',
-        variant: 'destructive',
+        title: "Save Failed",
+        description: "An error occurred while saving the JMC entry.",
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
+  // ---------------------- Render ----------------------
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -353,62 +354,67 @@ export default function JmcEntryPage() {
           </CardHeader>
 
           <CardContent>
-              <div className="overflow-x-auto">
-                  <Table>
-                      <TableHeader>
-                          <TableRow>
-                              <TableHead className="w-[240px]">BOQ Sl. No.</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="w-[110px]">Unit</TableHead>
-                              <TableHead className="w-[110px]">BOQ Qty</TableHead>
-                              <TableHead className="w-[130px]">Rate</TableHead>
-                              <TableHead className="w-[150px]">Executed Qty</TableHead>
-                              <TableHead className="w-[160px]">Total Amount</TableHead>
-                              <TableHead className="w-[60px]">Action</TableHead>
-                          </TableRow>
-                      </TableHeader>
+            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto rounded-md border">
+              <Table className="min-w-[900px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[240px] sticky top-0 bg-background z-10">BOQ Sl. No.</TableHead>
+                    <TableHead className="sticky top-0 bg-background z-10">Description</TableHead>
+                    <TableHead className="w-[110px] sticky top-0 bg-background z-10">Unit</TableHead>
+                    <TableHead className="w-[110px] sticky top-0 bg-background z-10">BOQ Qty</TableHead>
+                    <TableHead className="w-[130px] sticky top-0 bg-background z-10">Rate</TableHead>
+                    <TableHead className="w-[150px] sticky top-0 bg-background z-10">Executed Qty</TableHead>
+                    <TableHead className="w-[160px] sticky top-0 bg-background z-10">Total Amount</TableHead>
+                    <TableHead className="w-[60px] sticky top-0 bg-background z-10">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
 
-                      <TableBody>
-                          {items.map((item, index) => (
-                              <TableRow key={`${item.boqSlNo || 'row'}-${index}`}>
-                                  <TableCell>
-                                      <BoqItemSelector
-                                        boqItems={boqItems}
-                                        selectedSlNo={item.boqSlNo}
-                                        onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
-                                        isLoading={isBoqLoading}
-                                      />
-                                  </TableCell>
+                <TableBody>
+                  {items.map((item, index) => (
+                    <TableRow key={`${item.boqSlNo || "row"}-${index}`}>
+                      <TableCell>
+                        <BoqItemSelector
+                          boqItems={boqItems}
+                          selectedSlNo={item.boqSlNo}
+                          onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
+                          isLoading={isBoqLoading}
+                        />
+                      </TableCell>
 
-                                  <TableCell className="align-top">{item.description}</TableCell>
-                                  <TableCell className="align-top">{item.unit}</TableCell>
-                                  <TableCell className="align-top">{item.boqQty}</TableCell>
-                                  <TableCell className="align-top">{formatCurrency(item.rate)}</TableCell>
+                      <TableCell className="align-top">{item.description}</TableCell>
+                      <TableCell className="align-top">{item.unit}</TableCell>
+                      <TableCell className="align-top">{item.boqQty}</TableCell>
+                      <TableCell className="align-top">{formatCurrency(item.rate)}</TableCell>
 
-                                  <TableCell className="align-top">
-                                      <Input
-                                        inputMode="decimal"
-                                        name="executedQty"
-                                        value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
-                                        onChange={(e) => handleItemQtyChange(index, e)}
-                                        type="number"
-                                        step="any"
-                                        min={0}
-                                      />
-                                  </TableCell>
+                      <TableCell className="align-top">
+                        <Input
+                          inputMode="decimal"
+                          name="executedQty"
+                          value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
+                          onChange={(e) => handleItemQtyChange(index, e)}
+                          type="number"
+                          step="any"
+                          min={0}
+                        />
+                      </TableCell>
 
-                                  <TableCell className="align-top font-medium">{formatCurrency(item.totalAmount)}</TableCell>
+                      <TableCell className="align-top font-medium">{formatCurrency(item.totalAmount)}</TableCell>
 
-                                  <TableCell className="align-top">
-                                      <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove item">
-                                          <Trash2 className="h-4 w-4 text-destructive" />
-                                      </Button>
-                                  </TableCell>
-                              </TableRow>
-                          ))}
-                      </TableBody>
-                  </Table>
-              </div>
+                      <TableCell className="align-top">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          aria-label="Remove item"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
 
             <div className="flex justify-between items-center mt-4">
               <Button variant="outline" onClick={addItem} className="mt-4">
