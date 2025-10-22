@@ -42,7 +42,7 @@ export function BoqItemSelector({
   }, [selectedSlNo]);
 
   const getItemDescription = (item: BoqItem): string => {
-    const possibleKeys = ['Description', 'DESCRIPTION OF ITEMS'];
+    const possibleKeys = ['Description'];
     for (const key of possibleKeys) {
       if (item[key]) return String(item[key]);
     }
@@ -61,7 +61,7 @@ export function BoqItemSelector({
   }
 
   const getBoqQty = (item: BoqItem): string => {
-    return String(item['BOQ QTY'] || item['Total Qty'] || '0');
+    return String(item['QTY'] || item['Total Qty'] || '0');
   }
 
   const selectedItem = boqItems.find(item => getBoqSlNo(item) === currentValue);
@@ -114,7 +114,7 @@ export function BoqItemSelector({
                 <div className="text-left">ERP SL No</div>
                 <div className="text-left">BOQ SL No</div>
                 <div className="text-left">Description</div>
-                <div className="text-right">BOQ Qty</div>
+                <div className="text-right">QTY</div>
                 <div className="text-right">Rate</div>
               </div>
 

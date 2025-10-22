@@ -619,7 +619,7 @@ export default function ViewBoqPage() {
                                     if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
-                                  if (header === 'QTY' || header === 'Unit Rate') return fmtNum(raw);
+                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
                                   return raw ?? 'N/A';
                                 })();
 
@@ -710,9 +710,9 @@ export default function ViewBoqPage() {
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
               {editingItem && dialogFields.map(key => (
                   <div className="space-y-1" key={key}>
-                      <Label htmlFor={`edit-${key}`}>{key}</Label>
+                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
                       <Input
-                          id={`edit-${key}`}
+                          id={`edit-${String(key)}`}
                           name={String(key)}
                           value={editingItem[key] || ''}
                           onChange={handleEditFormChange}
