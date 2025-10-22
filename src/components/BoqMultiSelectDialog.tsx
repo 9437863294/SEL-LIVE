@@ -16,8 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import type { JmcEntry, JmcItem, Bill, BillItem } from '@/lib/types';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
@@ -366,7 +366,7 @@ export function JmcItemSelectorDialog({
 
           <ScrollArea className="h-96 border rounded-md">
             <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                 <div className="w-[50px] flex justify-center">
                   <Checkbox
                     aria-label="Select all"
@@ -396,6 +396,8 @@ export function JmcItemSelectorDialog({
                 </button>
 
                 <div>Description</div>
+                
+                <div className="text-right">BOQ Qty</div>
 
                 <button
                   type="button"
@@ -428,7 +430,7 @@ export function JmcItemSelectorDialog({
                   return (
                     <div
                       key={item.id}
-                      className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow(item.id, !rowChecked)}
@@ -455,6 +457,7 @@ export function JmcItemSelectorDialog({
                       <div className="truncate pr-2">{item.jmcNo}</div>
                       <div className="truncate pr-2">{String((item as any).boqSlNo ?? '')}</div>
                       <div className="truncate pr-2">{String((item as any).description ?? '')}</div>
+                      <div className="text-right pr-2">{item.boqQty}</div>
                       <div className="text-right pr-2">{item.availableQty}</div>
                       <div className="text-right pr-2">
                         {formatCurrency(getRateNumber((item as any).rate))}
