@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
@@ -33,7 +34,7 @@ interface JmcItemSelectorDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BillItem[]) => void;
-  alreadyAddedItems: BillItem[];
+  alreadyAddedItems?: BillItem[];
 }
 
 // ⚠️ Do NOT change types from JmcItem (e.g., unit stays `string` if that's what JmcItem declares)
@@ -52,7 +53,7 @@ export function JmcItemSelectorDialog({
   isOpen,
   onOpenChange,
   onConfirm,
-  alreadyAddedItems,
+  alreadyAddedItems = [],
 }: JmcItemSelectorDialogProps) {
   const { toast } = useToast();
   const params = useParams();
