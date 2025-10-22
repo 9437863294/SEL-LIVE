@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,11 +17,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BoqItem } from '@/lib/types';
+import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
-
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 
 interface JmcItemSelectorDialogProps {
   isOpen: boolean;
@@ -208,7 +216,7 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItem
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
           <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
-            Add {selectedIds.size} Selected Item(s)
+            Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </DialogFooter>
       </DialogContent>
