@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill } from '@/lib/types'; // Assuming these types are correct
+import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -24,6 +25,8 @@ import {
 } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
+import ViewJmcEntryDialog from './ViewJmcEntryDialog';
+import { Eye } from 'lucide-react';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -34,7 +37,6 @@ interface BoqItemDetailsDialogProps {
   isPanel?: boolean; // New prop
 }
 
-// --- Helper function moved outside the component ---
 const formatCurrency = (amount: string | number) => {
   const num = parseFloat(String(amount));
   if (isNaN(num)) return String(amount);
@@ -52,22 +54,34 @@ export default function BoqItemDetailsDialog({
   bills,
   isPanel = false,
 }: BoqItemDetailsDialogProps) {
+  const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
+  const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
 
-  // --- All calculations are memoized ---
+  const handleViewJmc = (jmcNo: string) => {
+    const jmc = jmcEntries.find(entry => entry.jmcNo === jmcNo);
+    if (jmc) {
+      setSelectedJmc(jmc);
+      setIsJmcViewOpen(true);
+    }
+  };
+
   const data = useMemo(() => {
     if (!item) return null;
 
-    // --- Normalize data keys once ---
-    const boqSlNo = item['SL. No.'] || item['BOQ SL No'];
+    const boqSlNo = String(item['SL. No.'] || item['BOQ SL No'] || '').trim();
+    
+    if (boqSlNo === '') return null; 
+
     const description = item['Description'] || item['Item Spec'];
-    // Ensure boqQty is a number
     const boqQty = Number(item['Total Qty'] || item['qty'] || item['QTY'] || 0);
 
-    // --- JMC calculations ---
     const relevantJmcItems = jmcEntries
       .flatMap((entry) =>
         entry.items
-          .filter((jmcItem) => jmcItem.boqSlNo === boqSlNo)
+          .filter((jmcItem) => {
+            const jmcSlNo = String(jmcItem.boqSlNo || '').trim();
+            return jmcSlNo === boqSlNo;
+          })
           .map((jmcItem) => ({
             ...jmcItem,
             jmcNo: entry.jmcNo,
@@ -80,11 +94,13 @@ export default function BoqItemDetailsDialog({
       0,
     );
 
-    // --- Bill calculations ---
     const relevantBillItems = bills
       .flatMap((bill) =>
         bill.items
-          .filter((billItem) => billItem.boqSlNo === boqSlNo)
+          .filter((billItem) => {
+            const billSlNo = String(billItem.boqSlNo || '').trim();
+            return billSlNo === boqSlNo;
+          })
           .map((billItem) => ({
             ...billItem,
             billNo: bill.billNo,
@@ -106,20 +122,16 @@ export default function BoqItemDetailsDialog({
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, bills]); // Dependencies for useMemo
+  }, [item, jmcEntries, bills]); 
 
-  // --- NEW: Safe Date Formatting Helper ---
-  // Handles strings, numbers, or Firebase Timestamps
   const formatDateSafe = (dateInput: any) => {
     if (!dateInput) return 'N/A';
     try {
-      // Check if it's a Firebase Timestamp
       if (typeof dateInput.toDate === 'function') {
         return format(dateInput.toDate(), 'dd MMM, yyyy');
       }
-      // Try to parse it as a string or number
       const date = new Date(dateInput);
-      if (isNaN(date.getTime())) return 'Invalid Date'; // Handle invalid date strings
+      if (isNaN(date.getTime())) return 'Invalid Date';
       return format(date, 'dd MMM, yyyy');
     } catch (error) {
       console.warn('Could not format date:', dateInput, error);
@@ -127,11 +139,8 @@ export default function BoqItemDetailsDialog({
     }
   };
 
-
-  // --- Updated guard clause ---
   if (!item || !data) return null;
 
-  // --- Destructure the memoized data ---
   const {
     boqSlNo,
     description,
@@ -176,7 +185,6 @@ export default function BoqItemDetailsDialog({
                     <TableCell>{boqQty}</TableCell>
                     <TableCell>{totalExecutedQty}</TableCell>
                     <TableCell>{totalBilledQty}</TableCell>
-                    {/* This balance logic seems correct based on the headers */}
                     <TableCell>{boqQty - totalExecutedQty}</TableCell>
                   </TableRow>
                 </TableBody>
@@ -195,24 +203,28 @@ export default function BoqItemDetailsDialog({
                     <TableHead>JMC No.</TableHead>
                     <TableHead>JMC Date</TableHead>
                     <TableHead>Executed Qty</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {relevantJmcItems.length > 0 ? (
                     relevantJmcItems.map((jmcItem, index) => (
-                      // --- CHANGE 1: Use a more stable key ---
                       <TableRow key={`jmc-${jmcItem.jmcNo}-${index}`}>
                         <TableCell>{jmcItem.jmcNo}</TableCell>
                         <TableCell>
-                          {/* --- CHANGE 2: Use safe date formatter --- */}
                           {formatDateSafe(jmcItem.jmcDate)}
                         </TableCell>
                         <TableCell>{jmcItem.executedQty}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}>
+                            <Eye className="mr-2 h-4 w-4" /> View
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center h-24">
+                      <TableCell colSpan={4} className="text-center h-24">
                         No JMC entries found for this item.
                       </TableCell>
                     </TableRow>
@@ -239,11 +251,9 @@ export default function BoqItemDetailsDialog({
                 <TableBody>
                   {relevantBillItems.length > 0 ? (
                     relevantBillItems.map((billItem, index) => (
-                      // --- CHANGE 1: Use a more stable key ---
                       <TableRow key={`bill-${billItem.billNo}-${index}`}>
                         <TableCell>{billItem.billNo}</TableCell>
                         <TableCell>
-                          {/* --- CHANGE 2: Use safe date formatter --- */}
                           {formatDateSafe(billItem.billDate)}
                         </TableCell>
                         <TableCell>{billItem.billedQty}</TableCell>
@@ -265,6 +275,11 @@ export default function BoqItemDetailsDialog({
           </div>
         </div>
       </div>
+      <ViewJmcEntryDialog
+        isOpen={isJmcViewOpen}
+        onOpenChange={setIsJmcViewOpen}
+        jmcEntry={selectedJmc}
+      />
     </>
   );
 

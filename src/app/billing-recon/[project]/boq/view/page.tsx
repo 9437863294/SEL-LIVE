@@ -208,27 +208,9 @@ export default function ViewBoqPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQuery);
-      const currentProject = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-
-      if(!currentProject) {
-        toast({title: 'Project Not Found', variant: 'destructive'});
-        setIsLoading(false);
-        return;
-      }
-
-      const boqItemsRef = collection(db, 'projects', currentProject.id, 'boqItems');
-      const jmcCollectionRef = collection(db, 'projects', currentProject.id, 'jmcEntries');
-      const billsCollectionRef = collection(db, 'projects', currentProject.id, 'bills');
-      
-      const [boqSnapshot, jmcSnapshot, billsSnapshot] = await Promise.all([
-          getDocs(boqItemsRef),
-          getDocs(jmcCollectionRef),
-          getDocs(billsCollectionRef),
-      ]);
-
+      const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
+      const q = query(boqItemsRef); // simplified query
+      const boqSnapshot = await getDocs(q);
       const items = boqSnapshot.docs.map((d) => {
         const data = d.data() as any;
         const erpKey = normalizeKey(data, 'ERP SL NO');
@@ -242,10 +224,13 @@ export default function ViewBoqPage() {
       });
       setBoqItems(items);
 
-      const jmcData = jmcSnapshot.docs.map(d => ({id: d.id, ...d.data()} as JmcEntry));
+      const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+      const jmcSnapshot = await getDocs(jmcCollectionRef);
+      const jmcData = jmcSnapshot.docs.map(d => d.data() as JmcEntry);
       setJmcEntries(jmcData);
-      
-      const billsData = billsSnapshot.docs.map(d => ({id: d.id, ...d.data()} as Bill));
+      const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
+      const billsSnapshot = await getDocs(billsCollectionRef);
+      const billsData = billsSnapshot.docs.map(d => d.data() as Bill);
       setBills(billsData);
 
     } catch (error) {
@@ -381,17 +366,10 @@ export default function ViewBoqPage() {
   };
   
   const handleSaveChanges = async () => {
-    if (!editingItem || !projectSlug) return;
+    if (!editingItem) return;
     setIsSaving(true);
     try {
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQuery);
-      const currentProject = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-
-      if(!currentProject) throw new Error("Project not found");
-
-      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'projects', projectSlug, 'boqItems', editingItem.id);
       const { id, ...dataToSave } = editingItem;
       await updateDoc(itemRef, dataToSave);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -409,7 +387,8 @@ export default function ViewBoqPage() {
   /*** SORT HEADER CLICK ***/
   const handleSort = (key: string) => {
     if (sortKey === key) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      const next = sortDirection === 'asc' ? 'desc' : 'asc';
+      setSortDirection(next);
     } else {
       setSortKey(key);
       setSortDirection('asc');
@@ -443,16 +422,9 @@ export default function ViewBoqPage() {
     if (!projectSlug || selectedItemIds.length === 0) return;
     setIsDeleting(true);
     try {
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQuery);
-      const currentProject = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-
-      if(!currentProject) throw new Error("Project not found");
-
       const batch = writeBatch(db);
       selectedItemIds.forEach((id) => {
-        batch.delete(doc(db, 'projects', currentProject.id, 'boqItems', id));
+        batch.delete(doc(db, 'projects', projectSlug, 'boqItems', id));
       });
       await batch.commit();
       toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
@@ -756,8 +728,8 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
-        jmcEntries={jmcEntries}
-        bills={bills}
+        jmcEntries={jmcEntries} // <-- PASS THE STATE VARIABLE
+        bills={[]}
       />
       
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -847,4 +819,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
