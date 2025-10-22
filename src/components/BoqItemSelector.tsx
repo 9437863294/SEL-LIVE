@@ -81,7 +81,7 @@ export function BoqItemSelector({
           className="w-full justify-between"
         >
           {currentValue && selectedItem
-            ? `${getBoqSlNo(selectedItem)}: ${getItemDescription(selectedItem).substring(0, 25)}...`
+            ? `${getBoqSlNo(selectedItem)}`
             : 'Select BOQ Item...'}
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>

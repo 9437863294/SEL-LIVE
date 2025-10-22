@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -28,6 +29,7 @@ type JmcItem = {
   boqSlNo: string;
   description: string;
   unit: string;
+  boqQty: number;
   rate: number;
   executedQty: number;
   totalAmount: number;
@@ -43,6 +45,7 @@ const initialItem: JmcItem = {
   boqSlNo: '',
   description: '',
   unit: '',
+  boqQty: 0,
   rate: 0,
   executedQty: 0,
   totalAmount: 0,
@@ -147,6 +150,8 @@ export default function JmcEntryPage() {
       const anyRow = boqItem as unknown as Record<string, unknown>;
       const rateKey = findBasicPriceKey(anyRow);
       const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
+      const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
+      const boqQty = parseNum(anyRow[boqQtyKey]);
 
       const updated: JmcItem = recalcRow({
         ...next[index],
@@ -156,6 +161,7 @@ export default function JmcEntryPage() {
             '') as string,
         description: ((anyRow['Description'] as string) ?? '') as string,
         unit: ((anyRow['Unit'] as string) ?? '') as string,
+        boqQty: boqQty,
         rate: Number.isFinite(rate) ? rate : 0,
       });
 
@@ -173,6 +179,9 @@ export default function JmcEntryPage() {
       const anyRow = row as unknown as Record<string, unknown>;
       const rateKey = findBasicPriceKey(anyRow);
       const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
+      const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
+      const boqQty = parseNum(anyRow[boqQtyKey]);
+
 
       const boqSlNo =
         (anyRow['SL. No.'] as string) ??
@@ -186,6 +195,7 @@ export default function JmcEntryPage() {
         boqSlNo,
         description,
         unit,
+        boqQty,
         rate: Number.isFinite(rate) ? rate : 0,
         executedQty: 0,
         totalAmount: 0,
@@ -346,6 +356,7 @@ export default function JmcEntryPage() {
                     <TableHead className="w-[240px]">BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="w-[110px]">Unit</TableHead>
+                    <TableHead className="w-[110px]">BOQ Qty</TableHead>
                     <TableHead className="w-[130px]">Rate</TableHead>
                     <TableHead className="w-[150px]">Executed Qty</TableHead>
                     <TableHead className="w-[160px]">Total Amount</TableHead>
@@ -367,6 +378,7 @@ export default function JmcEntryPage() {
 
                       <TableCell className="align-top">{item.description}</TableCell>
                       <TableCell className="align-top">{item.unit}</TableCell>
+                      <TableCell className="align-top">{item.boqQty}</TableCell>
                       <TableCell className="align-top">{formatCurrency(item.rate)}</TableCell>
 
                       <TableCell className="align-top">
@@ -393,7 +405,7 @@ export default function JmcEntryPage() {
 
                   {/* Footer row with grand total */}
                   <TableRow>
-                    <TableCell colSpan={4} />
+                    <TableCell colSpan={5} />
                     <TableCell className="font-semibold text-right">Grand Total</TableCell>
                     <TableCell className="font-bold">{formatCurrency(grandTotal)}</TableCell>
                     <TableCell />
