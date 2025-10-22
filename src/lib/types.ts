@@ -323,6 +323,11 @@ export interface UserSettings {
     [pageKey: string]: {
       order: string[];
       visibility: Record<string, boolean>;
+      names?: Record<string, string>;
+      sort?: {
+          key: string;
+          direction: 'asc' | 'desc';
+      };
     },
     requisitions_all?: {
       order: string[];
@@ -820,3 +825,4 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
+
