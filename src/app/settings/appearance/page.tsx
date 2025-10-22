@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -39,7 +38,8 @@ const colors = [
 const fonts = [
   { name: 'Inter', value: 'inter', className: 'font-inter' },
   { name: 'Roboto', value: 'roboto', className: 'font-roboto' },
-  { name: 'Lato', value: 'lato', className: 'font-lato' },
+  // The Lato font is not defined in globals.css or layout.tsx, so it's removed for now.
+  // { name: 'Lato', value: 'lato', className: 'font-lato' },
 ];
 
 
@@ -126,7 +126,7 @@ export default function AppearancePage() {
 
           <div className="space-y-4">
             <Label htmlFor="font-select">Font Style</Label>
-             <Select value={selectedFont} onValueChange={setSelectedFont}>
+             <Select value={selectedFont} onValueChange={(value) => setSelectedFont(value)}>
                 <SelectTrigger id="font-select" className="w-full md:w-1/2">
                     <SelectValue placeholder="Select a font" />
                 </SelectTrigger>
