@@ -114,38 +114,65 @@ export default function JmcEntryPage() {
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
     const itemToUpdate = newItems[index];
-
+  
     if (boqItem) {
-        const rateKey = findBasicPriceKey(boqItem);
-        itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
+      const rateKey = findBasicPriceKey(boqItem);
+      const rawRate = rateKey ? boqItem[rateKey] : 0;
+      const rateNum =
+        typeof rawRate === 'number'
+          ? rawRate
+          : Number(String(rawRate ?? '0').replace(/,/g, '').trim());
+  
+      Object.assign(itemToUpdate, {
+        boqSlNo: String(
+          (boqItem as any)['BOQ SL No'] ??
+          ''
+        ),
+        description: (boqItem as any)['Description'] ?? '',
+        unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
+        rate: Number.isFinite(rateNum) ? rateNum : 0,
+      });
+  
+      const qty = Number(itemToUpdate.executedQty) || 0;
+      itemToUpdate.totalAmount = qty * (Number(itemToUpdate.rate) || 0);
     } else {
-        Object.assign(itemToUpdate, initialItem);
+      Object.assign(itemToUpdate, initialItem);
     }
-    
+  
     setItems(newItems);
   };
   
-  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
-      const newJmcItems = selectedBoqItems.map(boqItem => {
-          const rateKey = findBasicPriceKey(boqItem);
-          const boqSlNo = boqItem['SL. No.'] || boqItem['BOQ SL No'] || '';
-          return {
-              boqSlNo: boqSlNo,
-              description: boqItem['Description'] || '',
-              unit: boqItem['Unit'] || boqItem['Unit'] || '',
-              rate: rateKey ? Number(boqItem[rateKey] || '0') : 0,
-              executedQty: 0,
-              totalAmount: 0,
-          };
-      });
-
-      // If the first item is empty, replace it. Otherwise, add the new items.
-      const existingItems = items.length === 1 && items[0].boqSlNo === ''
-          ? []
-          : items;
-
-      setItems([...existingItems, ...newJmcItems]);
-  };
+  
+    const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
+        const newJmcItems = selectedBoqItems.map((boqItem) => {
+        const rateKey = findBasicPriceKey(boqItem);
+        const rawRate = rateKey ? (boqItem as any)[rateKey] : 0;
+        const rateNum =
+            typeof rawRate === 'number'
+            ? rawRate
+            : Number(String(rawRate ?? '0').replace(/,/g, '').trim());
+    
+        const slNo = String(
+            (boqItem as any)['BOQ SL No'] ??
+            ''
+        );
+    
+        return {
+            boqSlNo: slNo,                                       // <-- force string
+            description: (boqItem as any)['Description'] ?? '',
+            unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
+            rate: Number.isFinite(rateNum) ? rateNum : 0,
+            executedQty: 0,
+            totalAmount: 0,
+        } as JmcItem;
+        });
+    
+        const existingItems =
+        items.length === 1 && items[0].boqSlNo === '' ? [] : items;
+    
+        setItems([...existingItems, ...newJmcItems]);
+    };
+  
 
   const addItem = () => {
     setItems([...items, { ...initialItem }]);

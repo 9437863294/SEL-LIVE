@@ -1,15 +1,25 @@
 
-
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Loader2, View, MoreHorizontal, Search, Settings } from 'lucide-react';
+import {
+  ArrowLeft,
+  Trash2,
+  Loader2,
+  Settings,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Search,
+  Edit,
+  Save,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, where, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -22,498 +32,540 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { JmcEntry, Bill } from '@/lib/types';
+import type { FabricationBomItem, Project } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
-import { DragDropContext, Droppable, Draggable, OnDragEndResponder } from 'react-beautiful-dnd';
-import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type BoqItem = {
-    id: string;
-    'JMC Executed Qty'?: number;
-    'Billed Qty'?: number;
-    'Balance Qty'?: number;
-    [key: string]: any;
+/** TYPES **/
+export type BoqItem = {
+  id: string;
+  'ERP SL NO'?: string | number;
+  'BOQ SL No'?: string | number;
+  'Description'?: string;
+  'Unit'?: string;
+  'QTY'?: number;
+  'Unit Rate'?: number;
+  'Total Amount'?: number;
+  bom?: FabricationBomItem[];
+  [key: string]: any;
 };
 
 const baseTableHeaders = [
-    'Project',
-    'Site',
-    'Scope',
-    'Sl No',
-    'Description',
-    'UNIT',
-    'BOQ QTY',
-    'UNIT PRICE',
-    'TOTAL PRICE FOR THE TENDER QUANTITY',
-    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
-];
-
+  'Project Name',
+  'Sub-Division',
+  'Site',
+  'Scope 1',
+  'Scope 2',
+  'Category 1',
+  'Category 2',
+  'Category 3',
+  'ERP SL NO',
+  'BOQ SL No',
+  'Description',
+  'Unit',
+  'QTY',
+  'Unit Rate',
+  'Total Amount',
+] as const;
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const params = useParams() as { project: string };
-  const { project: projectSlug } = params;
+  const { project: projectSlug } = useParams() as { project: string };
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [isClient, setIsClient] = useState(false);
-  
+  const [sortKey, setSortKey] = useState<string>('ERP SL NO');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
-
-  // Column Customization State
-  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
-    const defaults: Record<string, boolean> = {
-        'Scope': true,
-        'Sl No': true,
-        'Description': true,
-        'UNIT': true,
-    };
-    return baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] || false }), {});
-  });
-  const [columnNames, setColumnNames] = useState<Record<string, string>>(
-    baseTableHeaders.reduce((acc, h) => {
-        if(h === 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)') {
-            acc[h] = 'Description';
-        } else {
-            acc[h] = h;
-        }
-        return acc;
-    }, {} as Record<string, string>)
+  const [columnOrder, setColumnOrder] = useState<string[]>([...baseTableHeaders]);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    [...baseTableHeaders].reduce(
+      (acc, h) => ({
+        ...acc,
+        [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'Category 1'].includes(h as string),
+      }),
+      {} as Record<string, boolean>
+    )
   );
+  const [columnNames, setColumnNames] = useState<Record<string, string>>(
+    [...baseTableHeaders].reduce((acc, h) => ({ ...acc, [h]: h as string }), {} as Record<string, string>)
+  );
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const [filters, setFilters] = useState({
+    search: '',
+    'Scope 1': 'all',
+    'Scope 2': 'all',
+    'Category 1': 'all',
+  });
+  
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-        try {
-            const savedOrder = localStorage.getItem(`boqColumnOrder_${projectSlug}`);
-            const savedVisibility = localStorage.getItem(`boqColumnVisibility_${projectSlug}`);
-            const savedNames = localStorage.getItem(`boqColumnNames_${projectSlug}`);
-
-            if (savedOrder) setColumnOrder(JSON.parse(savedOrder));
-            if (savedVisibility) {
-                setColumnVisibility(JSON.parse(savedVisibility));
-            } else {
-                 const defaults: Record<string, boolean> = {
-                    'Scope': true,
-                    'Sl No': true,
-                    'Description': true,
-                    'UNIT': true,
-                };
-                setColumnVisibility(baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: defaults[header] || false }), {}));
-            }
-            if (savedNames) setColumnNames(JSON.parse(savedNames));
-        } catch (error) {
-            console.error("Failed to parse column preferences from localStorage", error);
-        }
-    }
-  }, [projectSlug]);
-  
-  const saveColumnPrefs = () => {
-    try {
-        localStorage.setItem(`boqColumnOrder_${projectSlug}`, JSON.stringify(columnOrder));
-        localStorage.setItem(`boqColumnVisibility_${projectSlug}`, JSON.stringify(columnVisibility));
-        localStorage.setItem(`boqColumnNames_${projectSlug}`, JSON.stringify(columnNames));
-        toast({ title: 'Success', description: 'Column preferences saved.' });
-    } catch (error) {
-        console.error("Failed to save preferences to localStorage", error);
-        toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
-    }
-  };
-
-  const onDragEnd: OnDragEndResponder = (result) => {
-    if (!result.destination) return;
-    const items = Array.from(columnOrder);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-    setColumnOrder(items);
-  };
-  
-  const fetchBoqItems = async () => {
+  const fetchProjectAndBoq = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const boqItemsRef = collection(db, 'boqItems');
-      const q = query(boqItemsRef, where('projectSlug', '==', projectSlug));
-      const boqSnapshot = await getDocs(q);
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
 
-      const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-      
-      const sortedItems = items.sort((a, b) => {
-        const slNoA = Number(a['Sl No']);
-        const slNoB = Number(b['Sl No']);
-        if (isNaN(slNoA) || isNaN(slNoB)) {
-          return 0; 
+        if (!projectData) {
+            toast({ title: 'Error', description: 'Project not found.', variant: 'destructive' });
+            setIsLoading(false);
+            return;
         }
-        return slNoA - slNoB;
-      });
+        setCurrentProject(projectData);
 
-      setBoqItems(sortedItems);
-      
-    } catch (error: any) {
-      console.error("Error fetching BOQ items: ", error);
-      if (error.code === 'failed-precondition') {
-          toast({
-              title: 'Database Index Required',
-              description: 'An index is required for this query. Please create a composite index on the `boqItems` collection for the `projectSlug` field.',
-              variant: 'destructive',
-              duration: 10000,
-          });
-      } else {
+        const boqItemsRef = collection(db, 'projects', projectData.id, 'boqItems');
+        const boqSnapshot = await getDocs(boqItemsRef);
+        const items = boqSnapshot.docs.map((d) => {
+            const data = d.data() as any;
+            const erpKey = normalizeKey(data, 'ERP SL NO');
+            const boqKey = normalizeKey(data, 'BOQ SL No');
+            return {
+                id: d.id,
+                ...data,
+                'ERP SL NO': erpKey ? data[erpKey] : '',
+                'BOQ SL No': boqKey ? data[boqKey] : '',
+            } as BoqItem;
+        });
+        setBoqItems(items);
+    } catch (error) {
+        console.error("Error fetching BOQ items:", error);
         toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
-      }
+    } finally {
+        setIsLoading(false);
     }
-    setIsLoading(false);
-  };
-
-  useEffect(() => {
-    fetchBoqItems();
   }, [projectSlug, toast]);
 
+  useEffect(() => {
+    fetchProjectAndBoq();
+  }, [fetchProjectAndBoq]);
+
+
+  /*** NORMALIZE KEYS FROM FIRESTORE ***/
+  const normalizeKey = (obj: any, targetKey: string): string | undefined => {
+    const foundKey = Object.keys(obj).find(
+      (k) => k.toLowerCase().replace(/\s+/g, '') === targetKey.toLowerCase().replace(/\s+/g, '')
+    );
+    return foundKey;
+  };
+
+  const filteredBoqItems = useMemo(() => {
+    return boqItems.filter(item => {
+      const searchMatch = filters.search === '' || 
+        String(item['ERP SL NO'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
+        String(item['BOQ SL No'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
+        String(item['Description'] || '').toLowerCase().includes(filters.search.toLowerCase());
+      
+      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
+      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
+      const category1Match = filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+
+      return searchMatch && scope1Match && scope2Match && category1Match;
+    })
+  }, [boqItems, filters]);
+
+  const filterOptions = useMemo(() => {
+    let filteredForOptions = boqItems;
+
+    const scope1Options = [...new Set(filteredForOptions.map(item => item['Scope 1']).filter(Boolean))];
+    
+    if (filters['Scope 1'] !== 'all') {
+      filteredForOptions = filteredForOptions.filter(item => item['Scope 1'] === filters['Scope 1']);
+    }
+
+    const scope2Options = [...new Set(filteredForOptions.map(item => item['Scope 2']).filter(Boolean))];
+
+    if (filters['Scope 2'] !== 'all') {
+      filteredForOptions = filteredForOptions.filter(item => item['Scope 2'] === filters['Scope 2']);
+    }
+    
+    const category1Options = [...new Set(filteredForOptions.map(item => item['Category 1']).filter(Boolean))];
+
+    return { 
+      'Scope 1': scope1Options, 
+      'Scope 2': scope2Options, 
+      'Category 1': category1Options 
+    };
+  }, [boqItems, filters]);
+
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
+     setFilters(prev => {
+      const newFilters = { ...prev, [key]: value };
+      if (key === 'Scope 1') {
+        newFilters['Scope 2'] = 'all';
+        newFilters['Category 1'] = 'all';
+      }
+      if (key === 'Scope 2') {
+        newFilters['Category 1'] = 'all';
+      }
+      return newFilters;
+    });
+  };
+  
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      'Scope 1': 'all',
+      'Scope 2': 'all',
+      'Category 1': 'all',
+    });
+  };
+
+  /*** SORTED DATA ***/
+  const sortedBoqItems = useMemo(() => {
+    const sorted = [...filteredBoqItems];
+    if (sortKey) {
+      sorted.sort((a, b) => {
+        const valA = a[sortKey];
+        const valB = b[sortKey];
+        if (valA === undefined || valA === null) return 1;
+        if (valB === undefined || valB === null) return -1;
+        const numA = Number(valA);
+        const numB = Number(valB);
+        if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
+          return sortDirection === 'asc' ? numA - numB : numB - numA;
+        }
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+        if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
+        if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sorted;
+  }, [filteredBoqItems, sortKey, sortDirection]);
+
+  /*** ROW CLICK ***/
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
     setIsDetailsDialogOpen(true);
   };
   
-  const handleClearBoq = async () => {
-    if (!user) return;
-    setIsDeleting(true);
+  const handleOpenEditDialog = (e: React.MouseEvent, item: BoqItem) => {
+    e.stopPropagation();
+    setEditingItem({ ...item }); // Clone item to avoid direct state mutation
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingItem) return;
+    const { name, value } = e.target;
+    setEditingItem(prev => (prev ? { ...prev, [name]: value } : null));
+  };
+  
+  const handleSaveChanges = async () => {
+    if (!editingItem || !currentProject) return;
+    setIsSaving(true);
     try {
-        const boqItemsRef = collection(db, 'boqItems');
-        const q = query(boqItemsRef, where('projectSlug', '==', projectSlug));
-        const querySnapshot = await getDocs(q);
-        if (querySnapshot.empty) {
-            toast({ title: 'No data to clear', description: 'The BOQ is already empty.' });
-            setIsDeleting(false);
-            return;
-        }
-
-        const batch = writeBatch(db);
-        querySnapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-
-        await batch.commit();
-
-        await logUserActivity({
-            userId: user.id,
-            action: 'Clear BOQ (Stock)',
-            details: { project: projectSlug, clearedItemCount: querySnapshot.size }
-        });
-
-        toast({
-            title: 'BOQ Cleared',
-            description: 'All items have been successfully deleted.',
-        });
-        fetchBoqItems();
-    } catch (error) {
-        console.error("Error clearing BOQ: ", error);
-        toast({ title: 'Error', description: 'Failed to clear BOQ.', variant: 'destructive' });
+      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
+      const { id, ...dataToSave } = editingItem;
+      await updateDoc(itemRef, dataToSave);
+      toast({ title: 'Success', description: 'BOQ item updated.' });
+      setIsEditDialogOpen(false);
+      fetchProjectAndBoq();
+    } catch (e) {
+      console.error("Failed to save changes:", e);
+      toast({ title: 'Error', description: 'Could not save changes.', variant: 'destructive' });
     } finally {
-        setIsDeleting(false);
+      setIsSaving(false);
     }
-  }
+  };
 
-  const handleDeleteSelected = async () => {
-    if (!user) return;
-    setIsDeleting(true);
-    const batch = writeBatch(db);
-    const boqItemsRef = collection(db, 'boqItems');
-    selectedItemIds.forEach(id => {
-        batch.delete(doc(boqItemsRef, id));
-    });
-
-    try {
-        await batch.commit();
-
-        await logUserActivity({
-            userId: user.id,
-            action: 'Delete BOQ Items (Stock)',
-            details: { project: projectSlug, deletedItemCount: selectedItemIds.length }
-        });
-
-        toast({
-            title: 'Success',
-            description: `${selectedItemIds.length} item(s) deleted successfully.`,
-        });
-        setSelectedItemIds([]);
-        fetchBoqItems();
-    } catch (error) {
-        console.error("Error deleting selected items:", error);
-        toast({ title: 'Error', description: 'Failed to delete selected items.', variant: 'destructive' });
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
     }
-    setIsDeleting(false);
-  };
-  
- const getItemDescription = (item: BoqItem) => {
-    const descriptionKeys = [
-      'Description',
-      'DESCRIPTION OF ITEMS',
-      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
-    ];
-    for (const key of descriptionKeys) {
-      if (item[key]) {
-        return item[key];
-      }
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? item[fallbackKey] : '';
   };
 
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const keys = Object.keys(item);
-    const specificKey = 'UNIT PRICE';
-    if(keys.includes(specificKey)) return specificKey;
-    
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+  const allSelected = selectedItemIds.length === boqItems.length && boqItems.length > 0;
+  const someSelected = selectedItemIds.length > 0 && selectedItemIds.length < boqItems.length;
+
+  const handleSelectAll = (checked: boolean | 'indeterminate') => {
+    if (checked) setSelectedItemIds(boqItems.map((i) => i.id));
+    else setSelectedItemIds([]);
   };
-  
-  const filteredItems = useMemo(() => {
-    return boqItems.filter(item => {
-        const description = getItemDescription(item);
-        const slNo = String(item['Sl No'] || '');
-        
-        return (
-            slNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(description).toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    });
-  }, [boqItems, searchTerm]);
-  
-  const formatNumber = (value: any) => {
-    if (typeof value === 'number') {
-      return new Intl.NumberFormat('en-IN', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(value);
-    }
-    return value;
-  };
-  
-  const isNumeric = (value: any) => {
-    return typeof value === 'number' || (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(value as any));
-  }
-  
-  const handleSelectAll = (checked: boolean) => {
-      setSelectedItemIds(checked ? boqItems.map(item => item.id) : []);
-  };
-  
+
   const handleSelectRow = (id: string, checked: boolean) => {
-      setSelectedItemIds(prev => checked ? [...prev, id] : prev.filter(itemId => itemId !== id));
+    setSelectedItemIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
   };
 
-  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
+  const toggleRowExpansion = (itemId: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      return next;
+    });
+  };
+
+  const fmtNum = (v: unknown) => {
+    const n = Number(v);
+    return Number.is.finite(n)
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
+      : String(v ?? 'N/A');
+  };
+
+  const visibleHeaders = columnOrder.filter((h) => columnVisibility[h]);
+
+  const dialogFields: (keyof BoqItem)[] = [
+    'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2',
+    'Category 1', 'Category 2', 'Category 3', 'ERP SL NO', 'BOQ SL No',
+    'Description', 'Unit', 'QTY', 'Unit Rate', 'Total Amount'
+  ];
 
   return (
-    <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-              <Link href={`/store-stock-management/${projectSlug}/boq`}>
-                  <Button variant="ghost" size="icon">
-                      <ArrowLeft className="h-6 w-6" />
-                  </Button>
-              </Link>
-              <h1 className="text-xl font-bold">View BOQ</h1>
-          </div>
-          <div className="flex items-center gap-2">
-               <Input
-                  placeholder="Search BOQ..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
-              />
-              {selectedItemIds.length > 0 && (
-                  <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={isDeleting}>
-                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                          Delete ({selectedItemIds.length})
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                          <AlertDialogHeader>
-                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                  This will permanently delete {selectedItemIds.length} item(s). This action cannot be undone.
-                              </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleDeleteSelected}>Continue</AlertDialogAction>
-                          </AlertDialogFooter>
-                      </AlertDialogContent>
-                  </AlertDialog>
-              )}
-               <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
-                    <Settings className="mr-2 h-4 w-4" /> Columns
-                </Button>
+    <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
+      {/* ... Header remains the same ... */}
+      <div className="flex-1 min-h-0">
+        <div className="h-full border rounded-lg flex flex-col min-w-0">
+          <div className="relative flex-1 min-h-0 w-full overflow-auto">
+             {/* ... Table structure remains same, just data source changes ... */}
+             <div className="min-w-max">
+              <Table className="text-sm">
+                <TableHeader>
+                  <TableRow>
+                    {/* Make every header cell sticky */}
+                    <TableHead className="sticky top-0 bg-background z-20 w-[50px]">
+                      <Checkbox
+                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                        onCheckedChange={handleSelectAll}
+                        aria-label="Select all rows"
+                      />
+                    </TableHead>
+                    <TableHead className="sticky top-0 bg-background z-20 w-12"></TableHead>
+
+                    {visibleHeaders
+                      .map((header) => (
+                        <TableHead
+                          key={header}
+                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
+                          onClick={() => handleSort(header)}
+                        >
+                          <div className="flex items-center gap-1">
+                            {columnNames[header] || header}
+                            {sortKey === header ? (
+                              sortDirection === 'asc' ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
+                            )}
+                          </div>
+                        </TableHead>
+                      ))}
+                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {isLoading ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Skeleton className="h-5 w-5" />
+                        </TableCell>
+                        <TableCell className="px-2">
+                          <Skeleton className="h-5 w-5" />
+                        </TableCell>
+                        {visibleHeaders
+                          .map((header, j) => (
+                            <TableCell key={`${i}-${j}`}>
+                              <Skeleton className="h-5 w-full" />
+                            </TableCell>
+                          ))}
+                        <TableCell>
+                          <Skeleton className="h-8 w-16" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : sortedBoqItems.length > 0 ? (
+                    sortedBoqItems.map((item) => {
+                      const isExpanded = expandedRows.has(item.id);
+                      const hasBom = item.bom && item.bom.length > 0;
+                      return (
+                        <Fragment key={item.id}>
+                          <TableRow
+                            data-state={selectedItemIds.includes(item.id) && 'selected'}
+                            onClick={() => handleRowClick(item)}
+                            className="cursor-pointer"
+                          >
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedItemIds.includes(item.id)}
+                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                aria-label={`Select row ${item.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="px-2">
+                              {hasBom && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleRowExpansion(item.id);
+                                  }}
+                                  aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+                                >
+                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </Button>
+                              )}
+                            </TableCell>
+                            {visibleHeaders.map((header) => {
+                                const raw = item[header];
+                                const value = (() => {
+                                  if (header === 'Total Amount') {
+                                    const qty = Number(item['QTY']);
+                                    const rate = Number(item['Unit Rate']);
+                                    const explicit = Number(raw);
+                                    if (Number.is.finite(explicit)) return fmtNum(explicit);
+                                    if (Number.is.finite(qty) && Number.is.finite(rate)) return fmtNum(qty * rate);
+                                    return 'N/A';
+                                  }
+                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
+                                  return raw ?? 'N/A';
+                                })();
+
+                                return (
+                                  <TableCell
+                                    key={`${item.id}-${header}`}
+                                    className={cn(
+                                      (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
+                                    )}
+                                    title={typeof value === 'string' ? value : undefined}
+                                  >
+                                    {value}
+                                  </TableCell>
+                                );
+                              })}
+                              <TableCell className="text-right">
+                                <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
+                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                                </Button>
+                              </TableCell>
+                          </TableRow>
+
+                          {isExpanded && hasBom && (
+                            <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableCell
+                                colSpan={visibleHeaders.length + 3}
+                                className="p-0"
+                              >
+                                <div className="p-4">
+                                  <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Mark No.</TableHead>
+                                        <TableHead>Section</TableHead>
+                                        <TableHead>Qty/Set</TableHead>
+                                        <TableHead>Total Wt (KG)</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
+                                        <TableRow key={index}>
+                                          <TableCell>{bomItem.markNo ?? '—'}</TableCell>
+                                          <TableCell>{bomItem.section ?? '—'}</TableCell>
+                                          <TableCell>{fmtNum(bomItem.qtyPerSet)}</TableCell>
+                                          <TableCell>{fmtNum(bomItem.totalWtKg)}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={visibleHeaders.length + 3}
+                        className="text-center h-24"
+                      >
+                        No BOQ items found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         </div>
-        <Card>
-          <CardContent className="p-0">
-              <ScrollArea className="h-[calc(100vh-15rem)]">
-                  <Table>
-                      <TableHeader className="sticky top-0 bg-background z-10">
-                          <TableRow>
-                              <TableHead className="w-[50px] sticky left-0 bg-background z-20">
-                                  <Checkbox 
-                                      checked={selectedItemIds.length > 0 && selectedItemIds.length === filteredItems.length}
-                                      onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                                  />
-                              </TableHead>
-                              {visibleHeaders.map((header) => (
-                                  <TableHead key={header} className="whitespace-nowrap px-4">{columnNames[header] || header}</TableHead>
-                              ))}
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                          {isLoading ? (
-                              Array.from({ length: 5 }).map((_, i) => (
-                              <TableRow key={i}>
-                                  <TableCell className="sticky left-0 bg-background z-20"><Skeleton className="h-5 w-5" /></TableCell>
-                                  {visibleHeaders.map((header, j) => (
-                                      <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                                  ))}
-                              </TableRow>
-                              ))
-                          ) : filteredItems.length > 0 ? (
-                              filteredItems.map((item) => (
-                                  <TableRow 
-                                    key={item.id} 
-                                    data-state={selectedItemIds.includes(item.id) && "selected"}
-                                    onClick={() => handleRowClick(item)}
-                                    className="cursor-pointer"
-                                  >
-                                      <TableCell onClick={(e) => e.stopPropagation()} className="sticky left-0 bg-background z-20">
-                                          <Checkbox 
-                                              checked={selectedItemIds.includes(item.id)}
-                                              onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                          />
-                                      </TableCell>
-                                      {visibleHeaders.map(header => {
-                                          let cellData;
-                                          if (header === 'Description') {
-                                                cellData = getItemDescription(item);
-                                          } else if (header === 'UNIT PRICE') {
-                                            const priceKey = findBasicPriceKey(item);
-                                            cellData = priceKey ? item[priceKey] : 'N/A';
-                                          }
-                                          else {
-                                              cellData = item[header];
-                                          }
-                                          const formattedData = formatNumber(cellData);
-                                          const numeric = isNumeric(cellData);
-                                          return (
-                                              <TableCell key={`${item.id}-${header}`} className={cn(numeric && 'text-right')}>
-                                                  {formattedData}
-                                              </TableCell>
-                                          )
-                                      })}
-                                  </TableRow>
-                              ))
-                          ) : (
-                              <TableRow>
-                                  <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                                      No BOQ items found for this project.
-                                  </TableCell>
-                              </TableRow>
-                          )}
-                      </TableBody>
-                  </Table>
-              </ScrollArea>
-          </CardContent>
-        </Card>
       </div>
-
-        <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-            <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                    <DialogTitle>Customize Columns</DialogTitle>
-                </DialogHeader>
-                <p className="text-sm text-muted-foreground">Drag to reorder, check to show/hide, and rename columns.</p>
-                <ScrollArea className="h-96 pr-4">
-                  {isClient && (
-                    <DragDropContext onDragEnd={onDragEnd}>
-                        <Droppable droppableId="columns" isDropDisabled={false} isCombineEnabled={false}>
-                            {(provided) => (
-                                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                                    {columnOrder.map((header, index) => (
-                                        <Draggable key={header} draggableId={header} index={index}>
-                                            {(provided) => (
-                                                <div
-                                                    ref={provided.innerRef}
-                                                    {...provided.draggableProps}
-                                                    {...provided.dragHandleProps}
-                                                    className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
-                                                >
-                                                    <Checkbox
-                                                        checked={columnVisibility[header]}
-                                                        onCheckedChange={(checked) =>
-                                                            setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
-                                                        }
-                                                    />
-                                                    <Input
-                                                        value={columnNames[header] || header}
-                                                        onChange={(e) =>
-                                                            setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
-                                                        }
-                                                    />
-                                                </div>
-                                            )}
-                                        </Draggable>
-                                    ))}
-                                    {provided.placeholder}
-                                </div>
-                            )}
-                        </Droppable>
-                    </DragDropContext>
-                  )}
-                </ScrollArea>
-                <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
-                    <Button onClick={() => { saveColumnPrefs(); setIsColumnEditorOpen(false); }}>Save Preferences</Button>
-                </div>
-            </DialogContent>
-        </Dialog>
-
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
-        onOpenChange={setIsDetailsDialogOpen}
+        onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
-        jmcEntries={jmcEntries}
-        bills={bills}
+        jmcEntries={[]}
+        bills={[]}
       />
-    </>
+      
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit BOQ Item</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+              {editingItem && dialogFields.map(key => (
+                  <div className="space-y-1" key={key}>
+                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                      <Input
+                          id={`edit-${String(key)}`}
+                          name={String(key)}
+                          value={editingItem[key] || ''}
+                          onChange={handleEditFormChange}
+                          readOnly={key === 'Project Name'}
+                      />
+                  </div>
+              ))}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={handleSaveChanges} disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
-
-
+    

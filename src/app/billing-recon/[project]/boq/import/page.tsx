@@ -27,6 +27,8 @@ import {
   writeBatch,
   doc,
   serverTimestamp,
+  getDocs,
+  query,
 } from 'firebase/firestore';
 import {
   Table,
@@ -39,6 +41,8 @@ import {
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import type { Project } from '@/lib/types';
+
 
 type BoqItem = Record<string, any>;
 const MAX_BATCH_WRITES = 500;
@@ -60,6 +64,7 @@ export default function ImportBoqPage() {
   const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -72,6 +77,24 @@ export default function ImportBoqPage() {
   const [headers, setHeaders] = useState<string[]>([]);
 
   const totalRows = jsonData.length;
+
+  useEffect(() => {
+    const fetchProject = async () => {
+        if (!projectSlug) return;
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        
+        if (projectData) {
+            setCurrentProject(projectData);
+        } else {
+            toast({ title: 'Error', description: 'Project not found.', variant: 'destructive' });
+        }
+    };
+    fetchProject();
+  }, [projectSlug, toast]);
+
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
@@ -179,10 +202,10 @@ export default function ImportBoqPage() {
       });
       return;
     }
-    if (!projectSlug) {
+    if (!currentProject) {
       toast({
         title: 'Project missing',
-        description: 'No project slug found in the URL.',
+        description: 'Could not identify the current project.',
         variant: 'destructive',
       });
       return;
@@ -195,7 +218,7 @@ export default function ImportBoqPage() {
       const nowMeta = {
         createdAt: serverTimestamp(),
         createdBy: user.id,
-        projectSlug: projectSlug,
+        // projectId: currentProject.id, // Removed projectSlug from here as it's part of the collection path
         source: 'excel_import',
         fileName: file?.name ?? null,
       };
@@ -206,7 +229,7 @@ export default function ImportBoqPage() {
       }));
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(db, 'projects', projectSlug, 'boqItems');
+      const boqCollectionRef = collection(db, 'projects', currentProject.id, 'boqItems');
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);
@@ -402,3 +425,5 @@ export default function ImportBoqPage() {
     </div>
   );
 }
+
+    
