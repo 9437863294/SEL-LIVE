@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, Fragment } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,9 +16,9 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
-import { Search, Loader2, ArrowUpDown } from 'lucide-react';
+import { Search, Loader2, ArrowUpDown, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
 import {
@@ -29,94 +29,123 @@ import {
   SelectValue,
 } from './ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
+import { useAuth } from './auth/AuthProvider';
+import { DragDropContext, Droppable, Draggable, OnDragEndResponder, DropResult } from 'react-beautiful-dnd';
+import { cn } from '@/lib/utils';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Label } from './ui/label';
 
 interface BoqMultiSelectDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
-  boqItems: BoqItem[];
+  alreadyAddedItems?: BillItem[];
 }
+
+const baseTableHeaders = [
+    'Project', 'Site', 'Scope', 'Sl No', 'Description', 'UNIT', 'BOQ QTY', 'UNIT PRICE',
+    'TOTAL PRICE FOR THE TENDER QUANTITY',
+    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+];
+
 
 export function BoqMultiSelectDialog({
   isOpen,
   onOpenChange,
   onConfirm,
-  boqItems,
+  alreadyAddedItems = [],
 }: BoqMultiSelectDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
+  const { user } = useAuth();
+  
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // debounced
+  const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [sortKey, setSortKey] =
-    useState<keyof BoqItem | 'description' | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
 
+  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  const [columnNames, setColumnNames] = useState<Record<string, string>>({});
 
-  // Debounce search
+  const userKey = user ? user.id : 'guest';
+  const prefKey = `boqSelectDialog:${projectSlug}:${userKey}`;
+
+  useEffect(() => {
+    try {
+      const savedPrefs = localStorage.getItem(prefKey);
+      if (savedPrefs) {
+        const { order, visibility, names } = JSON.parse(savedPrefs);
+        if (order) setColumnOrder(order);
+        if (visibility) setColumnVisibility(visibility);
+        if (names) setColumnNames(names);
+      } else {
+         const defaults: Record<string, boolean> = { 'Sl No': true, 'Description': true, 'UNIT': true, 'UNIT PRICE': true };
+         setColumnVisibility(baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: defaults[h] || false }), {}));
+      }
+    } catch (e) {
+      console.warn("Failed to load dialog column prefs", e);
+    }
+  }, [prefKey]);
+
+  const savePrefs = useCallback(() => {
+    const prefs = {
+      order: columnOrder,
+      visibility: columnVisibility,
+      names: columnNames
+    };
+    localStorage.setItem(prefKey, JSON.stringify(prefs));
+    toast({ title: "Preferences Saved", description: "Your column settings for this dialog have been saved." });
+  }, [columnOrder, columnVisibility, columnNames, prefKey, toast]);
+
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
+  
+  useEffect(() => {
+    if (!isOpen || !projectSlug) return;
 
-  // Helpers
-  const getItemDescription = (item: BoqItem): string => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS'];
-    for (const key of descriptionKeys) {
-      if ((item as any)[key]) return String((item as any)[key]);
-    }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
-    return fallbackKey ? String((item as any)[fallbackKey]) : 'No Description';
-  };
+    const fetchBoqData = async () => {
+      setIsLoading(true);
+      try {
+        const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const boqSnapshot = await getDocs(q);
+        const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+        setBoqItems(items);
+      } catch (error) {
+        console.error('Error fetching data for item selection:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not load available BOQ items for this project.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchBoqData();
+  }, [isOpen, projectSlug, toast]);
 
-  const getBoqSlNo = (item: BoqItem): string => {
-    return String(item['BOQ SL No'] || item['SL. No.'] || '');
-  };
 
-  const getRateNumber = (rate: unknown) => {
-    if (typeof rate === 'number') return rate;
-    const n = Number(rate);
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
-
+  const addedItemIds = useMemo(
+    () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)),
+    [alreadyAddedItems]
+  );
+  
   const filteredItems = useMemo(() => {
-    let items = boqItems.filter((item) => {
-      const q = searchTerm.toLowerCase();
+    const q = searchTerm.toLowerCase();
+    return boqItems.filter((item) => {
+      if (addedItemIds.has(item.id)) return false;
       if (!q) return true;
-      return (
-        getBoqSlNo(item).toLowerCase().includes(q) ||
-        getItemDescription(item).toLowerCase().includes(q)
-      );
+      return Object.values(item).some(val => String(val).toLowerCase().includes(q));
     });
-
-    if (sortKey) {
-      const dir = sortDirection === 'asc' ? 1 : -1;
-      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-
-      items.sort((a, b) => {
-        const valA = sortKey === 'description' ? getItemDescription(a) : (a as any)[sortKey];
-        const valB = sortKey === 'description' ? getItemDescription(b) : (b as any)[sortKey];
-
-        if (valA === undefined || valA === null) return 1 * dir;
-        if (valB === undefined || valB === null) return -1 * dir;
-        
-        if (typeof valA === 'number' && typeof valB === 'number') {
-            return (valA - valB) * dir;
-        }
-
-        return collator.compare(String(valA), String(valB)) * dir;
-      });
-    }
-
-    return items;
-  }, [boqItems, searchTerm, sortKey, sortDirection]);
-
-  // Select-all logic
+  }, [boqItems, searchTerm, addedItemIds]);
+  
   const allOnPageSelected =
     filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
   const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
@@ -124,15 +153,9 @@ export function BoqMultiSelectDialog({
     allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
 
   const handleSelectAll = (checked: CheckedState) => {
-    if (checked) {
-      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
-    } else {
-      const next = new Set(selectedIds);
-      filteredItems.forEach((i) => next.delete(i.id));
-      setSelectedIds(next);
-    }
+    setSelectedIds(new Set(checked ? filteredItems.map((i) => i.id) : []));
   };
-
+  
   const handleSelectRow = useCallback((id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -142,15 +165,6 @@ export function BoqMultiSelectDialog({
     });
   }, []);
 
-  const toggleSort = (key: keyof BoqItem | 'description') => {
-    if (sortKey === key) {
-      setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDirection('asc');
-    }
-  };
-
   const handleConfirm = () => {
     const selectedBoqItems = boqItems.filter((item) => selectedIds.has(item.id));
     onConfirm(selectedBoqItems);
@@ -159,21 +173,21 @@ export function BoqMultiSelectDialog({
     setSearchInput('');
     setSearchTerm('');
   };
-  
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
-    for (const key of knownPriceKeys) {
-        if (item.hasOwnProperty(key)) {
-            return key;
-        }
-    }
-    return Object.keys(item).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
-};
 
+  const onDragEnd: OnDragEndResponder = (result) => {
+    if (!result.destination) return;
+    const items = Array.from(columnOrder);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+    setColumnOrder(items);
+  };
+  
+  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-7xl">
         <DialogHeader>
           <DialogTitle>Select BOQ Items</DialogTitle>
           <DialogDescription>
@@ -186,97 +200,48 @@ export function BoqMultiSelectDialog({
             <div className="relative flex-grow w-full">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by Sl. No. or Description..."
+                placeholder="Search all columns..."
                 aria-label="Search items"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-8"
               />
             </div>
+            <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
+                <Settings className="mr-2 h-4 w-4" /> Columns
+            </Button>
           </div>
-
+          
           <ScrollArea className="h-96 border rounded-md">
-            <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                <div className="w-[50px] flex justify-center">
-                  <Checkbox
-                    aria-label="Select all"
-                    checked={selectAllState}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('BOQ SL No')}
-                  aria-label="Sort by BOQ Sl No"
-                >
-                  BOQ Sl.No.
-                  {sortKey === 'BOQ SL No' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('description')}
-                  aria-label="Sort by Description"
-                >
-                  Description
-                  {sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-                <div className="text-right">Unit Rate</div>
-                <div className="text-right">Unit</div>
-              </div>
-
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full p-8">
-                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : filteredItems.length > 0 ? (
-                filteredItems.map((item) => {
-                  const rateKey = findBasicPriceKey(item);
-                  const rate = rateKey ? getRateNumber(item[rateKey]) : 0;
-                  const rowChecked = selectedIds.has(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
-                        rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => handleSelectRow(item.id, !rowChecked)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === ' ' || e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSelectRow(item.id, !rowChecked);
-                        }
-                      }}
-                    >
-                      <div className="w-[50px] flex justify-center">
-                        <Checkbox
-                          aria-label={`Select ${getItemDescription(item) || getBoqSlNo(item)}`}
-                          checked={rowChecked}
-                          onCheckedChange={(checked) => {
-                            handleSelectRow(item.id, Boolean(checked));
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                      <div className="truncate pr-2">{getBoqSlNo(item)}</div>
-                      <div className="truncate pr-2">{getItemDescription(item)}</div>
-                      <div className="text-right pr-2">
-                        {formatCurrency(rate)}
-                      </div>
-                      <div className="text-right pr-2">{(item as any).UNIT || (item as any).unit || 'N/A'}</div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center p-8 text-muted-foreground">
-                  No available items found.
-                </div>
-              )}
-            </div>
+            <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                        <TableHead className="w-[50px]"><Checkbox aria-label="Select all" checked={selectAllState} onCheckedChange={handleSelectAll} /></TableHead>
+                        {visibleHeaders.map(header => (
+                            <TableHead key={header} className="whitespace-nowrap">{columnNames[header] || header}</TableHead>
+                        ))}
+                    </TableRow>
+                </TableHeader>
+                 <TableBody>
+                    {isLoading ? (
+                        <TableRow><TableCell colSpan={visibleHeaders.length + 1} className="h-24 text-center"><Loader2 className="animate-spin"/></TableCell></TableRow>
+                    ) : filteredItems.length > 0 ? (
+                        filteredItems.map(item => {
+                            const rowChecked = selectedIds.has(item.id);
+                            return (
+                                <TableRow key={item.id} data-state={rowChecked ? "selected" : undefined}>
+                                    <TableCell><Checkbox checked={rowChecked} onCheckedChange={(checked) => handleSelectRow(item.id, Boolean(checked))}/></TableCell>
+                                    {visibleHeaders.map(header => (
+                                        <TableCell key={header} className="whitespace-nowrap max-w-xs truncate">{String(item[header] ?? '')}</TableCell>
+                                    ))}
+                                </TableRow>
+                            )
+                        })
+                    ) : (
+                        <TableRow><TableCell colSpan={visibleHeaders.length + 1} className="h-24 text-center">No results.</TableCell></TableRow>
+                    )}
+                 </TableBody>
+            </Table>
           </ScrollArea>
         </div>
 
@@ -296,5 +261,55 @@ export function BoqMultiSelectDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+        <DialogContent className="max-w-2xl">
+            <DialogHeader>
+                <DialogTitle>Customize Columns</DialogTitle>
+                <DialogDescription>Drag to reorder, check to show/hide, and rename columns.</DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="h-96 pr-4">
+                <DragDropContext onDragEnd={onDragEnd}>
+                    <Droppable droppableId="columns" isDropDisabled={false}>
+                        {(provided) => (
+                            <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                                {columnOrder.map((header, index) => (
+                                    <Draggable key={header} draggableId={header} index={index}>
+                                        {(provided) => (
+                                            <div
+                                                ref={provided.innerRef}
+                                                {...provided.draggableProps}
+                                                {...provided.dragHandleProps}
+                                                className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
+                                            >
+                                                <Checkbox
+                                                    checked={columnVisibility[header]}
+                                                    onCheckedChange={(checked) =>
+                                                        setColumnVisibility(prev => ({ ...prev, [header]: !!checked }))
+                                                    }
+                                                />
+                                                <Input
+                                                    value={columnNames[header] || header}
+                                                    onChange={(e) =>
+                                                        setColumnNames(prev => ({ ...prev, [header]: e.target.value }))
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                    </Draggable>
+                                ))}
+                                {provided.placeholder}
+                            </div>
+                        )}
+                    </Droppable>
+                </DragDropContext>
+            </ScrollArea>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>Cancel</Button>
+                <Button onClick={() => { savePrefs(); setIsColumnEditorOpen(false); }}>Save Preferences</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
+    </>
   );
 }
