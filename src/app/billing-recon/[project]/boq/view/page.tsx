@@ -233,14 +233,41 @@ export default function ViewBoqPage() {
   }, [boqItems, filters]);
 
   const filterOptions = useMemo(() => {
-    const scope1 = [...new Set(boqItems.map(item => item['Scope 1']).filter(Boolean))];
-    const scope2 = [...new Set(boqItems.map(item => item['Scope 2']).filter(Boolean))];
-    const category1 = [...new Set(boqItems.map(item => item['Category 1']).filter(Boolean))];
-    return { 'Scope 1': scope1, 'Scope 2': scope2, 'Category 1': category1 };
-  }, [boqItems]);
+    let filteredForOptions = boqItems;
+
+    const scope1Options = [...new Set(filteredForOptions.map(item => item['Scope 1']).filter(Boolean))];
+    
+    if (filters['Scope 1'] !== 'all') {
+      filteredForOptions = filteredForOptions.filter(item => item['Scope 1'] === filters['Scope 1']);
+    }
+
+    const scope2Options = [...new Set(filteredForOptions.map(item => item['Scope 2']).filter(Boolean))];
+
+    if (filters['Scope 2'] !== 'all') {
+      filteredForOptions = filteredForOptions.filter(item => item['Scope 2'] === filters['Scope 2']);
+    }
+    
+    const category1Options = [...new Set(filteredForOptions.map(item => item['Category 1']).filter(Boolean))];
+
+    return { 
+      'Scope 1': scope1Options, 
+      'Scope 2': scope2Options, 
+      'Category 1': category1Options 
+    };
+  }, [boqItems, filters]);
 
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    setFilters(prev => ({...prev, [key]: value}));
+     setFilters(prev => {
+      const newFilters = { ...prev, [key]: value };
+      if (key === 'Scope 1') {
+        newFilters['Scope 2'] = 'all';
+        newFilters['Category 1'] = 'all';
+      }
+      if (key === 'Scope 2') {
+        newFilters['Category 1'] = 'all';
+      }
+      return newFilters;
+    });
   };
 
   /*** SORTED DATA ***/
