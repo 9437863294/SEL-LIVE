@@ -431,6 +431,12 @@ export default function ViewBoqPage() {
   // Reusable class for sticky header cells
   const stickyHead = 'sticky top-0 bg-background z-20';
 
+  const dialogFields: (keyof BoqItem)[] = [
+    'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2',
+    'Category 1', 'Category 2', 'Category 3', 'ERP SL NO', 'BOQ SL No',
+    'Description', 'Unit', 'QTY', 'Unit Rate', 'Total Amount'
+  ];
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
@@ -702,20 +708,18 @@ export default function ViewBoqPage() {
             <DialogTitle>Edit BOQ Item</DialogTitle>
           </DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-            {editingItem && Object.keys(editingItem).map(key => {
-              if (key === 'id' || key === 'bom') return null;
-              return (
-                <div className="space-y-1" key={key}>
-                  <Label htmlFor={`edit-${key}`}>{key}</Label>
-                  <Input
-                    id={`edit-${key}`}
-                    name={key}
-                    value={editingItem[key] || ''}
-                    onChange={handleEditFormChange}
-                  />
-                </div>
-              );
-            })}
+              {editingItem && dialogFields.map(key => (
+                  <div className="space-y-1" key={key}>
+                      <Label htmlFor={`edit-${key}`}>{key}</Label>
+                      <Input
+                          id={`edit-${key}`}
+                          name={key}
+                          value={editingItem[key] || ''}
+                          onChange={handleEditFormChange}
+                          readOnly={key === 'Project Name'}
+                      />
+                  </div>
+              ))}
           </div>
           <DialogFooter>
             <DialogClose asChild>
