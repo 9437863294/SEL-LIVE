@@ -38,7 +38,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem } from '@/lib/types';
+import type { FabricationBomItem, Project, JmcEntry } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -74,6 +74,7 @@ const baseTableHeaders = [
   'Description',
   'Unit',
   'QTY',
+  'JMC Executed Qty',
   'Unit Rate',
   'Total Amount',
 ] as const;
@@ -84,6 +85,7 @@ export default function ViewBoqPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -98,7 +100,7 @@ export default function ViewBoqPage() {
     [...baseTableHeaders].reduce(
       (acc, h) => ({
         ...acc,
-        [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'Category 1'].includes(h as string),
+        [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'JMC Executed Qty', 'Category 1'].includes(h as string),
       }),
       {} as Record<string, boolean>
     )
@@ -215,6 +217,12 @@ export default function ViewBoqPage() {
         } as BoqItem;
       });
       setBoqItems(items);
+
+      const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+      const jmcSnapshot = await getDocs(jmcCollectionRef);
+      const jmcData = jmcSnapshot.docs.map(d => d.data() as JmcEntry);
+      setJmcEntries(jmcData);
+
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -226,6 +234,22 @@ export default function ViewBoqPage() {
   useEffect(() => {
     fetchBoqItems();
   }, [fetchBoqItems]);
+
+  const jmcQuantities = useMemo(() => {
+    const quantities: Record<string, number> = {};
+    jmcEntries.forEach(entry => {
+      entry.items.forEach(item => {
+        if (item.boqSlNo) {
+          if (!quantities[item.boqSlNo]) {
+            quantities[item.boqSlNo] = 0;
+          }
+          quantities[item.boqSlNo] += Number(item.executedQty || 0);
+        }
+      });
+    });
+    return quantities;
+  }, [jmcEntries]);
+
 
   const filteredBoqItems = useMemo(() => {
     return boqItems.filter(item => {
@@ -609,17 +633,21 @@ export default function ViewBoqPage() {
                             {columnOrder
                               .filter((h) => columnVisibility[h])
                               .map((header) => {
-                                const raw = item[header];
+                                let raw = item[header];
+                                if (header === 'JMC Executed Qty') {
+                                  raw = jmcQuantities[item['BOQ SL No'] as string] || 0;
+                                }
+
                                 const value = (() => {
                                   if (header === 'Total Amount') {
                                     const qty = Number(item['QTY']);
                                     const rate = Number(item['Unit Rate']);
                                     const explicit = Number(raw);
-                                    if (Number.isFinite(explicit)) return fmtNum(explicit);
-                                    if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
+                                    if (Number.is.finite(explicit)) return fmtNum(explicit);
+                                    if (Number.is.finite(qty) && Number.is.finite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
-                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
+                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty' || header === 'JMC Executed Qty') return fmtNum(raw);
                                   return raw ?? 'N/A';
                                 })();
 
@@ -698,7 +726,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
-        jmcEntries={[]}
+        jmcEntries={jmcEntries}
         bills={[]}
       />
       
