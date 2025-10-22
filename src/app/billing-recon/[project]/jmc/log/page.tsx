@@ -3,33 +3,23 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trash2, Eye, MoreHorizontal, FileText, Download, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
-import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import type { JmcEntry } from '@/lib/types';
+import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import * as XLSX from 'xlsx';
 
 
 export default function JmcLogPage() {
@@ -41,37 +31,40 @@ export default function JmcLogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  
+
   const fetchJmcEntries = async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
       const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-      const querySnapshot = await getDocs(jmcCollectionRef);
+      const q = query(jmcCollectionRef, orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
       const entries = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
           ...data,
-          createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A'
+          createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A',
+          totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0)
         } as JmcEntry;
-      }).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      });
       setJmcEntries(entries);
     } catch (error) {
       console.error("Error fetching JMC entries: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch JMC entries for this project.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to fetch JMC entries for this project.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchJmcEntries();
-  }, [projectSlug]);
-
+  }, [projectSlug, toast]);
+  
+  const handleViewDetails = (entry: JmcEntry) => {
+    setSelectedEntry(entry);
+    setIsViewOpen(true);
+  };
+  
   const handleDelete = async (entry: JmcEntry) => {
     if (!user) return;
     try {
@@ -88,7 +81,7 @@ export default function JmcLogPage() {
       toast({ title: 'Error', description: 'Failed to delete JMC entry.', variant: 'destructive' });
     }
   };
-  
+
   const handleExportAll = () => {
     const flattenedData = jmcEntries.flatMap(entry => 
       entry.items.map(item => ({
@@ -128,26 +121,25 @@ export default function JmcLogPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, `JMC ${entry.jmcNo}`);
     XLSX.writeFile(workbook, `jmc_${projectSlug}_${entry.jmcNo}.xlsx`);
   };
-
-  const handleViewDetails = (entry: JmcEntry) => {
-    setSelectedEntry(entry);
-    setIsViewOpen(true);
-  };
-
+  
+  const formatCurrency = (amount: number) => {
+    if (isNaN(amount)) return 'N/A';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
 
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href={`/billing-recon/${projectSlug}/jmc`}>
-                  <Button variant="ghost" size="icon">
-                      <ArrowLeft className="h-6 w-6" />
-                  </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">JMC Log</h1>
+            <Link href={`/billing-recon/${projectSlug}/jmc`}>
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">JMC Log</h1>
           </div>
-          <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
+           <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
               <Download className="mr-2 h-4 w-4" /> Export All as Excel
           </Button>
         </div>
@@ -157,10 +149,10 @@ export default function JmcLogPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>JMC No.</TableHead>
+                  <TableHead>Bill Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
-                  <TableHead>JMC Date</TableHead>
-                  <TableHead>Created At</TableHead>
                   <TableHead>No. of Items</TableHead>
+                  <TableHead>Total Value</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -171,8 +163,8 @@ export default function JmcLogPage() {
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                     </TableRow>
                   ))
@@ -180,10 +172,10 @@ export default function JmcLogPage() {
                   jmcEntries.map((entry) => (
                     <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                       <TableCell className="font-medium">{entry.jmcNo}</TableCell>
-                      <TableCell>{entry.woNo}</TableCell>
                       <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                      <TableCell>{entry.createdAt}</TableCell>
+                      <TableCell>{entry.woNo}</TableCell>
                       <TableCell>{entry.items.length}</TableCell>
+                      <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>
                             <DropdownMenu>
