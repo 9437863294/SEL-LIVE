@@ -50,6 +50,17 @@ const toNum = (v: string) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
+
 const SuggestionField = ({
   value,
   onChange,
@@ -155,27 +166,23 @@ export default function AddBoqItemPage() {
   const [existingBoqItems, setExistingBoqItems] = useState<BoqItemType[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
-  // ⚡️ Fast: single indexed lookup by slug + one subcollection read
   useEffect(() => {
     let alive = true;
     const fetchData = async () => {
       if (!projectSlug) return;
       try {
-        const projectQ = query(
-          collection(db, 'projects'),
-          where('slug', '==', projectSlug),
-          limit(1)
-        );
-        const pSnap = await getDocs(projectQ);
+        const projectsQuery = query(collection(db, 'projects'));
+        const pSnap = await getDocs(projectsQuery);
         if (!alive) return;
+        
+        const allProjects = pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        const pData = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
-        if (pSnap.empty) {
+        if (!pData) {
           toast({ title: 'Project not found', description: 'Invalid project URL.', variant: 'destructive' });
           return;
         }
 
-        const pDoc = pSnap.docs[0];
-        const pData = { id: pDoc.id, ...pDoc.data() } as Project;
         setProjectName(pData.projectName);
         setCurrentProject(pData);
         setBoqItem(prev => ({ ...prev, 'Project Name': pData.projectName }));
@@ -275,8 +282,8 @@ export default function AddBoqItemPage() {
 
       const docRef = await addDoc(collection(db, 'projects', currentProject.id, 'boqItems'), payload);
 
-      // 🟢 Optimistic append: no second fetch
-      setExistingBoqItems(prev => [...prev, { ...payload, id: docRef.id } as BoqItemType]);
+      setExistingBoqItems(prev => [...prev, { ...payload, id: docRef.id, createdAt: new Date() } as unknown as BoqItemType]);
+
 
       await logUserActivity({
         userId: user.id,
