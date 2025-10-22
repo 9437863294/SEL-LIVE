@@ -34,6 +34,7 @@ interface BoqMultiSelectDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
+  boqItems: BoqItem[];
   alreadyAddedItems?: BillItem[];
 }
 
@@ -48,7 +49,7 @@ type JmcItemWithDetails = JmcItem & {
   ['Category 1']?: string;
 };
 
-export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, alreadyAddedItems = [] }: BoqMultiSelectDialogProps) {
+export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems, alreadyAddedItems = [] }: BoqMultiSelectDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
@@ -60,7 +61,6 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, alreadyA
   const [sortKey, setSortKey] =
     useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
 
   const [filters, setFilters] = useState<{
     'Scope 1': 'all' | string;
@@ -86,18 +86,11 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, alreadyA
       try {
         const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
         const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
-        const boqCollectionRef = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-
-        const [jmcSnapshot, billsSnapshot, boqSnapshot] = await Promise.all([
+        
+        const [jmcSnapshot, billsSnapshot] = await Promise.all([
           getDocs(jmcCollectionRef),
           getDocs(billsCollectionRef),
-          getDocs(boqCollectionRef),
         ]);
-
-        const allBoqItems = boqSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as BoqItem)
-        );
-        setBoqItems(allBoqItems);
 
         const allJmcEntries = jmcSnapshot.docs.map(
           (doc) => ({ id: doc.id, ...doc.data() } as JmcEntry)
@@ -137,7 +130,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, alreadyA
           });
         });
 
-        // setJmcItems(processed);
+        setJmcItems(processed);
       } catch (error) {
         console.error('Error fetching data for item selection:', error);
         toast({
