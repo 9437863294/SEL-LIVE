@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -326,9 +327,7 @@ export default function ImportBoqPage() {
   }, [totalRows]);
 
   return (
-    // ✅ Only the preview/table area scrolls
     <div className="h-screen flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 lg:px-8">
-      {/* Top bar (no scroll) */}
       <div className="mb-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Link href={`/billing-recon/${projectSlug}/boq`}>
@@ -356,97 +355,92 @@ export default function ImportBoqPage() {
         )}
       </div>
 
-      {/* Upload card (no scroll) */}
-      <Card className="shrink-0">
-        <CardHeader>
-          <CardTitle>Upload File</CardTitle>
-          <CardDescription>
-            Select an Excel file (.xlsx or .xls). The data will be previewed below before import.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Input
-              id="excel-file"
-              type="file"
-              onChange={handleFileChange}
-              accept=".xlsx, .xls"
-              disabled={isParsing || isImporting}
-              className="cursor-pointer file:cursor-pointer file:text-primary file:font-semibold"
-            />
-          </div>
-
-          {file && (
-            <div className="flex items-center gap-2 text-sm">
-              <FileSpreadsheet className="h-5 w-5 text-green-600" />
-              <span className="truncate max-w-[50ch]">{file.name}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={handleClear}
-                disabled={isParsing || isImporting}
-                aria-label="Remove file"
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          )}
-
-          {sheetNames.length > 1 && (
-            <div className="text-sm text-muted-foreground">
-              Sheets detected:&nbsp;
-              <span className="font-medium">{sheetNames.join(', ')}</span>
-              <span className="ml-1">
-                (loaded: <span className="font-medium">{activeSheet}</span>)
-              </span>
-            </div>
-          )}
-
-          {isParsing && (
-            <div className="flex items-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Parsing file…
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Preview card fills remaining space; only this area scrolls */}
-      {jsonData.length > 0 && (
-        <Card className="mt-6 flex-1 min-h-0 flex flex-col">
-          <CardHeader className="shrink-0">
-            <CardTitle>Preview Data</CardTitle>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
+        <Card className="flex flex-col shrink-0">
+          <CardHeader>
+            <CardTitle>Upload File</CardTitle>
             <CardDescription>
-              {`Found ${jsonData.length} row${jsonData.length === 1 ? '' : 's'}. `}{previewNote}
+              Select an Excel file (.xlsx or .xls). The data will be previewed before import.
             </CardDescription>
           </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid w-full max-w-sm items-center gap-1.5">
+              <Input
+                id="excel-file"
+                type="file"
+                onChange={handleFileChange}
+                accept=".xlsx, .xls"
+                disabled={isParsing || isImporting}
+                className="cursor-pointer file:cursor-pointer file:text-primary file:font-semibold"
+              />
+            </div>
 
-          {/* Make content take the remaining height and enable scroll */}
-          <CardContent className="flex-1 min-h-0 p-0">
-            <div
-              className="h-full overflow-auto overscroll-contain scrollbar-gutter-stable"
-              style={{ scrollbarGutter: 'stable' }}
-            >
-              <div className="w-full overflow-x-auto">
-                {/* table-fixed helps column width + sticky header stability */}
-                <Table className="min-w-full table-fixed">
+            {file && (
+              <div className="flex items-center gap-2 text-sm">
+                <FileSpreadsheet className="h-5 w-5 text-green-600" />
+                <span className="truncate max-w-[50ch]">{file.name}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleClear}
+                  disabled={isParsing || isImporting}
+                  aria-label="Remove file"
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            )}
+
+            {sheetNames.length > 1 && (
+              <div className="text-sm text-muted-foreground">
+                Sheets detected:&nbsp;
+                <span className="font-medium">{sheetNames.join(', ')}</span>
+                <span className="ml-1">
+                  (loaded: <span className="font-medium">{activeSheet}</span>)
+                </span>
+              </div>
+            )}
+
+            {isParsing && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Parsing file…
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {jsonData.length > 0 && (
+          <Card className="flex-1 min-h-0 flex flex-col">
+            <CardHeader className="shrink-0">
+              <CardTitle>Preview Data</CardTitle>
+              <CardDescription>
+                {`Found ${jsonData.length} row${jsonData.length === 1 ? '' : 's'}. `}{previewNote}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="flex-1 min-h-0 p-0">
+              <div
+                className="h-full overflow-auto overscroll-contain"
+              >
+                <Table className="min-w-full table-auto">
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       {headers.map((header) => (
-                        <TableHead key={header} className="whitespace-nowrap">
+                        <TableHead key={header} className="whitespace-nowrap px-2 py-1">
                           {header}
                         </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {jsonData.map((row, rowIndex) => (
+                    {jsonData.slice(0, 100).map((row, rowIndex) => ( // Preview limited rows for performance
                       <TableRow key={rowIndex}>
                         {headers.map((header) => (
                           <TableCell
                             key={`${rowIndex}-${header}`}
-                            className="whitespace-nowrap"
+                            className="whitespace-nowrap px-2 py-1 text-xs"
                             title={row[header] != null ? String(row[header]) : ''}
                           >
                             {row[header] != null ? String(row[header]) : ''}
@@ -456,11 +450,14 @@ export default function ImportBoqPage() {
                     ))}
                   </TableBody>
                 </Table>
+                 {jsonData.length > 100 && (
+                    <p className="text-center text-sm text-muted-foreground p-4">And {jsonData.length - 100} more rows...</p>
+                )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
