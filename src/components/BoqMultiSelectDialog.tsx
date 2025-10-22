@@ -59,7 +59,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
   const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sortKey, setSortKey] =
-    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | null>(null);
+    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'erpSlNo' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [filters, setFilters] = useState<{
@@ -280,7 +280,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
     });
   }, []);
 
-  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate') => {
+  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'erpSlNo') => {
     if (sortKey === key) {
       setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -358,7 +358,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
 
           <ScrollArea className="h-96 border rounded-md">
             <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                 <div className="w-[50px] flex justify-center">
                   <Checkbox
                     aria-label="Select all"
@@ -369,11 +369,11 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
 
                 <div
                   className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('jmcNo')}
+                  onClick={() => toggleSort('erpSlNo')}
                   aria-label="Sort by ERP Sl No"
                 >
                   ERP Sl. No.
-                  {sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                  {sortKey === 'erpSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </div>
 
                 <div
@@ -386,7 +386,12 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
                 </div>
 
                 <div>Description</div>
-
+                 <div
+                  className="text-right cursor-pointer flex items-center justify-end"
+                  aria-label="Sort by BOQ Qty"
+                >
+                  BOQ Qty
+                </div>
                 <div
                   className="text-right cursor-pointer flex items-center justify-end"
                   onClick={() => toggleSort('availableQty')}
@@ -418,7 +423,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
                   return (
                     <div
                       key={item.id}
-                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow(item.id, !rowChecked)}
@@ -445,6 +450,7 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
                       <div className="truncate pr-2">{item['ERP SL NO']}</div>
                       <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
                       <div className="truncate pr-2">{item['Description']}</div>
+                       <div className="text-right pr-2">{item['BOQ QTY'] || item['Total Qty']}</div>
                       <div className="text-right pr-2">{item['UNIT']}</div>
                       <div className="text-right pr-2">
                         {formatCurrency(getRateNumber(rate))}
@@ -479,3 +485,5 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
     </Dialog>
   );
 }
+
+```
