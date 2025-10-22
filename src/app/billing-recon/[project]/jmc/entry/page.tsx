@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -30,6 +31,7 @@ const initialItem = {
     description: '',
     unit: '',
     rate: 0,
+    boqQty: 0,
     executedQty: 0,
     totalAmount: 0,
 };
@@ -118,7 +120,11 @@ export default function JmcEntryPage() {
 
     if (boqItem) {
         const rateKey = findBasicPriceKey(boqItem);
-        itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
+        itemToUpdate.boqSlNo = boqItem['SL. No.'] || boqItem['BOQ SL No'] || '';
+        itemToUpdate.description = boqItem['Description'] || '';
+        itemToUpdate.unit = boqItem['Unit'] || boqItem['UNIT'] || '';
+        itemToUpdate.rate = rateKey ? Number(boqItem[rateKey] || '0') : 0;
+        itemToUpdate.boqQty = Number(boqItem['BOQ QTY'] || boqItem['Total Qty'] || '0');
     } else {
         Object.assign(itemToUpdate, initialItem);
     }
@@ -133,14 +139,14 @@ export default function JmcEntryPage() {
           return {
               boqSlNo: boqSlNo,
               description: boqItem['Description'] || '',
-              unit: boqItem['UNIT'] || boqItem['UNITS'] || '',
+              unit: boqItem['Unit'] || boqItem['UNIT'] || '',
               rate: rateKey ? Number(boqItem[rateKey] || '0') : 0,
+              boqQty: Number(boqItem['BOQ QTY'] || boqItem['Total Qty'] || '0'),
               executedQty: 0,
               totalAmount: 0,
           };
       });
 
-      // If the first item is empty, replace it. Otherwise, add the new items.
       const existingItems = items.length === 1 && items[0].boqSlNo === ''
           ? []
           : items;
@@ -157,7 +163,6 @@ export default function JmcEntryPage() {
         const newItems = items.filter((_, i) => i !== index);
         setItems(newItems);
     } else {
-        // If it's the last item, just reset it to the initial state
         setItems([{...initialItem}]);
     }
   };
@@ -281,6 +286,7 @@ export default function JmcEntryPage() {
                             <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead className="w-[100px]">Unit</TableHead>
+                            <TableHead className="w-[100px]">BOQ Qty</TableHead>
                             <TableHead className="w-[120px]">Rate</TableHead>
                             <TableHead className="w-[120px]">Executed Qty</TableHead>
                             <TableHead className="w-[150px]">Total Amount</TableHead>
@@ -300,6 +306,7 @@ export default function JmcEntryPage() {
                                 </TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
+                                <TableCell>{item.boqQty}</TableCell>
                                 <TableCell>{item.rate}</TableCell>
                                 <TableCell>
                                     <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />

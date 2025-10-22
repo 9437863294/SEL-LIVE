@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -16,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +48,8 @@ type JmcItemWithDetails = JmcItem & {
   ['Category 1']?: string;
 };
 
+type SortKey = 'erpSlNo' | 'boqSlNo' | 'description' | 'boqQty' | 'unit' | 'rate';
+
 export function BoqMultiSelectDialog({
   isOpen,
   onOpenChange,
@@ -65,8 +66,8 @@ export function BoqMultiSelectDialog({
   const [searchTerm, setSearchTerm] = useState(''); // debounced
   const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [sortKey, setSortKey] =
-    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'erpSlNo' | null>(null);
+
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [filters, setFilters] = useState<{
@@ -93,7 +94,7 @@ export function BoqMultiSelectDialog({
       try {
         const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
         const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
-        
+
         const [jmcSnapshot, billsSnapshot] = await Promise.all([
           getDocs(jmcCollectionRef),
           getDocs(billsCollectionRef),
@@ -106,12 +107,12 @@ export function BoqMultiSelectDialog({
           (doc) => ({ id: doc.id, ...doc.data() } as Bill)
         );
 
-        // Accumulate billed quantities keyed by our synthetic item id
+        // Accumulate billed quantities keyed by synthetic item id
         const billedQuantities: Record<string, number> = {};
         allBills.forEach((bill) => {
           (bill.items ?? []).forEach((it) => {
             const k = it.jmcItemId;
-            const inc = Number.parseFloat(it.billedQty || '0') || 0;
+            const inc = Number.parseFloat((it as any).billedQty || '0') || 0;
             billedQuantities[k] = (billedQuantities[k] || 0) + inc;
           });
         });
@@ -156,14 +157,54 @@ export function BoqMultiSelectDialog({
   // Helpers
   const getRateNumber = (rate: unknown) => {
     if (typeof rate === 'number') return rate;
-    const n = Number(rate);
+    const n = Number(
+      typeof rate === 'string' ? rate.replace(/,/g, '').trim() : rate
+    );
     return Number.isFinite(n) ? n : 0;
   };
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
 
-  // Cascading filter options
+  const getNumeric = (v: unknown) => {
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') {
+      const n = Number(v.replace(/,/g, '').trim());
+      return Number.isFinite(n) ? n : 0;
+    }
+    return 0;
+  };
+
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const known = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Unit Price', 'UNIT RATE'];
+    for (const k of known) if (k in item) return k;
+    return Object.keys(item).find(
+      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total')
+    );
+  };
+
+  const getSortValue = (item: BoqItem, key: SortKey) => {
+    switch (key) {
+      case 'erpSlNo':
+        return (item as any)['ERP SL NO'] ?? '';
+      case 'boqSlNo':
+        return (item as any)['BOQ SL No'] ?? (item as any)['SL. No.'] ?? '';
+      case 'description':
+        return (item as any)['Description'] ?? '';
+      case 'boqQty':
+        return (item as any)['BOQ QTY'] ?? (item as any)['Total Qty'] ?? 0;
+      case 'unit':
+        return (item as any)['UNIT'] ?? '';
+      case 'rate': {
+        const rateKey = findBasicPriceKey(item);
+        return rateKey ? (item as any)[rateKey] : 0;
+      }
+      default:
+        return '';
+    }
+  };
+
+  // Cascading filter options (derived from jmcItems meta if present)
   const filterOptions = useMemo(() => {
     let base = [...jmcItems];
 
@@ -214,20 +255,22 @@ export function BoqMultiSelectDialog({
     const q = searchTerm.toLowerCase();
 
     let items = boqItems.filter((item) => {
+      // Example to hide already-added items if needed:
       // if (addedItemIds.has(item.id)) return false;
 
-      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
+      const scope1Match = filters['Scope 1'] === 'all' || (item as any)['Scope 1'] === filters['Scope 1'];
+      const scope2Match = filters['Scope 2'] === 'all' || (item as any)['Scope 2'] === filters['Scope 2'];
       const category1Match =
-        filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+        filters['Category 1'] === 'all' || (item as any)['Category 1'] === filters['Category 1'];
 
       if (!(scope1Match && scope2Match && category1Match)) return false;
 
       if (!q) return true;
       return (
-        item.jmcNo?.toLowerCase().includes(q) ||
-        (item as any).boqSlNo?.toLowerCase?.().includes(q) || // if present on JmcItem
-        (item as any).description?.toLowerCase?.().includes(q)
+        (item as any).jmcNo?.toLowerCase?.().includes(q) ||
+        (item as any)['BOQ SL No']?.toLowerCase?.().includes(q) ||
+        (item as any)['SL. No.']?.toLowerCase?.().includes(q) ||
+        (item as any)['Description']?.toLowerCase?.().includes(q)
       );
     });
 
@@ -236,24 +279,19 @@ export function BoqMultiSelectDialog({
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
       items = items
-        .map((v, i) => ({ v, i })) // stable
+        .map((v, i) => ({ v, i })) // stable sort
         .sort((a, b) => {
-          const A = a.v;
-          const B = b.v;
+          const A = getSortValue(a.v, sortKey);
+          const B = getSortValue(b.v, sortKey);
 
           let cmp = 0;
-          if (sortKey === 'availableQty') {
-            cmp = ((A.availableQty ?? 0) - (B.availableQty ?? 0)) * dir;
-          } else if (sortKey === 'rate') {
-            // rate lives on JmcItem (string | number). We normalize.
-            cmp = (getRateNumber((A as any).rate) - getRateNumber((B as any).rate)) * dir;
+          if (sortKey === 'boqQty' || sortKey === 'rate') {
+            cmp = (getNumeric(A) - getNumeric(B)) * dir;
           } else {
-            cmp =
-              collator.compare(String((A as any)[sortKey] ?? ''), String((B as any)[sortKey] ?? '')) *
-              dir;
+            cmp = collator.compare(String(A ?? ''), String(B ?? '')) * dir;
           }
 
-          return cmp || a.i - b.i;
+          return cmp || (a.i - b.i);
         })
         .map((x) => x.v);
     }
@@ -263,17 +301,17 @@ export function BoqMultiSelectDialog({
 
   // Select-all logic
   const allOnPageSelected =
-    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
-  const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
+    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has((it as any).id));
+  const noneSelected = filteredItems.every((it) => !selectedIds.has((it as any).id));
   const selectAllState: CheckedState =
     allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
 
   const handleSelectAll = (checked: CheckedState) => {
     if (checked) {
-      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
+      setSelectedIds(new Set(filteredItems.map((i: any) => i.id)));
     } else {
       const next = new Set(selectedIds);
-      filteredItems.forEach((i) => next.delete(i.id));
+      filteredItems.forEach((i: any) => next.delete(i.id));
       setSelectedIds(next);
     }
   };
@@ -287,7 +325,7 @@ export function BoqMultiSelectDialog({
     });
   }, []);
 
-  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'erpSlNo') => {
+  const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -297,23 +335,13 @@ export function BoqMultiSelectDialog({
   };
 
   const handleConfirm = () => {
-    const selectedBoqItems = boqItems.filter((item) => selectedIds.has(item.id));
+    const selectedBoqItems = boqItems.filter((item: any) => selectedIds.has(item.id));
     onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
     setSearchInput('');
     setSearchTerm('');
   };
-  
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
-    for (const key of knownPriceKeys) {
-        if (item.hasOwnProperty(key)) {
-            return key;
-        }
-    }
-    return Object.keys(item).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
-};
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -392,20 +420,31 @@ export function BoqMultiSelectDialog({
                   {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </div>
 
-                <div>Description</div>
-                 <div
+                <div
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('description')}
+                  aria-label="Sort by Description"
+                >
+                  Description
+                  {sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </div>
+
+                <div
                   className="text-right cursor-pointer flex items-center justify-end"
+                  onClick={() => toggleSort('boqQty')}
                   aria-label="Sort by BOQ Qty"
                 >
                   BOQ Qty
+                  {sortKey === 'boqQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </div>
+
                 <div
                   className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('availableQty')}
-                  aria-label="Sort by Available Qty"
+                  onClick={() => toggleSort('unit')}
+                  aria-label="Sort by Unit"
                 >
                   Unit
-                  {sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                  {sortKey === 'unit' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </div>
 
                 <div
@@ -423,7 +462,7 @@ export function BoqMultiSelectDialog({
                   <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                 </div>
               ) : filteredItems.length > 0 ? (
-                filteredItems.map((item) => {
+                filteredItems.map((item: any) => {
                   const rowChecked = selectedIds.has(item.id);
                   const rateKey = findBasicPriceKey(item);
                   const rate = rateKey ? item[rateKey] : 0;
@@ -445,7 +484,7 @@ export function BoqMultiSelectDialog({
                     >
                       <div className="w-[50px] flex justify-center">
                         <Checkbox
-                          aria-label={`Select ${String((item as any).description ?? (item as any).boqSlNo ?? item.jmcNo)}`}
+                          aria-label={`Select ${String(item['Description'] ?? item['BOQ SL No'] ?? item['SL. No.'] ?? item.jmcNo ?? '')}`}
                           checked={rowChecked}
                           onCheckedChange={(checked) => {
                             // Avoid double-toggle from parent onClick
@@ -457,11 +496,9 @@ export function BoqMultiSelectDialog({
                       <div className="truncate pr-2">{item['ERP SL NO']}</div>
                       <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
                       <div className="truncate pr-2">{item['Description']}</div>
-                       <div className="text-right pr-2">{item['BOQ QTY'] || item['Total Qty']}</div>
-                      <div className="text-right pr-2">{item['UNIT']}</div>
-                      <div className="text-right pr-2">
-                        {formatCurrency(getRateNumber(rate))}
-                      </div>
+                      <div className="text-right pr-2">{item['QTY'] || item['Total Qty']}</div>
+                      <div className="text-right pr-2">{item['Unit']}</div>
+                      <div className="text-right pr-2">{formatCurrency(getRateNumber(rate))}</div>
                     </div>
                   );
                 })
