@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { BoqItem, BillItem } from "@/lib/types";
 import { BoqItemSelector } from "@/components/BoqItemSelector";
-import { JmcItemSelectorDialog } from "@/components/BoqMultiSelectDialog";
+import { JmcItemSelectorDialog } from "@/components/JmcItemSelectorDialog";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
@@ -177,8 +177,8 @@ export default function JmcEntryPage() {
     setItems(next);
   };
   
-  const handleMultiBoqSelect = (selectedItems: BoqItem[]) => {
-    const mapped: JmcItem[] = selectedItems.map((row) => {
+  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
+    const mapped: JmcItem[] = selectedBoqItems.map((row) => {
       const anyRow = row as unknown as Record<string, unknown>;
 
       const rateKey = findBasicPriceKey(anyRow);
