@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ChevronUp,
   Search,
+  Edit,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -502,6 +503,7 @@ export default function ViewBoqPage() {
                           </div>
                         </TableHead>
                       ))}
+                      <TableHead className={`${stickyHead}`}>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -522,6 +524,9 @@ export default function ViewBoqPage() {
                               <Skeleton className="h-5 w-full" />
                             </TableCell>
                           ))}
+                        <TableCell>
+                          <Skeleton className="h-8 w-16" />
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : sortedBoqItems.length > 0 ? (
@@ -586,12 +591,17 @@ export default function ViewBoqPage() {
                                   </TableCell>
                                 );
                               })}
+                              <TableCell className="text-right">
+                                <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                                </Button>
+                              </TableCell>
                           </TableRow>
 
                           {isExpanded && hasBom && (
                             <TableRow className="bg-muted/50 hover:bg-muted/50">
                               <TableCell
-                                colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
+                                colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 3}
                                 className="p-0"
                               >
                                 <div className="p-4">
@@ -626,7 +636,7 @@ export default function ViewBoqPage() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
+                        colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 3}
                         className="text-center h-24"
                       >
                         No BOQ items found.
