@@ -43,9 +43,21 @@ interface BoqMultiSelectDialogProps {
 }
 
 const baseTableHeaders = [
-    'Project', 'Site', 'Scope', 'Sl No', 'Description', 'UNIT', 'BOQ QTY', 'UNIT PRICE',
-    'TOTAL PRICE FOR THE TENDER QUANTITY',
-    'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'
+    'Project Name',
+    'Sub-Division',
+    'Site',
+    'Scope 1',
+    'Scope 2',
+    'Category 1',
+    'Category 2',
+    'Category 3',
+    'ERP SL NO',
+    'BOQ SL No',
+    'Description',
+    'Unit',
+    'QTY',
+    'Unit Rate',
+    'Total Amount',
 ];
 
 
@@ -84,7 +96,13 @@ export function BoqMultiSelectDialog({
         if (visibility) setColumnVisibility(visibility);
         if (names) setColumnNames(names);
       } else {
-         const defaults: Record<string, boolean> = { 'Sl No': true, 'Description': true, 'UNIT': true, 'UNIT PRICE': true };
+         const defaults: Record<string, boolean> = {
+            'BOQ SL No': true, 
+            'Description': true, 
+            'Unit': true, 
+            'QTY': true,
+            'Unit Rate': true,
+         };
          setColumnVisibility(baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: defaults[h] || false }), {}));
       }
     } catch (e) {
@@ -113,7 +131,7 @@ export function BoqMultiSelectDialog({
     const fetchBoqData = async () => {
       setIsLoading(true);
       try {
-        const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const q = query(collection(db, 'projects', projectSlug, 'boqItems'));
         const boqSnapshot = await getDocs(q);
         const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(items);
