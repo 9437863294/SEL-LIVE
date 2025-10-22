@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { BoqItem, BillItem } from "@/lib/types";
 import { BoqItemSelector } from "@/components/BoqItemSelector";
-import { JmcItemSelectorDialog } from "@/components/JmcItemSelectorDialog";
+import { BoqMultiSelectDialog } from "@/components/BoqMultiSelectDialog";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
@@ -429,7 +429,7 @@ export default function JmcEntryPage() {
         </Card>
       </div>
 
-      <JmcItemSelectorDialog
+      <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
@@ -438,3 +438,5 @@ export default function JmcEntryPage() {
     </>
   );
 }
+
+    
