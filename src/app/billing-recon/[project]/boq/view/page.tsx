@@ -15,11 +15,12 @@ import {
   ChevronUp,
   Search,
   Edit,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, where } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, where, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -33,8 +34,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { FabricationBomItem } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
@@ -112,6 +114,11 @@ export default function ViewBoqPage() {
     'Scope 2': 'all',
     'Category 1': 'all',
   });
+  
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
 
   /*** CLIENT FLAG ***/
   useEffect(() => {
@@ -311,6 +318,37 @@ export default function ViewBoqPage() {
     setSelectedBoqItem(item);
     setIsDetailsDialogOpen(true);
   };
+  
+  const handleOpenEditDialog = (e: React.MouseEvent, item: BoqItem) => {
+    e.stopPropagation();
+    setEditingItem({ ...item }); // Clone item to avoid direct state mutation
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingItem) return;
+    const { name, value } = e.target;
+    setEditingItem(prev => (prev ? { ...prev, [name]: value } : null));
+  };
+  
+  const handleSaveChanges = async () => {
+    if (!editingItem) return;
+    setIsSaving(true);
+    try {
+      const itemRef = doc(db, 'projects', projectSlug, 'boqItems', editingItem.id);
+      const { id, ...dataToSave } = editingItem;
+      await updateDoc(itemRef, dataToSave);
+      toast({ title: 'Success', description: 'BOQ item updated.' });
+      setIsEditDialogOpen(false);
+      fetchBoqItems();
+    } catch (e) {
+      console.error("Failed to save changes:", e);
+      toast({ title: 'Error', description: 'Could not save changes.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
 
   /*** SORT HEADER CLICK ***/
   const handleSort = (key: string) => {
@@ -592,7 +630,7 @@ export default function ViewBoqPage() {
                                 );
                               })}
                               <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                                <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
                                   <Edit className="mr-2 h-4 w-4" /> Edit
                                 </Button>
                               </TableCell>
@@ -657,6 +695,39 @@ export default function ViewBoqPage() {
         jmcEntries={[]}
         bills={[]}
       />
+      
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit BOQ Item</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+            {editingItem && Object.keys(editingItem).map(key => {
+              if (key === 'id' || key === 'bom') return null;
+              return (
+                <div className="space-y-1" key={key}>
+                  <Label htmlFor={`edit-${key}`}>{key}</Label>
+                  <Input
+                    id={`edit-${key}`}
+                    name={key}
+                    value={editingItem[key] || ''}
+                    onChange={handleEditFormChange}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={handleSaveChanges} disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Column Editor */}
       <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
