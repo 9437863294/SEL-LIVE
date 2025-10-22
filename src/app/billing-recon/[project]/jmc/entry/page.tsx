@@ -179,33 +179,32 @@ export default function JmcEntryPage() {
   };
 
   // IMPORTANT: dialog emits BillItem[], so the handler must accept BillItem[]
-  const handleMultiBoqSelect = (selectedItems: BillItem[]) => {
-    const mapped: JmcItem[] = selectedItems.map((row) => {
-      const anyRow = row as unknown as Record<string, unknown>;
-      const rateKey = findBasicPriceKey(anyRow);
-      const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
-      const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
-      const boqQty = parseNum(anyRow[boqQtyKey]);
-
-
-      const boqSlNo =
-        (anyRow['SL. No.'] as string) ??
-        (anyRow['BOQ SL No'] as string) ??
-        '';
-
-      const description = (anyRow['Description'] as string) ?? '';
-      const unit = (anyRow['Unit'] as string) ?? '';
-
-      return recalcRow({
-        boqSlNo,
-        description,
-        unit,
-        boqQty,
-        rate: Number.isFinite(rate) ? rate : 0,
-        executedQty: 0,
-        totalAmount: 0,
+  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
+    const mapped: JmcItem[] = selectedBoqItems.map((boqItem) => {
+        const anyRow = boqItem as unknown as Record<string, unknown>;
+        const rateKey = findBasicPriceKey(anyRow);
+        const rate = parseNum(rateKey ? anyRow[rateKey] : 0);
+        const boqQtyKey = Object.keys(anyRow).find(k => k.toLowerCase().includes('qty')) || 'QTY';
+        const boqQty = parseNum(anyRow[boqQtyKey]);
+  
+        const boqSlNo =
+          (anyRow['SL. No.'] as string) ??
+          (anyRow['BOQ SL No'] as string) ??
+          '';
+  
+        const description = (anyRow['Description'] as string) ?? '';
+        const unit = (anyRow['Unit'] as string) ?? '';
+  
+        return recalcRow({
+          boqSlNo,
+          description,
+          unit,
+          boqQty,
+          rate: Number.isFinite(rate) ? rate : 0,
+          executedQty: 0,
+          totalAmount: 0,
+        });
       });
-    });
 
     const base = items.length === 1 && !items[0].boqSlNo ? [] : items;
     setItems([...base, ...mapped]);
