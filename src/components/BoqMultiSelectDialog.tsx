@@ -49,10 +49,17 @@ type JmcItemWithDetails = JmcItem & {
   ['Category 1']?: string;
 };
 
-export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems, alreadyAddedItems = [] }: BoqMultiSelectDialogProps) {
+export function BoqMultiSelectDialog({
+  isOpen,
+  onOpenChange,
+  onConfirm,
+  boqItems,
+  alreadyAddedItems = [],
+}: BoqMultiSelectDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // debounced
@@ -485,5 +492,3 @@ export function BoqMultiSelectDialog({ isOpen, onOpenChange, onConfirm, boqItems
     </Dialog>
   );
 }
-
-```
