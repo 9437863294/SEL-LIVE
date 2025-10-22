@@ -30,87 +30,135 @@ import {
 } from './ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 
-interface JmcItemSelectorDialogProps {
+interface BoqMultiSelectDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
   boqItems: BoqItem[];
 }
 
-export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItems }: JmcItemSelectorDialogProps) {
+export function BoqMultiSelectDialog({
+  isOpen,
+  onOpenChange,
+  onConfirm,
+  boqItems,
+}: BoqMultiSelectDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState(''); // debounced
   const [isLoading, setIsLoading] = useState(false);
-  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortKey, setSortKey] =
+    useState<keyof BoqItem | 'description' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
 
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Helpers
+  const getItemDescription = (item: BoqItem): string => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS'];
+    for (const key of descriptionKeys) {
+      if ((item as any)[key]) return String((item as any)[key]);
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as any)[fallbackKey]) : 'No Description';
+  };
+
+  const getBoqSlNo = (item: BoqItem): string => {
+    return String(item['BOQ SL No'] || item['SL. No.'] || '');
+  };
+
+  const getRateNumber = (rate: unknown) => {
+    if (typeof rate === 'number') return rate;
+    const n = Number(rate);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
+
   const filteredItems = useMemo(() => {
-    let items = boqItems.filter(item =>
-        (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         (item['SL. No.'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-         (item['ERP SL NO'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    let items = boqItems.filter((item) => {
+      const q = searchTerm.toLowerCase();
+      if (!q) return true;
+      return (
+        getBoqSlNo(item).toLowerCase().includes(q) ||
+        getItemDescription(item).toLowerCase().includes(q)
+      );
+    });
 
     if (sortKey) {
-        items.sort((a, b) => {
-            const valA = a[sortKey];
-            const valB = b[sortKey];
+      const dir = sortDirection === 'asc' ? 1 : -1;
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-            if (valA === undefined || valA === null) return 1;
-            if (valB === undefined || valB === null) return -1;
-            
-            if (!isNaN(Number(valA)) && !isNaN(Number(valB))) {
-                return sortDirection === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
-            }
+      items.sort((a, b) => {
+        const valA = sortKey === 'description' ? getItemDescription(a) : (a as any)[sortKey];
+        const valB = sortKey === 'description' ? getItemDescription(b) : (b as any)[sortKey];
 
-            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
-            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
-            
-            return 0;
-        });
+        if (valA === undefined || valA === null) return 1 * dir;
+        if (valB === undefined || valB === null) return -1 * dir;
+        
+        if (typeof valA === 'number' && typeof valB === 'number') {
+            return (valA - valB) * dir;
+        }
+
+        return collator.compare(String(valA), String(valB)) * dir;
+      });
     }
 
     return items;
   }, [boqItems, searchTerm, sortKey, sortDirection]);
 
-  const handleSelectAll = (checked: boolean) => {
-    setSelectedIds(checked ? new Set(filteredItems.map(item => item.id)) : new Set());
+  // Select-all logic
+  const allOnPageSelected =
+    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
+  const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
+  const selectAllState: CheckedState =
+    allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
+
+  const handleSelectAll = (checked: CheckedState) => {
+    if (checked) {
+      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
+    } else {
+      const next = new Set(selectedIds);
+      filteredItems.forEach((i) => next.delete(i.id));
+      setSelectedIds(next);
+    }
   };
 
-  const handleSelectRow = (id: string, checked: boolean) => {
-    const newSelectedIds = new Set(selectedIds);
-    if (checked) {
-      newSelectedIds.add(id);
-    } else {
-      newSelectedIds.delete(id);
-    }
-    setSelectedIds(newSelectedIds);
-  };
-  
-  const handleSort = (key: string) => {
+  const handleSelectRow = useCallback((id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSort = (key: keyof BoqItem | 'description') => {
     if (sortKey === key) {
-        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+      setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
     } else {
-        setSortKey(key);
-        setSortDirection('asc');
+      setSortKey(key);
+      setSortDirection('asc');
     }
-  }
+  };
 
   const handleConfirm = () => {
-    const selectedBoqItems = boqItems.filter(item => selectedIds.has(item.id));
+    const selectedBoqItems = boqItems.filter((item) => selectedIds.has(item.id));
     onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
+    setSearchInput('');
     setSearchTerm('');
   };
-  
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  }
   
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
@@ -122,15 +170,6 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItem
     return Object.keys(item).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
 };
 
-  const getCombinedSlNo = (item: BoqItem): string => {
-      const erpSlNo = item['ERP SL NO'] || '';
-      const boqSlNo = item['BOQ SL No'] || item['SL. No.'] || '';
-      if (erpSlNo && boqSlNo) {
-          return `${erpSlNo} / ${boqSlNo}`;
-      }
-      return erpSlNo || boqSlNo || '';
-  };
-
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -141,81 +180,117 @@ export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItem
             Select multiple items from the Bill of Quantities to add.
           </DialogDescription>
         </DialogHeader>
+
         <div className="py-4">
-            <div className="relative mb-4">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                    placeholder="Search by Sl. No. or Description..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
-                />
+          <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
+            <div className="relative flex-grow w-full">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by Sl. No. or Description..."
+                aria-label="Search items"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-8"
+              />
             </div>
-            <ScrollArea className="h-96 border rounded-md">
-                <div className="p-1">
-                    <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                        <div className="w-[50px] flex justify-center">
-                            <Checkbox
-                                checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
-                                onCheckedChange={handleSelectAll}
-                            />
-                        </div>
-                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('ERP SL NO')}>
-                            ERP Sl. No.
-                            {sortKey === 'ERP SL NO' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                        </div>
-                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('BOQ SL No')}>
-                            BOQ Sl. No.
-                             {sortKey === 'BOQ SL No' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                        </div>
-                        <div>Description</div>
-                        <div className="text-right cursor-pointer" onClick={() => handleSort(findBasicPriceKey(filteredItems[0] || {}) || 'rate')}>
-                            Unit Rate
-                            {sortKey === (findBasicPriceKey(filteredItems[0] || {}) || 'rate') && <ArrowUpDown className="ml-1 h-3 w-3 inline-flex" />}
-                        </div>
-                        <div className="text-right">Unit</div>
-                    </div>
-                    {isLoading ? (
-                        <div className="flex items-center justify-center h-full p-8">
-                            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                        </div>
-                    ) : filteredItems.length > 0 ? (
-                        filteredItems.map(item => {
-                             const rateKey = findBasicPriceKey(item);
-                             const rate = rateKey ? item[rateKey] : 0;
-                             return (
-                                <div 
-                                    key={item.id} 
-                                    className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
-                                    onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
-                                >
-                                    <div className="w-[50px] flex justify-center">
-                                        <Checkbox
-                                            checked={selectedIds.has(item.id)}
-                                            onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                                        />
-                                    </div>
-                                    <div className="truncate pr-2">{item['ERP SL NO']}</div>
-                                    <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
-                                    <div className="truncate pr-2">{item['Description']}</div>
-                                    <div className="text-right pr-2">{formatCurrency(rate)}</div>
-                                    <div className="text-right pr-2">{item['Unit']}</div>
-                                </div>
-                             )
-                        })
-                    ) : (
-                        <div className="text-center p-8 text-muted-foreground">
-                            No available items found.
-                        </div>
-                    )}
+          </div>
+
+          <ScrollArea className="h-96 border rounded-md">
+            <div className="p-1">
+              <div className="grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                <div className="w-[50px] flex justify-center">
+                  <Checkbox
+                    aria-label="Select all"
+                    checked={selectAllState}
+                    onCheckedChange={handleSelectAll}
+                  />
                 </div>
-            </ScrollArea>
+                <button
+                  type="button"
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('BOQ SL No')}
+                  aria-label="Sort by BOQ Sl No"
+                >
+                  BOQ Sl.No.
+                  {sortKey === 'BOQ SL No' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('description')}
+                  aria-label="Sort by Description"
+                >
+                  Description
+                  {sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
+                <div className="text-right">Unit Rate</div>
+                <div className="text-right">Unit</div>
+              </div>
+
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full p-8">
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : filteredItems.length > 0 ? (
+                filteredItems.map((item) => {
+                  const rateKey = findBasicPriceKey(item);
+                  const rate = rateKey ? getRateNumber(item[rateKey]) : 0;
+                  const rowChecked = selectedIds.has(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className={`grid grid-cols-[auto_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                        rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
+                      }`}
+                      onClick={() => handleSelectRow(item.id, !rowChecked)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSelectRow(item.id, !rowChecked);
+                        }
+                      }}
+                    >
+                      <div className="w-[50px] flex justify-center">
+                        <Checkbox
+                          aria-label={`Select ${getItemDescription(item) || getBoqSlNo(item)}`}
+                          checked={rowChecked}
+                          onCheckedChange={(checked) => {
+                            handleSelectRow(item.id, Boolean(checked));
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <div className="truncate pr-2">{getBoqSlNo(item)}</div>
+                      <div className="truncate pr-2">{getItemDescription(item)}</div>
+                      <div className="text-right pr-2">
+                        {formatCurrency(rate)}
+                      </div>
+                      <div className="text-right pr-2">{(item as any).UNIT || (item as any).unit || 'N/A'}</div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center p-8 text-muted-foreground">
+                  No available items found.
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </div>
+
         <DialogFooter>
           <DialogClose asChild>
-            <Button type="button" variant="outline">Cancel</Button>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
           </DialogClose>
-          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={selectedIds.size === 0}
+          >
             Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </DialogFooter>
