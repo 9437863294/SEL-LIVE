@@ -11,11 +11,12 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -38,7 +39,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 /** TYPES **/
 export type BoqItem = {
@@ -89,15 +90,25 @@ export default function ViewBoqPage() {
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>([...baseTableHeaders]);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    [...baseTableHeaders].reduce((acc, h) => ({
-      ...acc,
-      [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'Category 1'].includes(h as string),
-    }), {} as Record<string, boolean>)
+    [...baseTableHeaders].reduce(
+      (acc, h) => ({
+        ...acc,
+        [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'Category 1'].includes(h as string),
+      }),
+      {} as Record<string, boolean>
+    )
   );
   const [columnNames, setColumnNames] = useState<Record<string, string>>(
     [...baseTableHeaders].reduce((acc, h) => ({ ...acc, [h]: h as string }), {} as Record<string, string>)
   );
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const [filters, setFilters] = useState({
+    search: '',
+    'Scope 1': 'all',
+    'Scope 2': 'all',
+    'Category 1': 'all',
+  });
 
   /*** CLIENT FLAG ***/
   useEffect(() => {
@@ -116,10 +127,7 @@ export default function ViewBoqPage() {
     return 'guest';
   }, [user]);
 
-  const prefKey = useMemo(
-    () => (projectSlug ? `boqTable:${projectSlug}:${userKey}` : ''),
-    [projectSlug, userKey]
-  );
+  const prefKey = useMemo(() => (projectSlug ? `boqTable:${projectSlug}:${userKey}` : ''), [projectSlug, userKey]);
 
   /*** LOAD/SAVE PREFERENCES ***/
   useEffect(() => {
@@ -142,12 +150,14 @@ export default function ViewBoqPage() {
   }, [prefKey]);
 
   const savePrefs = useCallback(
-    (next?: Partial<{
-      order: string[];
-      visibility: Record<string, boolean>;
-      names: Record<string, string>;
-      sort: { key: string; direction: 'asc' | 'desc' };
-    }>) => {
+    (
+      next?: Partial<{
+        order: string[];
+        visibility: Record<string, boolean>;
+        names: Record<string, string>;
+        sort: { key: string; direction: 'asc' | 'desc' };
+      }>
+    ) => {
       if (!prefKey) return;
       try {
         const current = localStorage.getItem(prefKey);
@@ -181,7 +191,8 @@ export default function ViewBoqPage() {
     setIsLoading(true);
     try {
       const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
-      const boqSnapshot = await getDocs(boqItemsRef);
+      const q = query(boqItemsRef); // simplified query
+      const boqSnapshot = await getDocs(q);
       const items = boqSnapshot.docs.map((d) => {
         const data = d.data() as any;
         const erpKey = normalizeKey(data, 'ERP SL NO');
@@ -206,9 +217,35 @@ export default function ViewBoqPage() {
     fetchBoqItems();
   }, [fetchBoqItems]);
 
+  const filteredBoqItems = useMemo(() => {
+    return boqItems.filter(item => {
+      const searchMatch = filters.search === '' || 
+        String(item['ERP SL NO'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
+        String(item['BOQ SL No'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
+        String(item['Description'] || '').toLowerCase().includes(filters.search.toLowerCase());
+      
+      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
+      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
+      const category1Match = filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+
+      return searchMatch && scope1Match && scope2Match && category1Match;
+    })
+  }, [boqItems, filters]);
+
+  const filterOptions = useMemo(() => {
+    const scope1 = [...new Set(boqItems.map(item => item['Scope 1']).filter(Boolean))];
+    const scope2 = [...new Set(boqItems.map(item => item['Scope 2']).filter(Boolean))];
+    const category1 = [...new Set(boqItems.map(item => item['Category 1']).filter(Boolean))];
+    return { 'Scope 1': scope1, 'Scope 2': scope2, 'Category 1': category1 };
+  }, [boqItems]);
+
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
+    setFilters(prev => ({...prev, [key]: value}));
+  };
+
   /*** SORTED DATA ***/
   const sortedBoqItems = useMemo(() => {
-    const sorted = [...boqItems];
+    const sorted = [...filteredBoqItems];
     if (sortKey) {
       sorted.sort((a, b) => {
         const valA = a[sortKey];
@@ -228,7 +265,7 @@ export default function ViewBoqPage() {
       });
     }
     return sorted;
-  }, [boqItems, sortKey, sortDirection]);
+  }, [filteredBoqItems, sortKey, sortDirection]);
 
   /*** ROW CLICK ***/
   const handleRowClick = (item: BoqItem) => {
@@ -309,8 +346,13 @@ export default function ViewBoqPage() {
   /*** HELPERS ***/
   const fmtNum = (v: unknown) => {
     const n = Number(v);
-    return Number.isFinite(n) ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n) : String(v ?? 'N/A');
+    return Number.isFinite(n)
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
+      : String(v ?? 'N/A');
   };
+
+  // Reusable class for sticky header cells
+  const stickyHead = 'sticky top-0 bg-background z-20';
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
@@ -325,16 +367,36 @@ export default function ViewBoqPage() {
           <h1 className="text-xl font-bold">View BOQ</h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          {Object.keys(filterOptions).map(key => {
+            const options = filterOptions[key as keyof typeof filterOptions];
+            if (options.length === 0) return null;
+            return (
+              <Select key={key} value={filters[key as keyof typeof filters]} onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={`Filter by ${key}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All {key}s</SelectItem>
+                  {options.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )
+          })}
           {selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={isDeleting}>
-                  {isDeleting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="mr-2 h-4 w-4" />
-                  )}
+                  {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
                   Delete ({selectedItemIds.length})
                 </Button>
               </AlertDialogTrigger>
@@ -360,189 +422,188 @@ export default function ViewBoqPage() {
 
       {/* Table */}
       <div className="flex-1 min-h-0">
-        <ScrollArea className="h-full border rounded-lg w-full">
-          <div className="min-w-max">
-            <Table className="text-sm">
-              <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
-                <TableRow>
-                  <TableHead className="w-[50px]">
-                    <Checkbox
-                      checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                      onCheckedChange={handleSelectAll}
-                      aria-label="Select all rows"
-                    />
-                  </TableHead>
-                  <TableHead className="w-12"></TableHead>
-                  {columnOrder.filter((h) => columnVisibility[h]).map((header) => (
-                    <TableHead
-                      key={header}
-                      className="whitespace-nowrap px-4 cursor-pointer select-none"
-                      onClick={() => handleSort(header)}
-                    >
-                      <div className="flex items-center gap-1">
-                        {columnNames[header] || header}
-                        {sortKey === header ? (
-                          sortDirection === 'asc' ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
-                        )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell>
-                        <Skeleton className="h-5 w-5" />
-                      </TableCell>
-                      <TableCell className="px-2">
-                        <Skeleton className="h-5 w-5" />
-                      </TableCell>
-                      {columnOrder
-                        .filter((h) => columnVisibility[h])
-                        .map((header, j) => (
-                          <TableCell key={`${i}-${j}`}>
-                            <Skeleton className="h-5 w-full" />
-                          </TableCell>
-                        ))}
-                    </TableRow>
-                  ))
-                ) : sortedBoqItems.length > 0 ? (
-                  sortedBoqItems.map((item) => {
-                    const isExpanded = expandedRows.has(item.id);
-                    const hasBom = item.bom && item.bom.length > 0;
-                    return (
-                      <Fragment key={item.id}>
-                        <TableRow
-                          data-state={selectedItemIds.includes(item.id) && 'selected'}
-                          onClick={() => handleRowClick(item)}
-                          className="cursor-pointer"
-                        >
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={selectedItemIds.includes(item.id)}
-                              onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                              aria-label={`Select row ${item.id}`}
-                            />
-                          </TableCell>
-                          <TableCell className="px-2">
-                            {hasBom && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleRowExpansion(item.id);
-                                }}
-                                aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                              </Button>
-                            )}
-                          </TableCell>
-                          {columnOrder.filter((h) => columnVisibility[h]).map((header) => {
-                            const raw = item[header];
-                            const value = (() => {
-                              if (header === 'Total Amount') {
-                                const qty = Number(item['QTY']);
-                                const rate = Number(item['Unit Rate']);
-                                const explicit = Number(raw);
-                                if (Number.isFinite(explicit)) return fmtNum(explicit);
-                                if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
-                                return 'N/A';
-                              }
-                              if (header === 'QTY' || header === 'Unit Rate') return fmtNum(raw);
-                              return raw ?? 'N/A';
-                            })();
-
-                            return (
-                              <TableCell
-                                key={`${item.id}-${header}`}
-                                className={cn(
-                                  (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
-                                )}
-                                title={typeof value === 'string' ? value : undefined}
-                              >
-                                {value}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-
-                        {isExpanded && hasBom && (
-                          <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            <TableCell
-                              colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
-                              className="p-0"
-                            >
-                              <div className="p-4">
-                                <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>Mark No.</TableHead>
-                                      <TableHead>Section</TableHead>
-                                      <TableHead>Qty/Set</TableHead>
-                                      <TableHead>Total Wt (KG)</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
-                                      <TableRow key={index}>
-                                        <TableCell>{bomItem.markNo ?? '—'}</TableCell>
-                                        <TableCell>{bomItem.section ?? '—'}</TableCell>
-                                        <TableCell>{fmtNum(bomItem.qtyPerSet)}</TableCell>
-                                        <TableCell>{fmtNum(bomItem.totalWtKg)}</TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
+        {/* Outer container ensures the scrollbar track spans full width */}
+        <div className="h-full border rounded-lg flex flex-col min-w-0">
+          {/* Header + Body share the same horizontal scroll via this wrapper */}
+          <div className="relative flex-1 min-h-0 w-full overflow-auto">
+            {/* Keep table at least as wide as its content */}
+            <div className="min-w-max">
+              <Table className="text-sm">
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
-                      className="text-center h-24"
-                    >
-                      No BOQ items found.
-                    </TableCell>
+                    {/* Make every header cell sticky */}
+                    <TableHead className={`${stickyHead} w-[50px]`}>
+                      <Checkbox
+                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                        onCheckedChange={handleSelectAll}
+                        aria-label="Select all rows"
+                      />
+                    </TableHead>
+                    <TableHead className={`${stickyHead} w-12`}></TableHead>
+
+                    {columnOrder
+                      .filter((h) => columnVisibility[h])
+                      .map((header) => (
+                        <TableHead
+                          key={header}
+                          className={`${stickyHead} whitespace-nowrap px-4 cursor-pointer select-none`}
+                          onClick={() => handleSort(header)}
+                        >
+                          <div className="flex items-center gap-1">
+                            {columnNames[header] || header}
+                            {sortKey === header ? (
+                              sortDirection === 'asc' ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
+                            )}
+                          </div>
+                        </TableHead>
+                      ))}
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+
+                <TableBody>
+                  {isLoading ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Skeleton className="h-5 w-5" />
+                        </TableCell>
+                        <TableCell className="px-2">
+                          <Skeleton className="h-5 w-5" />
+                        </TableCell>
+                        {columnOrder
+                          .filter((h) => columnVisibility[h])
+                          .map((header, j) => (
+                            <TableCell key={`${i}-${j}`}>
+                              <Skeleton className="h-5 w-full" />
+                            </TableCell>
+                          ))}
+                      </TableRow>
+                    ))
+                  ) : sortedBoqItems.length > 0 ? (
+                    sortedBoqItems.map((item) => {
+                      const isExpanded = expandedRows.has(item.id);
+                      const hasBom = item.bom && item.bom.length > 0;
+                      return (
+                        <Fragment key={item.id}>
+                          <TableRow
+                            data-state={selectedItemIds.includes(item.id) && 'selected'}
+                            onClick={() => handleRowClick(item)}
+                            className="cursor-pointer"
+                          >
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedItemIds.includes(item.id)}
+                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                aria-label={`Select row ${item.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="px-2">
+                              {hasBom && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleRowExpansion(item.id);
+                                  }}
+                                  aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+                                >
+                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </Button>
+                              )}
+                            </TableCell>
+                            {columnOrder
+                              .filter((h) => columnVisibility[h])
+                              .map((header) => {
+                                const raw = item[header];
+                                const value = (() => {
+                                  if (header === 'Total Amount') {
+                                    const qty = Number(item['QTY']);
+                                    const rate = Number(item['Unit Rate']);
+                                    const explicit = Number(raw);
+                                    if (Number.isFinite(explicit)) return fmtNum(explicit);
+                                    if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
+                                    return 'N/A';
+                                  }
+                                  if (header === 'QTY' || header === 'Unit Rate') return fmtNum(raw);
+                                  return raw ?? 'N/A';
+                                })();
+
+                                return (
+                                  <TableCell
+                                    key={`${item.id}-${header}`}
+                                    className={cn(
+                                      (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
+                                    )}
+                                    title={typeof value === 'string' ? value : undefined}
+                                  >
+                                    {value}
+                                  </TableCell>
+                                );
+                              })}
+                          </TableRow>
+
+                          {isExpanded && hasBom && (
+                            <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableCell
+                                colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
+                                className="p-0"
+                              >
+                                <div className="p-4">
+                                  <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Mark No.</TableHead>
+                                        <TableHead>Section</TableHead>
+                                        <TableHead>Qty/Set</TableHead>
+                                        <TableHead>Total Wt (KG)</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
+                                        <TableRow key={index}>
+                                          <TableCell>{bomItem.markNo ?? '—'}</TableCell>
+                                          <TableCell>{bomItem.section ?? '—'}</TableCell>
+                                          <TableCell>{fmtNum(bomItem.qtyPerSet)}</TableCell>
+                                          <TableCell>{fmtNum(bomItem.totalWtKg)}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columnOrder.filter((h) => columnVisibility[h]).length + 2}
+                        className="text-center h-24"
+                      >
+                        No BOQ items found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
-          <ScrollBar orientation="horizontal" />
-          <ScrollBar />
-        </ScrollArea>
+        </div>
       </div>
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
         onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
-        item={selectedBoqItem}
-        jmcEntries={[]}
-        bills={[]}
-      />
-        isOpen={isDetailsDialogOpen}
-        onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
         jmcEntries={[]}
         bills={[]}
