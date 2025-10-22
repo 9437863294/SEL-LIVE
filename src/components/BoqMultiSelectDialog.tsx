@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,480 +11,204 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-  import { Input } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
+import type { BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import type { CheckedState } from '@radix-ui/react-checkbox';
+
 
 interface JmcItemSelectorDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (selectedItems: BillItem[]) => void;
-  alreadyAddedItems?: BillItem[];
+  onConfirm: (selectedItems: BoqItem[]) => void;
+  boqItems: BoqItem[];
 }
 
-// ⚠️ Do NOT change types from JmcItem (e.g., unit stays `string` if that's what JmcItem declares)
-type JmcItemWithDetails = JmcItem & {
-  id: string;
-  jmcEntryId: string;
-  jmcNo: string;
-  billedQty: number;
-  availableQty: number;
-  ['Scope 1']?: string;
-  ['Scope 2']?: string;
-  ['Category 1']?: string;
-};
-
-export function JmcItemSelectorDialog({
-  isOpen,
-  onOpenChange,
-  onConfirm,
-  alreadyAddedItems = [],
-}: JmcItemSelectorDialogProps) {
+export function JmcItemSelectorDialog({ isOpen, onOpenChange, onConfirm, boqItems }: JmcItemSelectorDialogProps) {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
-
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchInput, setSearchInput] = useState('');
-  const [searchTerm, setSearchTerm] = useState(''); // debounced
-  const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sortKey, setSortKey] =
-    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | null>(null);
+  const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const [filters, setFilters] = useState<{
-    'Scope 1': 'all' | string;
-    'Scope 2': 'all' | string;
-    'Category 1': 'all' | string;
-  }>({
-    'Scope 1': 'all',
-    'Scope 2': 'all',
-    'Category 1': 'all',
-  });
-
-  // Debounce search
-  useEffect(() => {
-    const t = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
-    return () => clearTimeout(t);
-  }, [searchInput]);
-
-  useEffect(() => {
-    if (!isOpen || !projectSlug) return;
-
-    const fetchJmcAndBillData = async () => {
-      setIsLoading(true);
-      try {
-        const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-        const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
-
-        const [jmcSnapshot, billsSnapshot] = await Promise.all([
-          getDocs(jmcCollectionRef),
-          getDocs(billsCollectionRef),
-        ]);
-
-        const allJmcEntries = jmcSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as JmcEntry)
-        );
-        const allBills = billsSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as Bill)
-        );
-
-        // Accumulate billed quantities keyed by our synthetic item id
-        const billedQuantities: Record<string, number> = {};
-        allBills.forEach((bill) => {
-          (bill.items ?? []).forEach((it) => {
-            const k = it.jmcItemId;
-            const inc = Number.parseFloat(it.billedQty || '0') || 0;
-            billedQuantities[k] = (billedQuantities[k] || 0) + inc;
-          });
-        });
-
-        const processed: JmcItemWithDetails[] = [];
-        allJmcEntries.forEach((entry) => {
-          (entry.items ?? []).forEach((item, index) => {
-            const jmcItemId = `${entry.id}-${index}`;
-            const executedQty = Number.parseFloat((item as any).executedQty ?? '0') || 0;
-            const billedQty = billedQuantities[jmcItemId] || 0;
-            const availableQty = executedQty - billedQty;
-
-            if (availableQty > 0) {
-              processed.push({
-                ...(item as JmcItem),
-                id: jmcItemId,
-                jmcEntryId: entry.id,
-                jmcNo: String((entry as any).jmcNo ?? ''),
-                billedQty,
-                availableQty,
-              });
-            }
-          });
-        });
-
-        setJmcItems(processed);
-      } catch (error) {
-        console.error('Error fetching data for item selection:', error);
-        toast({
-          title: 'Error',
-          description: 'Could not load available JMC items for this project.',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchJmcAndBillData();
-  }, [isOpen, projectSlug, toast]);
-
-  // Helpers
-  const getRateNumber = (rate: unknown) => {
-    if (typeof rate === 'number') return rate;
-    const n = Number(rate);
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
-
-  // Cascading filter options
-  const filterOptions = useMemo(() => {
-    let base = [...jmcItems];
-
-    const scope1Options = [...new Set(base.map((i) => i['Scope 1']).filter(Boolean))] as string[];
-
-    if (filters['Scope 1'] !== 'all') {
-      base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
-    }
-
-    const scope2Options = [...new Set(base.map((i) => i['Scope 2']).filter(Boolean))] as string[];
-
-    if (filters['Scope 2'] !== 'all') {
-      base = base.filter((i) => i['Scope 2'] === filters['Scope 2']);
-    }
-
-    const category1Options = [
-      ...new Set(base.map((i) => i['Category 1']).filter(Boolean)),
-    ] as string[];
-
-    return {
-      'Scope 1': scope1Options,
-      'Scope 2': scope2Options,
-      'Category 1': category1Options,
-    };
-  }, [jmcItems, filters]);
-
-  const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    setFilters((prev) => {
-      const next = { ...prev, [key]: value };
-      if (key === 'Scope 1') {
-        next['Scope 2'] = 'all';
-        next['Category 1'] = 'all';
-      }
-      if (key === 'Scope 2') {
-        next['Category 1'] = 'all';
-      }
-      return next;
-    });
-    setSelectedIds(new Set());
-  };
-
-  const addedItemIds = useMemo(
-    () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)),
-    [alreadyAddedItems]
-  );
 
   const filteredItems = useMemo(() => {
-    const q = searchTerm.toLowerCase();
-
-    let items = jmcItems.filter((item) => {
-      if (addedItemIds.has(item.id)) return false;
-
-      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
-      const category1Match =
-        filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
-
-      if (!(scope1Match && scope2Match && category1Match)) return false;
-
-      if (!q) return true;
-      return (
-        item.jmcNo?.toLowerCase().includes(q) ||
-        (item as any).boqSlNo?.toLowerCase?.().includes(q) || // if present on JmcItem
-        (item as any).description?.toLowerCase?.().includes(q)
-      );
-    });
+    let items = boqItems.filter(item =>
+        (item['Description']?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         (item['SL. No.'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+         (item['ERP SL NO'] || '').toString().toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
     if (sortKey) {
-      const dir = sortDirection === 'asc' ? 1 : -1;
-      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        items.sort((a, b) => {
+            const valA = a[sortKey];
+            const valB = b[sortKey];
 
-      items = items
-        .map((v, i) => ({ v, i })) // stable
-        .sort((a, b) => {
-          const A = a.v;
-          const B = b.v;
+            if (valA === undefined || valA === null) return 1;
+            if (valB === undefined || valB === null) return -1;
+            
+            if (!isNaN(Number(valA)) && !isNaN(Number(valB))) {
+                return sortDirection === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+            }
 
-          let cmp = 0;
-          if (sortKey === 'availableQty') {
-            cmp = ((A.availableQty ?? 0) - (B.availableQty ?? 0)) * dir;
-          } else if (sortKey === 'rate') {
-            // rate lives on JmcItem (string | number). We normalize.
-            cmp = (getRateNumber((A as any).rate) - getRateNumber((B as any).rate)) * dir;
-          } else {
-            cmp =
-              collator.compare(String((A as any)[sortKey] ?? ''), String((B as any)[sortKey] ?? '')) *
-              dir;
-          }
-
-          return cmp || a.i - b.i;
-        })
-        .map((x) => x.v);
+            if (String(valA) < String(valB)) return sortDirection === 'asc' ? -1 : 1;
+            if (String(valA) > String(valB)) return sortDirection === 'asc' ? 1 : -1;
+            
+            return 0;
+        });
     }
 
     return items;
-  }, [jmcItems, searchTerm, filters, sortKey, sortDirection, addedItemIds]);
+  }, [boqItems, searchTerm, sortKey, sortDirection]);
 
-  // Select-all logic
-  const allOnPageSelected =
-    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
-  const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
-  const selectAllState: CheckedState =
-    allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
+  const handleSelectAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(filteredItems.map(item => item.id)) : new Set());
+  };
 
-  const handleSelectAll = (checked: CheckedState) => {
+  const handleSelectRow = (id: string, checked: boolean) => {
+    const newSelectedIds = new Set(selectedIds);
     if (checked) {
-      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
+      newSelectedIds.add(id);
     } else {
-      const next = new Set(selectedIds);
-      filteredItems.forEach((i) => next.delete(i.id));
-      setSelectedIds(next);
+      newSelectedIds.delete(id);
     }
+    setSelectedIds(newSelectedIds);
   };
-
-  const handleSelectRow = useCallback((id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate') => {
+  
+  const handleSort = (key: string) => {
     if (sortKey === key) {
-      setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortKey(key);
-      setSortDirection('asc');
+        setSortKey(key);
+        setSortDirection('asc');
     }
-  };
+  }
 
   const handleConfirm = () => {
-    const selectedJmcItems = jmcItems.filter((item) => selectedIds.has(item.id));
-    const billItems: BillItem[] = selectedJmcItems.map((item) => ({
-      jmcItemId: item.id,
-      jmcEntryId: item.jmcEntryId,
-      jmcNo: item.jmcNo,
-      boqSlNo: String((item as any).boqSlNo ?? ''),
-      description: String((item as any).description ?? ''),
-      unit: (item as any).unit ?? '', // keep type compatible with BillItem
-      rate: String((item as any).rate ?? 0),
-      executedQty: String(item.availableQty ?? 0), // default to available
-      billedQty: '', // user will fill
-      totalAmount: '',
-    }));
-    onConfirm(billItems);
+    const selectedBoqItems = boqItems.filter(item => selectedIds.has(item.id));
+    onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
-    setSearchInput('');
     setSearchTerm('');
   };
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
+  
+  const findBasicPriceKey = (item: BoqItem): string | undefined => {
+    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
+    for (const key of knownPriceKeys) {
+        if (item.hasOwnProperty(key)) {
+            return key;
+        }
+    }
+    return Object.keys(item).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
+};
+
+  const getCombinedSlNo = (item: BoqItem): string => {
+      const erpSlNo = item['ERP SL NO'] || '';
+      const boqSlNo = item['BOQ SL No'] || item['SL. No.'] || '';
+      if (erpSlNo && boqSlNo) {
+          return `${erpSlNo} / ${boqSlNo}`;
+      }
+      return erpSlNo || boqSlNo || '';
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Select Items to Add to Bill</DialogTitle>
+          <DialogTitle>Select BOQ Items</DialogTitle>
           <DialogDescription>
-            Only items with a remaining quantity to be billed are shown.
+            Select multiple items from the Bill of Quantities to add.
           </DialogDescription>
         </DialogHeader>
-
         <div className="py-4">
-          <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-            <div className="relative flex-grow w-full">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by JMC No, Sl. No. or Description..."
-                aria-label="Search items"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
-              />
+            <div className="relative mb-4">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search by Sl. No. or Description..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                />
             </div>
-
-            {(['Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
-              const options = filterOptions[key];
-              if (!options || options.length === 0) return null;
-              return (
-                <Select
-                  key={key}
-                  value={filters[key]}
-                  onValueChange={(v) => handleFilterChange(key, v)}
-                >
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder={`Filter by ${key}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All {key}s</SelectItem>
-                    {options.map((opt) => (
-                      <SelectItem key={`${key}-${opt}`} value={opt}>
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              );
-            })}
-          </div>
-
-          <ScrollArea className="h-96 border rounded-md">
-            <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                <div className="w-[50px] flex justify-center">
-                  <Checkbox
-                    aria-label="Select all"
-                    checked={selectAllState}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('jmcNo')}
-                  aria-label="Sort by JMC No"
-                >
-                  JMC No.
-                  {sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('boqSlNo')}
-                  aria-label="Sort by BOQ Sl No"
-                >
-                  BOQ Sl.No.
-                  {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
-                <div>Description</div>
-                
-                <div className="text-right">BOQ Qty</div>
-
-                <button
-                  type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('availableQty')}
-                  aria-label="Sort by Available Qty"
-                >
-                  Available Qty
-                  {sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
-                <button
-                  type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('rate')}
-                  aria-label="Sort by Unit Rate"
-                >
-                  Unit Rate
-                  {sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-              </div>
-
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full p-8">
-                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : filteredItems.length > 0 ? (
-                filteredItems.map((item) => {
-                  const rowChecked = selectedIds.has(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
-                        rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => handleSelectRow(item.id, !rowChecked)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === ' ' || e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSelectRow(item.id, !rowChecked);
-                        }
-                      }}
-                    >
-                      <div className="w-[50px] flex justify-center">
-                        <Checkbox
-                          aria-label={`Select ${String((item as any).description ?? (item as any).boqSlNo ?? item.jmcNo)}`}
-                          checked={rowChecked}
-                          onCheckedChange={(checked) => {
-                            // Avoid double-toggle from parent onClick
-                            handleSelectRow(item.id, Boolean(checked));
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                      <div className="truncate pr-2">{item.jmcNo}</div>
-                      <div className="truncate pr-2">{String((item as any).boqSlNo ?? '')}</div>
-                      <div className="truncate pr-2">{String((item as any).description ?? '')}</div>
-                      <div className="text-right pr-2">{item.boqQty}</div>
-                      <div className="text-right pr-2">{item.availableQty}</div>
-                      <div className="text-right pr-2">
-                        {formatCurrency(getRateNumber((item as any).rate))}
-                      </div>
+            <ScrollArea className="h-96 border rounded-md">
+                <div className="p-1">
+                    <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+                        <div className="w-[50px] flex justify-center">
+                            <Checkbox
+                                checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                                onCheckedChange={handleSelectAll}
+                            />
+                        </div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('ERP SL NO')}>
+                            ERP Sl. No.
+                            {sortKey === 'ERP SL NO' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
+                        <div className="cursor-pointer flex items-center" onClick={() => handleSort('BOQ SL No')}>
+                            BOQ Sl. No.
+                             {sortKey === 'BOQ SL No' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                        </div>
+                        <div>Description</div>
+                        <div className="text-right cursor-pointer" onClick={() => handleSort(findBasicPriceKey(filteredItems[0] || {}) || 'rate')}>
+                            Unit Rate
+                            {sortKey === (findBasicPriceKey(filteredItems[0] || {}) || 'rate') && <ArrowUpDown className="ml-1 h-3 w-3 inline-flex" />}
+                        </div>
+                        <div className="text-right">Unit</div>
                     </div>
-                  );
-                })
-              ) : (
-                <div className="text-center p-8 text-muted-foreground">
-                  No available items found.
+                    {isLoading ? (
+                        <div className="flex items-center justify-center h-full p-8">
+                            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                        </div>
+                    ) : filteredItems.length > 0 ? (
+                        filteredItems.map(item => {
+                             const rateKey = findBasicPriceKey(item);
+                             const rate = rateKey ? item[rateKey] : 0;
+                             return (
+                                <div 
+                                    key={item.id} 
+                                    className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${selectedIds.has(item.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                                    onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))}
+                                >
+                                    <div className="w-[50px] flex justify-center">
+                                        <Checkbox
+                                            checked={selectedIds.has(item.id)}
+                                            onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                        />
+                                    </div>
+                                    <div className="truncate pr-2">{item['ERP SL NO']}</div>
+                                    <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
+                                    <div className="truncate pr-2">{item['Description']}</div>
+                                    <div className="text-right pr-2">{formatCurrency(rate)}</div>
+                                    <div className="text-right pr-2">{item['Unit']}</div>
+                                </div>
+                             )
+                        })
+                    ) : (
+                        <div className="text-center p-8 text-muted-foreground">
+                            No available items found.
+                        </div>
+                    )}
                 </div>
-              )}
-            </div>
-          </ScrollArea>
+            </ScrollArea>
         </div>
-
         <DialogFooter>
           <DialogClose asChild>
-            <Button type="button" variant="outline">
-              Cancel
-            </Button>
+            <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button
-            type="button"
-            onClick={handleConfirm}
-            disabled={selectedIds.size === 0}
-          >
-            Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
+          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
+            Add {selectedIds.size} Selected Item(s)
           </Button>
         </DialogFooter>
       </DialogContent>

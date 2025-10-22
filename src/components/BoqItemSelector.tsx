@@ -60,6 +60,10 @@ export function BoqItemSelector({
     return String(item['ERP SL NO'] || '');
   }
 
+  const getBoqQty = (item: BoqItem): string => {
+    return String(item['BOQ QTY'] || item['Total Qty'] || '0');
+  }
+
   const selectedItem = boqItems.find(item => getBoqSlNo(item) === currentValue);
 
   const findRateKey = (item: BoqItem): string | undefined => {
@@ -87,7 +91,7 @@ export function BoqItemSelector({
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[600px] p-0">
+      <PopoverContent className="w-[700px] p-0">
         <Command
           filter={(value, search) => {
             const item = boqItems.find(i => getBoqSlNo(i) === value);
@@ -106,10 +110,11 @@ export function BoqItemSelector({
             </CommandEmpty>
 
             <CommandGroup>
-              <div className="grid grid-cols-[1fr_1fr_3fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
                 <div className="text-left">ERP SL No</div>
                 <div className="text-left">BOQ SL No</div>
                 <div className="text-left">Description</div>
+                <div className="text-right">BOQ Qty</div>
                 <div className="text-right">Rate</div>
               </div>
 
@@ -122,6 +127,7 @@ export function BoqItemSelector({
                   const description = getItemDescription(item);
                   const isSelected = currentValue === boqSlNo;
                   const unit = item['Unit'] || item['Units'] || item['UNIT'] || '';
+                  const boqQty = getBoqQty(item);
 
                   return (
                     <CommandItem
@@ -140,7 +146,7 @@ export function BoqItemSelector({
                         isSelected && 'bg-accent text-accent-foreground'
                       )}
                     >
-                      <div className="grid grid-cols-[1fr_1fr_3fr_1fr] w-full items-center gap-2">
+                      <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] w-full items-center gap-2">
                         <div className="text-sm flex items-center gap-2">
                           {isSelected && <Check className="h-4 w-4 text-primary" />}
                           {erpSlNo}
@@ -148,6 +154,9 @@ export function BoqItemSelector({
                         <div className="text-sm">{boqSlNo}</div>
                         <div className="text-sm font-medium truncate pr-2">
                           {description}
+                        </div>
+                        <div className="text-right text-sm">
+                          {boqQty}
                         </div>
                         <div className="text-right text-xs text-muted-foreground">
                           {rate} {unit && `/ ${unit}`}
