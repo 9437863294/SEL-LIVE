@@ -45,6 +45,8 @@ export default function BoqItemDetailsDialog({
         .filter(jmcItem => jmcItem.boqSlNo === boqSlNo)
         .map(jmcItem => ({ ...jmcItem, jmcNo: entry.jmcNo, jmcDate: entry.jmcDate }))
     );
+    
+  const totalExecutedQty = relevantJmcItems.reduce((sum, jmcItem) => sum + Number(jmcItem.executedQty || 0), 0);
 
   const relevantBillItems = bills
     .flatMap(bill => 
@@ -52,6 +54,8 @@ export default function BoqItemDetailsDialog({
         .filter(billItem => billItem.boqSlNo === boqSlNo)
         .map(billItem => ({ ...billItem, billNo: bill.billNo, billDate: bill.billDate }))
     );
+    
+  const totalBilledQty = relevantBillItems.reduce((sum, billItem) => sum + Number(billItem.billedQty || 0), 0);
     
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
@@ -91,9 +95,9 @@ export default function BoqItemDetailsDialog({
                       <TableBody>
                           <TableRow>
                               <TableCell>{item['Total Qty'] || item['qty'] || 0}</TableCell>
-                              <TableCell>{item['JMC Executed Qty'] || 0}</TableCell>
-                              <TableCell>{item['Billed Qty'] || 0}</TableCell>
-                              <TableCell>{(item['Total Qty'] || item['qty'] || 0) - (item['JMC Executed Qty'] || 0)}</TableCell>
+                              <TableCell>{totalExecutedQty}</TableCell>
+                              <TableCell>{totalBilledQty}</TableCell>
+                              <TableCell>{(item['Total Qty'] || item['qty'] || 0) - totalExecutedQty}</TableCell>
                           </TableRow>
                       </TableBody>
                   </Table>
