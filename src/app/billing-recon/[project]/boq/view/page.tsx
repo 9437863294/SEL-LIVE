@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
@@ -269,6 +270,15 @@ export default function ViewBoqPage() {
       return newFilters;
     });
   };
+  
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      'Scope 1': 'all',
+      'Scope 2': 'all',
+      'Category 1': 'all',
+    });
+  };
 
   /*** SORTED DATA ***/
   const sortedBoqItems = useMemo(() => {
@@ -419,6 +429,7 @@ export default function ViewBoqPage() {
               </Select>
             )
           })}
+           <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
           {selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
