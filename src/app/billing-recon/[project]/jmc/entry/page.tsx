@@ -83,7 +83,7 @@ export default function JmcEntryPage() {
   };
   
   const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
+    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate'];
     for (const key of knownPriceKeys) {
         if (boqItem.hasOwnProperty(key)) {
             return key;
@@ -119,7 +119,7 @@ export default function JmcEntryPage() {
 
     if (boqItem) {
         const rateKey = findBasicPriceKey(boqItem);
-        itemToUpdate.boqSlNo = boqItem['SL. No.'] || '';
+        itemToUpdate.boqSlNo = boqItem['SL. No.'] || boqItem['BOQ SL No'] || '';
         itemToUpdate.description = boqItem['Description'] || '';
         itemToUpdate.unit = boqItem['Unit'] || '';
         itemToUpdate.rate = rateKey ? Number(boqItem[rateKey] || '0') : 0;
@@ -142,7 +142,7 @@ export default function JmcEntryPage() {
       const newJmcItems = selectedBoqItems.map(boqItem => {
           const rateKey = findBasicPriceKey(boqItem);
           return {
-              boqSlNo: boqItem['SL. No.'] || '',
+              boqSlNo: boqItem['SL. No.'] || boqItem['BOQ SL No'] || '',
               description: boqItem['Description'] || '',
               unit: boqItem['Unit'] || '',
               rate: rateKey ? Number(boqItem[rateKey] || '0') : 0,
