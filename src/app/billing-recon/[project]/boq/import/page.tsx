@@ -43,52 +43,6 @@ import { logUserActivity } from '@/lib/activity-logger';
 type BoqItem = Record<string, any>;
 const MAX_BATCH_WRITES = 500;
 
-function toSnakeCase(s: string): string {
-  return s
-    .trim()
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, '_')
-    .replace(/[^\w]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '')
-    .toLowerCase();
-}
-
-function normalizeHeaders(row: BoqItem): [BoqItem, string[]] {
-  const map: Record<string, string> = {};
-  const normalized: BoqItem = {};
-  const headers: string[] = [];
-
-  Object.keys(row).forEach((k) => {
-    const nk = toSnakeCase(k || 'col');
-    let final = nk || 'col';
-    let i = 2;
-    while (final in map || final in normalized) {
-      final = `${nk || 'col'}_${i++}`;
-    }
-    map[k] = final;
-    normalized[final] = row[k];
-    headers.push(final);
-  });
-
-  return [normalized, headers];
-}
-
-function cleanRow(row: BoqItem, headers: string[]): BoqItem {
-  const cleaned: BoqItem = {};
-  headers.forEach((h) => {
-    const v = row[h];
-    if (v instanceof Date) {
-      cleaned[h] = v.toISOString();
-    } else if (v === '' || v === undefined || v === null) {
-      cleaned[h] = null;
-    } else {
-      cleaned[h] = v;
-    }
-  });
-  return cleaned;
-}
-
 function isEmptyRow(row: BoqItem): boolean {
   return Object.values(row).every(
     (v) => v === null || v === undefined || String(v).trim() === ''
@@ -186,28 +140,14 @@ export default function ImportBoqPage() {
         return;
       }
 
-      const [firstNormalized, hdrs] = normalizeHeaders(rawJson[0]);
-      const normalizedRows: BoqItem[] = [
-        firstNormalized,
-        ...rawJson.slice(1).map((r) => {
-          const mapped: BoqItem = {};
-          Object.keys(r).forEach((origKey, idx) => {
-            const safeKey =
-              (hdrs[idx] ?? toSnakeCase(origKey)) || `col_${idx + 1}`;
-            mapped[safeKey] = (r as any)[origKey];
-          });
-          return mapped;
-        }),
-      ]
-        .map((r) => cleanRow(r, hdrs))
-        .filter((r) => !isEmptyRow(r));
+      const filteredData = rawJson.filter(row => !isEmptyRow(row));
 
-      setJsonData(normalizedRows);
-      setHeaders(hdrs);
+      setJsonData(filteredData);
+      setHeaders(Object.keys(filteredData[0] || {}));
 
       toast({
         title: 'File parsed',
-        description: `Loaded "${sheetName}" with ${normalizedRows.length} rows.`,
+        description: `Loaded "${sheetName}" with ${filteredData.length} rows.`,
       });
     } catch (error) {
       console.error('parseExcel error:', error);
@@ -220,6 +160,7 @@ export default function ImportBoqPage() {
       setIsParsing(false);
     }
   };
+
 
   const handleImport = async () => {
     if (jsonData.length === 0) {
@@ -254,7 +195,7 @@ export default function ImportBoqPage() {
       const nowMeta = {
         createdAt: serverTimestamp(),
         createdBy: user.id,
-        project: projectSlug,
+        projectSlug: projectSlug,
         source: 'excel_import',
         fileName: file?.name ?? null,
       };
