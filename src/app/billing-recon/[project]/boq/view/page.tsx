@@ -713,7 +713,7 @@ export default function ViewBoqPage() {
                       <Label htmlFor={`edit-${key}`}>{key}</Label>
                       <Input
                           id={`edit-${key}`}
-                          name={key}
+                          name={String(key)}
                           value={editingItem[key] || ''}
                           onChange={handleEditFormChange}
                           readOnly={key === 'Project Name'}
