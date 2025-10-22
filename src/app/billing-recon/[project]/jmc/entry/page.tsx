@@ -348,7 +348,7 @@ export default function JmcEntryPage() {
                 <CardDescription>Add one or more items executed under this JMC.</CardDescription>
               </div>
               <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={isBoqLoading}>
-                <Library className="mr-2 h-4 w-4" /> Add Multiple Items
+                <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
               </Button>
             </div>
           </CardHeader>
