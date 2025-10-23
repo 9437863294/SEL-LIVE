@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -81,8 +82,11 @@ export default function JmcPage() {
 
   const canViewModule = can('View', 'Billing Recon.JMC');
 
-  const jmcItems: JmcItem[] = useMemo(
-    () => [
+  const jmcItems: JmcItem[] = useMemo(() => {
+    // This calculation now only depends on the boolean results of `can`, not the function itself.
+    // It will only re-run when `isLoading` changes from true to false.
+    if (isLoading) return [];
+    return [
       {
         icon: FilePlus,
         text: 'Create Work Order',
@@ -104,9 +108,8 @@ export default function JmcPage() {
         description: 'View and manage existing JMC entries.',
         disabled: !can('View Log', 'Billing Recon.JMC'),
       },
-    ],
-    [projectSlug, can]
-  );
+    ];
+  }, [projectSlug, isLoading, can]); // Dependency on `can` is safe here because it's wrapped in useCallback in the hook.
 
   if (isLoading) {
     return (
