@@ -75,6 +75,7 @@ const baseTableHeaders = [
   'Unit',
   'QTY',
   'JMC Executed Qty',
+  'JMC Amount',
   'Unit Rate',
   'Total Amount',
 ] as const;
@@ -101,7 +102,17 @@ export default function ViewBoqPage() {
     [...baseTableHeaders].reduce(
       (acc, h) => ({
         ...acc,
-        [h]: ['BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY', 'JMC Executed Qty', 'Category 1'].includes(h as string),
+        [h]: ['BOQ SL No', 
+              'ERP SL NO', 
+              'Description', 
+              'Unit',
+              'QTY',
+              'Unit Rate',
+              'JMC Executed Qty',
+              'JMC Amount',
+              'Total Amount'
+              
+            ].includes(h as string),
       }),
       {} as Record<string, boolean>
     )
@@ -326,17 +337,39 @@ export default function ViewBoqPage() {
   /*** SORTED DATA ***/
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
+  
+    // Include computed columns in sorting
+    const getComparableValue = (item: BoqItem, key: string) => {
+      if (key === 'JMC Executed Qty') {
+        return Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
+      }
+      if (key === 'JMC Amount') {
+        const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
+        // robust parse for rates like "223 / Cum" or "4,200"
+        const rate = Number(String(item['Unit Rate'] ?? '').replace(/[^0-9.+-]/g, ''));
+        return Number.isFinite(jmcQty) && Number.isFinite(rate) ? jmcQty * rate : NaN;
+      }
+      return (item as any)[key];
+    };
+  
     if (sortKey) {
       sorted.sort((a, b) => {
-        const valA = a[sortKey];
-        const valB = b[sortKey];
-        if (valA === undefined || valA === null) return 1;
-        if (valB === undefined || valB === null) return -1;
+        const valA = getComparableValue(a, sortKey);
+        const valB = getComparableValue(b, sortKey);
+  
+        const aBad = valA === undefined || valA === null || Number.isNaN(Number(valA));
+        const bBad = valB === undefined || valB === null || Number.isNaN(Number(valB));
+        if (aBad && !bBad) return 1;
+        if (!aBad && bBad) return -1;
+        if (aBad && bBad) return 0;
+  
         const numA = Number(valA);
         const numB = Number(valB);
-        if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
+  
+        if (Number.isFinite(numA) && Number.isFinite(numB)) {
           return sortDirection === 'asc' ? numA - numB : numB - numA;
         }
+  
         const strA = String(valA).toLowerCase();
         const strB = String(valB).toLowerCase();
         if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
@@ -344,8 +377,10 @@ export default function ViewBoqPage() {
         return 0;
       });
     }
+  
     return sorted;
-  }, [filteredBoqItems, sortKey, sortDirection]);
+  }, [filteredBoqItems, sortKey, sortDirection, jmcQuantities]);
+  
 
   /*** ROW CLICK ***/
   const handleRowClick = (item: BoqItem) => {
@@ -647,6 +682,14 @@ export default function ViewBoqPage() {
                                     const explicit = Number(raw);
                                     if (Number.isFinite(explicit)) return fmtNum(explicit);
                                     if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
+                                    return 'N/A';
+                                  }
+                                  if (header === 'JMC Amount') {                          // 👈 NEW
+                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
+                                    const rate = Number(item['Unit Rate']);
+                                    if (Number.isFinite(jmcQty) && Number.isFinite(rate)) {
+                                      return fmtNum(jmcQty * rate);
+                                    }
                                     return 'N/A';
                                   }
                                   if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty' || header === 'JMC Executed Qty') return fmtNum(raw);
