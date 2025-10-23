@@ -369,8 +369,13 @@ export interface JmcEntry {
     woNo: string;
     jmcDate: string;
     items: JmcItem[];
-    createdAt: any;
-    status?: 'Certified' | 'Pending' | 'Cancelled';
+    createdAt: Timestamp;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
+    stage: string;
+    currentStepId: string | null;
+    assignees: string[];
+    deadline: Timestamp | null;
+    history: ActionLog[];
 }
 
 export interface BillItem {

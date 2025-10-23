@@ -10,15 +10,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem, JmcEntry as JmcEntryType } from '@/lib/types';
+import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 const initialJmcDetails = {
     jmcNo: '',
@@ -37,7 +38,7 @@ const initialItem = {
     totalCertifiedQty: 0,
 };
 
-type JmcItem = typeof initialItem & { certifiedQty?: number };
+type JmcItem = typeof initialItem;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
@@ -187,7 +188,7 @@ export default function JmcEntryPage() {
             rate: Number.isFinite(rateNum) ? rateNum : 0,
             boqQty: Number((boqItem as any)['QTY'] || 0),
             totalCertifiedQty: totalCertifiedQtyMap[slNo] || 0,
-        } as JmcItem;
+        };
         });
     
         const existingItems =
@@ -206,7 +207,6 @@ export default function JmcEntryPage() {
         const newItems = items.filter((_, i) => i !== index);
         setItems(newItems);
     } else {
-        // If it's the last item, just reset it to the initial state
         setItems([{...initialItem}]);
     }
   };
@@ -228,11 +228,47 @@ export default function JmcEntryPage() {
     }
     
     try {
+        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error("Workflow not configured for JMC.");
+        
+        const steps = workflowSnap.data().steps as WorkflowStep[];
+        if (!steps || steps.length === 0) throw new Error("Workflow has no steps.");
+
+        const firstStep = steps[0];
+        
+        const tempJmcData = {
+          ...details,
+          items,
+          projectId: projectSlug, // Assuming projectSlug is the ID, adjust if not
+        };
+
+        const assignees = await getAssigneeForStep(firstStep, tempJmcData);
+        if (assignees.length === 0) throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
+        
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+        
+        const initialLog: ActionLog = {
+            action: 'Created',
+            comment: 'JMC created.',
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: 'Creation',
+        };
+
         const jmcData = {
             ...details,
             items,
-            createdAt: new Date().toISOString()
+            createdAt: Timestamp.now(),
+            status: 'Pending' as const,
+            stage: firstStep.name,
+            currentStepId: firstStep.id,
+            assignees: assignees,
+            deadline: Timestamp.fromDate(deadline),
+            history: [initialLog],
         };
+
         await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
 
         await logUserActivity({
@@ -248,15 +284,15 @@ export default function JmcEntryPage() {
 
         toast({
             title: 'JMC Entry Created',
-            description: 'The new JMC entry has been successfully saved.',
+            description: 'The new JMC entry has been successfully saved and workflow started.',
         });
         setDetails(initialJmcDetails);
         setItems([initialItem]);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error creating JMC entry: ", error);
         toast({
             title: 'Save Failed',
-            description: 'An error occurred while saving the JMC entry.',
+            description: error.message || 'An error occurred while saving the JMC entry.',
             variant: 'destructive',
         });
     } finally {
