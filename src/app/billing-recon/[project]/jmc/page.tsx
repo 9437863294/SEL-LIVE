@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -9,6 +10,7 @@ import {
   History,
   ShieldAlert,
   type LucideIcon,
+  Settings,
 } from 'lucide-react';
 import {
   Card,
@@ -113,6 +115,13 @@ export default function JmcPage() {
         description: 'View JMC entries that have been certified.',
         disabled: !can('View Certified JMC', 'Billing Recon.JMC'),
       },
+       {
+        icon: Settings,
+        text: 'Settings',
+        href: `/billing-recon/${projectSlug}/jmc/settings`,
+        description: 'Configure JMC module settings.',
+        disabled: !can('View Settings', 'Billing Recon.JMC'),
+      },
     ];
   }, [projectSlug, isLoading, can]); 
 
@@ -124,6 +133,7 @@ export default function JmcPage() {
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
+           <Skeleton className="h-28" />
            <Skeleton className="h-28" />
         </div>
       </div>
