@@ -49,7 +49,7 @@ function SettingsCard({ item }: SettingsCardProps) {
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-lg font-semibold">{item.title}</CardTitle>
+                    <CardTitle className="text-lg font-semibold">{item.text}</CardTitle>
                     <CardDescription className="mt-1">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -121,7 +121,7 @@ export default function JmcSettingsPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {settingsItems.map((item) => (
-          <SettingsCard key={item.title} item={item} />
+          <SettingsCard key={item.text} item={item} />
         ))}
       </div>
     </div>
