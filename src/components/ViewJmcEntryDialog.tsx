@@ -26,7 +26,7 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry }: V
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>JMC Details: {jmcEntry.jmcNo}</DialogTitle>
         </DialogHeader>
@@ -60,6 +60,7 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry }: V
                             <TableHead>Unit</TableHead>
                             <TableHead>Rate</TableHead>
                             <TableHead>Executed Qty</TableHead>
+                            <TableHead>Certified Qty</TableHead>
                             <TableHead>Total Amount</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -71,6 +72,7 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry }: V
                                 <TableCell>{item.unit}</TableCell>
                                 <TableCell>{formatCurrency(item.rate)}</TableCell>
                                 <TableCell>{item.executedQty}</TableCell>
+                                <TableCell>{item.certifiedQty ?? 'N/A'}</TableCell>
                                 <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                             </TableRow>
                         ))}

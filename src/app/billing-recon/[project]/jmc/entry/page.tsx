@@ -30,6 +30,7 @@ const initialItem = {
     unit: '',
     rate: 0,
     executedQty: 0,
+    certifiedQty: 0,
     totalAmount: 0,
 };
 
@@ -97,7 +98,7 @@ export default function JmcEntryPage() {
     const item = newItems[index];
     const updatedItem = { ...item, [name]: value };
 
-    if (name === 'executedQty' || name === 'rate') {
+    if (name === 'executedQty' || name === 'rate' || name === 'certifiedQty') {
         const qty = parseFloat(String(updatedItem.executedQty));
         const rate = parseFloat(String(updatedItem.rate));
         if (!isNaN(qty) && !isNaN(rate)) {
@@ -163,6 +164,7 @@ export default function JmcEntryPage() {
             unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
             rate: Number.isFinite(rateNum) ? rateNum : 0,
             executedQty: 0,
+            certifiedQty: 0,
             totalAmount: 0,
         } as JmcItem;
         });
@@ -309,6 +311,7 @@ export default function JmcEntryPage() {
                             <TableHead className="w-[100px]">Unit</TableHead>
                             <TableHead className="w-[120px]">Rate</TableHead>
                             <TableHead className="w-[120px]">Executed Qty</TableHead>
+                            <TableHead className="w-[120px]">Certified Qty</TableHead>
                             <TableHead className="w-[150px]">Total Amount</TableHead>
                             <TableHead className="w-[50px]">Action</TableHead>
                         </TableRow>
@@ -329,6 +332,9 @@ export default function JmcEntryPage() {
                                 <TableCell>{item.rate}</TableCell>
                                 <TableCell>
                                     <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
+                                </TableCell>
+                                <TableCell>
+                                    <Input name="certifiedQty" value={item.certifiedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
                                 </TableCell>
                                 <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                                 <TableCell>

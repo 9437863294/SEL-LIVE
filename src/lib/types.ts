@@ -357,7 +357,8 @@ export interface JmcItem {
     description: string;
     unit: string;
     rate: number;
-    executedQty: any;
+    executedQty: number;
+    certifiedQty?: number;
     totalAmount: number;
 }
 
@@ -825,4 +826,5 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
+
 
