@@ -30,18 +30,27 @@ export default function CertifiedJmcLogPage() {
       setIsLoading(true);
       try {
         const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-        const q = query(jmcCollectionRef, where('status', '==', 'Certified'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
+        // Fetch all documents and filter client-side to avoid indexing issues
+        const querySnapshot = await getDocs(jmcCollectionRef);
         const entries = querySnapshot.docs.map(doc => {
           const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A',
-            totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
-            certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
-          } as JmcEntry;
-        });
+          const isCertified = data.items.some((item: any) => typeof item.certifiedQty === 'number' && item.certifiedQty > 0);
+          
+          if (data.status === 'Certified' || isCertified) {
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A',
+              totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
+              certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
+            } as JmcEntry;
+          }
+          return null;
+        }).filter((entry): entry is JmcEntry => entry !== null);
+        
+        // Sort after filtering
+        entries.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
         setCertifiedEntries(entries);
       } catch (error) {
         console.error("Error fetching certified JMCs: ", error);
