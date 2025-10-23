@@ -330,11 +330,9 @@ export default function JmcEntryPage() {
                             <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead>Unit</TableHead>
-                            <TableHead>BOQ Qty</TableHead>
                             <TableHead>Total Certified Qty</TableHead>
                             <TableHead className="w-[120px]">Rate</TableHead>
                             <TableHead className="w-[120px]">Executed Qty</TableHead>
-                            <TableHead className="w-[120px]">Certified Qty</TableHead>
                             <TableHead className="w-[150px]">Total Amount</TableHead>
                             <TableHead className="w-[50px]">Action</TableHead>
                         </TableRow>
@@ -352,14 +350,10 @@ export default function JmcEntryPage() {
                                 </TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
-                                <TableCell>{item.boqQty}</TableCell>
                                 <TableCell>{item.totalCertifiedQty}</TableCell>
                                 <TableCell>{item.rate}</TableCell>
                                 <TableCell>
                                     <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
-                                </TableCell>
-                                <TableCell>
-                                    <Input name="certifiedQty" value={item.certifiedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
                                 </TableCell>
                                 <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                                 <TableCell>
@@ -387,5 +381,3 @@ export default function JmcEntryPage() {
     </>
   );
 }
-
-    
