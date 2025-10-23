@@ -59,7 +59,6 @@ export default function JmcWorkflowConfigurationPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [roles, setRoles] = useState<Role[]>([]);
     
     const canViewPage = can('View Settings', 'Billing Recon.JMC');
     const canEditPage = can('Edit Settings', 'Billing Recon.JMC');
