@@ -75,6 +75,7 @@ const baseTableHeaders = [
   'Unit',
   'QTY',
   'JMC Executed Qty',
+  'JMC Certified Qty',
   'JMC Amount',
   'Unit Rate',
   'Total Amount',
@@ -109,6 +110,7 @@ export default function ViewBoqPage() {
               'QTY',
               'Unit Rate',
               'JMC Executed Qty',
+              'JMC Certified Qty',
               'JMC Amount',
               'Total Amount'
               
@@ -257,14 +259,15 @@ export default function ViewBoqPage() {
   }, [fetchBoqItems]);
 
   const jmcQuantities = useMemo(() => {
-    const quantities: Record<string, number> = {};
+    const quantities: Record<string, { executed: number, certified: number }> = {};
     jmcEntries.forEach(entry => {
       entry.items.forEach(item => {
         if (item.boqSlNo) {
           if (!quantities[item.boqSlNo]) {
-            quantities[item.boqSlNo] = 0;
+            quantities[item.boqSlNo] = { executed: 0, certified: 0 };
           }
-          quantities[item.boqSlNo] += Number(item.executedQty || 0);
+          quantities[item.boqSlNo].executed += Number(item.executedQty || 0);
+          quantities[item.boqSlNo].certified += Number(item.certifiedQty || 0);
         }
       });
     });
@@ -338,14 +341,15 @@ export default function ViewBoqPage() {
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
   
-    // Include computed columns in sorting
     const getComparableValue = (item: BoqItem, key: string) => {
       if (key === 'JMC Executed Qty') {
-        return Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
+        return Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
+      }
+       if (key === 'JMC Certified Qty') {
+        return Number(jmcQuantities[item['BOQ SL No'] as string]?.certified || 0);
       }
       if (key === 'JMC Amount') {
-        const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
-        // robust parse for rates like "223 / Cum" or "4,200"
+        const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
         const rate = Number(String(item['Unit Rate'] ?? '').replace(/[^0-9.+-]/g, ''));
         return Number.isFinite(jmcQty) && Number.isFinite(rate) ? jmcQty * rate : NaN;
       }
@@ -672,7 +676,10 @@ export default function ViewBoqPage() {
                             {visibleHeaders.map((header) => {
                                 let raw = item[header];
                                 if (header === 'JMC Executed Qty') {
-                                  raw = jmcQuantities[item['BOQ SL No'] as string] || 0;
+                                  raw = jmcQuantities[item['BOQ SL No'] as string]?.executed || 0;
+                                }
+                                if (header === 'JMC Certified Qty') {
+                                  raw = jmcQuantities[item['BOQ SL No'] as string]?.certified || 0;
                                 }
 
                                 const value = (() => {
@@ -685,14 +692,14 @@ export default function ViewBoqPage() {
                                     return 'N/A';
                                   }
                                   if (header === 'JMC Amount') {                          // 👈 NEW
-                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string] || 0);
+                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
                                     const rate = Number(item['Unit Rate']);
                                     if (Number.isFinite(jmcQty) && Number.isFinite(rate)) {
                                       return fmtNum(jmcQty * rate);
                                     }
                                     return 'N/A';
                                   }
-                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty' || header === 'JMC Executed Qty') return fmtNum(raw);
+                                  if (['QTY', 'Unit Rate', 'Total Qty', 'JMC Executed Qty', 'JMC Certified Qty'].includes(header)) return fmtNum(raw);
                                   return raw ?? 'N/A';
                                 })();
 
@@ -862,3 +869,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
