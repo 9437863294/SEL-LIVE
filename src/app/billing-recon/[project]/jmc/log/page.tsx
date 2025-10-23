@@ -1,14 +1,15 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit } from 'lucide-react';
+import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -17,7 +18,7 @@ import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
@@ -88,6 +89,24 @@ export default function JmcLogPage() {
     } catch (error) {
       console.error("Error deleting JMC entry:", error);
       toast({ title: 'Error', description: 'Failed to delete JMC entry.', variant: 'destructive' });
+    }
+  };
+
+  const handleCancelJmc = async (entry: JmcEntry) => {
+    if (!user) return;
+    try {
+        const entryRef = doc(db, 'projects', projectSlug, 'jmcEntries', entry.id);
+        await updateDoc(entryRef, { status: 'Cancelled' });
+        await logUserActivity({
+            userId: user.id,
+            action: 'Cancel JMC Entry',
+            details: { project: projectSlug, jmcNo: entry.jmcNo }
+        });
+        toast({ title: 'Success', description: 'JMC entry has been cancelled.'});
+        fetchJmcEntries();
+    } catch (error) {
+        console.error("Error cancelling JMC:", error);
+        toast({ title: 'Error', description: 'Failed to cancel JMC entry.', variant: 'destructive' });
     }
   };
 
@@ -186,6 +205,13 @@ export default function JmcLogPage() {
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
                     const isCertified = entry.items.some(item => item.certifiedQty !== undefined && item.certifiedQty !== null);
+                    let status: 'Certified' | 'Pending' | 'Cancelled' = 'Pending';
+                    if (entry.status === 'Cancelled') {
+                        status = 'Cancelled';
+                    } else if (isCertified) {
+                        status = 'Certified';
+                    }
+
                     return (
                         <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
@@ -195,8 +221,8 @@ export default function JmcLogPage() {
                           <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
                           <TableCell>{formatCurrency(entry.certifiedValue || 0)}</TableCell>
                           <TableCell>
-                            <Badge variant={isCertified ? 'default' : 'secondary'}>
-                              {isCertified ? 'Certified' : 'Pending'}
+                            <Badge variant={status === 'Certified' ? 'default' : (status === 'Cancelled' ? 'destructive' : 'secondary')}>
+                              {status}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
@@ -218,6 +244,12 @@ export default function JmcLogPage() {
                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
                                             <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
                                         </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <AlertDialogTrigger asChild>
+                                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                                                <XCircle className="mr-2 h-4 w-4" /> Cancel JMC
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
                                         <AlertDialogTrigger asChild>
                                             <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
                                                 <Trash2 className="mr-2 h-4 w-4" /> Delete
@@ -225,14 +257,24 @@ export default function JmcLogPage() {
                                         </AlertDialogTrigger>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
-                                <AlertDialogContent>
+                                 <AlertDialogContent>
                                     <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                         <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
                                         <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
                                         <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Cancel this JMC?</AlertDialogTitle>
+                                        <AlertDialogDescription>This will mark the JMC as cancelled. You can revert this action later.</AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Close</AlertDialogCancel>
+                                        <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleCancelJmc(entry); }}>Confirm</AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
