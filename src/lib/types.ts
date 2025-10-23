@@ -364,6 +364,7 @@ export interface JmcItem {
 
 export interface JmcEntry {
     id: string;
+    projectSlug: string;
     jmcNo: string;
     woNo: string;
     jmcDate: string;
@@ -826,5 +827,3 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
-
-

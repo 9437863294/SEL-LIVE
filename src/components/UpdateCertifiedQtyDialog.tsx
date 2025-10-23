@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -26,6 +27,7 @@ interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry;
+  projectSlug: string;
   onSaveSuccess: () => void;
 }
 
@@ -33,6 +35,7 @@ export function UpdateCertifiedQtyDialog({
   isOpen,
   onOpenChange,
   jmcEntry,
+  projectSlug,
   onSaveSuccess,
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
@@ -68,7 +71,7 @@ export function UpdateCertifiedQtyDialog({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const jmcRef = doc(db, 'projects', jmcEntry.projectSlug, 'jmcEntries', jmcEntry.id);
+      const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
       await updateDoc(jmcRef, { items: items });
       toast({ title: 'Success', description: 'Certified quantities updated.' });
       onSaveSuccess();

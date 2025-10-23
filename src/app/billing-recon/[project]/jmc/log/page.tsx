@@ -252,6 +252,7 @@ export default function JmcLogPage() {
             isOpen={isCertifyOpen}
             onOpenChange={setIsCertifyOpen}
             jmcEntry={selectedEntry}
+            projectSlug={projectSlug}
             onSaveSuccess={fetchJmcEntries}
         />
       )}
