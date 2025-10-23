@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -10,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition, AssignedTo } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition, AssignedTo, ActionConfig } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -45,7 +46,7 @@ const initialSteps: WorkflowStep[] = [
     },
 ];
 
-const allActions = ['Approve', 'Reject', 'Needs Correction', 'Verify'];
+const allActions = ['Approve', 'Reject', 'Needs Correction', 'Verify', 'Update Approved Amount', 'Create Expense Request'];
 
 export default function JmcWorkflowConfigurationPage() {
     const { toast } = useToast();
@@ -155,12 +156,40 @@ export default function JmcWorkflowConfigurationPage() {
         }));
     };
 
-    const handleActionChange = (stepId: string, action: string, checked: boolean) => {
+    const handleActionChange = (stepId: string, actionName: string, checked: boolean) => {
         setSteps(steps.map(step => {
             if (step.id === stepId) {
-                const newActions = checked 
-                    ? [...step.actions, action]
-                    : step.actions.filter(a => (typeof a === 'string' ? a : a.name) !== action);
+                let newActions: (string | ActionConfig)[] = [];
+                const existingAction = step.actions.find(a => (typeof a === 'string' ? a : a.name) === actionName);
+
+                if (checked) {
+                    if (!existingAction) {
+                        if (actionName === 'Create Expense Request') {
+                            newActions = [...step.actions, { name: actionName, departmentId: '' }];
+                        } else {
+                            newActions = [...step.actions, actionName];
+                        }
+                    } else {
+                        newActions = step.actions; // Already exists
+                    }
+                } else {
+                    newActions = step.actions.filter(a => (typeof a === 'string' ? a : a.name) !== actionName);
+                }
+                return { ...step, actions: newActions };
+            }
+            return step;
+        }));
+    };
+    
+    const handleActionConfigChange = (stepId: string, actionName: string, configKey: 'departmentId', value: string) => {
+        setSteps(steps.map(step => {
+            if (step.id === stepId) {
+                const newActions = step.actions.map(action => {
+                    if (typeof action !== 'string' && action.name === actionName) {
+                        return { ...action, [configKey]: value };
+                    }
+                    return action;
+                });
                 return { ...step, actions: newActions };
             }
             return step;
@@ -468,17 +497,40 @@ export default function JmcWorkflowConfigurationPage() {
                                             <div className="space-y-4">
                                                 <Label>Actions</Label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                    {allActions.map(action => (
-                                                        <div key={action} className="flex items-center space-x-2">
-                                                            <Checkbox
-                                                                id={`${step.id}-action-${action}`}
-                                                                checked={step.actions.some(a => (typeof a === 'string' ? a : a.name) === action)}
-                                                                onCheckedChange={(checked) => handleActionChange(step.id, action, !!checked)}
-                                                                disabled={!canEditPage}
-                                                            />
-                                                            <Label htmlFor={`${step.id}-action-${action}`} className="font-normal">{action}</Label>
-                                                        </div>
-                                                    ))}
+                                                    {allActions.map(actionName => {
+                                                      const actionConfig = step.actions.find(a => (typeof a === 'string' ? a : a.name) === actionName);
+                                                      const isChecked = !!actionConfig;
+
+                                                      return (
+                                                          <div key={actionName} className="space-y-2">
+                                                              <div className="flex items-center space-x-2">
+                                                                  <Checkbox
+                                                                      id={`${step.id}-action-${actionName}`}
+                                                                      checked={isChecked}
+                                                                      onCheckedChange={(checked) => handleActionChange(step.id, actionName, !!checked)}
+                                                                      disabled={!canEditPage}
+                                                                  />
+                                                                  <Label htmlFor={`${step.id}-action-${actionName}`} className="font-normal">{actionName}</Label>
+                                                              </div>
+                                                              {actionName === 'Create Expense Request' && isChecked && (
+                                                                  <Select
+                                                                      value={(actionConfig as ActionConfig)?.departmentId || ''}
+                                                                      onValueChange={(value) => handleActionConfigChange(step.id, actionName, 'departmentId', value)}
+                                                                      disabled={!canEditPage}
+                                                                  >
+                                                                      <SelectTrigger className="h-8 text-xs">
+                                                                          <SelectValue placeholder="Select Dept..." />
+                                                                      </SelectTrigger>
+                                                                      <SelectContent>
+                                                                          {departments.map(dept => (
+                                                                              <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                                                                          ))}
+                                                                      </SelectContent>
+                                                                  </Select>
+                                                              )}
+                                                          </div>
+                                                      );
+                                                    })}
                                                 </div>
                                             </div>
                                             
@@ -514,3 +566,5 @@ export default function JmcWorkflowConfigurationPage() {
     );
 
     
+
+}
