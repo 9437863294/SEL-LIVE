@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -11,6 +10,8 @@ import {
   ShieldAlert,
   type LucideIcon,
   Settings,
+  GitMerge,
+  Loader2
 } from 'lucide-react';
 import {
   Card,
@@ -24,7 +25,10 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import type { WorkflowStep } from '@/lib/types';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 type JmcItem = {
   icon: LucideIcon;
@@ -80,22 +84,36 @@ function JmcCard({ item }: JmcCardProps) {
 export default function JmcPage() {
   const params = useParams<{ project: string }>();
   const projectSlug = params.project;
-  const { can, isLoading } = useAuthorization();
+  const { can, isLoading: authIsLoading } = useAuthorization();
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
 
-  const canViewModule = can('View', 'Billing Recon.JMC');
+  useEffect(() => {
+    const fetchWorkflow = async () => {
+      setIsWorkflowLoading(true);
+      try {
+        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (workflowSnap.exists()) {
+          setWorkflowSteps(workflowSnap.data().steps as WorkflowStep[]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow steps:", error);
+      }
+      setIsWorkflowLoading(false);
+    };
+
+    if (!authIsLoading) {
+      fetchWorkflow();
+    }
+  }, [authIsLoading]);
 
   const jmcItems: JmcItem[] = useMemo(() => {
-    if (isLoading) return [];
-    return [
-      {
+    if (authIsLoading || isWorkflowLoading) return [];
+    
+    const staticItems = [
+       {
         icon: FilePlus,
-        text: 'Create Work Order',
-        href: `/billing-recon/${projectSlug}/jmc/work-order`,
-        description: 'Issue a new work order to a subcontractor.',
-        disabled: !can('Create Work Order', 'Billing Recon.JMC'),
-      },
-      {
-        icon: ClipboardCheck,
         text: 'Create JMC',
         href: `/billing-recon/${projectSlug}/jmc/entry`,
         description: 'Create a Joint Measurement Certificate.',
@@ -105,10 +123,10 @@ export default function JmcPage() {
         icon: History,
         text: 'JMC Log',
         href: `/billing-recon/${projectSlug}/jmc/log`,
-        description: 'View and manage existing JMC entries.',
+        description: 'View and manage all existing JMC entries.',
         disabled: !can('View Log', 'Billing Recon.JMC'),
       },
-       {
+      {
         icon: Settings,
         text: 'Settings',
         href: `/billing-recon/${projectSlug}/jmc/settings`,
@@ -116,18 +134,28 @@ export default function JmcPage() {
         disabled: !can('View Settings', 'Billing Recon.JMC'),
       },
     ];
-  }, [projectSlug, isLoading, can]); 
+
+    const workflowItems = workflowSteps.map(step => ({
+      icon: GitMerge,
+      text: step.name,
+      href: `/billing-recon/${projectSlug}/jmc/stage/${step.id}`,
+      description: `Tasks for the ${step.name} stage.`,
+      disabled: !can('View', 'Billing Recon.JMC'), // Simplified permission, could be more granular
+    }));
+
+    return [...workflowItems, ...staticItems];
+
+  }, [projectSlug, authIsLoading, isWorkflowLoading, can, workflowSteps]);
+
+  const canViewModule = can('View', 'Billing Recon.JMC');
+  const isLoading = authIsLoading || isWorkflowLoading;
 
   if (isLoading) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <Skeleton className="h-10 w-64 mb-6" />
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-           <Skeleton className="h-28" />
-           <Skeleton className="h-28" />
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
         </div>
       </div>
     );
