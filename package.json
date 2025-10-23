@@ -12,6 +12,7 @@
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
     "@genkit-ai/next": "^1.14.1",
+    "@hello-pangea/dnd": "^16.6.0",
     "@hookform/resolvers": "^3.9.0",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
@@ -58,14 +59,15 @@
     "tailwindcss-animate": "^1.0.7",
     "wav": "^1.0.2",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8",
-    "@hello-pangea/dnd": "^16.6.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/node": "^20.14.12",
     "@types/react": "^18.3.3",
     "@types/react-beautiful-dnd": "^13.1.8",
     "@types/react-dom": "^18.3.0",
+    "dotenv": "^17.2.3",
     "genkit-cli": "^1.14.1",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.1",

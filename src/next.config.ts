@@ -34,11 +34,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },
-  modularizeImports: {
-    "lucide-react": {
-        transform: "lucide-react/dist/esm/icons/{{member}}",
-    },
-  },
 };
 
 export default nextConfig;
