@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,10 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem } from '@/lib/types';
+import type { BoqItem, JmcEntry as JmcEntryType } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
@@ -32,6 +33,8 @@ const initialItem = {
     executedQty: 0,
     certifiedQty: 0,
     totalAmount: 0,
+    boqQty: 0,
+    totalCertifiedQty: 0,
 };
 
 type JmcItem = typeof initialItem;
@@ -44,15 +47,16 @@ export default function JmcEntryPage() {
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [allJmcEntries, setAllJmcEntries] = useState<JmcEntryType[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
   useEffect(() => {
-    const fetchBoqItems = async () => {
+    const fetchBoqAndJmcData = async () => {
         if (!projectSlug) return;
         setIsBoqLoading(true);
         try {
-            const boqSnapshot = await getDocs(collection(db, "projects", projectSlug, "boqItems"));
+            const boqSnapshot = await getDocs(query(collection(db, "projects", projectSlug, "boqItems")));
             const boqData = boqSnapshot.docs.map(doc => {
                 const data = doc.data();
                 return { 
@@ -67,14 +71,30 @@ export default function JmcEntryPage() {
                 return slNoA - slNoB;
             });
             setBoqItems(boqData);
+            
+            const jmcSnapshot = await getDocs(collection(db, "projects", projectSlug, "jmcEntries"));
+            setAllJmcEntries(jmcSnapshot.docs.map(doc => doc.data() as JmcEntryType));
+
         } catch (error) {
-            console.error("Error fetching BOQ items:", error);
-            toast({ title: "Error", description: "Could not fetch BOQ items for this project.", variant: "destructive" });
+            console.error("Error fetching data:", error);
+            toast({ title: "Error", description: "Could not fetch project data.", variant: "destructive" });
         }
         setIsBoqLoading(false);
     };
-    fetchBoqItems();
+    fetchBoqAndJmcData();
   }, [projectSlug, toast]);
+
+  const totalCertifiedQtyMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    allJmcEntries.forEach(entry => {
+        entry.items.forEach(item => {
+            if (item.boqSlNo) {
+                map[item.boqSlNo] = (map[item.boqSlNo] || 0) + (item.certifiedQty || 0);
+            }
+        });
+    });
+    return map;
+  }, [allJmcEntries]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -123,15 +143,16 @@ export default function JmcEntryPage() {
         typeof rawRate === 'number'
           ? rawRate
           : Number(String(rawRate ?? '0').replace(/,/g, '').trim());
+      
+      const boqSlNo = String((boqItem as any)['BOQ SL No'] ?? '');
   
       Object.assign(itemToUpdate, {
-        boqSlNo: String(
-          (boqItem as any)['BOQ SL No'] ??
-          ''
-        ),
-        description: (boqItem as any)['Description'] ?? '',
+        boqSlNo: boqSlNo,
+        description: String((boqItem as any)['Description'] ?? ''),
         unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
         rate: Number.isFinite(rateNum) ? rateNum : 0,
+        boqQty: Number((boqItem as any)['QTY'] || 0),
+        totalCertifiedQty: totalCertifiedQtyMap[boqSlNo] || 0
       });
   
       const qty = Number(itemToUpdate.executedQty) || 0;
@@ -159,13 +180,13 @@ export default function JmcEntryPage() {
         );
     
         return {
-            boqSlNo: slNo,                                       // <-- force string
+            ...initialItem,
+            boqSlNo: slNo,
             description: (boqItem as any)['Description'] ?? '',
             unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
             rate: Number.isFinite(rateNum) ? rateNum : 0,
-            executedQty: 0,
-            certifiedQty: 0,
-            totalAmount: 0,
+            boqQty: Number((boqItem as any)['QTY'] || 0),
+            totalCertifiedQty: totalCertifiedQtyMap[slNo] || 0,
         } as JmcItem;
         });
     
@@ -308,7 +329,9 @@ export default function JmcEntryPage() {
                         <TableRow>
                             <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
                             <TableHead>Description</TableHead>
-                            <TableHead className="w-[100px]">Unit</TableHead>
+                            <TableHead>Unit</TableHead>
+                            <TableHead>BOQ Qty</TableHead>
+                            <TableHead>Total Certified Qty</TableHead>
                             <TableHead className="w-[120px]">Rate</TableHead>
                             <TableHead className="w-[120px]">Executed Qty</TableHead>
                             <TableHead className="w-[120px]">Certified Qty</TableHead>
@@ -329,6 +352,8 @@ export default function JmcEntryPage() {
                                 </TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
+                                <TableCell>{item.boqQty}</TableCell>
+                                <TableCell>{item.totalCertifiedQty}</TableCell>
                                 <TableCell>{item.rate}</TableCell>
                                 <TableCell>
                                     <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
@@ -362,3 +387,5 @@ export default function JmcEntryPage() {
     </>
   );
 }
+
+    

@@ -74,11 +74,12 @@ const baseTableHeaders = [
   'Description',
   'Unit',
   'QTY',
+  'Unit Rate',
+  'Total Amount',
   'JMC Executed Qty',
   'JMC Certified Qty',
   'JMC Amount',
-  'Unit Rate',
-  'Total Amount',
+  
 ] as const;
 
 export default function ViewBoqPage() {
@@ -109,7 +110,6 @@ export default function ViewBoqPage() {
               'Unit',
               'QTY',
               'Unit Rate',
-              'JMC Executed Qty',
               'JMC Certified Qty',
               'JMC Amount',
               'Total Amount'
@@ -815,5 +815,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-    
-```
