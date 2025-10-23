@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   GitMerge,
   ShieldAlert,
+  Hash,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -33,6 +34,13 @@ const settingsItemsBase = [
     description: 'Set up approval workflows for JMC entries.',
     href: 'settings/workflow-configuration',
     permission: 'View Settings'
+  },
+  {
+    icon: Hash,
+    text: 'Serial Number Configuration',
+    description: 'Configure serial numbers for JMC entries.',
+    href: '#', // To be implemented
+    permission: 'Edit Serial Nos'
   },
 ];
 
