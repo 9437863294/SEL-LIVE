@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -48,7 +47,8 @@ export default function JmcLogPage() {
           id: doc.id,
           ...data,
           createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A',
-          totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0)
+          totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
+          certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
         } as JmcEntry;
       });
       setJmcEntries(entries);
@@ -163,6 +163,7 @@ export default function JmcLogPage() {
                   <TableHead>Work Order No.</TableHead>
                   <TableHead>No. of Items</TableHead>
                   <TableHead>Total Value</TableHead>
+                  <TableHead>Certified Value</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -175,12 +176,13 @@ export default function JmcLogPage() {
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
-                    const isCertified = entry.items.some(item => item.certifiedQty !== undefined && item.certifiedQty !== null);
+                    const isCertified = entry.items.some(item => item.certifiedQty !== undefined && item.certifiedQty !== null && item.certifiedQty > 0);
                     return (
                         <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
@@ -188,6 +190,7 @@ export default function JmcLogPage() {
                           <TableCell>{entry.woNo}</TableCell>
                           <TableCell>{entry.items.length}</TableCell>
                           <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
+                          <TableCell>{formatCurrency(entry.certifiedValue || 0)}</TableCell>
                           <TableCell className="text-right">
                             <AlertDialog>
                                 <DropdownMenu>
@@ -231,7 +234,7 @@ export default function JmcLogPage() {
                 })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
+                    <TableCell colSpan={7} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
