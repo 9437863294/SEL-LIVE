@@ -692,7 +692,7 @@ export default function ViewBoqPage() {
                                     return 'N/A';
                                   }
                                   if (header === 'JMC Amount') {                          // 👈 NEW
-                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
+                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.certified || 0);
                                     const rate = Number(item['Unit Rate']);
                                     if (Number.isFinite(jmcQty) && Number.isFinite(rate)) {
                                       return fmtNum(jmcQty * rate);
@@ -778,7 +778,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
-        jmcEntries={jmcEntries} // <-- PASS THE STATE VARIABLE
+        jmcEntries={jmcEntries}
         bills={[]}
       />
       
@@ -812,61 +812,8 @@ export default function ViewBoqPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Column Editor */}
-      <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Customize Columns</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-96 overflow-auto space-y-2 mt-2">
-            {isClient && (
-              <DragDropContext onDragEnd={onDragEnd}>
-                <Droppable droppableId="columns">
-                  {(provided) => (
-                    <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                      {columnOrder.map((header, index) => (
-                        <Draggable key={header} draggableId={header} index={index}>
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className="flex items-center gap-2 p-2 border rounded-md bg-muted/50"
-                            >
-                              <Checkbox
-                                checked={!!columnVisibility[header]}
-                                onCheckedChange={(checked) => {
-                                  const next = { ...columnVisibility, [header]: !!checked };
-                                  setColumnVisibility(next);
-                                }}
-                              />
-                              <Input
-                                value={columnNames[header] || header}
-                                onChange={(e) => {
-                                  const next = { ...columnNames, [header]: e.target.value };
-                                  setColumnNames(next);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              </DragDropContext>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setIsColumnEditorOpen(false)}>
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-
+    
+```
