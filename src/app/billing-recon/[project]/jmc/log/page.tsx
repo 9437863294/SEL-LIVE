@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -178,53 +179,56 @@ export default function JmcLogPage() {
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
-                  jmcEntries.map((entry) => (
-                    <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
-                      <TableCell className="font-medium">{entry.jmcNo}</TableCell>
-                      <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                      <TableCell>{entry.woNo}</TableCell>
-                      <TableCell>{entry.items.length}</TableCell>
-                      <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
-                      <TableCell className="text-right">
-                        <AlertDialog>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
-                                        <span className="sr-only">Open menu</span>
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
-                                        <Eye className="mr-2 h-4 w-4" /> View Details
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }}>
-                                        <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
-                                        <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
-                                    </DropdownMenuItem>
-                                    <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
-                                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  jmcEntries.map((entry) => {
+                    const isCertified = entry.items.some(item => item.certifiedQty !== undefined && item.certifiedQty !== null);
+                    return (
+                        <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
+                          <TableCell className="font-medium">{entry.jmcNo}</TableCell>
+                          <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
+                          <TableCell>{entry.woNo}</TableCell>
+                          <TableCell>{entry.items.length}</TableCell>
+                          <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
+                          <TableCell className="text-right">
+                            <AlertDialog>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+                                            <span className="sr-only">Open menu</span>
+                                            <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
+                                            <Eye className="mr-2 h-4 w-4" /> View Details
                                         </DropdownMenuItem>
-                                    </AlertDialogTrigger>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                    <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }} disabled={isCertified}>
+                                            <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
+                                            <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
+                                        </DropdownMenuItem>
+                                        <AlertDialogTrigger asChild>
+                                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                          </TableCell>
+                        </TableRow>
+                    )
+                })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center h-24">

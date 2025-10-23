@@ -50,7 +50,7 @@ export function UpdateCertifiedQtyDialog({
     const executedQty = Number(newItems[index].executedQty);
     let certifiedQty = parseFloat(value);
     
-    if (isNaN(certifiedQty)) {
+    if (isNaN(certifiedQty) || certifiedQty < 0) {
         certifiedQty = 0;
     } else if (certifiedQty > executedQty) {
       toast({
@@ -107,9 +107,10 @@ export function UpdateCertifiedQtyDialog({
                   <TableCell>
                     <Input
                       type="number"
-                      value={item.certifiedQty || ''}
+                      value={item.certifiedQty ?? ''}
                       onChange={(e) => handleCertifiedQtyChange(index, e.target.value)}
                       max={item.executedQty}
+                      min={0}
                     />
                   </TableCell>
                 </TableRow>
