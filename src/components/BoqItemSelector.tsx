@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -18,15 +17,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { BoqItem } from '@/lib/types';
-import { usePathname } from 'next/navigation';
+import { ScrollArea } from './ui/scroll-area';
 
 interface BoqItemSelectorProps {
   boqItems: BoqItem[];
@@ -44,37 +36,6 @@ export function BoqItemSelector({
   const [open, setOpen] = React.useState(false);
   const [currentId, setCurrentId] = React.useState<string>('');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc');
-  const pathname = usePathname();
-
-  const [filters, setFilters] = React.useState<{
-    Site: 'all' | string;
-    'Scope 1': 'all' | string;
-    'Scope 2': 'all' | string;
-    'Category 1': 'all' | string;
-  }>({
-    Site: 'all',
-    'Scope 1': 'all',
-    'Scope 2': 'all',
-    'Category 1': 'all',
-  });
-
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const onMadanpurEntryPage = pathname?.startsWith('/billing-recon/madanpur-rampur/jmc/entry');
-    if (!onMadanpurEntryPage) return;
-
-    const hasCivil = boqItems.some(
-      (i: any) => String(i['Scope 2'] ?? '').toLowerCase() === 'civil'
-    );
-
-    if (!hasCivil) return;
-
-    setFilters(prev => {
-      if (prev['Scope 2'] !== 'all') return prev;
-      return { ...prev, 'Scope 2': 'Civil', 'Category 1': 'all' };
-    });
-  }, [isOpen, pathname, boqItems]);
-
 
   const toggleSort = () => setSortDirection(p => (p === 'asc' ? 'desc' : 'asc'));
 
@@ -101,72 +62,13 @@ export function BoqItemSelector({
     () => boqItems.find(i => i.id === currentId) ?? null,
     [boqItems, currentId]
   );
-  
-   const filterOptions = React.useMemo(() => {
-    let base = [...boqItems];
-
-    const siteOptions = [...new Set(base.map((i: any) => i['Site']).filter(Boolean))] as string[];
-
-    if (filters.Site !== 'all') {
-      base = base.filter((i: any) => i['Site'] === filters.Site);
-    }
-
-    const scope1Options = [...new Set(base.map((i: any) => i['Scope 1']).filter(Boolean))] as string[];
-
-    if (filters['Scope 1'] !== 'all') {
-      base = base.filter((i: any) => i['Scope 1'] === filters['Scope 1']);
-    }
-
-    const scope2Options = [...new Set(base.map((i: any) => i['Scope 2']).filter(Boolean))] as string[];
-
-    if (filters['Scope 2'] !== 'all') {
-      base = base.filter((i: any) => i['Scope 2'] === filters['Scope 2']);
-    }
-
-    const category1Options = [...new Set(base.map((i: any) => i['Category 1']).filter(Boolean))] as string[];
-
-    return {
-      Site: siteOptions,
-      'Scope 1': scope1Options,
-      'Scope 2': scope2Options,
-      'Category 1': category1Options,
-    };
-  }, [boqItems, filters]);
-
-  const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    setFilters((prev) => {
-      const next = { ...prev, [key]: value as any };
-      if (key === 'Site') {
-        next['Scope 1'] = 'all';
-        next['Scope 2'] = 'all';
-        next['Category 1'] = 'all';
-      }
-      if (key === 'Scope 1') {
-        next['Scope 2'] = 'all';
-        next['Category 1'] = 'all';
-      }
-      if (key === 'Scope 2') {
-        next['Category 1'] = 'all';
-      }
-      return next;
-    });
-  };
 
   const sortedItems = React.useMemo(() => {
-    let items = boqItems.filter((item: any) => {
-      const siteMatch = filters['Site'] === 'all' || item['Site'] === filters['Site'];
-      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
-      const category1Match =
-        filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
-
-      return siteMatch && scope1Match && scope2Match && category1Match;
-    });
-
+    const list = [...boqItems];
     const dir = sortDirection === 'asc' ? 1 : -1;
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-    return items.sort((a, b) => collator.compare(getErpSlNo(a), getErpSlNo(b)) * dir);
-  }, [boqItems, sortDirection, filters]);
+    return list.sort((a, b) => collator.compare(getErpSlNo(a), getErpSlNo(b)) * dir);
+  }, [boqItems, sortDirection]);
 
   const commitSelect = (id: string) => {
     const selected = boqItems.find(i => i.id === id) ?? null;
@@ -191,31 +93,6 @@ export function BoqItemSelector({
         sideOffset={4}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <div className="flex flex-wrap gap-2 p-2 border-b">
-             {(['Site', 'Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
-              const options = filterOptions[key];
-              if (!options || options.length === 0) return null;
-              return (
-                <Select
-                  key={key}
-                  value={filters[key]}
-                  onValueChange={(v) => handleFilterChange(key, v)}
-                >
-                  <SelectTrigger className="w-full sm:w-[150px] h-8 text-xs">
-                    <SelectValue placeholder={`Filter by ${key}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All {key}s</SelectItem>
-                    {options.map((opt) => (
-                      <SelectItem key={`${key}-${opt}`} value={opt}>
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              );
-            })}
-        </div>
         <Command>
           <CommandInput placeholder="Search by BOQ SL No, ERP SL No or Description..." />
           <CommandList className="max-h-72 overflow-y-auto">
@@ -258,6 +135,7 @@ export function BoqItemSelector({
                     aria-selected={isSelected}
                     asChild
                   >
+                    {/* Render a real button so the cursor is a hand and clicks always work */}
                     <button
                       type="button"
                       className="w-full px-2 py-2 cursor-pointer pointer-events-auto"
