@@ -83,8 +83,6 @@ export default function JmcPage() {
   const canViewModule = can('View', 'Billing Recon.JMC');
 
   const jmcItems: JmcItem[] = useMemo(() => {
-    // This calculation now only depends on the boolean results of `can`, not the function itself.
-    // It will only re-run when `isLoading` changes from true to false.
     if (isLoading) return [];
     return [
       {
@@ -108,8 +106,15 @@ export default function JmcPage() {
         description: 'View and manage existing JMC entries.',
         disabled: !can('View Log', 'Billing Recon.JMC'),
       },
+      {
+        icon: ClipboardCheck,
+        text: 'Certified JMC',
+        href: `/billing-recon/${projectSlug}/jmc/certified`,
+        description: 'View JMC entries that have been certified.',
+        disabled: !can('View Certified JMC', 'Billing Recon.JMC'),
+      },
     ];
-  }, [projectSlug, isLoading, can]); // Dependency on `can` is safe here because it's wrapped in useCallback in the hook.
+  }, [projectSlug, isLoading, can]); 
 
   if (isLoading) {
     return (
@@ -119,6 +124,7 @@ export default function JmcPage() {
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
+           <Skeleton className="h-28" />
         </div>
       </div>
     );

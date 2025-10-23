@@ -204,7 +204,7 @@ export default function JmcLogPage() {
                   ))
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
-                    const isCertified = entry.items.some(item => item.certifiedQty !== undefined && item.certifiedQty !== null);
+                    const isCertified = entry.items.some(item => typeof item.certifiedQty === 'number');
                     let status: 'Certified' | 'Pending' | 'Cancelled' = 'Pending';
                     if (entry.status === 'Cancelled') {
                         status = 'Cancelled';
@@ -265,16 +265,6 @@ export default function JmcLogPage() {
                                     <AlertDialogFooter>
                                         <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
                                         <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Cancel this JMC?</AlertDialogTitle>
-                                        <AlertDialogDescription>This will mark the JMC as cancelled. You can revert this action later.</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Close</AlertDialogCancel>
-                                        <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleCancelJmc(entry); }}>Confirm</AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
