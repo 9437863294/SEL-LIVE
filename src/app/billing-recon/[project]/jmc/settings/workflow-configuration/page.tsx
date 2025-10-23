@@ -53,11 +53,13 @@ export default function JmcWorkflowConfigurationPage() {
     const { can, isLoading: isAuthLoading } = useAuthorization();
     
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
+    const [roles, setRoles] = useState<Role[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [roles, setRoles] = useState<Role[]>([]);
     
     const canViewPage = can('View Settings', 'Billing Recon.JMC');
     const canEditPage = can('Edit Settings', 'Billing Recon.JMC');
@@ -409,7 +411,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                                         </TableCell>
                                                                          <TableCell>
                                                                              <Select
-                                                                                value={(step.assignedTo as Record<string, { alternative?: string }>)[item.id]?.alternative || ''}
+                                                                                value={(step.assignedTo as Record<string, { alternative?: string }>)[item.id]?.alternative || 'none'}
                                                                                 onValueChange={(value) => handleAssignmentDetailChange(step.id, item.id, 'alternative', value)}
                                                                                 disabled={!canEditPage}
                                                                             >
