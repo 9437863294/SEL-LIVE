@@ -108,13 +108,6 @@ export default function JmcPage() {
         description: 'View and manage existing JMC entries.',
         disabled: !can('View Log', 'Billing Recon.JMC'),
       },
-      {
-        icon: ClipboardCheck,
-        text: 'Certified JMC',
-        href: `/billing-recon/${projectSlug}/jmc/certified`,
-        description: 'View JMC entries that have been certified.',
-        disabled: !can('View Certified JMC', 'Billing Recon.JMC'),
-      },
        {
         icon: Settings,
         text: 'Settings',
