@@ -31,13 +31,12 @@ const initialItem = {
     unit: '',
     rate: 0,
     executedQty: 0,
-    certifiedQty: 0,
     totalAmount: 0,
     boqQty: 0,
     totalCertifiedQty: 0,
 };
 
-type JmcItem = typeof initialItem;
+type JmcItem = typeof initialItem & { certifiedQty?: number };
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
@@ -118,7 +117,7 @@ export default function JmcEntryPage() {
     const item = newItems[index];
     const updatedItem = { ...item, [name]: value };
 
-    if (name === 'executedQty' || name === 'rate' || name === 'certifiedQty') {
+    if (name === 'executedQty' || name === 'rate') {
         const qty = parseFloat(String(updatedItem.executedQty));
         const rate = parseFloat(String(updatedItem.rate));
         if (!isNaN(qty) && !isNaN(rate)) {
