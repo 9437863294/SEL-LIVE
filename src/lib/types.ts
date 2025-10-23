@@ -89,7 +89,7 @@ export const permissionModules = {
     'Billing Recon': {
       'View Module': [],
       'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-      'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings'],
+      'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings'],
       'Billing': ['View', 'Create Bill', 'View Log'],
       'MVAC': ['View', 'Add Item'],
       'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
