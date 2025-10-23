@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -329,6 +330,7 @@ export default function JmcEntryPage() {
                             <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead>Unit</TableHead>
+                            <TableHead>BOQ Qty</TableHead>
                             <TableHead>Total Certified Qty</TableHead>
                             <TableHead className="w-[120px]">Rate</TableHead>
                             <TableHead className="w-[120px]">Executed Qty</TableHead>
@@ -349,6 +351,7 @@ export default function JmcEntryPage() {
                                 </TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
+                                <TableCell>{item.boqQty}</TableCell>
                                 <TableCell>{item.totalCertifiedQty}</TableCell>
                                 <TableCell>{item.rate}</TableCell>
                                 <TableCell>
