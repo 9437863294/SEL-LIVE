@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download } from 'lucide-react';
+import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,6 +20,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
+import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
 
 
 export default function JmcLogPage() {
@@ -31,6 +32,7 @@ export default function JmcLogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isCertifyOpen, setIsCertifyOpen] = useState(false);
 
   const fetchJmcEntries = async () => {
     if (!projectSlug) return;
@@ -64,6 +66,11 @@ export default function JmcLogPage() {
     setSelectedEntry(entry);
     setIsViewOpen(true);
   };
+
+  const handleOpenCertifyDialog = (entry: JmcEntry) => {
+    setSelectedEntry(entry);
+    setIsCertifyOpen(true);
+  };
   
   const handleDelete = async (entry: JmcEntry) => {
     if (!user) return;
@@ -93,6 +100,7 @@ export default function JmcLogPage() {
         'Unit': item.unit,
         'Rate': item.rate,
         'Executed Qty': item.executedQty,
+        'Certified Qty': item.certifiedQty,
         'Total Amount': item.totalAmount,
       }))
     );
@@ -113,6 +121,7 @@ export default function JmcLogPage() {
       'Unit': item.unit,
       'Rate': item.rate,
       'Executed Qty': item.executedQty,
+      'Certified Qty': item.certifiedQty,
       'Total Amount': item.totalAmount,
     }));
     
@@ -189,6 +198,9 @@ export default function JmcLogPage() {
                                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
                                         <Eye className="mr-2 h-4 w-4" /> View Details
                                     </DropdownMenuItem>
+                                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }}>
+                                        <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
                                         <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
                                     </DropdownMenuItem>
@@ -231,6 +243,14 @@ export default function JmcLogPage() {
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
       />
+      {selectedEntry && (
+        <UpdateCertifiedQtyDialog
+            isOpen={isCertifyOpen}
+            onOpenChange={setIsCertifyOpen}
+            jmcEntry={selectedEntry}
+            onSaveSuccess={fetchJmcEntries}
+        />
+      )}
     </>
   );
 }
