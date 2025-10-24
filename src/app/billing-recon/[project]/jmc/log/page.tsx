@@ -206,9 +206,11 @@ export default function JmcLogPage() {
                                     <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
                                         <Eye className="mr-2 h-4 w-4" /> View Details
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => handleOpenCertifyDialog(entry)}>
-                                        <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
-                                    </DropdownMenuItem>
+                                    {entry.stage === 'Verification' && (
+                                        <DropdownMenuItem onSelect={() => handleOpenCertifyDialog(entry)}>
+                                            <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
+                                        </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem className="text-destructive">
                                         <Trash2 className="mr-2 h-4 w-4" /> Delete
