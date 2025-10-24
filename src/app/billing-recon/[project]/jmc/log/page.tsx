@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -132,45 +133,32 @@ export default function JmcLogPage() {
   };
 
   const handleExportAll = () => {
-    const flattenedData = jmcEntries.flatMap(entry => 
-      entry.items.map(item => ({
-        'JMC No': entry.jmcNo,
-        'WO No': entry.woNo,
-        'JMC Date': entry.jmcDate,
-        'BOQ Sl. No.': item.boqSlNo,
-        'Description': item.description,
-        'Unit': item.unit,
-        'Rate': item.rate,
-        'Executed Qty': item.executedQty,
-        'Certified Qty': item.certifiedQty,
-        'Total Amount': item.totalAmount,
-      }))
-    );
+    const dataToExport = jmcEntries.map(entry => {
+        const row: Record<string, any> = {
+            'JMC No.': entry.jmcNo,
+            'JMC Date': format(new Date(entry.jmcDate), 'dd MMM, yyyy'),
+        };
+        workflowSteps.forEach(step => {
+            row[`${step.name} Date`] = entry.stageDates[step.name] || '-';
+        });
+        row['JMC Value'] = entry.totalAmount;
+        row['Certified Value'] = entry.certifiedValue;
+        row['Stage'] = entry.stage;
+        row['Status'] = entry.status;
+        return row;
+    });
 
-    const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Log");
-    XLSX.writeFile(workbook, `jmc_log_${projectSlug}.xlsx`);
-  };
+    XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Workflow Log");
 
-  const handleExportSingle = (entry: JmcEntry) => {
-    const flattenedData = entry.items.map(item => ({
-      'JMC No': entry.jmcNo,
-      'WO No': entry.woNo,
-      'JMC Date': entry.jmcDate,
-      'BOQ Sl. No.': item.boqSlNo,
-      'Description': item.description,
-      'Unit': item.unit,
-      'Rate': item.rate,
-      'Executed Qty': item.executedQty,
-      'Certified Qty': item.certifiedQty,
-      'Total Amount': item.totalAmount,
+    // Adjust column widths
+    const colWidths = Object.keys(dataToExport[0] || {}).map(key => ({
+        wch: Math.max(15, key.length, ...dataToExport.map(row => String(row[key] || '').length))
     }));
-    
-    const worksheet = XLSX.utils.json_to_sheet(flattenedData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `JMC ${entry.jmcNo}`);
-    XLSX.writeFile(workbook, `jmc_${projectSlug}_${entry.jmcNo}.xlsx`);
+    worksheet['!cols'] = colWidths;
+
+    XLSX.writeFile(workbook, `jmc_workflow_log_${projectSlug}.xlsx`);
   };
   
   const formatCurrency = (amount: number) => {
