@@ -88,7 +88,7 @@ export const permissionModules = {
     'Billing Recon': {
       'View Module': [],
       'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-      'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings'],
+      'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos'],
       'Billing': ['View', 'Create Bill', 'View Log'],
       'MVAC': ['View', 'Add Item'],
       'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
@@ -226,19 +226,10 @@ export interface WorkflowStep {
   id: string;
   name: string;
   tat: number; // in hours
-  assignmentType: 'User-based' | 'Role-based' | 'Project-based' | 'Department-based' | 'Amount-based';
-  assignedTo: string[] | Record<string, AssignedTo> | AmountBasedCondition[];
+  assignmentType: 'User-based' | 'Role-based' | 'Project-based' | 'Department-based';
+  assignedTo: string[] | Record<string, AssignedTo>;
   actions: (string | ActionConfig)[];
   upload: 'Required' | 'Optional' | 'Not Required';
-}
-
-export interface AmountBasedCondition {
-    id: string;
-    type: 'Below' | 'Between' | 'Above';
-    amount1: number;
-    amount2?: number;
-    userId: string;
-    alternativeUserId?: string;
 }
 
 export interface AssignedTo {

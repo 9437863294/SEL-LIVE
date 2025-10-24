@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -10,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User, Project, Department, ActionConfig } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department, AssignedTo, ActionConfig } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -375,7 +376,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                             <TableBody>
                                                                 {(step.assignmentType === 'Project-based' ? projects : departments).map(item => (
                                                                     <TableRow key={item.id}>
-                                                                        <TableCell>{'projectName' in item ? item.projectName : item.name}</TableCell>
+                                                                        <TableCell>{item.projectName || item.name}</TableCell>
                                                                         <TableCell>
                                                                              <Select
                                                                                 value={(step.assignedTo as Record<string, { primary: string }>)[item.id]?.primary || ''}
@@ -480,5 +481,3 @@ export default function JmcWorkflowConfigurationPage() {
         </div>
     );
 }
-
-    
