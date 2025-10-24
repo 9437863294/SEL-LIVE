@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -59,55 +58,16 @@ export default function ViewJmcEntryDialog({
   isLoading,
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<EnrichedJmcItem[]>([]);
+  const [initialItems, setInitialItems] = useState<EnrichedJmcItem[]>([]);
   const { toast } = useToast();
-
-  const handleItemChange = (
-    index: number,
-    field: 'executedQty' | 'certifiedQty',
-    value: string
-  ) => {
-    setEditableItems((prev) => {
-      const next = [...prev];
-      const numValue = Number(value);
-      const item = { ...next[index] };
-      (item as any)[field] = numValue;
-
-      if (!Number.isNaN(numValue) && field === 'certifiedQty') {
-        const executedQty = (item.executedQty || 0);
-        if (numValue > executedQty) {
-          item.__error = `Cannot exceed executed qty (${executedQty})`;
-        } else {
-          item.__error = null;
-        }
-      }
-      
-      const rate = Number(item.rate) || 0;
-      const executedQty = Number(item.executedQty) || 0;
-      item.totalAmount = executedQty * rate;
-      next[index] = item;
-      return next;
-    });
-  };
-
-  const handleSaveAndVerify = () => {
-    const hasErrors = editableItems.some(item => item.__error);
-    if (onVerify && jmcEntry && !hasErrors) {
-      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, __certStr, ...rest }) => rest);
-      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
-    } else if (hasErrors) {
-        toast({
-            title: "Validation Error",
-            description: "Please correct the errors in the certified quantities before saving.",
-            variant: "destructive"
-        });
-    }
-  };
 
   useEffect(() => {
     if (!isOpen || !jmcEntry) {
       setEditableItems([]);
+      setInitialItems([]);
       return;
     }
+
     const enriched = (jmcEntry.items || []).map((item) => {
       const boqItem = boqItems.find(
         (b) => (b as any)['BOQ SL No'] === item.boqSlNo || (b as any)['SL. No.'] === item.boqSlNo
@@ -130,15 +90,76 @@ export default function ViewJmcEntryDialog({
         __error: null,
       };
     });
+    setInitialItems(enriched);
     setEditableItems(enriched);
-  }, [jmcEntry, boqItems, allJmcEntries, isOpen]);
+  }, [jmcEntry, isOpen]);
+
+
+  const handleItemChange = (
+    index: number,
+    field: 'executedQty' | 'certifiedQty',
+    value: string
+  ) => {
+    setEditableItems((prev) => {
+      const next = [...prev];
+      const numValue = Number(value);
+      const item = { ...next[index] };
+
+      if (field === 'executedQty') {
+        (item as any)[field] = numValue;
+      } else if (field === 'certifiedQty') {
+        item.__certStr = value;
+      }
+
+      if (!Number.isNaN(numValue) && field === 'certifiedQty') {
+        const executedQty = Number(item.executedQty) || 0;
+        const totalPreviousCertified = item.totalCertifiedQty || 0;
+        const availableToCertify = executedQty - totalPreviousCertified;
+        
+        if (numValue < 0) {
+          item.__error = 'Cannot be negative';
+        } else if (numValue > availableToCertify) {
+          item.__error = `Max available: ${availableToCertify.toFixed(3)}`;
+        } else {
+          item.__error = null;
+        }
+        item.certifiedQty = numValue;
+      }
+      
+      const rate = Number(item.rate) || 0;
+      const executedQty = Number(item.executedQty) || 0;
+      item.totalAmount = executedQty * rate;
+      next[index] = item;
+      return next;
+    });
+  };
+  
+  const hasErrors = useMemo(() => editableItems.some(item => item.__error), [editableItems]);
+
+  const handleSaveAndVerify = () => {
+    if (hasErrors) {
+        toast({
+            title: "Validation Error",
+            description: "Please correct the errors in the certified quantities before saving.",
+            variant: "destructive"
+        });
+        return;
+    }
+    if (onVerify && jmcEntry) {
+      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, __certStr, ...rest }) => ({
+        ...rest,
+        certifiedQty: Number(rest.certifiedQty)
+      }));
+      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
+    }
+  };
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
     if (isNaN(num)) return String(amount);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
-  
+
   if (!jmcEntry) return null;
 
   return (
@@ -238,7 +259,7 @@ export default function ViewJmcEntryDialog({
                 <Button variant="outline">Close</Button>
             </DialogClose>
             {isEditMode && (
-                <Button onClick={handleSaveAndVerify} disabled={isLoading}>
+                <Button onClick={handleSaveAndVerify} disabled={isLoading || hasErrors}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Save & Verify
                 </Button>
