@@ -19,9 +19,9 @@ import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 
@@ -271,7 +271,7 @@ export default function MyTasksPage() {
                                                             </DropdownMenuItem>
                                                             {actions.length > 0 && <DropdownMenuSeparator />}
                                                             {actions.map(action => (
-                                                                <DropdownMenuItem key={action} onSelect={() => onAction?.(task.id, action, '')}>
+                                                                <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action, '')}}>
                                                                     {action}
                                                                 </DropdownMenuItem>
                                                             ))}
