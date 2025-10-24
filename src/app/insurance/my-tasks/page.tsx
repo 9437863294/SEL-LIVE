@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -247,6 +246,8 @@ export default function MyTasksPage() {
                         <TableBody>
                             {data.length > 0 ? (
                                 data.map(task => {
+                                    const currentStep = workflow?.find(s => s.id === task.currentStepId);
+                                    const actions = currentStep?.actions || [];
                                     return (
                                         <TableRow key={task.id} className="cursor-pointer" onClick={() => handleRowClick(task)}>
                                             <TableCell>{format(task.createdAt.toDate(), 'dd MMM, yyyy HH:mm')}</TableCell>
@@ -257,6 +258,25 @@ export default function MyTasksPage() {
                                             <TableCell className="text-right">
                                                  {isActionLoading === task.id ? (
                                                     <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                                                ) : isPending ? (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
+                                                                <MoreHorizontal className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                             <DropdownMenuItem onSelect={() => handleRowClick(task)}>
+                                                                <Eye className="mr-2 h-4 w-4" /> View Details
+                                                            </DropdownMenuItem>
+                                                            {actions.length > 0 && <DropdownMenuSeparator />}
+                                                            {actions.map(action => (
+                                                                <DropdownMenuItem key={action} onSelect={() => onAction?.(task.id, action, '')}>
+                                                                    {action}
+                                                                </DropdownMenuItem>
+                                                            ))}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 ) : (
                                                     <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(task); }}>
                                                         <Eye className="mr-2 h-4 w-4" /> View
