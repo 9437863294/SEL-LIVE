@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -219,9 +220,6 @@ export default function StagePage() {
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
-                                        <Eye className="mr-2 h-4 w-4" /> View
-                                    </DropdownMenuItem>
                                     {type === 'pending' && actions.map(action => (
                                         <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(entry.id, action); }}>
                                             {action}
