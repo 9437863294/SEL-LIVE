@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead } from '@/lib/types';
+import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -58,6 +58,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
   
   const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
@@ -109,6 +110,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     } else {
         setWorkflow(null);
         setActionComment('');
+        setFile(null);
         setEnrichedSteps([]);
         setIsWorkflowOpen(false);
         setExpenseToCreate(null);
@@ -217,6 +219,15 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     try {
         const requisitionRef = doc(db, 'requisitions', requisition.id);
         
+        let attachmentData: { name: string; url: string } | undefined;
+        if (file) {
+            const storagePath = `requisition-actions/${requisition.id}/${currentStep.name}/${file.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(storageRef);
+            attachmentData = { name: file.name, url: downloadURL };
+        }
+
         const newActionLog: ActionLog = {
             action: actionName,
             comment: actionComment,
@@ -224,6 +235,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             userName: user.name,
             timestamp: Timestamp.now(),
             stepName: currentStep.name,
+            attachment: attachmentData,
         };
 
         await runTransaction(db, async (transaction) => {
@@ -243,8 +255,10 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
             let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
             let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
+            
+            const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(actionName);
 
-            if (actionName === 'Approve' || actionName === 'Complete' || actionName === 'Verified' || actionName === 'Update Approved Amount') {
+            if (isCompletionAction) {
                 const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
                 nextStep = workflow[currentStepIndex + 1];
 
@@ -430,6 +444,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
                   <div><Label>Department</Label><p className="font-medium">{getDepartmentName(requisition.departmentId)}</p></div>
                   <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
                   <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
+                  <div><Label>Raised By</Label><p className="font-medium">{requisition.raisedBy}</p></div>
                   <div><Label>Party Name</Label><p className="font-medium">{requisition.partyName}</p></div>
               </div>
               <div>
@@ -467,6 +482,12 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
               {isActionAllowed && (
                   <div className="space-y-4 pt-4 border-t">
+                      {currentStep?.upload === 'Required' && (
+                        <div>
+                            <Label htmlFor="file-upload" className="font-semibold text-destructive">Upload Required Document</Label>
+                            <Input id="file-upload" type="file" className="mt-1" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                        </div>
+                      )}
                       <div>
                           <Label>Action Comment</Label>
                           <Textarea 
@@ -639,3 +660,4 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     </>
   );
 }
+
