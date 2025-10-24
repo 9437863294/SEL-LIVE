@@ -374,7 +374,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                     <div className="space-y-2">
                                                         <Label>Primary User</Label>
                                                         <Select
-                                                            value={Array.isArray(step.assignedTo) ? step.assignedTo[0] || '' : ''}
+                                                            value={(Array.isArray(step.assignedTo) ? step.assignedTo[0] : '') || ''}
                                                             onValueChange={(value) => {
                                                                 const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
                                                                 newAssignedTo[0] = value;
@@ -391,7 +391,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                      <div className="space-y-2">
                                                         <Label>Alternative User</Label>
                                                         <Select
-                                                            value={Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] || '' : ''}
+                                                            value={(Array.isArray(step.assignedTo) ? (step.assignedTo as string[])[1] : '') || 'none'}
                                                             onValueChange={(value) => {
                                                                 const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
                                                                 newAssignedTo[1] = value === 'none' ? '' : value;
@@ -424,7 +424,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                             <TableBody>
                                                                 {(step.assignmentType === 'Project-based' ? projects : departments).map(item => (
                                                                     <TableRow key={item.id}>
-                                                                        <TableCell>{item.name || (item as Project).projectName}</TableCell>
+                                                                        <TableCell>{item.projectName || item.name}</TableCell>
                                                                         <TableCell>
                                                                              <Select
                                                                                 value={(step.assignedTo as Record<string, { primary: string }>)[item.id]?.primary || ''}
@@ -482,7 +482,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                                 </div>
                                                                 <div className="col-span-2 flex gap-2">
                                                                     <Select value={condition.userId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)} disabled={!canEditPage}><SelectTrigger><SelectValue placeholder="Primary" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
-                                                                    <Select value={condition.alternativeUserId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value === 'none' ? '' : value)} disabled={!canEditPage}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
+                                                                    <Select value={condition.alternativeUserId || 'none'} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value === 'none' ? '' : value)} disabled={!canEditPage}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
                                                                     <Button variant="ghost" size="icon" onClick={() => handleDeleteAmountCondition(step.id, condition.id)} disabled={!canEditPage}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                                                 </div>
                                                             </div>
@@ -564,7 +564,5 @@ export default function JmcWorkflowConfigurationPage() {
             </Card>
         </div>
     );
-
-    
-
 }
+
