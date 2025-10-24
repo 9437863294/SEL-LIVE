@@ -27,6 +27,7 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry, boq
   }
 
   const enrichedItems = useMemo(() => {
+    if (!jmcEntry.items || !Array.isArray(boqItems)) return [];
     return jmcEntry.items.map(item => {
       const boqItem = boqItems.find(b => b['BOQ SL No'] === item.boqSlNo || b['SL. No.'] === item.boqSlNo);
       const boqQty = boqItem ? Number(boqItem.QTY || boqItem['Total Qty'] || 0) : 0;
@@ -41,7 +42,7 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry, boq
         totalCertifiedQty,
       };
     });
-  }, [jmcEntry.items, boqItems, jmcEntry.id]);
+  }, [jmcEntry.items, boqItems]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>

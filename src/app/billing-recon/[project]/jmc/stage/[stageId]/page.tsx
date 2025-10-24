@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { JmcEntry, WorkflowStep, ActionLog } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -30,6 +30,8 @@ export default function StagePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
 
   useEffect(() => {
     if (!user || !stageId) return;
@@ -56,9 +58,17 @@ export default function StagePage() {
           where('currentStepId', '==', stageId)
         );
         
-        const tasksSnapshot = await getDocs(q);
+        const [tasksSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
+          getDocs(q),
+          getDocs(collection(db, 'projects', projectSlug, 'boqItems')),
+          getDocs(collection(db, 'projects', projectSlug, 'bills'))
+        ]);
+        
         const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
         setTasks(tasksData);
+
+        setBoqItems(boqSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
+        setBills(billsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
 
       } catch (error) {
         console.error("Error fetching tasks for stage:", error);
@@ -159,6 +169,8 @@ export default function StagePage() {
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedJmc}
+        boqItems={boqItems}
+        bills={bills}
       />
     </>
   );
