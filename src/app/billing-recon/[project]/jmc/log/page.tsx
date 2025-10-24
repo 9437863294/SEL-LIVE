@@ -55,7 +55,7 @@ export default function JmcLogPage() {
         const q = query(jmcCollectionRef, orderBy('createdAt', 'desc'));
         const querySnapshot = await getDocs(q);
         const entries = querySnapshot.docs.map(doc => {
-            const data = doc.data() as JmcEntry;
+            const data = doc.data();
             const history = (data.history || []) as ActionLog[];
             const stageDates: Record<string, string> = {};
 
@@ -69,8 +69,9 @@ export default function JmcLogPage() {
             });
 
             return {
-              ...data,
               id: doc.id,
+              ...data,
+              createdAt: data.createdAt.toDate(),
               totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
               certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
               stageDates,
