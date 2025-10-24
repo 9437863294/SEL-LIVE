@@ -100,7 +100,7 @@ export default function JmcLogPage() {
             'JMC Date': format(new Date(entry.jmcDate), 'dd MMM, yyyy'),
         };
         workflowSteps.forEach(step => {
-            row[`${step.name} Date`] = entry.stageDates[step.name] || '-';
+            row[step.name] = entry.stageDates[step.name] || '-';
         });
         row['JMC Value'] = entry.totalAmount;
         row['Certified Value'] = entry.certifiedValue;
@@ -151,7 +151,7 @@ export default function JmcLogPage() {
                   <TableHead>JMC No.</TableHead>
                   <TableHead>JMC Date</TableHead>
                   {workflowSteps.map(step => (
-                      <TableHead key={step.id}>{step.name} Date</TableHead>
+                      <TableHead key={step.id}>{step.name}</TableHead>
                   ))}
                   <TableHead>JMC Value</TableHead>
                   <TableHead>Certified Value</TableHead>
