@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -97,8 +97,9 @@ export default function StagePage() {
     return { pendingTasks: pending, completedTasks: completed };
   }, [tasks, user, stage]);
 
-  const handleAction = async (taskId: string, action: string, comment: string = '', updatedItems?: any[]) => {
+  const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '', updatedItems?: any[]) => {
     if (!workflow || !user || !stage) return;
+    const actionName = typeof action === 'string' ? action : action.name;
     setIsActionLoading(taskId);
     
     try {
@@ -111,7 +112,7 @@ export default function StagePage() {
             const currentTaskData = taskDoc.data() as JmcEntry;
 
             const newActionLog: ActionLog = {
-                action,
+                action: actionName,
                 comment,
                 userId: user.id,
                 userName: user.name,
@@ -126,7 +127,7 @@ export default function StagePage() {
             let newAssignees: string[] = [];
             let newDeadline: Timestamp | null = null;
             
-            const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(action);
+            const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(actionName);
 
             if (isCompletionAction) {
                 const currentStepIndex = workflow.findIndex(s => s.id === stage.id);
@@ -145,7 +146,7 @@ export default function StagePage() {
                     newStatus = 'Completed';
                     newCurrentStepId = null;
                 }
-            } else if (action === 'Reject') {
+            } else if (actionName === 'Reject') {
                 newStage = 'Rejected';
                 newStatus = 'Rejected';
                 newCurrentStepId = null;
@@ -170,7 +171,7 @@ export default function StagePage() {
             transaction.update(taskRef, updateData);
         });
 
-        toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}ed.` });
+        toast({ title: 'Success', description: `Task has been ${actionName.toLowerCase()}ed.` });
         fetchTasks();
 
     } catch (error: any) {
@@ -231,11 +232,14 @@ export default function StagePage() {
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    {type === 'pending' && actions.map(action => (
-                                        <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); if(action === 'Verified') { handleVerifyClick(entry) } else { handleAction(entry.id, action); } }}>
-                                            {action}
-                                        </DropdownMenuItem>
-                                    ))}
+                                    {type === 'pending' && actions.map(action => {
+                                        const actionName = typeof action === 'string' ? action : action.name;
+                                        return (
+                                            <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); if(actionName === 'Verified') { handleVerifyClick(entry) } else { handleAction(entry.id, action); } }}>
+                                                {actionName}
+                                            </DropdownMenuItem>
+                                        )
+                                    })}
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         )}
@@ -295,3 +299,4 @@ export default function StagePage() {
     </>
   );
 }
+
