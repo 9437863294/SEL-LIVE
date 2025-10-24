@@ -1,7 +1,16 @@
 
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import { useMemo, useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -9,10 +18,8 @@ import type { JmcEntry, BoqItem, Bill, JmcItem, ActionConfig } from '@/lib/types
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
-import { useMemo, useState, useEffect } from 'react';
 import { Input } from './ui/input';
 import { Loader2, Save } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -56,11 +63,9 @@ export default function ViewJmcEntryDialog({
       setEditableItems([]);
     }
   }, [jmcEntry, isOpen]);
-  
-  if (!jmcEntry) return null;
 
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
+    const itemsToDisplay = isEditMode ? editableItems : jmcEntry?.items;
     if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
 
     return itemsToDisplay.map((item) => {
@@ -80,6 +85,9 @@ export default function ViewJmcEntryDialog({
       };
     });
   }, [jmcEntry, boqItems, isEditMode, editableItems]);
+  
+  if (!jmcEntry) return null;
+
 
   const handleItemChange = (
     index: number,
