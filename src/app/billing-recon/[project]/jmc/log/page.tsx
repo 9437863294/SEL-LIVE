@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +27,6 @@ interface EnrichedJmcEntry extends JmcEntry {
     stageDates: Record<string, string>;
     totalAmount: number;
     certifiedValue: number;
-    createdAt: Timestamp;
 }
 
 export default function JmcLogPage() {
@@ -100,6 +98,11 @@ export default function JmcLogPage() {
     setSelectedEntry(entry);
     setIsViewOpen(true);
   };
+  
+  const handleOpenCertifyDialog = (entry: EnrichedJmcEntry) => {
+    setSelectedEntry(entry);
+    setIsCertifyOpen(true);
+  }
 
   const handleExportAll = () => {
     const dataToExport = jmcEntries.map(entry => {
@@ -165,6 +168,7 @@ export default function JmcLogPage() {
                   <TableHead>Certified Value</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Stage Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -177,7 +181,7 @@ export default function JmcLogPage() {
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
                     return (
-                        <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
+                        <TableRow key={entry.id}>
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
                           <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy')}</TableCell>
                           {workflowSteps.map(step => (
@@ -191,12 +195,33 @@ export default function JmcLogPage() {
                               {entry.status}
                             </Badge>
                           </TableCell>
+                          <TableCell className="text-right">
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
+                                        <Eye className="mr-2 h-4 w-4" /> View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => handleOpenCertifyDialog(entry)}>
+                                        <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-destructive">
+                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                             </DropdownMenu>
+                          </TableCell>
                         </TableRow>
                     )
                 })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7 + workflowSteps.length} className="text-center h-24">
+                    <TableCell colSpan={8 + workflowSteps.length} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
