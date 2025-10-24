@@ -76,6 +76,8 @@ function SettingsCard({ item }: SettingsCardProps) {
 }
 
 export default function JmcSettingsPage() {
+    const params = useParams();
+    const projectSlug = params.project as string;
     const { can, isLoading } = useAuthorization();
     const canViewPage = can('View Settings', 'Billing Recon.JMC');
 
@@ -86,7 +88,7 @@ export default function JmcSettingsPage() {
 
     if (isLoading) {
         return (
-            <div className="w-full max-w-6xl mx-auto">
+            <div className="w-full px-4 sm:px-6 lg:px-8">
                 <Skeleton className="h-10 w-96 mb-6" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <Skeleton className="h-40" />
@@ -97,9 +99,9 @@ export default function JmcSettingsPage() {
     
     if (!canViewPage) {
         return (
-             <div className="w-full max-w-6xl mx-auto">
+             <div className="w-full px-4 sm:px-6 lg:px-8">
                 <div className="mb-6 flex items-center gap-4">
-                    <Link href={`/billing-recon`}>
+                    <Link href={`/billing-recon/${projectSlug}`}>
                         <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
                     </Link>
                     <h1 className="text-xl font-bold">JMC Settings</h1>
@@ -118,9 +120,9 @@ export default function JmcSettingsPage() {
     }
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-4">
-        <Link href={`/billing-recon`}>
+        <Link href={`/billing-recon/${projectSlug}`}>
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-6 w-6" />
           </Button>
