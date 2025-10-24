@@ -294,7 +294,7 @@ export default function JmcWorkflowConfigurationPage() {
 
                         <div className="space-y-4">
                           <Label>Assignment Type</Label>
-                          <RadioGroup value={step.assignmentType} onValueChange={(v) => handleStepChange(step.id, 'assignmentType', v)} className="flex flex-wrap gap-4">
+                          <RadioGroup value={step.assignmentType} onValueChange={(v) => handleStepChange(step.id, 'assignmentType', v as 'User-based' | 'Project-based' | 'Department-based')} className="flex flex-wrap gap-4">
                             {(['User-based', 'Project-based', 'Department-based'] as const).map((type) => (
                               <div key={type} className="flex items-center space-x-2">
                                 <RadioGroupItem value={type} id={`${step.id}-${type}`} disabled={!canEditPage} />
@@ -447,7 +447,7 @@ export default function JmcWorkflowConfigurationPage() {
 
                         <div className="space-y-2">
                           <Label>Upload</Label>
-                          <RadioGroup value={step.upload} onValueChange={(v) => handleStepChange(step.id, 'upload', v)} className="flex gap-4">
+                          <RadioGroup value={step.upload} onValueChange={(v) => handleStepChange(step.id, 'upload', v as 'Required' | 'Optional' | 'Not Required')} className="flex gap-4">
                             {( ['Required', 'Not Required', 'Optional'] ).map((opt) => (
                               <div key={opt} className="flex items-center space-x-2">
                                 <RadioGroupItem value={opt} id={`${step.id}-upload-${opt}`} disabled={!canEditPage} />
@@ -473,3 +473,5 @@ export default function JmcWorkflowConfigurationPage() {
     </div>
   );
 }
+
+    
