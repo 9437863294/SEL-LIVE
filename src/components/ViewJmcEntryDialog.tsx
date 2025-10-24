@@ -20,10 +20,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ScrollArea } from './ui/scroll-area';
 import { Input } from './ui/input';
 import { Loader2, Save } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
   totalCertifiedQty: number;
+  __error?: string | null;
 };
 
 interface ViewJmcEntryDialogProps {
@@ -33,7 +35,6 @@ interface ViewJmcEntryDialogProps {
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
-  // Match the union used elsewhere in your app
   onVerify?: (
     taskId: string,
     action: string | ActionConfig,
@@ -48,32 +49,67 @@ export default function ViewJmcEntryDialog({
   onOpenChange,
   jmcEntry,
   boqItems,
-  bills, // not used right now, kept for future
+  bills,
   isEditMode = false,
   onVerify,
   isLoading,
 }: ViewJmcEntryDialogProps) {
-  const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
+  const [editableItems, setEditableItems] = useState<EnrichedJmcItem[]>([]);
+  const { toast } = useToast();
+
+  const handleItemChange = (
+    index: number,
+    field: 'executedQty' | 'certifiedQty',
+    value: string
+  ) => {
+    setEditableItems((prev) => {
+      const next = [...prev];
+      const numValue = Number(value);
+      const item = { ...next[index] };
+      (item as any)[field] = numValue;
+
+      if (!Number.isNaN(numValue) && field === 'certifiedQty') {
+        if (numValue > (item.executedQty || 0)) {
+          item.__error = `Cannot exceed executed qty (${item.executedQty})`;
+        } else {
+          item.__error = null;
+        }
+      }
+      
+      const rate = Number(item.rate) || 0;
+      const executedQty = Number(item.executedQty) || 0;
+      item.totalAmount = executedQty * rate;
+      next[index] = item;
+      return next;
+    });
+  };
+
+  const handleSaveAndVerify = () => {
+    if (onVerify && jmcEntry) {
+      if (editableItems.some(item => item.__error)) {
+        toast({
+            title: "Validation Error",
+            description: "Please correct the errors in the certified quantities before saving.",
+            variant: "destructive"
+        });
+        return;
+      }
+      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, ...rest }) => rest);
+      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
+    }
+  };
 
   useEffect(() => {
-    if (jmcEntry?.items) {
-      // Deep copy to avoid mutating parent state
-      setEditableItems(JSON.parse(JSON.stringify(jmcEntry.items)) as JmcItem[]);
-    } else {
+    if (!jmcEntry?.items || !boqItems) {
       setEditableItems([]);
+      return;
     }
-  }, [jmcEntry, isOpen]);
-
-  const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry?.items;
-    if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
-
-    return itemsToDisplay.map((item) => {
+    const enriched = (jmcEntry.items || []).map((item) => {
       const boqItem = boqItems.find(
         (b) => (b as any)['BOQ SL No'] === item.boqSlNo || (b as any)['SL. No.'] === item.boqSlNo
       );
       const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
-
+      
       const totalCertifiedQty = (jmcEntry?.items || [])
         .filter((i) => i.boqSlNo === item.boqSlNo)
         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
@@ -84,36 +120,10 @@ export default function ViewJmcEntryDialog({
         totalCertifiedQty,
       };
     });
-  }, [jmcEntry, boqItems, isEditMode, editableItems]);
+    setEditableItems(enriched);
+  }, [jmcEntry, boqItems, isOpen]);
   
-  if (!jmcEntry) return null;
-
-
-  const handleItemChange = (
-    index: number,
-    field: keyof Pick<JmcItem, 'executedQty' | 'certifiedQty'>,
-    value: string
-  ) => {
-    setEditableItems((prev) => {
-      const next = [...prev];
-      const numValue = Number(value);
-      if (!Number.isNaN(numValue)) {
-        const item = { ...next[index] };
-        (item as any)[field] = numValue;
-        const rate = Number(item.rate) || 0;
-        const executedQty = Number(item.executedQty) || 0;
-        item.totalAmount = executedQty * rate;
-        next[index] = item;
-      }
-      return next;
-    });
-  };
-
-  const handleSaveAndVerify = () => {
-    if (onVerify && jmcEntry) {
-      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
-    }
-  };
+  const itemsToDisplay = isEditMode ? editableItems : enrichedItems;
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
@@ -121,6 +131,7 @@ export default function ViewJmcEntryDialog({
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
 
+  if (!jmcEntry) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -157,7 +168,7 @@ export default function ViewJmcEntryDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>BOQ Sl. No.</TableHead>
-                      <TableHead className="max-w-[250px]">Description</TableHead>
+                      <TableHead className="max-w-[200px]">Description</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead>BOQ QTY</TableHead>
                       <TableHead>Rate</TableHead>
@@ -168,10 +179,10 @@ export default function ViewJmcEntryDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {enrichedItems.map((item, index) => (
+                    {itemsToDisplay.map((item, index) => (
                       <TableRow key={`${item.boqSlNo}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
-                        <TableCell className="truncate max-w-[250px]">{item.description}</TableCell>
+                        <TableCell className="truncate max-w-[200px]">{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
@@ -181,7 +192,7 @@ export default function ViewJmcEntryDialog({
                             <Input
                               type="number"
                               inputMode="decimal"
-                              value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
+                              value={Number.isFinite(item.executedQty) ? item.executedQty : ''}
                               onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
                             />
                           ) : (
@@ -190,12 +201,16 @@ export default function ViewJmcEntryDialog({
                         </TableCell>
                         <TableCell>
                           {isEditMode ? (
-                            <Input
-                              type="number"
-                              inputMode="decimal"
-                              value={item.certifiedQty ?? ''}
-                              onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
-                            />
+                            <div>
+                                <Input
+                                type="number"
+                                inputMode="decimal"
+                                value={item.certifiedQty ?? ''}
+                                onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
+                                className={item.__error ? 'border-destructive' : ''}
+                                />
+                                {item.__error && <p className="text-xs text-destructive mt-1">{item.__error}</p>}
+                            </div>
                           ) : (
                             item.certifiedQty ?? 'N/A'
                           )}
