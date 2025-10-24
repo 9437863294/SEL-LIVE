@@ -154,6 +154,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
             setUser(userData);
             
+            // Set the initial session timestamp right after fetching user data
+            if (!sessionStorage.getItem('loginTimestamp')) {
+              extendSession();
+            }
+            
             if (shouldRemember && !isImpersonationSession) {
               const currentSavedUsers: SavedUser[] = JSON.parse(localStorage.getItem('savedUsers') || '[]');
               const userIsSaved = currentSavedUsers.some(u => u.id === userData.id);
@@ -194,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
         setLoading(false);
     }
-  }, [handleSignOut, shouldRemember]);
+  }, [handleSignOut, shouldRemember, extendSession]);
   
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
