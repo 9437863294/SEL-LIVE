@@ -208,14 +208,13 @@ export default function JmcLogPage() {
                   <TableHead>Certified Value</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Stage Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8 + workflowSteps.length}><Skeleton className="h-5" /></TableCell>
+                      <TableCell colSpan={7 + workflowSteps.length}><Skeleton className="h-5" /></TableCell>
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
@@ -235,56 +234,12 @@ export default function JmcLogPage() {
                               {entry.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <AlertDialog>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
-                                            <span className="sr-only">Open menu</span>
-                                            <MoreHorizontal className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
-                                            <Eye className="mr-2 h-4 w-4" /> View Details
-                                        </DropdownMenuItem>
-                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }}>
-                                            <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
-                                            <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <AlertDialogTrigger asChild>
-                                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
-                                                <XCircle className="mr-2 h-4 w-4" /> Cancel JMC
-                                            </DropdownMenuItem>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogTrigger asChild>
-                                            <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
-                                                <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                            </DropdownMenuItem>
-                                        </AlertDialogTrigger>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                                 <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                        <AlertDialogDescription>This will permanently delete the JMC entry. This action cannot be undone.</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}>Delete</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
-                          </TableCell>
                         </TableRow>
                     )
                 })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8 + workflowSteps.length} className="text-center h-24">
+                    <TableCell colSpan={7 + workflowSteps.length} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
