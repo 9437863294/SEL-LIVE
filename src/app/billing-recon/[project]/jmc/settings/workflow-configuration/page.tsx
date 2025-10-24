@@ -46,7 +46,7 @@ const initialSteps: WorkflowStep[] = [
     },
 ];
 
-const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified'];
+const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified', 'Update Certified Qty'];
 
 export default function JmcWorkflowConfigurationPage() {
     const { toast } = useToast();
@@ -59,7 +59,6 @@ export default function JmcWorkflowConfigurationPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [roles, setRoles] = useState<Role[]>([]);
     
     const canViewPage = can('View Settings', 'Billing Recon.JMC');
     const canEditPage = can('Edit Settings', 'Billing Recon.JMC');
@@ -77,13 +76,11 @@ export default function JmcWorkflowConfigurationPage() {
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            const [rolesSnap, usersSnap, projectsSnap, deptsSnap] = await Promise.all([
-                getDocs(collection(db, 'roles')),
+            const [usersSnap, projectsSnap, deptsSnap] = await Promise.all([
                 getDocs(collection(db, 'users')),
                 getDocs(collection(db, 'projects')),
                 getDocs(collection(db, 'departments'))
             ]);
-            setRoles(rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role)));
             setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
             setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
             setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
