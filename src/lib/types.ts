@@ -1,7 +1,24 @@
-
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
+
+/** ---------- Shared small types used below ---------- **/
+
+export type UploadRequirement = 'Required' | 'Optional' | 'Not Required';
+
+export interface AssignedTo {
+  primary: string;
+  alternative?: string;
+}
+
+/** Allow richer per-step action config */
+export type ActionConfig = {
+  name: string;
+  requiresComment?: boolean;
+  requiresAttachment?: boolean;
+  nextStatus?: string;
+};
+
+/** ---------- Core app types ---------- **/
 
 export interface Module {
   id: string;
@@ -58,9 +75,9 @@ export interface Project {
 }
 
 export interface Site {
-    id: string;
-    name: string;
-    location: string;
+  id: string;
+  name: string;
+  location: string;
 }
 
 export interface Role {
@@ -70,136 +87,137 @@ export interface Role {
 }
 
 export const permissionModules = {
-    'Module Hub': ['View Module', 'Create', 'Edit', 'Delete'],
-    'Site Fund Requisition': [
-      'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
-      'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
-      'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
-      'View All'
-    ],
-    'Daily Requisition': {
-      'View Module': [],
-      'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
-      'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
-      'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
-      'Processed for Payment': ['View', 'Mark as Received for Payment'],
-      'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
-      'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
-    },
-    'Billing Recon': {
-      'View Module': [],
-      'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-      'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos'],
-      'Billing': ['View', 'Create Bill', 'View Log'],
-      'MVAC': ['View', 'Add Item'],
-      'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
-    },
-    'Email Management': ['View Module'],
-    'Bank Balance': {
-      'View Module': [],
-      'Accounts': ['View', 'Add', 'Edit', 'Delete'],
-      'DP Management': ['View', 'Add', 'Delete'],
-      'Opening Utilization': ['View', 'Edit'],
-      'Daily Log': ['View'],
-      'Interest Rate': ['View', 'Add', 'Delete'],
-      'Monthly Interest': ['View', 'Edit'],
-      'Expenses': ['View', 'Add', 'Delete'],
-      'Receipts': ['View', 'Add', 'Delete'],
-      'Internal Transaction': ['View', 'Add', 'Delete'],
-      'Reports': ['View'],
-    },
-    'Expenses': {
-      'View Module': [],
-      'Departments': ['View', 'Create', 'Edit'],
-      'Expense Requests': ['View All'],
-      'Reports': ['View'],
-      'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
-    },
-    'Loan': {
-      'View Module': [],
-      'Dashboard': ['View'],
-      'Add Loan': ['Create'],
-      'Loan Details': ['View', 'Update EMI'],
-      'Reports': ['View'],
-    },
-    'LC Module': {
-      'View Module': [],
-      'Dashboard': ['View', 'Create'],
-      'LC Details': ['View', 'Edit', 'Track Payments'],
-    },
-    'Store & Stock Management': {
-        'View Module': true,
-        'Settings': ['View', 'Manage Projects', 'Manage Units', 'Manage GRN Entry'],
-        'Projects': [
-            'View Dashboard',
-            'View Inventory',
-            'View Transactions',
-            'Stock In',
-            'Stock Out',
-            'Edit Transaction',
-            'Delete Transaction',
-            'View Conversions',
-            'Manage Conversions',
-            'View BOM',
-            'Manage BOM',
-            'View BOQ',
-            'Import BOQ',
-            'Add BOQ Item',
-            'View Reports',
-            'View Ageing Report',
-            'View AI Forecast',
-        ]
-    },
-    'Insurance': {
-      'View Module': [],
-      'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],
-      'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History', 'Mark as Not Required'],
-      'Premium Due': ['View'],
-      'Maturity Due': ['View'],
-      'My Tasks': ['View'],
-      'Reports': ['View Reports'],
-      'Settings': ['View'],
-      'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
-      'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
-      'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
-      'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
-    },
-    'Settings': {
-      'View Module': [],
-      'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
-      'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
-      'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
-      'User Management': ['View', 'Add', 'Edit', 'Delete', 'Switch User'],
-      'Role Management': ['View', 'Add', 'Edit', 'Delete'],
-      'Working Hrs': ['View', 'Edit'],
-      'Serial No. Config': ['View', 'Edit'],
-      'Appearance': ['View', 'Edit'],
-      'Email Authorization': ['View', 'Send Request', 'Revoke'],
-      'Login Expiry': ['View', 'Edit'],
-    },
+  'Module Hub': ['View Module', 'Create', 'Edit', 'Delete'],
+  'Site Fund Requisition': [
+    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
+    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
+    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
+    'View All'
+  ],
+  'Daily Requisition': {
+    'View Module': [],
+    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
+    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
+    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
+    'Processed for Payment': ['View', 'Mark as Received for Payment'],
+    'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
+    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+  },
+  'Billing Recon': {
+    'View Module': [],
+    'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
+    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos'],
+    'Billing': ['View', 'Create Bill', 'View Log'],
+    'MVAC': ['View', 'Add Item'],
+    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+  },
+  'Email Management': ['View Module'],
+  'Bank Balance': {
+    'View Module': [],
+    'Accounts': ['View', 'Add', 'Edit', 'Delete'],
+    'DP Management': ['View', 'Add', 'Delete'],
+    'Opening Utilization': ['View', 'Edit'],
+    'Daily Log': ['View'],
+    'Interest Rate': ['View', 'Add', 'Delete'],
+    'Monthly Interest': ['View', 'Edit'],
+    'Expenses': ['View', 'Add', 'Delete'],
+    'Receipts': ['View', 'Add', 'Delete'],
+    'Internal Transaction': ['View', 'Add', 'Delete'],
+    'Reports': ['View'],
+  },
+  'Expenses': {
+    'View Module': [],
+    'Departments': ['View', 'Create', 'Edit'],
+    'Expense Requests': ['View All'],
+    'Reports': ['View'],
+    'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
+  },
+  'Loan': {
+    'View Module': [],
+    'Dashboard': ['View'],
+    'Add Loan': ['Create'],
+    'Loan Details': ['View', 'Update EMI'],
+    'Reports': ['View'],
+  },
+  'LC Module': {
+    'View Module': [],
+    'Dashboard': ['View', 'Create'],
+    'LC Details': ['View', 'Edit', 'Track Payments'],
+  },
+  'Store & Stock Management': {
+    'View Module': true,
+    'Settings': ['View', 'Manage Projects', 'Manage Units', 'Manage GRN Entry'],
+    'Projects': [
+      'View Dashboard',
+      'View Inventory',
+      'View Transactions',
+      'Stock In',
+      'Stock Out',
+      'Edit Transaction',
+      'Delete Transaction',
+      'View Conversions',
+      'Manage Conversions',
+      'View BOM',
+      'Manage BOM',
+      'View BOQ',
+      'Import BOQ',
+      'Add BOQ Item',
+      'View Reports',
+      'View Ageing Report',
+      'View AI Forecast',
+    ]
+  },
+  'Insurance': {
+    'View Module': [],
+    'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],
+    'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History', 'Mark as Not Required'],
+    'Premium Due': ['View'],
+    'Maturity Due': ['View'],
+    'My Tasks': ['View'],
+    'Reports': ['View Reports'],
+    'Settings': ['View'],
+    'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
+    'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
+  },
+  'Settings': {
+    'View Module': [],
+    'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
+    'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
+    'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
+    'User Management': ['View', 'Add', 'Edit', 'Delete', 'Switch User'],
+    'Role Management': ['View', 'Add', 'Edit', 'Delete'],
+    'Working Hrs': ['View', 'Edit'],
+    'Serial No. Config': ['View', 'Edit'],
+    'Appearance': ['View', 'Edit'],
+    'Email Authorization': ['View', 'Send Request', 'Revoke'],
+    'Login Expiry': ['View', 'Edit'],
+  },
 };
 
+/** ---------- Requisition & workflow-related ---------- **/
 
 export interface Requisition {
-    id: string;
-    requisitionId: string;
-    projectId: string;
-    departmentId: string;
-    amount: number;
-    partyName: string;
-    description: string;
-    date: string; // Stored as ISO string
-    raisedBy: string;
-    raisedById: string;
-    createdAt: Timestamp;
-    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
-    stage: string; // e.g., 'Request Receiving', 'Verification'
-    currentStepId: string | null;
-    assignees: string[]; // User IDs
-    deadline: Timestamp | null;
-    history: ActionLog[];
-    attachments?: Attachment[];
-    expenseRequestNo?: string;
+  id: string;
+  requisitionId: string;
+  projectId: string;
+  departmentId: string;
+  amount: number;
+  partyName: string;
+  description: string;
+  date: string; // ISO
+  raisedBy: string;
+  raisedById: string;
+  createdAt: Timestamp;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
+  stage: string;
+  currentStepId: string | null;
+  assignees: string[];
+  deadline: Timestamp | null;
+  history: ActionLog[];
+  attachments?: Attachment[];
+  expenseRequestNo?: string;
 }
 
 export interface Attachment {
@@ -208,30 +226,58 @@ export interface Attachment {
 }
 
 export interface ActionLog {
-    action: string;
-    comment: string;
-    userId: string;
-    userName: string;
-    timestamp: Timestamp;
-    stepName: string;
-    attachment?: { name: string; url: string };
+  action: string;
+  comment: string;
+  userId: string;
+  userName: string;
+  timestamp: Timestamp;
+  stepName: string;
+  attachment?: { name: string; url: string };
 }
 
-export interface WorkflowStep {
+/**
+ * WORKFLOW STEP (Discriminated Union)
+ * - User-based => assignedTo: string[] ([primary, alternative?])
+ * - Role/Project/Department-based => assignedTo: Record<id, AssignedTo>
+ */
+export type WorkflowAssignmentType =
+  | 'User-based'
+  | 'Role-based'
+  | 'Project-based'
+  | 'Department-based'
+  | 'Amount-based';
+
+export interface WorkflowStepBase {
   id: string;
   name: string;
   tat: number; // in hours
-  assignmentType: 'User-based' | 'Role-based' | 'Project-based' | 'Department-based';
-  assignedTo: string[] | Record<string, AssignedTo>;
-  actions: string[];
-  upload: 'Required' | 'Optional' | 'Not Required';
+  actions: (string | ActionConfig)[];   // <-- widened
+  upload: UploadRequirement;
 }
 
-export interface AssignedTo {
-    primary: string;
-    alternative?: string;
+export interface WorkflowStepUser extends WorkflowStepBase {
+  assignmentType: 'User-based';
+  assignedTo: string[]; // [primary, alternative?]
 }
 
+export interface WorkflowStepMapped extends WorkflowStepBase {
+  assignmentType: 'Role-based' | 'Project-based' | 'Department-based';
+  assignedTo: Record<string, AssignedTo>;
+}
+
+export interface AmountBasedCondition {
+    id: string;
+    type: 'Below' | 'Between' | 'Above';
+    amount1: number;
+    amount2?: number;
+    userId: string;
+    alternativeUserId?: string;
+}
+
+
+export type WorkflowStep = WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: 'Amount-based', assignedTo: AmountBasedCondition[] });
+
+/** ---------- Serial number config ---------- **/
 
 export interface SerialNumberConfig {
   prefix: string;
@@ -239,6 +285,8 @@ export interface SerialNumberConfig {
   suffix: string;
   startingIndex: number;
 }
+
+/** ---------- Expenses ---------- **/
 
 export interface ExpenseRequest {
   id: string;
@@ -260,64 +308,63 @@ export interface ExpenseRequest {
 }
 
 export interface AccountHead {
-    id: string;
-    name: string;
+  id: string;
+  name: string;
 }
 
 export interface SubAccountHead {
-    id: string;
-    name: string;
-    headId: string;
+  id: string;
+  name: string;
+  headId: string;
 }
 
+/** ---------- Daily Requisition ---------- **/
+
 export interface DailyRequisitionEntry {
-    id: string;
-    receptionNo: string;
-    depNo: string;
-    date: string | Timestamp;
-    projectId: string;
-    departmentId: string;
-    description: string;
-    partyName: string;
-    grossAmount: number;
-    netAmount: number;
-    createdAt: Timestamp;
-    // GST/TDS Fields
-    status: 'Pending' | 'Received' | 'Verified' | 'Cancelled' | 'Needs Review' | 'Received for Payment' | 'Paid';
-    receivedAt?: Timestamp;
-    receivedById?: string;
-    verifiedAt?: Timestamp;
-    igstAmount?: number;
-    tdsAmount?: number;
-    cgstAmount?: number;
-    sgstAmount?: number;
-    retentionAmount?: number;
-    otherDeduction?: number;
-    verificationNotes?: string;
-    gstNo?: string;
-    // Document Status
-    documentStatus: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
-    documentStatusUpdatedAt?: Timestamp;
-    documentStatusUpdatedById?: string;
-    attachments?: Attachment[];
-    paidAt?: Timestamp;
+  id: string;
+  receptionNo: string;
+  depNo: string;
+  date: string | Timestamp;
+  projectId: string;
+  departmentId: string;
+  description: string;
+  partyName: string;
+  grossAmount: number;
+  netAmount: number;
+  createdAt: Timestamp;
+  // GST/TDS Fields
+  status: 'Pending' | 'Received' | 'Verified' | 'Cancelled' | 'Needs Review' | 'Received for Payment' | 'Paid';
+  receivedAt?: Timestamp;
+  receivedById?: string;
+  verifiedAt?: Timestamp;
+  igstAmount?: number;
+  tdsAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  retentionAmount?: number;
+  otherDeduction?: number;
+  verificationNotes?: string;
+  gstNo?: string;
+  // Document Status
+  documentStatus: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
+  documentStatusUpdatedAt?: Timestamp;
+  documentStatusUpdatedById?: string;
+  attachments?: Attachment[];
+  paidAt?: Timestamp;
+}
+
+/** ---------- User settings ---------- **/
+
+export interface ColumnPref {
+  order: string[];
+  visibility: Record<string, boolean>;
+  names?: Record<string, string>;
+  sort?: { key: string; direction: 'asc' | 'desc' };
 }
 
 export interface UserSettings {
   columnPreferences?: {
-    [pageKey: string]: {
-      order: string[];
-      visibility: Record<string, boolean>;
-      names?: Record<string, string>;
-      sort?: {
-          key: string;
-          direction: 'asc' | 'desc';
-      };
-    },
-    requisitions_all?: {
-      order: string[];
-      visibility: Record<string, boolean>;
-    }
+    [pageKey: string]: ColumnPref | undefined;
   },
   pivotPreferences?: {
     [pageKey: string]: PivotConfig
@@ -325,55 +372,57 @@ export interface UserSettings {
 }
 
 export interface PivotConfig {
-    rows: string[];
-    columns: string[];
-    value: string;
+  rows: string[];
+  columns: string[];
+  value: string;
 }
+
+/** ---------- Billing / JMC ---------- **/
 
 export interface BoqItem {
   id: string;
-  [key: string]: any; // Allow any other BOQ-specific fields
+  [key: string]: any;
   bom?: FabricationBomItem[];
   conversions?: Conversion[];
 }
 
 export interface JmcItem {
-    boqSlNo: string;
-    description: string;
-    unit: string;
-    rate: number;
-    executedQty: number;
-    certifiedQty?: number;
-    totalAmount: number;
+  boqSlNo: string;
+  description: string;
+  unit: string;
+  rate: number;
+  executedQty: number;
+  certifiedQty?: number;
+  totalAmount: number;
 }
 
 export interface JmcEntry {
-    id: string;
-    projectSlug: string;
-    jmcNo: string;
-    woNo: string;
-    jmcDate: string;
-    items: JmcItem[];
-    createdAt: Timestamp;
-    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
-    stage: string;
-    currentStepId: string | null;
-    assignees: string[];
-    deadline: Timestamp | null;
-    history: ActionLog[];
+  id: string;
+  projectSlug: string;
+  jmcNo: string;
+  woNo: string;
+  jmcDate: string;
+  items: JmcItem[];
+  createdAt: Timestamp;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
+  stage: string;
+  currentStepId: string | null;
+  assignees: string[];
+  deadline: Timestamp | null;
+  history: ActionLog[];
 }
 
 export interface BillItem {
-    jmcItemId: string; // Unique ID for the JMC item (e.g., `${jmcEntryId}-${jmcItemIndex}`)
-    jmcEntryId: string;
-    jmcNo: string;
-    boqSlNo: string;
-    description: string;
-    unit: string;
-    rate: string;
-    executedQty: string;
-    billedQty: string;
-    totalAmount: string;
+  jmcItemId: string; // e.g., `${jmcEntryId}-${jmcItemIndex}`
+  jmcEntryId: string;
+  jmcNo: string;
+  boqSlNo: string;
+  description: string;
+  unit: string;
+  rate: string;
+  executedQty: string;
+  billedQty: string;
+  totalAmount: string;
 }
 
 export interface Bill {
@@ -386,25 +435,27 @@ export interface Bill {
   totalAmount?: number;
 }
 
+/** ---------- Insurance ---------- **/
+
 export interface PolicyHolder {
-    id: string;
-    name: string;
-    date_of_birth: Date | null;
-    contact?: string;
-    email?: string;
-    address?: string;
+  id: string;
+  name: string;
+  date_of_birth: Date | null;
+  contact?: string;
+  email?: string;
+  address?: string;
 }
 
 export interface InsuranceCompany {
-    id: string;
-    name: string;
-    status: 'Active' | 'Inactive';
+  id: string;
+  name: string;
+  status: 'Active' | 'Inactive';
 }
 
 export interface PolicyCategory {
-    id: string;
-    name: string;
-    status: 'Active' | 'Inactive';
+  id: string;
+  name: string;
+  status: 'Active' | 'Inactive';
 }
 
 export interface InsurancePolicy {
@@ -441,71 +492,74 @@ export interface PolicyRenewal {
   renewedBy: string;
 }
 
+/** ---------- Email Auth ---------- **/
+
 export interface Email {
-    id: string;
-    sender: string;
-    initials: string;
-    subject: string;
-    body: string;
-    date: string;
-    read: boolean;
+  id: string;
+  sender: string;
+  initials: string;
+  subject: string;
+  body: string;
+  date: string;
+  read: boolean;
 }
 
 export interface EmailAuthorization {
-    id: string;
-    email: string;
-    status: 'Pending' | 'Authorized';
-    createdAt: string;
+  id: string;
+  email: string;
+  status: 'Pending' | 'Authorized';
+  createdAt: string;
 }
 
+/** ---------- Bank / Finance ---------- **/
+
 export interface BankAccount {
-    id: string;
-    bankName: string;
-    shortName: string;
-    accountNumber: string;
-    accountType: 'Current Account' | 'Cash Credit';
-    status: 'Active' | 'Inactive';
-    branch: string;
-    ifsc: string;
-    openingBalance?: number;
-    openingUtilization?: number;
-    openingDate: string; // YYYY-MM-DD
-    currentBalance: number;
-    drawingPower: DpLogEntry[];
-    interestRateLog: InterestRateLogEntry[];
+  id: string;
+  bankName: string;
+  shortName: string;
+  accountNumber: string;
+  accountType: 'Current Account' | 'Cash Credit';
+  status: 'Active' | 'Inactive';
+  branch: string;
+  ifsc: string;
+  openingBalance?: number;
+  openingUtilization?: number;
+  openingDate: string; // YYYY-MM-DD
+  currentBalance: number;
+  drawingPower: DpLogEntry[];
+  interestRateLog: InterestRateLogEntry[];
 }
 
 export interface DpLogEntry {
-    id: string;
-    fromDate: string;
-    toDate: string | null;
-    amount: number;
+  id: string;
+  fromDate: string;
+  toDate: string | null;
+  amount: number;
 }
 
 export interface InterestRateLogEntry {
-    id: string;
-    fromDate: string;
-    toDate: string | null;
-    rate: number; // percentage
+  id: string;
+  fromDate: string;
+  toDate: string | null;
+  rate: number; // percentage
 }
 
 export interface BankExpense {
-    id: string;
-    date: Timestamp;
-    accountId: string;
-    description: string;
-    amount: number;
-    type: 'Debit' | 'Credit';
-    isContra: boolean;
-    contraId?: string; // To link two contra entries
-    // Payment-specific fields
-    paymentRequestRefNo?: string;
-    utrNumber?: string;
-    paymentMethod?: string;
-    paymentRefNo?: string;
-    approvalCopyUrl?: string;
-    bankTransferCopyUrl?: string;
-    createdAt: Timestamp;
+  id: string;
+  date: Timestamp;
+  accountId: string;
+  description: string;
+  amount: number;
+  type: 'Debit' | 'Credit';
+  isContra: boolean;
+  contraId?: string;
+  paymentRequestRefNo?: string;
+  utrNumber?: string;
+  paymentMethod?: string;
+  paymentRefNo?: string;
+  approvalCopyUrl?: string;
+  bankTransferCopyUrl?: string;
+  createdAt: Timestamp;
 }
 
 export interface BankDailyLog {
@@ -527,10 +581,12 @@ export interface MonthlyInterestData {
   }
 }
 
+/** ---------- Calendar / Schedule ---------- **/
+
 export interface Holiday {
-    id: string;
-    name: string;
-    date: string; // YYYY-MM-DD
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
 }
 
 export interface WorkingHours {
@@ -541,33 +597,35 @@ export interface WorkingHours {
   };
 }
 
+/** ---------- LC / Loans ---------- **/
+
 export interface LcEntry {
-    id: string;
-    vendor: string;
-    projectId: string;
-    bank: string;
-    lcNo: string;
-    lcAmount: number;
-    selCalculation: number;
-    bankCalculation: number;
-    difference: number;
-    fdMargin: number;
-    status: 'Opened' | 'Closed' | 'Amended';
-    createdAt: any;
-    poUrl?: string;
-    applicationUrl?: string;
-    lcCopyUrl?: string;
+  id: string;
+  vendor: string;
+  projectId: string;
+  bank: string;
+  lcNo: string;
+  lcAmount: number;
+  selCalculation: number;
+  bankCalculation: number;
+  difference: number;
+  fdMargin: number;
+  status: 'Opened' | 'Closed' | 'Amended';
+  createdAt: any;
+  poUrl?: string;
+  applicationUrl?: string;
+  lcCopyUrl?: string;
 }
 
 export interface Employee {
-    id: string;
-    employeeId: string;
-    name: string;
-    email: string;
-    phone: string;
-    department: string;
-    designation: string;
-    status: 'Active' | 'Inactive';
+  id: string;
+  employeeId: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  designation: string;
+  status: 'Active' | 'Inactive';
 }
 
 export interface EmployeePosition {
@@ -582,6 +640,8 @@ export interface PositionDetail {
   effectiveFrom: string;
   effectiveTo: string | null;
 }
+
+/** ---------- Expense request schema ---------- **/
 
 export interface CreateExpenseRequestInput {
   departmentId: string;
@@ -606,47 +666,49 @@ const CreateExpenseRequestInputSchema = z.object({
 });
 
 export interface CreateExpenseRequestOutput {
-    success: boolean;
-    message: string;
-    requestNo?: string;
+  success: boolean;
+  message: string;
+  requestNo?: string;
 }
 
 const CreateExpenseRequestOutputSchema = z.object({
-    success: z.boolean(),
-    message: z.string(),
-    requestNo: z.string().optional(),
+  success: z.boolean(),
+  message: z.string(),
+  requestNo: z.string().optional(),
 });
 
 export { CreateExpenseRequestInputSchema, CreateExpenseRequestOutputSchema };
 
+/** ---------- Chat ---------- **/
+
 export interface Chat {
-    id: string;
-    type: 'one-to-one' | 'group';
-    members: string[]; // array of user IDs
-    memberDetails: { id: string; name: string; photoURL: string; }[];
-    groupName?: string;
-    groupDescription?: string;
-    groupPhotoURL?: string;
-    createdBy?: string;
-    groupAdmins?: string[];
-    lastMessage: {
-        text: string;
-        senderId: string;
-        timestamp: any;
-    };
-    createdAt: any;
+  id: string;
+  type: 'one-to-one' | 'group';
+  members: string[];
+  memberDetails: { id: string; name: string; photoURL: string; }[];
+  groupName?: string;
+  groupDescription?: string;
+  groupPhotoURL?: string;
+  createdBy?: string;
+  groupAdmins?: string[];
+  lastMessage: {
+    text: string;
+    senderId: string;
+    timestamp: any;
+  };
+  createdAt: any;
 }
 
 export interface Message {
-    id: string;
-    senderId: string;
-    timestamp: Timestamp;
-    readBy: string[];
-    type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'event';
-    content?: string;
-    mediaUrl?: string;
-    fileName?: string;
-    eventDetails?: EventDetails;
+  id: string;
+  senderId: string;
+  timestamp: Timestamp;
+  readBy: string[];
+  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'event';
+  content?: string;
+  mediaUrl?: string;
+  fileName?: string;
+  eventDetails?: EventDetails;
 }
 
 export interface EventDetails {
@@ -657,12 +719,13 @@ export interface EventDetails {
   isWhatsappCall?: boolean;
 }
 
+/** ---------- Insurance project assets ---------- **/
 
 export interface InsuredAsset {
   id: string;
   name: string;
   type: 'Project' | 'Property';
-  projectId?: string; // if type is 'Project'
+  projectId?: string;
   location: string;
   description: string;
   status: 'Active' | 'Inactive';
@@ -687,35 +750,38 @@ export interface ProjectInsurancePolicy {
 }
 
 export interface ProjectPolicyRenewal {
-    id: string;
-    policyNo: string;
-    premium: number;
-    sumInsured: number;
-    startDate: Timestamp;
-    endDate: Timestamp;
-    renewalDate: Timestamp;
-    renewedBy: string;
-    renewalCopyUrl?: string;
+  id: string;
+  policyNo: string;
+  premium: number;
+  sumInsured: number;
+  startDate: Timestamp;
+  endDate: Timestamp;
+  renewalDate: Timestamp;
+  renewedBy: string;
+  renewalCopyUrl?: string;
 }
+
+/** ---------- Insurance tasks ---------- **/
 
 export interface InsuranceTask {
-    id: string;
-    uniqueCheckId: string;
-    policyId: string;
-    policyNo: string;
-    insuredPerson: string;
-    dueDate: Timestamp;
-    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
-    assignees: string[];
-    createdAt: Timestamp;
-    taskType: 'Premium Due' | 'Maturity Due';
-    currentStepId: string | null;
-    currentStage: string;
-    deadline: Timestamp | null;
-    projectId?: string;
-    history: ActionLog[];
+  id: string;
+  uniqueCheckId: string;
+  policyId: string;
+  policyNo: string;
+  insuredPerson: string;
+  dueDate: Timestamp;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
+  assignees: string[];
+  createdAt: Timestamp;
+  taskType: 'Premium Due' | 'Maturity Due';
+  currentStepId: string | null;
+  currentStage: string;
+  deadline: Timestamp | null;
+  projectId?: string;
+  history: ActionLog[];
 }
 
+/** ---------- Loans ---------- **/
 
 export interface EMI {
   id: string;
@@ -752,65 +818,65 @@ export interface Loan {
   otherChargesOnClosure?: number;
 }
 
+/** ---------- Store & Stock ---------- **/
 
 export interface FabricationBomItem {
-    id: string;
-    markNo: string;
-    section: string;
-    grade: string;
-    length: number;
-    width: number;
-    unitWt: number;
-    wtPerPc: number;
-    totalWtPerSet: number;
-    qtyPerSet: number;
-    totalWtKg: number;
+  id: string;
+  markNo: string;
+  section: string;
+  grade: string;
+  length: number;
+  width: number;
+  unitWt: number;
+  wtPerPc: number;
+  totalWtPerSet: number;
+  qtyPerSet: number;
+  totalWtKg: number;
 }
 
 export interface Conversion {
-    id: string;
-    fromUnit: string;
-    fromQty: number;
-    toUnit: string;
-    toQty: number;
+  id: string;
+  fromUnit: string;
+  fromQty: number;
+  toUnit: string;
+  toQty: number;
 }
 
 export interface InventoryLog {
-    id: string;
-    date: Timestamp;
-    itemId: string; // Corresponds to BOQItem id or a new item id
-    itemName: string;
-    itemType: 'Main' | 'Sub'; // From BOQ or a user-defined sub-item
-    transactionType: 'Goods Receipt' | 'Goods Issue' | 'Return' | 'Transfer' | 'Adjustment' | 'Conversion';
-    quantity: number;
-    availableQuantity: number; // For FIFO tracking
-    unit: string;
-    cost?: number;
-    projectId: string;
-    projectSlug?: string;
-    batch?: string; // Could be GRN number
-    description?: string;
-    details?: {
-      grnNo?: string;
-      boqSlNo?: string;
-      supplier?: string;
-      poNumber?: string;
-      poDate?: string | null;
-      invoiceNumber?: string;
-      invoiceDate?: string | null;
-      invoiceAmount?: number | null;
-      invoiceFileUrls?: { name: string, url: string }[];
-      transporterDocUrls?: { name: string, url: string }[];
-      vehicleNo?: string;
-      waybillNo?: string;
-      lrNo?: string;
-      lrDate?: string | null;
-      notes?: string;
-      // for issues/transfers
-      issuedTo?: string;
-      destinationProjectId?: string;
-      sourceGrn?: string;
-    };
+  id: string;
+  date: Timestamp;
+  itemId: string;
+  itemName: string;
+  itemType: 'Main' | 'Sub';
+  transactionType: 'Goods Receipt' | 'Goods Issue' | 'Return' | 'Transfer' | 'Adjustment' | 'Conversion';
+  quantity: number;
+  availableQuantity: number;
+  unit: string;
+  cost?: number;
+  projectId: string;
+  projectSlug?: string;
+  batch?: string;
+  description?: string;
+  details?: {
+    grnNo?: string;
+    boqSlNo?: string;
+    supplier?: string;
+    poNumber?: string;
+    poDate?: string | null;
+    invoiceNumber?: string;
+    invoiceDate?: string | null;
+    invoiceAmount?: number | null;
+    invoiceFileUrls?: { name: string, url: string }[];
+    transporterDocUrls?: { name: string, url: string }[];
+    vehicleNo?: string;
+    waybillNo?: string;
+    lrNo?: string;
+    lrDate?: string | null;
+    notes?: string;
+    issuedTo?: string;
+    destinationProjectId?: string;
+    sourceGrn?: string;
+  };
 }
 
 export interface EnrichedLogItem extends InventoryLog {
