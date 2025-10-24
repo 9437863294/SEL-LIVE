@@ -1,8 +1,6 @@
-
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,14 +12,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import type { JmcEntry, JmcItem } from '@/lib/types';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
@@ -31,6 +28,8 @@ interface UpdateCertifiedQtyDialogProps {
   onSaveSuccess: () => void;
 }
 
+type EditableItem = JmcItem & { __certStr?: string; __error?: string | null };
+
 export function UpdateCertifiedQtyDialog({
   isOpen,
   onOpenChange,
@@ -39,40 +38,75 @@ export function UpdateCertifiedQtyDialog({
   onSaveSuccess,
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
-  const [items, setItems] = useState<JmcItem[]>([]);
+  const [items, setItems] = useState<EditableItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // hydrate editable rows when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setItems(JSON.parse(JSON.stringify(jmcEntry.items))); // Deep copy
-    }
-  }, [isOpen, jmcEntry]);
-
-  const handleCertifiedQtyChange = (index: number, value: string) => {
-    const newItems = [...items];
-    const executedQty = Number(newItems[index].executedQty);
-    let certifiedQty = parseFloat(value);
-    
-    if (isNaN(certifiedQty) || certifiedQty < 0) {
-        certifiedQty = 0;
-    } else if (certifiedQty > executedQty) {
-      toast({
-        title: 'Validation Error',
-        description: `Certified quantity cannot exceed executed quantity (${executedQty}).`,
-        variant: 'destructive',
+      const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items));
+      // keep the input as a string so users can clear/partially type
+      cloned.forEach((it) => {
+        it.__certStr = it.certifiedQty ?? it.certifiedQty === 0 ? String(it.certifiedQty) : '';
+        it.__error = null;
       });
-      certifiedQty = executedQty;
+      setItems(cloned);
     }
-    
-    newItems[index] = { ...newItems[index], certifiedQty };
-    setItems(newItems);
+  }, [isOpen, jmcEntry.items]);
+
+  const hasErrors = useMemo(() => items.some((it) => it.__error), [items]);
+
+  const handleCertifiedQtyChange = (index: number, raw: string) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const row = { ...next[index] };
+
+      row.__certStr = raw;
+
+      // Validate
+      const parsed = raw.trim() === '' ? NaN : Number(raw);
+      const executedQty = Number(row.executedQty) || 0;
+
+      if (raw.trim() === '') {
+        // allow empty while typing; treat as undefined
+        row.__error = null;
+        row.certifiedQty = undefined;
+      } else if (Number.isNaN(parsed)) {
+        row.__error = 'Enter a valid number';
+      } else if (parsed < 0) {
+        row.__error = 'Certified quantity cannot be negative';
+        row.certifiedQty = 0;
+      } else if (parsed > executedQty) {
+        row.__error = `Cannot exceed executed qty (${executedQty})`;
+        row.certifiedQty = executedQty;
+        row.__certStr = String(executedQty);
+      } else {
+        row.__error = null;
+        row.certifiedQty = parsed;
+      }
+
+      next[index] = row;
+      return next;
+    });
   };
 
   const handleSave = async () => {
+    // quick guard: avoid saving if any invalid
+    if (hasErrors) {
+      toast({
+        title: 'Fix validation errors',
+        description: 'Please correct the highlighted certified quantities.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
+      const payloadItems: JmcItem[] = items.map(({ __certStr, __error, ...rest }) => rest);
       const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
-      await updateDoc(jmcRef, { items: items });
+      await updateDoc(jmcRef, { items: payloadItems });
+
       toast({ title: 'Success', description: 'Certified quantities updated.' });
       onSaveSuccess();
       onOpenChange(false);
@@ -89,43 +123,54 @@ export function UpdateCertifiedQtyDialog({
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Update Certified Quantities</DialogTitle>
-          <DialogDescription>
-            JMC No: {jmcEntry.jmcNo}
-          </DialogDescription>
+          <DialogDescription>JMC No: {jmcEntry.jmcNo}</DialogDescription>
         </DialogHeader>
+
         <ScrollArea className="max-h-[60vh] border rounded-md">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Description</TableHead>
-                <TableHead>Executed Qty</TableHead>
-                <TableHead className="w-[150px]">Certified Qty</TableHead>
+                <TableHead className="text-right">Executed Qty</TableHead>
+                <TableHead className="w-[180px]">Certified Qty</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell>{item.description}</TableCell>
-                  <TableCell>{item.executedQty}</TableCell>
-                  <TableCell>
+              {items.map((item, idx) => (
+                <TableRow key={`${item.boqSlNo}-${idx}`}>
+                  <TableCell className="align-top">{item.description}</TableCell>
+                  <TableCell className="text-right align-top">{item.executedQty}</TableCell>
+                  <TableCell className="align-top">
                     <Input
                       type="number"
-                      value={item.certifiedQty ?? ''}
-                      onChange={(e) => handleCertifiedQtyChange(index, e.target.value)}
-                      max={item.executedQty}
+                      inputMode="decimal"
+                      step="any"
                       min={0}
+                      max={Number(item.executedQty) || undefined}
+                      value={item.__certStr ?? ''}
+                      onChange={(e) => handleCertifiedQtyChange(idx, e.target.value)}
+                      aria-invalid={!!item.__error}
+                      aria-describedby={item.__error ? `cert-error-${idx}` : undefined}
                     />
+                    {item.__error && (
+                      <p id={`cert-error-${idx}`} className="text-xs text-destructive mt-1">
+                        {item.__error}
+                      </p>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </ScrollArea>
+
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button variant="outline" disabled={isSaving}>
+              Cancel
+            </Button>
           </DialogClose>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button onClick={handleSave} disabled={isSaving || hasErrors}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Quantities
           </Button>
