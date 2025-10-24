@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition, AssignedTo, ActionConfig } from '@/lib/types';
+import type { WorkflowStep, Role, User, Project, Department, ActionConfig } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -124,9 +124,7 @@ export default function JmcWorkflowConfigurationPage() {
             if (step.id === id) {
                 const updatedStep = { ...step, [field]: value };
                 if (field === 'assignmentType') {
-                    if (value === 'Amount-based') {
-                        updatedStep.assignedTo = [{id: crypto.randomUUID(), type: 'Below', amount1: 0, userId: '' }];
-                    } else if (value === 'User-based') {
+                    if (value === 'User-based') {
                         updatedStep.assignedTo = [];
                     } else {
                         updatedStep.assignedTo = {};
@@ -195,47 +193,6 @@ export default function JmcWorkflowConfigurationPage() {
         }));
     };
 
-    const handleAmountConditionChange = (stepId: string, conditionId: string, field: keyof AmountBasedCondition, value: any) => {
-        setSteps(steps.map(step => {
-            if (step.id === stepId) {
-                const updatedAssignedTo = (step.assignedTo as AmountBasedCondition[]).map(cond => {
-                    if (cond.id === conditionId) {
-                        return { ...cond, [field]: value };
-                    }
-                    return cond;
-                });
-                return { ...step, assignedTo: updatedAssignedTo };
-            }
-            return step;
-        }));
-    };
-
-    const handleAddAmountCondition = (stepId: string) => {
-        setSteps(steps.map(step => {
-            if (step.id === stepId) {
-                const newCondition: AmountBasedCondition = {
-                    id: crypto.randomUUID(),
-                    type: 'Between',
-                    amount1: 0,
-                    amount2: 10000,
-                    userId: ''
-                };
-                return { ...step, assignedTo: [...(step.assignedTo as AmountBasedCondition[]), newCondition] };
-            }
-            return step;
-        }));
-    };
-
-    const handleDeleteAmountCondition = (stepId: string, conditionId: string) => {
-        setSteps(steps.map(step => {
-            if (step.id === stepId) {
-                const newAssignedTo = (step.assignedTo as AmountBasedCondition[]).filter(cond => cond.id !== conditionId);
-                return { ...step, assignedTo: newAssignedTo };
-            }
-            return step;
-        }));
-    };
-
     const handleSave = async () => {
         if (!user) return;
         setIsSaving(true);
@@ -275,10 +232,7 @@ export default function JmcWorkflowConfigurationPage() {
                     </div>
                 </div>
                 <Card>
-                    <CardHeader>
-                        <CardTitle>Access Denied</CardTitle>
-                        <CardDescription>You do not have permission to view or edit this page.</CardDescription>
-                    </CardHeader>
+                    <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view or edit this page.</CardDescription></CardHeader>
                     <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
@@ -357,7 +311,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                     className="flex flex-wrap gap-4"
                                                     disabled={!canEditPage}
                                                 >
-                                                    {['User-based', 'Project-based', 'Department-based', 'Amount-based'].map(type => (
+                                                    {['User-based', 'Project-based', 'Department-based'].map(type => (
                                                         <div key={type} className="flex items-center space-x-2">
                                                             <RadioGroupItem value={type} id={`${step.id}-${type}`} />
                                                             <Label htmlFor={`${step.id}-${type}`} className="font-normal">{type}</Label>
@@ -455,42 +409,6 @@ export default function JmcWorkflowConfigurationPage() {
                                                 </div>
                                             )}
 
-                                            {step.assignmentType === 'Amount-based' && Array.isArray(step.assignedTo) && (
-                                                <div className="space-y-2">
-                                                    <Label>Assign Users per Amount Condition</Label>
-                                                    <Card className="p-4 mt-2 space-y-4">
-                                                        {(step.assignedTo as AmountBasedCondition[]).map(condition => (
-                                                            <div key={condition.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-                                                                <Select
-                                                                    value={condition.type}
-                                                                    onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'type', value)}
-                                                                    disabled={!canEditPage}
-                                                                >
-                                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        <SelectItem value="Below">Below</SelectItem>
-                                                                        <SelectItem value="Between">Between</SelectItem>
-                                                                        <SelectItem value="Above">Above</SelectItem>
-                                                                    </SelectContent>
-                                                                </Select>
-                                                                <div className={cn("flex gap-2 items-center", condition.type === 'Between' ? 'col-span-1' : 'col-span-1')}>
-                                                                    <Input type="number" value={condition.amount1} onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount1', e.target.valueAsNumber || 0)} disabled={!canEditPage} />
-                                                                    {condition.type === 'Between' && <><span>&</span><Input type="number" value={condition.amount2} onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount2', e.target.valueAsNumber || 0)} disabled={!canEditPage} /></>}
-                                                                </div>
-                                                                <div className="col-span-2 flex gap-2">
-                                                                    <Select value={condition.userId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)} disabled={!canEditPage}><SelectTrigger><SelectValue placeholder="Primary" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
-                                                                    <Select value={condition.alternativeUserId || 'none'} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value === 'none' ? '' : value)} disabled={!canEditPage}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
-                                                                    <Button variant="ghost" size="icon" onClick={() => handleDeleteAmountCondition(step.id, condition.id)} disabled={!canEditPage}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                        <Button variant="outline" size="sm" onClick={() => handleAddAmountCondition(step.id)} disabled={!canEditPage}>
-                                                            <Plus className="mr-2 h-4 w-4" /> Add Condition
-                                                        </Button>
-                                                    </Card>
-                                                </div>
-                                            )}
-
                                             <div className="space-y-4">
                                                 <Label>Actions</Label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -562,3 +480,5 @@ export default function JmcWorkflowConfigurationPage() {
         </div>
     );
 }
+
+    
