@@ -13,7 +13,7 @@ import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc,
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -28,6 +28,7 @@ interface EnrichedJmcEntry extends JmcEntry {
     stageDates: Record<string, string>;
     totalAmount: number;
     certifiedValue: number;
+    createdAt: Timestamp;
 }
 
 export default function JmcLogPage() {
@@ -37,8 +38,10 @@ export default function JmcLogPage() {
   const projectSlug = params.project as string;
   const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isCertifyOpen, setIsCertifyOpen] = useState(false);
 
@@ -46,15 +49,19 @@ export default function JmcLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-        const workflowSnap = await getDoc(workflowRef);
+        const [workflowSnap, boqSnap, billsSnap, jmcSnapshot] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'jmc-workflow')),
+          getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
+          getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
+          getDocs(query(collection(db, 'projects', projectSlug, 'jmcEntries'), orderBy('createdAt', 'desc'))),
+        ]);
+
         const steps = workflowSnap.exists() ? workflowSnap.data().steps as WorkflowStep[] : [];
         setWorkflowSteps(steps);
+        setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
 
-        const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-        const q = query(jmcCollectionRef, orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
-        const entries = querySnapshot.docs.map(doc => {
+        const entries = jmcSnapshot.docs.map(doc => {
             const data = doc.data();
             const history = (data.history || []) as ActionLog[];
             const stageDates: Record<string, string> = {};
@@ -71,7 +78,7 @@ export default function JmcLogPage() {
             return {
               id: doc.id,
               ...data,
-              createdAt: data.createdAt.toDate(),
+              createdAt: data.createdAt,
               totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
               certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
               stageDates,
@@ -89,7 +96,7 @@ export default function JmcLogPage() {
     fetchJmcEntries();
   }, [projectSlug, toast]);
   
-  const handleViewDetails = (entry: JmcEntry) => {
+  const handleViewDetails = (entry: EnrichedJmcEntry) => {
     setSelectedEntry(entry);
     setIsViewOpen(true);
   };
@@ -98,7 +105,7 @@ export default function JmcLogPage() {
     const dataToExport = jmcEntries.map(entry => {
         const row: Record<string, any> = {
             'JMC No.': entry.jmcNo,
-            'JMC Date': format(new Date(entry.jmcDate), 'dd MMM, yyyy'),
+            'JMC Date': format(entry.createdAt.toDate(), 'dd MMM, yyyy'),
         };
         workflowSteps.forEach(step => {
             row[step.name] = entry.stageDates[step.name] || '-';
@@ -172,7 +179,7 @@ export default function JmcLogPage() {
                     return (
                         <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
-                          <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
+                          <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy')}</TableCell>
                           {workflowSteps.map(step => (
                             <TableCell key={step.id}>{entry.stageDates[step.name]}</TableCell>
                           ))}
@@ -204,6 +211,8 @@ export default function JmcLogPage() {
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
+        boqItems={boqItems}
+        bills={bills}
       />
       {selectedEntry && (
         <UpdateCertifiedQtyDialog

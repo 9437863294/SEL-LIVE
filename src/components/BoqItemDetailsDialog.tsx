@@ -279,6 +279,8 @@ export default function BoqItemDetailsDialog({
         isOpen={isJmcViewOpen}
         onOpenChange={setIsJmcViewOpen}
         jmcEntry={selectedJmc}
+        boqItems={[]} 
+        bills={[]}
       />
     </>
   );
