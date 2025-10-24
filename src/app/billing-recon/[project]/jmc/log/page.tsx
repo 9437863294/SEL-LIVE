@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -26,6 +26,8 @@ import { Badge } from '@/components/ui/badge';
 
 interface EnrichedJmcEntry extends JmcEntry {
     stageDates: Record<string, string>;
+    totalAmount: number;
+    certifiedValue: number;
 }
 
 export default function JmcLogPage() {
@@ -67,9 +69,8 @@ export default function JmcLogPage() {
             });
 
             return {
-              id: doc.id,
               ...data,
-              createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'dd MMM yyyy') : 'N/A',
+              id: doc.id,
               totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
               certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
               stageDates,
@@ -90,46 +91,6 @@ export default function JmcLogPage() {
   const handleViewDetails = (entry: JmcEntry) => {
     setSelectedEntry(entry);
     setIsViewOpen(true);
-  };
-
-  const handleOpenCertifyDialog = (entry: JmcEntry) => {
-    setSelectedEntry(entry);
-    setIsCertifyOpen(true);
-  };
-  
-  const handleDelete = async (entry: JmcEntry) => {
-    if (!user) return;
-    try {
-      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', entry.id));
-      await logUserActivity({
-        userId: user.id,
-        action: 'Delete JMC Entry',
-        details: { project: projectSlug, jmcNo: entry.jmcNo }
-      });
-      toast({ title: 'Success', description: 'JMC entry deleted successfully.' });
-      fetchJmcEntries();
-    } catch (error) {
-      console.error("Error deleting JMC entry:", error);
-      toast({ title: 'Error', description: 'Failed to delete JMC entry.', variant: 'destructive' });
-    }
-  };
-
-  const handleCancelJmc = async (entry: JmcEntry) => {
-    if (!user) return;
-    try {
-        const entryRef = doc(db, 'projects', projectSlug, 'jmcEntries', entry.id);
-        await updateDoc(entryRef, { status: 'Cancelled' });
-        await logUserActivity({
-            userId: user.id,
-            action: 'Cancel JMC Entry',
-            details: { project: projectSlug, jmcNo: entry.jmcNo }
-        });
-        toast({ title: 'Success', description: 'JMC entry has been cancelled.'});
-        fetchJmcEntries();
-    } catch (error) {
-        console.error("Error cancelling JMC:", error);
-        toast({ title: 'Error', description: 'Failed to cancel JMC entry.', variant: 'destructive' });
-    }
   };
 
   const handleExportAll = () => {
@@ -214,8 +175,8 @@ export default function JmcLogPage() {
                           {workflowSteps.map(step => (
                             <TableCell key={step.id}>{entry.stageDates[step.name]}</TableCell>
                           ))}
-                          <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
-                          <TableCell>{formatCurrency(entry.certifiedValue || 0)}</TableCell>
+                          <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
+                          <TableCell>{formatCurrency(entry.certifiedValue)}</TableCell>
                           <TableCell>{entry.stage}</TableCell>
                           <TableCell>
                             <Badge variant={entry.status === 'Completed' ? 'default' : (entry.status === 'Rejected' || entry.status === 'Cancelled' ? 'destructive' : 'secondary')}>
