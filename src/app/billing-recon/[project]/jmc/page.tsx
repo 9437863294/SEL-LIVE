@@ -1,11 +1,11 @@
 
+
 'use client';
 
 import Link from 'next/link';
 import {
   ArrowLeft,
   FilePlus,
-  ClipboardCheck,
   History,
   ShieldAlert,
   type LucideIcon,
@@ -143,7 +143,7 @@ export default function JmcPage() {
       disabled: !can('View', 'Billing Recon.JMC'), // Simplified permission, could be more granular
     }));
 
-    return [...workflowItems, ...staticItems];
+    return [staticItems[0], ...workflowItems, ...staticItems.slice(1)];
 
   }, [projectSlug, authIsLoading, isWorkflowLoading, can, workflowSteps]);
 
