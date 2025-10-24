@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -376,7 +375,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                             <TableBody>
                                                                 {(step.assignmentType === 'Project-based' ? projects : departments).map(item => (
                                                                     <TableRow key={item.id}>
-                                                                        <TableCell>{item.projectName || item.name}</TableCell>
+                                                                        <TableCell>{'projectName' in item ? item.projectName : item.name}</TableCell>
                                                                         <TableCell>
                                                                              <Select
                                                                                 value={(step.assignedTo as Record<string, { primary: string }>)[item.id]?.primary || ''}
@@ -480,4 +479,5 @@ export default function JmcWorkflowConfigurationPage() {
             </Card>
         </div>
     );
-}
+
+    
