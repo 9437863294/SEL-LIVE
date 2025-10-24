@@ -18,10 +18,11 @@ import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 
 export default function MyTasksPage() {
