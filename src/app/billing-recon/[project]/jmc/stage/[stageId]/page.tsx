@@ -1,15 +1,15 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Clock } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Eye, Loader2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
@@ -18,6 +18,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { Badge } from '@/components/ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+
 
 export default function StagePage() {
   const { project: projectSlug, stageId } = useParams() as { project: string; stageId: string };
@@ -27,58 +30,61 @@ export default function StagePage() {
   
   const [tasks, setTasks] = useState<JmcEntry[]>([]);
   const [stage, setStage] = useState<WorkflowStep | null>(null);
+  const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
 
-  useEffect(() => {
+  const fetchTasks = useCallback(async () => {
     if (!user || !stageId) return;
 
-    const fetchTasks = async () => {
-      setIsLoading(true);
-      try {
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-        const workflowSnap = await getDoc(workflowRef);
-        if (workflowSnap.exists()) {
-          const steps = workflowSnap.data().steps as WorkflowStep[];
-          const currentStage = steps.find(s => s.id === stageId);
-          if (currentStage) {
-            setStage(currentStage);
-          } else {
-            toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
-            router.back();
-            return;
-          }
+    setIsLoading(true);
+    try {
+      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+      if (workflowSnap.exists()) {
+        const steps = workflowSnap.data().steps as WorkflowStep[];
+        setWorkflow(steps);
+        const currentStage = steps.find(s => s.id === stageId);
+        if (currentStage) {
+          setStage(currentStage);
+        } else {
+          toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
+          router.back();
+          return;
         }
-
-        const q = query(
-          collection(db, 'projects', projectSlug, 'jmcEntries'),
-          where('currentStepId', '==', stageId)
-        );
-        
-        const [tasksSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
-          getDocs(q),
-          getDocs(collection(db, 'projects', projectSlug, 'boqItems')),
-          getDocs(collection(db, 'projects', projectSlug, 'bills'))
-        ]);
-        
-        const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
-        setTasks(tasksData);
-
-        setBoqItems(boqSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
-        setBills(billsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
-
-      } catch (error) {
-        console.error("Error fetching tasks for stage:", error);
-        toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
       }
-      setIsLoading(false);
-    };
 
-    fetchTasks();
+      const q = query(
+        collection(db, 'projects', projectSlug, 'jmcEntries'),
+        where('currentStepId', '==', stageId)
+      );
+      
+      const [tasksSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
+        getDocs(q),
+        getDocs(collection(db, 'projects', projectSlug, 'boqItems')),
+        getDocs(collection(db, 'projects', projectSlug, 'bills'))
+      ]);
+      
+      const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
+      setTasks(tasksData);
+
+      setBoqItems(boqSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
+      setBills(billsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
+
+    } catch (error) {
+      console.error("Error fetching tasks for stage:", error);
+      toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
+    }
+    setIsLoading(false);
   }, [stageId, user, projectSlug, toast, router]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
   const { pendingTasks, completedTasks } = useMemo(() => {
     if (!user) return { pendingTasks: [], completedTasks: [] };
@@ -88,6 +94,86 @@ export default function StagePage() {
     );
     return { pendingTasks: pending, completedTasks: completed };
   }, [tasks, user, stage]);
+
+  const handleAction = async (taskId: string, action: string, comment: string = '') => {
+    if (!workflow || !user || !stage) return;
+    setIsActionLoading(taskId);
+    
+    try {
+        const taskRef = doc(db, 'projects', projectSlug, 'jmcEntries', taskId);
+
+        await runTransaction(db, async (transaction) => {
+            const taskDoc = await transaction.get(taskRef);
+            if (!taskDoc.exists()) throw new Error("Task document not found!");
+            
+            const currentTaskData = taskDoc.data() as JmcEntry;
+
+            const newActionLog: ActionLog = {
+                action,
+                comment,
+                userId: user.id,
+                userName: user.name,
+                timestamp: Timestamp.now(),
+                stepName: stage.name,
+            };
+
+            let nextStep: WorkflowStep | undefined;
+            let newStatus: JmcEntry['status'] = currentTaskData.status;
+            let newStage = currentTaskData.stage;
+            let newCurrentStepId: string | null = currentTaskData.currentStepId || null;
+            let newAssignees: string[] = [];
+            let newDeadline: Timestamp | null = null;
+            
+            const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(action);
+
+            if (isCompletionAction) {
+                const currentStepIndex = workflow.findIndex(s => s.id === stage.id);
+                nextStep = workflow[currentStepIndex + 1];
+
+                if (nextStep) {
+                    newStage = nextStep.name;
+                    newStatus = 'In Progress';
+                    newCurrentStepId = nextStep.id;
+                    newAssignees = await getAssigneeForStep(nextStep, currentTaskData as any);
+                    if (newAssignees.length === 0) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+                    const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
+                    newDeadline = Timestamp.fromDate(deadlineDate);
+                } else {
+                    newStage = 'Completed';
+                    newStatus = 'Completed';
+                    newCurrentStepId = null;
+                }
+            } else if (action === 'Reject') {
+                newStage = 'Rejected';
+                newStatus = 'Rejected';
+                newCurrentStepId = null;
+            } else {
+                 newAssignees = currentTaskData.assignees || [];
+                 newDeadline = currentTaskData.deadline;
+            }
+
+            const updateData = {
+                status: newStatus,
+                stage: newStage,
+                currentStepId: newCurrentStepId,
+                assignees: newAssignees,
+                deadline: newDeadline,
+                history: arrayUnion(newActionLog),
+            };
+            
+            transaction.update(taskRef, updateData);
+        });
+
+        toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}ed.` });
+        fetchTasks();
+
+    } catch (error: any) {
+        toast({ title: 'Error', description: error.message || 'Failed to perform action.', variant: 'destructive' });
+    } finally {
+        setIsActionLoading(null);
+    }
+  };
+
 
   const handleViewDetails = (entry: JmcEntry) => {
     setSelectedJmc(entry);
@@ -114,18 +200,40 @@ export default function StagePage() {
                 <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
               ))
             ) : data.length > 0 ? (
-              data.map(entry => (
-                <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
-                  <TableCell>{entry.jmcNo}</TableCell>
-                  <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                  <TableCell>{entry.woNo}</TableCell>
-                  <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.totalAmount || 0)}</TableCell>
-                  <TableCell><Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>{entry.status}</Badge></TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm">View</Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              data.map(entry => {
+                  const currentStep = workflow?.find(s => s.id === entry.currentStepId);
+                  const actions = currentStep?.actions || [];
+                  return (
+                    <TableRow key={entry.id}>
+                      <TableCell>{entry.jmcNo}</TableCell>
+                      <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
+                      <TableCell>{entry.woNo}</TableCell>
+                      <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((entry as any).totalAmount || 0)}</TableCell>
+                      <TableCell><Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>{entry.status}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        {isActionLoading === entry.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
+                                        <Eye className="mr-2 h-4 w-4" /> View
+                                    </DropdownMenuItem>
+                                    {type === 'pending' && actions.map(action => (
+                                        <DropdownMenuItem key={action} onSelect={() => handleAction(entry.id, action)}>
+                                            {action}
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+              })
             ) : (
               <TableRow><TableCell colSpan={6} className="text-center h-24">No {type} tasks found.</TableCell></TableRow>
             )}
