@@ -32,6 +32,7 @@ interface ViewJmcEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
+  allJmcEntries?: JmcEntry[]; // Make this optional if not always passed
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
@@ -48,6 +49,7 @@ export default function ViewJmcEntryDialog({
   isOpen,
   onOpenChange,
   jmcEntry,
+  allJmcEntries = [],
   boqItems,
   bills,
   isEditMode = false,
@@ -110,24 +112,25 @@ export default function ViewJmcEntryDialog({
       );
       const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
       
-      const totalCertifiedQty = (jmcEntry?.items || [])
-        .filter((i) => i.boqSlNo === item.boqSlNo)
+      // Calculate total certified quantity from *other* JMC entries
+      const totalCertifiedQty = allJmcEntries
+        .filter(entry => entry.id !== jmcEntry.id) // Exclude the current entry
+        .flatMap(entry => entry.items)
+        .filter(i => i.boqSlNo === item.boqSlNo)
         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
 
       return {
         ...item,
         boqQty,
-        totalCertifiedQty,
+        totalCertifiedQty, // This is now "previously certified"
       };
     });
     setEditableItems(enriched);
-  }, [jmcEntry, boqItems, isOpen]);
-
-  const itemsToDisplay = editableItems;
+  }, [jmcEntry, allJmcEntries, boqItems, isOpen]);
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
-    if (Number.isNaN(num)) return String(amount);
+    if (isNaN(num)) return String(amount);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
   
@@ -179,7 +182,7 @@ export default function ViewJmcEntryDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {itemsToDisplay.map((item, index) => (
+                    {editableItems.map((item, index) => (
                       <TableRow key={`${item.boqSlNo}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell className="truncate max-w-[200px]">{item.description}</TableCell>
