@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -206,12 +207,6 @@ export interface Attachment {
   url: string;
 }
 
-export type ActionConfig = {
-  name: string;
-  departmentId?: string; // For 'Create Expense Request'
-};
-
-
 export interface ActionLog {
     action: string;
     comment: string;
@@ -228,7 +223,7 @@ export interface WorkflowStep {
   tat: number; // in hours
   assignmentType: 'User-based' | 'Role-based' | 'Project-based' | 'Department-based';
   assignedTo: string[] | Record<string, AssignedTo>;
-  actions: (string | ActionConfig)[];
+  actions: string[];
   upload: 'Required' | 'Optional' | 'Not Required';
 }
 
