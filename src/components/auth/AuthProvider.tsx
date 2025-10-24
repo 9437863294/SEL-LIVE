@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (isExpired) {
             toast({
                 title: 'Session Expired',
-                description: 'You have been logged out due to inactivity.',
+                description: 'You have been logged out.',
                 variant: 'destructive',
             });
         }
