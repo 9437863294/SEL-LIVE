@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -45,7 +46,7 @@ const initialSteps: WorkflowStep[] = [
   },
 ];
 
-const allActions = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Edit', 'Revise', 'Update', 'Verified', 'Update Certified Qty'] as const;
+const allActions = ['Complete', 'Verified', 'Update Certified Qty'] as const;
 
 export default function JmcWorkflowConfigurationPage() {
   const { toast } = useToast();
@@ -473,5 +474,7 @@ export default function JmcWorkflowConfigurationPage() {
     </div>
   );
 }
+
+    
 
     
