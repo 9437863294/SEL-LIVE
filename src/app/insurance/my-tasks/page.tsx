@@ -255,9 +255,7 @@ export default function MyTasksPage() {
                                             <TableCell>{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</TableCell>
                                             <TableCell>{isPending ? task.currentStage : task.status}</TableCell>
                                             <TableCell className="text-right">
-                                                 {isActionLoading === task.id ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                                                ) : (
+                                                 {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
                                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
@@ -265,15 +263,17 @@ export default function MyTasksPage() {
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
-                                                             <DropdownMenuItem onSelect={() => handleRowClick(task)}>
-                                                                <Eye className="mr-2 h-4 w-4" /> View Details
-                                                            </DropdownMenuItem>
-                                                            {isPending && actions.length > 0 && <DropdownMenuSeparator />}
-                                                            {isPending && actions.map(action => (
-                                                                <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action, '')}}>
-                                                                    {action}
+                                                            {isPending && actions.length > 0 ? (
+                                                                actions.map(action => (
+                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action, '')}}>
+                                                                        {action}
+                                                                    </DropdownMenuItem>
+                                                                ))
+                                                            ) : (
+                                                                <DropdownMenuItem onSelect={() => handleRowClick(task)}>
+                                                                    <Eye className="mr-2 h-4 w-4" /> View
                                                                 </DropdownMenuItem>
-                                                            ))}
+                                                            )}
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 )}
