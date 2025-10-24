@@ -48,7 +48,7 @@ export default function JmcLogPage() {
         return {
           id: doc.id,
           ...data,
-          createdAt: data.createdAt ? format(new Date(data.createdAt), 'dd MMM yyyy') : 'N/A',
+          createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'dd MMM yyyy') : 'N/A',
           totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
           certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
         } as JmcEntry;
