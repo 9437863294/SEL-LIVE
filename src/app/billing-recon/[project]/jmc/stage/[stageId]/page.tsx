@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,7 @@ export default function StagePage() {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
 
@@ -96,7 +97,7 @@ export default function StagePage() {
     return { pendingTasks: pending, completedTasks: completed };
   }, [tasks, user, stage]);
 
-  const handleAction = async (taskId: string, action: string, comment: string = '') => {
+  const handleAction = async (taskId: string, action: string, comment: string = '', updatedItems?: any[]) => {
     if (!workflow || !user || !stage) return;
     setIsActionLoading(taskId);
     
@@ -153,7 +154,7 @@ export default function StagePage() {
                  newDeadline = currentTaskData.deadline;
             }
 
-            const updateData = {
+            const updateData: any = {
                 status: newStatus,
                 stage: newStage,
                 currentStepId: newCurrentStepId,
@@ -161,6 +162,10 @@ export default function StagePage() {
                 deadline: newDeadline,
                 history: arrayUnion(newActionLog),
             };
+
+            if (updatedItems) {
+                updateData.items = updatedItems;
+            }
             
             transaction.update(taskRef, updateData);
         });
@@ -172,6 +177,7 @@ export default function StagePage() {
         toast({ title: 'Error', description: error.message || 'Failed to perform action.', variant: 'destructive' });
     } finally {
         setIsActionLoading(null);
+        setIsVerifyOpen(false);
     }
   };
 
@@ -180,6 +186,11 @@ export default function StagePage() {
     setSelectedJmc(entry);
     setIsViewOpen(true);
   };
+  
+  const handleVerifyClick = (entry: JmcEntry) => {
+      setSelectedJmc(entry);
+      setIsVerifyOpen(true);
+  }
   
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
     <Card>
@@ -221,7 +232,7 @@ export default function StagePage() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     {type === 'pending' && actions.map(action => (
-                                        <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(entry.id, action); }}>
+                                        <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); if(action === 'Verified') { handleVerifyClick(entry) } else { handleAction(entry.id, action); } }}>
                                             {action}
                                         </DropdownMenuItem>
                                     ))}
@@ -272,11 +283,14 @@ export default function StagePage() {
         </Tabs>
       </div>
       <ViewJmcEntryDialog
-        isOpen={isViewOpen}
-        onOpenChange={setIsViewOpen}
+        isOpen={isViewOpen || isVerifyOpen}
+        onOpenChange={isVerifyOpen ? setIsVerifyOpen : setIsViewOpen}
         jmcEntry={selectedJmc}
         boqItems={boqItems}
         bills={bills}
+        isEditMode={isVerifyOpen}
+        onVerify={handleAction}
+        isLoading={isActionLoading === selectedJmc?.id}
       />
     </>
   );
