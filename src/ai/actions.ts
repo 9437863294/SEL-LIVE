@@ -13,39 +13,31 @@ import { createExpenseRequest as createExpenseRequestFlow, type CreateExpenseReq
 export async function suggestModuleTags(input: SuggestModuleTagsInput): Promise<SuggestModuleTagsOutput> {
   return await suggestModuleTagsFlow(input);
 }
-export type { SuggestModuleTagsInput, SuggestModuleTagsOutput };
 
 export async function validateModuleContent(input: ValidateModuleContentInput): Promise<ValidateModuleContentOutput> {
     return await validateModuleContentFlow(input);
 }
-export type { ValidateModuleContentInput, ValidateModuleContentOutput };
 
 export async function syncGreytHR(input: SyncGreytHRInput): Promise<SyncGreytHROutput> {
     return await syncGreytHRFlow(input);
 }
-export type { SyncGreytHRInput, SyncGreytHROutput };
 
 export async function syncGreytHRCategories(): Promise<SyncCategoriesOutput> {
     return await syncGreytHRCategoriesFlow();
 }
-export type { SyncCategoriesOutput };
 
 export async function getAllEmployeePositions(input: GetAllEmployeePositionsInput): Promise<GetAllEmployeePositionsOutput> {
     return await getAllEmployeePositionsFlow(input);
 }
-export type { GetAllEmployeePositionsInput, GetAllEmployeePositionsOutput };
 
 export async function getEmails(input: GetEmailsInput): Promise<GetEmailsOutput> {
     return await getEmailsFlow(input);
 }
-export type { GetEmailsInput, GetEmailsOutput };
 
 export async function sendEmailAuthorization(input: SendEmailAuthorizationInput): Promise<SendEmailAuthorizationOutput> {
     return await sendEmailAuthorizationFlow(input);
 }
-export type { SendEmailAuthorizationInput, SendEmailAuthorizationOutput };
 
 export async function createExpenseRequest(input: CreateExpenseRequestInput): Promise<CreateExpenseRequestOutput> {
     return await createExpenseRequestFlow(input);
 }
-export type { CreateExpenseRequestInput, CreateExpenseRequestOutput };
