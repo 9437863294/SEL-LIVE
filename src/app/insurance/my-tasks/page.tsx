@@ -6,17 +6,16 @@ import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Check, RefreshCw, Loader2, MoreHorizontal, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where, getDoc } from 'firebase/firestore';
+import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -258,7 +257,7 @@ export default function MyTasksPage() {
                                             <TableCell className="text-right">
                                                  {isActionLoading === task.id ? (
                                                     <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                                                ) : isPending ? (
+                                                ) : (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
                                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
@@ -269,18 +268,14 @@ export default function MyTasksPage() {
                                                              <DropdownMenuItem onSelect={() => handleRowClick(task)}>
                                                                 <Eye className="mr-2 h-4 w-4" /> View Details
                                                             </DropdownMenuItem>
-                                                            {actions.length > 0 && <DropdownMenuSeparator />}
-                                                            {actions.map(action => (
+                                                            {isPending && actions.length > 0 && <DropdownMenuSeparator />}
+                                                            {isPending && actions.map(action => (
                                                                 <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action, '')}}>
                                                                     {action}
                                                                 </DropdownMenuItem>
                                                             ))}
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
-                                                ) : (
-                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(task); }}>
-                                                        <Eye className="mr-2 h-4 w-4" /> View
-                                                    </Button>
                                                 )}
                                             </TableCell>
                                         </TableRow>
