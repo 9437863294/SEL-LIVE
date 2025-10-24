@@ -46,7 +46,7 @@ const initialSteps: WorkflowStep[] = [
     },
 ];
 
-const allActions = ['Approve', 'Reject', 'Needs Correction', 'Verify', 'Update Approved Amount'];
+const allActions = ['Approve', 'Reject', 'Complete', 'Edit', 'Revise', 'Update', 'Verified'];
 
 export default function JmcWorkflowConfigurationPage() {
     const { toast } = useToast();
@@ -159,7 +159,7 @@ export default function JmcWorkflowConfigurationPage() {
             if (step.id === stepId) {
                 const newActions = checked 
                     ? [...step.actions, action]
-                    : step.actions.filter(a => a !== action);
+                    : step.actions.filter(a => (typeof a === 'string' ? a : a.name) !== action);
                 return { ...step, actions: newActions };
             }
             return step;
@@ -386,7 +386,7 @@ export default function JmcWorkflowConfigurationPage() {
                                                 <Label>Actions</Label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                     {allActions.map(actionName => {
-                                                      const isChecked = step.actions.includes(actionName);
+                                                      const isChecked = step.actions.some(a => (typeof a === 'string' ? a : a.name) === actionName);
 
                                                       return (
                                                           <div key={actionName} className="space-y-2">
