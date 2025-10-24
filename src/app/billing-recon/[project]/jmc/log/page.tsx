@@ -1,7 +1,8 @@
 
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,6 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
-import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
 import { Badge } from '@/components/ui/badge';
 
 interface EnrichedJmcEntry extends JmcEntry {
@@ -42,6 +42,8 @@ export default function JmcLogPage() {
   const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isCertifyOpen, setIsCertifyOpen] = useState(false);
+
+  const allJmcEntries = useMemo(() => jmcEntries, [jmcEntries]);
 
   const fetchJmcEntries = async () => {
     if (!projectSlug) return;
@@ -101,7 +103,7 @@ export default function JmcLogPage() {
   
   const handleOpenCertifyDialog = (entry: EnrichedJmcEntry) => {
     setSelectedEntry(entry);
-    setIsCertifyOpen(true);
+    setIsViewOpen(true);
   }
 
   const handleExportAll = () => {
@@ -136,6 +138,13 @@ export default function JmcLogPage() {
   const formatCurrency = (amount: number) => {
     if (isNaN(amount)) return 'N/A';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
+
+  const handleVerify = async () => {
+      // Dummy handler, real logic is in ViewJmcEntryDialog now
+      if (selectedEntry) {
+          setIsViewOpen(true);
+      }
   }
 
   return (
@@ -197,23 +206,9 @@ export default function JmcLogPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex gap-1 justify-end">
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                                            <MoreHorizontal className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
-                                            <Eye className="mr-2 h-4 w-4" /> View Details
-                                        </DropdownMenuItem>
-                                        {entry.stage === 'Verification' && (
-                                            <DropdownMenuItem onSelect={() => handleOpenCertifyDialog(entry)}>
-                                                <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
-                                            </DropdownMenuItem>
-                                        )}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleViewDetails(entry)}>
+                                  <Eye className="h-4 w-4" />
+                               </Button>
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                         <Button variant="ghost" size="icon" className="text-destructive h-8 w-8">
@@ -253,18 +248,16 @@ export default function JmcLogPage() {
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
+        allJmcEntries={allJmcEntries}
         boqItems={boqItems}
         bills={bills}
+        isEditMode={true}
+        onVerify={async (taskId, action, comment, updatedItems) => {
+            console.log('Verification action triggered from log page');
+            // This could be a more complex workflow action call
+        }}
+        isLoading={false}
       />
-      {selectedEntry && (
-        <UpdateCertifiedQtyDialog
-            isOpen={isCertifyOpen}
-            onOpenChange={setIsCertifyOpen}
-            jmcEntry={selectedEntry}
-            projectSlug={projectSlug}
-            onSaveSuccess={fetchJmcEntries}
-        />
-      )}
     </>
   );
 }

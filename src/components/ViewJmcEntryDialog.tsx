@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -25,6 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
   totalCertifiedQty: number;
+  __certStr?: string;
   __error?: string | null;
 };
 
@@ -32,7 +34,7 @@ interface ViewJmcEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
-  allJmcEntries?: JmcEntry[]; // Make this optional if not always passed
+  allJmcEntries?: JmcEntry[];
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
@@ -71,8 +73,9 @@ export default function ViewJmcEntryDialog({
       (item as any)[field] = numValue;
 
       if (!Number.isNaN(numValue) && field === 'certifiedQty') {
-        if (numValue > (item.executedQty || 0)) {
-          item.__error = `Cannot exceed executed qty (${item.executedQty})`;
+        const executedQty = (item.executedQty || 0);
+        if (numValue > executedQty) {
+          item.__error = `Cannot exceed executed qty (${executedQty})`;
         } else {
           item.__error = null;
         }
@@ -87,22 +90,21 @@ export default function ViewJmcEntryDialog({
   };
 
   const handleSaveAndVerify = () => {
-    if (onVerify && jmcEntry) {
-      if (editableItems.some(item => item.__error)) {
+    const hasErrors = editableItems.some(item => item.__error);
+    if (onVerify && jmcEntry && !hasErrors) {
+      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, __certStr, ...rest }) => rest);
+      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
+    } else if (hasErrors) {
         toast({
             title: "Validation Error",
             description: "Please correct the errors in the certified quantities before saving.",
             variant: "destructive"
         });
-        return;
-      }
-      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, ...rest }) => rest);
-      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
     }
   };
 
   useEffect(() => {
-    if (!jmcEntry) {
+    if (!isOpen || !jmcEntry) {
       setEditableItems([]);
       return;
     }
@@ -112,21 +114,24 @@ export default function ViewJmcEntryDialog({
       );
       const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
       
-      // Calculate total certified quantity from *other* JMC entries
       const totalCertifiedQty = allJmcEntries
-        .filter(entry => entry.id !== jmcEntry.id) // Exclude the current entry
+        .filter(entry => entry.id !== jmcEntry.id)
         .flatMap(entry => entry.items)
         .filter(i => i.boqSlNo === item.boqSlNo)
         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
 
+      const certQtyString = item.certifiedQty ?? item.certifiedQty === 0 ? String(item.certifiedQty) : '';
+
       return {
         ...item,
         boqQty,
-        totalCertifiedQty, // This is now "previously certified"
+        totalCertifiedQty,
+        __certStr: certQtyString,
+        __error: null,
       };
     });
     setEditableItems(enriched);
-  }, [jmcEntry, allJmcEntries, boqItems, isOpen]);
+  }, [jmcEntry, boqItems, allJmcEntries, isOpen]);
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
@@ -208,7 +213,7 @@ export default function ViewJmcEntryDialog({
                                 <Input
                                 type="number"
                                 inputMode="decimal"
-                                value={item.certifiedQty ?? ''}
+                                value={item.__certStr ?? ''}
                                 onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
                                 className={item.__error ? 'border-destructive' : ''}
                                 />
