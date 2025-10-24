@@ -1,19 +1,18 @@
 
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -24,13 +23,17 @@ import * as XLSX from 'xlsx';
 import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
 import { Badge } from '@/components/ui/badge';
 
+interface EnrichedJmcEntry extends JmcEntry {
+    stageDates: Record<string, string>;
+}
 
 export default function JmcLogPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
-  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -40,23 +43,41 @@ export default function JmcLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-      const q = query(jmcCollectionRef, orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const entries = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'dd MMM yyyy') : 'N/A',
-          totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
-          certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
-        } as JmcEntry;
-      });
-      setJmcEntries(entries);
+        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        const steps = workflowSnap.exists() ? workflowSnap.data().steps as WorkflowStep[] : [];
+        setWorkflowSteps(steps);
+
+        const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
+        const q = query(jmcCollectionRef, orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        const entries = querySnapshot.docs.map(doc => {
+            const data = doc.data() as JmcEntry;
+            const history = (data.history || []) as ActionLog[];
+            const stageDates: Record<string, string> = {};
+
+            steps.forEach(step => {
+                const completionLog = history.find(h => h.stepName === step.name && ['Approve', 'Complete', 'Verified'].includes(h.action));
+                if (completionLog) {
+                    stageDates[step.name] = format(completionLog.timestamp.toDate(), 'dd-MM-yyyy');
+                } else {
+                    stageDates[step.name] = '-';
+                }
+            });
+
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'dd MMM yyyy') : 'N/A',
+              totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
+              certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
+              stageDates,
+            } as EnrichedJmcEntry;
+        });
+        setJmcEntries(entries);
     } catch (error) {
-      console.error("Error fetching JMC entries: ", error);
-      toast({ title: 'Error', description: 'Failed to fetch JMC entries for this project.', variant: 'destructive' });
+        console.error("Error fetching JMC entries: ", error);
+        toast({ title: 'Error', description: 'Failed to fetch JMC entries for this project.', variant: 'destructive' });
     }
     setIsLoading(false);
   };
@@ -179,12 +200,14 @@ export default function JmcLogPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>JMC No.</TableHead>
-                  <TableHead>Bill Date</TableHead>
-                  <TableHead>Work Order No.</TableHead>
-                  <TableHead>No. of Items</TableHead>
-                  <TableHead>Total Value</TableHead>
+                  <TableHead>JMC Date</TableHead>
+                  {workflowSteps.map(step => (
+                      <TableHead key={step.id}>{step.name} Date</TableHead>
+                  ))}
+                  <TableHead>JMC Value</TableHead>
                   <TableHead>Certified Value</TableHead>
-                  <TableHead>Certified Status</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Stage Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -192,37 +215,24 @@ export default function JmcLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+                      <TableCell colSpan={8 + workflowSteps.length}><Skeleton className="h-5" /></TableCell>
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
-                    const isCertified = entry.items.some(item => typeof item.certifiedQty === 'number');
-                    let status: 'Certified' | 'Pending' | 'Cancelled' = 'Pending';
-                    if (entry.status === 'Cancelled') {
-                        status = 'Cancelled';
-                    } else if (isCertified) {
-                        status = 'Certified';
-                    }
-
                     return (
                         <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
                           <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
-                          <TableCell>{entry.woNo}</TableCell>
-                          <TableCell>{entry.items.length}</TableCell>
+                          {workflowSteps.map(step => (
+                            <TableCell key={step.id}>{entry.stageDates[step.name]}</TableCell>
+                          ))}
                           <TableCell>{formatCurrency(entry.totalAmount || 0)}</TableCell>
                           <TableCell>{formatCurrency(entry.certifiedValue || 0)}</TableCell>
+                          <TableCell>{entry.stage}</TableCell>
                           <TableCell>
-                            <Badge variant={status === 'Certified' ? 'default' : (status === 'Cancelled' ? 'destructive' : 'secondary')}>
-                              {status}
+                            <Badge variant={entry.status === 'Completed' ? 'default' : (entry.status === 'Rejected' || entry.status === 'Cancelled' ? 'destructive' : 'secondary')}>
+                              {entry.status}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
@@ -238,7 +248,7 @@ export default function JmcLogPage() {
                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewDetails(entry) }}>
                                             <Eye className="mr-2 h-4 w-4" /> View Details
                                         </DropdownMenuItem>
-                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }} disabled={isCertified}>
+                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenCertifyDialog(entry) }}>
                                             <Edit className="mr-2 h-4 w-4" /> Update Certified Qty
                                         </DropdownMenuItem>
                                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportSingle(entry); }}>
@@ -274,7 +284,7 @@ export default function JmcLogPage() {
                 })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={8 + workflowSteps.length} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
