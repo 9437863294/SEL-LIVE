@@ -65,8 +65,8 @@ export default function StagePage() {
       
       const [tasksSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
         getDocs(q),
-        getDocs(collection(db, 'projects', projectSlug, 'boqItems')),
-        getDocs(collection(db, 'projects', projectSlug, 'bills'))
+        getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
+        getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
       ]);
       
       const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
@@ -204,7 +204,7 @@ export default function StagePage() {
                   const currentStep = workflow?.find(s => s.id === entry.currentStepId);
                   const actions = currentStep?.actions || [];
                   return (
-                    <TableRow key={entry.id}>
+                    <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                       <TableCell>{entry.jmcNo}</TableCell>
                       <TableCell>{format(new Date(entry.jmcDate), 'dd MMM, yyyy')}</TableCell>
                       <TableCell>{entry.woNo}</TableCell>
@@ -214,7 +214,7 @@ export default function StagePage() {
                         {isActionLoading === entry.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
                                         <MoreHorizontal className="h-4 w-4" />
                                     </Button>
                                 </DropdownMenuTrigger>
@@ -223,7 +223,7 @@ export default function StagePage() {
                                         <Eye className="mr-2 h-4 w-4" /> View
                                     </DropdownMenuItem>
                                     {type === 'pending' && actions.map(action => (
-                                        <DropdownMenuItem key={action} onSelect={() => handleAction(entry.id, action)}>
+                                        <DropdownMenuItem key={action} onSelect={(e) => { e.stopPropagation(); handleAction(entry.id, action); }}>
                                             {action}
                                         </DropdownMenuItem>
                                     ))}
