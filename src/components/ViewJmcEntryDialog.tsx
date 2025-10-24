@@ -100,7 +100,7 @@ export default function ViewJmcEntryDialog({
   };
 
   useEffect(() => {
-    if (!jmcEntry?.items || !boqItems) {
+    if (!jmcEntry) {
       setEditableItems([]);
       return;
     }
@@ -122,15 +122,15 @@ export default function ViewJmcEntryDialog({
     });
     setEditableItems(enriched);
   }, [jmcEntry, boqItems, isOpen]);
-  
-  const itemsToDisplay = isEditMode ? editableItems : enrichedItems;
+
+  const itemsToDisplay = editableItems;
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
     if (Number.isNaN(num)) return String(amount);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
-
+  
   if (!jmcEntry) return null;
 
   return (
