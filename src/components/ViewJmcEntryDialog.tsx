@@ -57,9 +57,10 @@ export default function ViewJmcEntryDialog({
     }
   }, [jmcEntry, isOpen]);
   
+  if (!jmcEntry) return null;
 
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry?.items;
+    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
     if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
 
     return itemsToDisplay.map((item) => {
@@ -106,8 +107,6 @@ export default function ViewJmcEntryDialog({
     }
   };
 
-  if (!jmcEntry) return null;
-  
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
     if (Number.isNaN(num)) return String(amount);
@@ -150,9 +149,11 @@ export default function ViewJmcEntryDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>BOQ Sl. No.</TableHead>
-                      <TableHead className="max-w-[300px]">Description</TableHead>
+                      <TableHead className="max-w-[250px]">Description</TableHead>
                       <TableHead>Unit</TableHead>
+                      <TableHead>BOQ QTY</TableHead>
                       <TableHead>Rate</TableHead>
+                      <TableHead>Total Certified QTY</TableHead>
                       <TableHead>Executed Qty</TableHead>
                       <TableHead>Certified Qty</TableHead>
                       <TableHead>Total Amount</TableHead>
@@ -162,9 +163,11 @@ export default function ViewJmcEntryDialog({
                     {enrichedItems.map((item, index) => (
                       <TableRow key={`${item.boqSlNo}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
-                        <TableCell className="truncate max-w-[300px]">{item.description}</TableCell>
+                        <TableCell className="truncate max-w-[250px]">{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
+                        <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
+                        <TableCell>{item.totalCertifiedQty}</TableCell>
                         <TableCell>
                           {isEditMode ? (
                             <Input
@@ -200,16 +203,15 @@ export default function ViewJmcEntryDialog({
         </ScrollArea>
 
         <DialogFooter className="mt-4 pr-4">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
-
-          {isEditMode && (
-            <Button onClick={handleSaveAndVerify} disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save &amp; Verify
-            </Button>
-          )}
+            <DialogClose asChild>
+                <Button variant="outline">Close</Button>
+            </DialogClose>
+            {isEditMode && (
+                <Button onClick={handleSaveAndVerify} disabled={isLoading}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save & Verify
+                </Button>
+            )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
