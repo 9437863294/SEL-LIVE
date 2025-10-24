@@ -29,6 +29,8 @@ import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
+
 
 function formatINR(n: number | undefined) {
   try {
@@ -95,10 +97,15 @@ export default function StagePage() {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isUpdateQtyOpen, setIsUpdateQtyOpen] = useState(false);
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-
+  const handleUpdateQtyClick = (entry: JmcEntry) => {
+    setSelectedJmc(entry);
+    setIsUpdateQtyOpen(true);
+  };
+  
   const fetchTasks = useCallback(async () => {
     if (!user || !stageId) return;
 
@@ -168,13 +175,15 @@ export default function StagePage() {
   }, [tasks, user, stage]);
 
   // Close both dialogs when onOpenChange(false)
-  const handleDialogOpenChange = (open: boolean) => {
-    if (!open) {
-      setIsViewOpen(false);
-      setIsVerifyOpen(false);
-      setSelectedJmc(null);
-    }
-  };
+    const handleDialogOpenChange = (open: boolean) => {
+      if (!open) {
+        setIsViewOpen(false);
+        setIsVerifyOpen(false);
+        setIsUpdateQtyOpen(false); // close Update Certified Qty dialog too
+        setSelectedJmc(null);
+      }
+    };
+  
 
   const handleAction = async (
     taskId: string,
@@ -294,7 +303,7 @@ export default function StagePage() {
     setSelectedJmc(entry);
     setIsVerifyOpen(true);
   };
-
+  
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
     <Card>
       <CardContent className="p-0">
@@ -358,26 +367,30 @@ export default function StagePage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                            {type === 'pending' &&
-                              actions.map((action) => {
-                                const actionName = typeof action === 'string' ? action : action.name;
-                                const isVerify = actionName === 'Verify';
-                                return (
-                                  <DropdownMenuItem
-                                    key={actionName}
-                                    onSelect={(e) => {
-                                      e.preventDefault();
-                                      if (isVerify) {
-                                        handleVerifyClick(entry);
-                                      } else {
-                                        handleAction(entry.id!, action);
-                                      }
-                                    }}
-                                  >
-                                    {actionName}
-                                  </DropdownMenuItem>
-                                );
-                              })}
+                          {type === 'pending' && (actions as (string | ActionConfig)[]).map(action => {
+                              const actionName = typeof action === 'string' ? action : action.name;
+                              const isVerify = actionName === 'Verify';
+                              const isUpdateQty = actionName === 'Update Certified Qty';
+                              return (
+                                <DropdownMenuItem
+                                  key={actionName}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (isVerify) {
+                                      handleVerifyClick(entry);
+                                    } else if (isUpdateQty) {
+                                      handleUpdateQtyClick(entry);
+                                    } else {
+                                      handleAction(entry.id, action);
+                                    }
+                                  }}
+                                >
+                                  {actionName}
+                                </DropdownMenuItem>
+                              );
+                            })}
+
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
@@ -439,6 +452,16 @@ export default function StagePage() {
         onVerify={handleAction}
         isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
       />
+      {selectedJmc && (
+      <UpdateCertifiedQtyDialog
+        isOpen={isUpdateQtyOpen}
+        onOpenChange={setIsUpdateQtyOpen}
+        jmcEntry={selectedJmc}
+        projectSlug={projectSlug}
+        onSaveSuccess={fetchTasks}   // refresh after save
+      />
+    )}
+
     </>
   );
 }

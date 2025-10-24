@@ -1,6 +1,7 @@
+
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -11,6 +12,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { useMemo, useState, useEffect } from 'react';
 import { Input } from './ui/input';
 import { Loader2, Save } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -53,11 +55,11 @@ export default function ViewJmcEntryDialog({
     } else {
       setEditableItems([]);
     }
-  }, [jmcEntry]);
+  }, [jmcEntry, isOpen]);
+  
 
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
-    if (!jmcEntry) return [];
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
+    const itemsToDisplay = isEditMode ? editableItems : jmcEntry?.items;
     if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
 
     return itemsToDisplay.map((item) => {
@@ -66,7 +68,7 @@ export default function ViewJmcEntryDialog({
       );
       const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
 
-      const totalCertifiedQty = jmcEntry.items
+      const totalCertifiedQty = (jmcEntry?.items || [])
         .filter((i) => i.boqSlNo === item.boqSlNo)
         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
 
@@ -77,15 +79,6 @@ export default function ViewJmcEntryDialog({
       };
     });
   }, [jmcEntry, boqItems, isEditMode, editableItems]);
-
-  // Keep hooks above – now safe to early-return
-  if (!jmcEntry) return null;
-
-  const formatCurrency = (amount: number | string) => {
-    const num = Number(amount);
-    if (Number.isNaN(num)) return String(amount);
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
-  };
 
   const handleItemChange = (
     index: number,
@@ -112,6 +105,15 @@ export default function ViewJmcEntryDialog({
       onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
     }
   };
+
+  if (!jmcEntry) return null;
+  
+  const formatCurrency = (amount: number | string) => {
+    const num = Number(amount);
+    if (Number.isNaN(num)) return String(amount);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -148,7 +150,7 @@ export default function ViewJmcEntryDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>BOQ Sl. No.</TableHead>
-                      <TableHead>Description</TableHead>
+                      <TableHead className="max-w-[300px]">Description</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead>Rate</TableHead>
                       <TableHead>Executed Qty</TableHead>
@@ -160,7 +162,7 @@ export default function ViewJmcEntryDialog({
                     {enrichedItems.map((item, index) => (
                       <TableRow key={`${item.boqSlNo}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
-                        <TableCell>{item.description}</TableCell>
+                        <TableCell className="truncate max-w-[300px]">{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>
