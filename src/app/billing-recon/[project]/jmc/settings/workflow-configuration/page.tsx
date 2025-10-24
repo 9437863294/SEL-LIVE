@@ -270,7 +270,7 @@ export default function JmcWorkflowConfigurationPage() {
              <div className="w-full max-w-4xl mx-auto pr-14">
                 <div className="mb-6 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link href="/billing-recon/madanpur-rampur/jmc/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                        <Link href={`/billing-recon/${'project'}/jmc/settings`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                         <h1 className="text-xl font-bold">JMC Workflow Configuration</h1>
                     </div>
                 </div>
@@ -279,9 +279,7 @@ export default function JmcWorkflowConfigurationPage() {
                         <CardTitle>Access Denied</CardTitle>
                         <CardDescription>You do not have permission to view or edit this page.</CardDescription>
                     </CardHeader>
-                    <CardContent className="flex justify-center p-8">
-                        <ShieldAlert className="h-16 w-16 text-destructive" />
-                    </CardContent>
+                    <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
                 </Card>
             </div>
         )
@@ -291,7 +289,7 @@ export default function JmcWorkflowConfigurationPage() {
         <div className="w-full max-w-4xl mx-auto pr-14">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/billing-recon/madanpur-rampur/jmc/settings">
+                    <Link href={`/billing-recon/${'project'}/jmc/settings`}>
                         <Button variant="ghost" size="icon">
                             <ArrowLeft className="h-6 w-6" />
                         </Button>
