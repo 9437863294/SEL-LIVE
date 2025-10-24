@@ -74,8 +74,8 @@ export default function StagePage() {
       const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
       setTasks(tasksData);
 
-      setBoqItems(boqSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
-      setBills(billsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
+      setBoqItems(boqSnapshot.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));
+      setBills(billsSnapshot.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
 
     } catch (error) {
       console.error("Error fetching tasks for stage:", error);
@@ -89,12 +89,19 @@ export default function StagePage() {
   }, [fetchTasks]);
 
   const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!user) return { pendingTasks: [], completedTasks: [] };
-    const pending = tasks.filter(task => task.assignees?.includes(user.id));
-    const completed = tasks.filter(task => 
-      task.history?.some(h => h.stepName === stage?.name && h.userId === user.id)
+    if (!user || !stage) return { pendingTasks: [], completedTasks: [] };
+    const myPendingTasks = tasks.filter(task => 
+      task.assignees?.includes(user.id) && 
+      task.status !== 'Completed' && 
+      task.status !== 'Rejected'
     );
-    return { pendingTasks: pending, completedTasks: completed };
+    const myCompletedTasks = tasks.filter(task => {
+        // It's not in my pending list AND...
+        return !myPendingTasks.some(pt => pt.id === task.id) &&
+               // ... I have an action in its history for this stage.
+               task.history?.some(h => h.stepName === stage.name && h.userId === user.id);
+    });
+    return { pendingTasks: myPendingTasks, completedTasks: myCompletedTasks };
   }, [tasks, user, stage]);
 
   const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '', updatedItems?: any[]) => {
@@ -137,8 +144,9 @@ export default function StagePage() {
                     newStage = nextStep.name;
                     newStatus = 'In Progress';
                     newCurrentStepId = nextStep.id;
-                    newAssignees = await getAssigneeForStep(nextStep, currentTaskData as any);
-                    if (newAssignees.length === 0) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+                    const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
+                    if (assignees.length === 0) throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+                    newAssignees = assignees;
                     const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
                     newDeadline = Timestamp.fromDate(deadlineDate);
                 } else {
@@ -234,8 +242,9 @@ export default function StagePage() {
                                 <DropdownMenuContent align="end">
                                     {type === 'pending' && actions.map(action => {
                                         const actionName = typeof action === 'string' ? action : action.name;
+                                        const isVerify = actionName === 'Verify';
                                         return (
-                                            <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); if(actionName === 'Verified') { handleVerifyClick(entry) } else { handleAction(entry.id, action); } }}>
+                                            <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); if(isVerify) { handleVerifyClick(entry) } else { handleAction(entry.id, action); } }}>
                                                 {actionName}
                                             </DropdownMenuItem>
                                         )
@@ -299,4 +308,5 @@ export default function StagePage() {
     </>
   );
 }
+
 
