@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -34,6 +33,28 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry, boq
     }
   }, [jmcEntry]);
 
+  const enrichedItems = useMemo(() => {
+    if (!jmcEntry) return []; // Guard against null jmcEntry
+    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
+    if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
+
+    return itemsToDisplay.map(item => {
+      const boqItem = boqItems.find(b => b['BOQ SL No'] === item.boqSlNo || b['SL. No.'] === item.boqSlNo);
+      const boqQty = boqItem ? Number(boqItem.QTY || boqItem['Total Qty'] || 0) : 0;
+      
+      const totalCertifiedQty = jmcEntry.items
+        .filter(i => i.boqSlNo === item.boqSlNo)
+        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
+
+      return {
+        ...item,
+        boqQty,
+        totalCertifiedQty,
+      };
+    });
+  }, [jmcEntry, boqItems, isEditMode, editableItems]);
+
+  // Early return must be after all hook calls.
   if (!jmcEntry) return null;
   
   const formatCurrency = (amount: number | string) => {
@@ -60,26 +81,6 @@ export default function ViewJmcEntryDialog({ isOpen, onOpenChange, jmcEntry, boq
           onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
       }
   }
-
-  const enrichedItems = useMemo(() => {
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
-    if (!itemsToDisplay || !Array.isArray(boqItems)) return [];
-
-    return itemsToDisplay.map(item => {
-      const boqItem = boqItems.find(b => b['BOQ SL No'] === item.boqSlNo || b['SL. No.'] === item.boqSlNo);
-      const boqQty = boqItem ? Number(boqItem.QTY || boqItem['Total Qty'] || 0) : 0;
-      
-      const totalCertifiedQty = jmcEntry.items
-        .filter(i => i.boqSlNo === item.boqSlNo)
-        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
-
-      return {
-        ...item,
-        boqQty,
-        totalCertifiedQty,
-      };
-    });
-  }, [jmcEntry.items, boqItems, isEditMode, editableItems]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
