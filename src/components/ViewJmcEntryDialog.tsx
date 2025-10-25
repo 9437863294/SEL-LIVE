@@ -151,6 +151,7 @@ export default function ViewJmcEntryDialog({
                       <TableHead>BOQ Sl. No.</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Unit</TableHead>
+                      <TableHead>BOQ Qty</TableHead>
                       <TableHead>Rate</TableHead>
                       <TableHead>Executed Qty</TableHead>
                       <TableHead>Certified Qty</TableHead>
@@ -163,6 +164,7 @@ export default function ViewJmcEntryDialog({
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell>{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
+                        <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>
                           {isEditMode ? (
