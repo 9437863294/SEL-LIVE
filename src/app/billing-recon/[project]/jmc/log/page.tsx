@@ -231,10 +231,9 @@ export default function JmcLogPage() {
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
-        allJmcEntries={allJmcEntries}
         boqItems={boqItems}
         bills={bills}
-        isEditMode={false}   // ✅ Edit disabled here
+        isEditMode={false}   // keep Log view read-only
         isLoading={false}
       />
     </>

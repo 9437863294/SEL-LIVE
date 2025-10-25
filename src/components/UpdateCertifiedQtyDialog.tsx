@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -17,15 +18,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import type { JmcEntry, JmcItem } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import type { JmcEntry, JmcItem, ActionConfig } from '@/lib/types';
+import { Loader2, Save } from 'lucide-react';
 
 interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  jmcEntry: JmcEntry;
+  jmcEntry: JmcEntry | null;
   projectSlug: string;
   onSaveSuccess: () => void;
+  onAction?: (taskId: string, action: string | ActionConfig, comment: string, updatedItems: JmcItem[]) => Promise<void>;
 }
 
 type EditableItem = JmcItem & { __certStr?: string; __error?: string | null };
@@ -36,6 +38,7 @@ export function UpdateCertifiedQtyDialog({
   jmcEntry,
   projectSlug,
   onSaveSuccess,
+  onAction,
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
   const [items, setItems] = useState<EditableItem[]>([]);
@@ -43,8 +46,8 @@ export function UpdateCertifiedQtyDialog({
 
   // hydrate editable rows when dialog opens
   useEffect(() => {
-    if (isOpen) {
-      const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items));
+    if (isOpen && jmcEntry) {
+      const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items || []));
       // keep the input as a string so users can clear/partially type
       cloned.forEach((it) => {
         it.__certStr = it.certifiedQty ?? it.certifiedQty === 0 ? String(it.certifiedQty) : '';
@@ -52,7 +55,7 @@ export function UpdateCertifiedQtyDialog({
       });
       setItems(cloned);
     }
-  }, [isOpen, jmcEntry.items]);
+  }, [isOpen, jmcEntry]);
 
   const hasErrors = useMemo(() => items.some((it) => it.__error), [items]);
 
@@ -91,6 +94,7 @@ export function UpdateCertifiedQtyDialog({
   };
 
   const handleSave = async () => {
+    if (!jmcEntry) return;
     // quick guard: avoid saving if any invalid
     if (hasErrors) {
       toast({
@@ -102,19 +106,31 @@ export function UpdateCertifiedQtyDialog({
     }
 
     setIsSaving(true);
-    try {
-      const payloadItems: JmcItem[] = items.map(({ __certStr, __error, ...rest }) => rest);
-      const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
-      await updateDoc(jmcRef, { items: payloadItems });
+    const payloadItems: JmcItem[] = items.map(({ __certStr, __error, ...rest }) => ({
+        ...rest,
+        certifiedQty: rest.certifiedQty === undefined || rest.certifiedQty === null ? undefined : Number(rest.certifiedQty),
+    }));
 
-      toast({ title: 'Success', description: 'Certified quantities updated.' });
-      onSaveSuccess();
-      onOpenChange(false);
-    } catch (error) {
-      console.error('Error updating certified quantities:', error);
-      toast({ title: 'Error', description: 'Failed to update quantities.', variant: 'destructive' });
-    } finally {
-      setIsSaving(false);
+    if (onAction) {
+        // This is the new workflow-aware save
+        await onAction(jmcEntry.id, 'Verified', 'Verified with edits', payloadItems);
+        setIsSaving(false);
+        onOpenChange(false); // The parent will handle success toast
+    } else {
+        // This is the original direct-update logic (fallback)
+        try {
+            const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
+            await updateDoc(jmcRef, { items: payloadItems });
+
+            toast({ title: 'Success', description: 'Certified quantities updated.' });
+            onSaveSuccess();
+            onOpenChange(false);
+        } catch (error) {
+            console.error('Error updating certified quantities:', error);
+            toast({ title: 'Error', description: 'Failed to update quantities.', variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
+        }
     }
   };
 
@@ -123,7 +139,7 @@ export function UpdateCertifiedQtyDialog({
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Update Certified Quantities</DialogTitle>
-          <DialogDescription>JMC No: {jmcEntry.jmcNo}</DialogDescription>
+          <DialogDescription>JMC No: {jmcEntry?.jmcNo}</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh] border rounded-md">
@@ -172,7 +188,7 @@ export function UpdateCertifiedQtyDialog({
           </DialogClose>
           <Button onClick={handleSave} disabled={isSaving || hasErrors}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Quantities
+            {onAction ? "Save & Verify" : "Save Quantities"}
           </Button>
         </DialogFooter>
       </DialogContent>

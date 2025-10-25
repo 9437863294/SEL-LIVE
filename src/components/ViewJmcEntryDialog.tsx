@@ -48,7 +48,6 @@ interface ViewJmcEntryDialogProps {
 function safeFormatDate(d: unknown): string {
   try {
     // Firestore Timestamp support
-    // @ts-expect-error - runtime guard
     if (d && typeof d === 'object' && typeof (d as any).toDate === 'function') {
       return format((d as any).toDate(), 'dd MMM, yyyy');
     }
