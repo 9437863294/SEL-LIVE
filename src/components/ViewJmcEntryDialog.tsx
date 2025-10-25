@@ -31,6 +31,7 @@ interface ViewJmcEntryDialogProps {
     comment: string,
     updatedItems: JmcItem[]
   ) => Promise<void>;
+  onSave?: (jmcEntryId: string, items: JmcItem[]) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -42,19 +43,10 @@ export default function ViewJmcEntryDialog({
   bills,
   isEditMode = false,
   onVerify,
+  onSave,
   isLoading,
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
-  const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
-  const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
-
-   const handleViewJmc = (jmcNo: string) => {
-    // This function seems to be missing the logic to find the JMC entry.
-    // This might need to be passed in or fetched.
-    // For now, let's assume it can be found in a non-existent `jmcEntries` prop.
-    // To prevent a crash, let's just log it.
-    console.log("Viewing JMC:", jmcNo);
-  };
 
   useEffect(() => {
     if (jmcEntry?.items) {
@@ -108,15 +100,21 @@ export default function ViewJmcEntryDialog({
   ) => {
     setEditableItems((prev) => {
       const next = [...prev];
-      const numValue = Number(value);
-      if (!Number.isNaN(numValue)) {
-        const item = { ...next[index] };
+      const numValue = parseFloat(value); // Use parseFloat for decimal values
+      const item = { ...next[index] };
+      
+      if (!isNaN(numValue)) {
         (item as any)[field] = numValue;
-        const rate = Number(item.rate) || 0;
-        const executedQty = Number(item.executedQty) || 0;
-        item.totalAmount = executedQty * rate;
-        next[index] = item;
+      } else {
+        // Allow clearing the input
+        (item as any)[field] = value === '' ? '' : (item as any)[field];
       }
+      
+      const rate = Number(item.rate) || 0;
+      const executedQty = Number(item.executedQty) || 0;
+      item.totalAmount = executedQty * rate;
+
+      next[index] = item;
       return next;
     });
   };
@@ -126,8 +124,29 @@ export default function ViewJmcEntryDialog({
       onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
     }
   };
+  
+  const handleSaveChanges = () => {
+    if (onSave && jmcEntry) {
+        onSave(jmcEntry.id, editableItems);
+    }
+  }
 
   if (!jmcEntry) return null;
+  
+  const formatDateSafe = (dateInput: any) => {
+    if (!dateInput) return 'N/A';
+    try {
+      if (typeof dateInput.toDate === 'function') {
+        return format(dateInput.toDate(), 'dd MMM, yyyy');
+      }
+      const date = new Date(dateInput);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return format(date, 'dd MMM, yyyy');
+    } catch (error) {
+      console.warn('Could not format date:', dateInput, error);
+      return 'Invalid Date';
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -150,7 +169,7 @@ export default function ViewJmcEntryDialog({
               <div>
                 <Label>JMC Date</Label>
                 <p className="font-medium">
-                  {jmcEntry.jmcDate ? format(new Date(jmcEntry.jmcDate), 'dd MMM, yyyy') : '—'}
+                  {formatDateSafe(jmcEntry.jmcDate)}
                 </p>
               </div>
             </div>
@@ -183,12 +202,12 @@ export default function ViewJmcEntryDialog({
                         <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>{item.previousCertifiedQty}</TableCell>
-                        <TableCell>
+                         <TableCell>
                           {isEditMode ? (
                             <Input
                               type="number"
                               inputMode="decimal"
-                              value={item.executedQty}
+                              value={item.executedQty ?? ''}
                               onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
                             />
                           ) : (
@@ -197,12 +216,7 @@ export default function ViewJmcEntryDialog({
                         </TableCell>
                         <TableCell>
                            {isEditMode ? (
-                            <Input
-                              type="number"
-                              inputMode="decimal"
-                              value={item.certifiedQty}
-                              onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
-                            />
+                            item.certifiedQty ?? 'N/A'
                           ) : (
                             item.certifiedQty ?? 'N/A'
                           )}
@@ -223,9 +237,9 @@ export default function ViewJmcEntryDialog({
           </DialogClose>
 
           {isEditMode && (
-            <Button onClick={handleSaveAndVerify} disabled={isLoading}>
+            <Button onClick={handleSaveChanges} disabled={isLoading}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save &amp; Verify
+              Save Changes
             </Button>
           )}
         </DialogFooter>
