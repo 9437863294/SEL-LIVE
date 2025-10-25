@@ -1,6 +1,7 @@
+
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -53,7 +54,7 @@ export default function ViewJmcEntryDialog({
     } else {
       setEditableItems([]);
     }
-  }, [jmcEntry]);
+  }, [jmcEntry, isOpen]); // Reruns when dialog opens or entry changes
 
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
     if (!jmcEntry) return [];
@@ -164,16 +165,7 @@ export default function ViewJmcEntryDialog({
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>
-                          {isEditMode ? (
-                            <Input
-                              type="number"
-                              inputMode="decimal"
-                              value={Number.isFinite(item.executedQty) ? item.executedQty : 0}
-                              onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
-                            />
-                          ) : (
-                            item.executedQty
-                          )}
+                            {item.executedQty}
                         </TableCell>
                         <TableCell>
                           {isEditMode ? (
