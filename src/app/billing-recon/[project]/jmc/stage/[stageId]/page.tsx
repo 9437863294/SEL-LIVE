@@ -212,7 +212,8 @@ export default function StagePage() {
         nextStep = workflow[idx + 1];
 
         if (nextStep) {
-          const computedAssignees = await getAssigneeForStep(nextStep, preData as any);
+          const serializableData = { ...preData, createdAt: preData.createdAt.toDate().toISOString() };
+          const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
           if (!computedAssignees || computedAssignees.length === 0) {
             throw new Error(`Could not find assignee for step: ${nextStep.name}`);
           }
