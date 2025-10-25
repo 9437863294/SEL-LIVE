@@ -13,7 +13,7 @@ import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc,
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, JmcItem } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -170,7 +170,7 @@ export default function JmcLogPage() {
                 <TableRow>
                   <TableHead>JMC No.</TableHead>
                   <TableHead>JMC Date</TableHead>
-                  {workflowSteps.map(step => (
+                  {workflowSteps && workflowSteps.map(step => (
                       <TableHead key={step.id}>{step.name}</TableHead>
                   ))}
                   <TableHead>JMC Value</TableHead>
@@ -184,7 +184,7 @@ export default function JmcLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={7 + workflowSteps.length}><Skeleton className="h-5" /></TableCell>
+                      <TableCell colSpan={7 + (workflowSteps?.length || 0)}><Skeleton className="h-5" /></TableCell>
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
@@ -193,7 +193,7 @@ export default function JmcLogPage() {
                         <TableRow key={entry.id}>
                           <TableCell className="font-medium">{entry.jmcNo}</TableCell>
                           <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy')}</TableCell>
-                          {workflowSteps.map(step => (
+                          {workflowSteps && workflowSteps.map(step => (
                             <TableCell key={step.id}>{entry.stageDates[step.name]}</TableCell>
                           ))}
                           <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
@@ -233,7 +233,7 @@ export default function JmcLogPage() {
                 })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8 + workflowSteps.length} className="text-center h-24">
+                    <TableCell colSpan={8 + (workflowSteps?.length || 0)} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
