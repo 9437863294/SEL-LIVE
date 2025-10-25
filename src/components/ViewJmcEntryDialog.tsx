@@ -12,6 +12,8 @@ import { ScrollArea } from './ui/scroll-area';
 import { useMemo, useState, useEffect } from 'react';
 import { Input } from './ui/input';
 import { Loader2, Save } from 'lucide-react';
+import ViewJmcEntryDialog from './ViewJmcEntryDialog';
+import { Eye } from 'lucide-react';
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -22,7 +24,6 @@ interface ViewJmcEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
-  allJmcEntries: JmcEntry[]; // Pass all entries for calculation
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
@@ -39,9 +40,8 @@ export default function ViewJmcEntryDialog({
   isOpen,
   onOpenChange,
   jmcEntry,
-  allJmcEntries,
   boqItems,
-  bills, // not used right now, kept for future
+  bills,
   isEditMode = false,
   onVerify,
   isLoading,
@@ -68,12 +68,8 @@ export default function ViewJmcEntryDialog({
         );
         const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
         
-        // Calculate the total certified quantity for this BOQ item from *other* JMCs
-        const previousCertifiedQty = allJmcEntries
-            .filter(entry => entry.id !== jmcEntry.id) // Exclude the current JMC
-            .flatMap(entry => entry.items)
-            .filter(jmcItem => jmcItem.boqSlNo === item.boqSlNo)
-            .reduce((sum, jmcItem) => sum + (jmcItem.certifiedQty || 0), 0);
+        // This is a placeholder for the logic to calculate previous certified quantity
+        const previousCertifiedQty = 0; 
 
         return {
             ...item,
@@ -81,7 +77,7 @@ export default function ViewJmcEntryDialog({
             previousCertifiedQty,
         };
     });
-}, [jmcEntry, allJmcEntries, boqItems, isEditMode, editableItems]);
+}, [jmcEntry, boqItems, isEditMode, editableItems]);
 
 
   const formatCurrency = (amount: number | string) => {
@@ -157,8 +153,8 @@ export default function ViewJmcEntryDialog({
                       <TableHead>Unit</TableHead>
                       <TableHead>BOQ Qty</TableHead>
                       <TableHead>Rate</TableHead>
-                      <TableHead>Executed Qty</TableHead>
                       <TableHead>Prev. Certified</TableHead>
+                      <TableHead>Executed Qty</TableHead>
                       <TableHead>Certified Qty</TableHead>
                       <TableHead>Total Amount</TableHead>
                     </TableRow>
@@ -171,6 +167,7 @@ export default function ViewJmcEntryDialog({
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
+                        <TableCell>{item.previousCertifiedQty}</TableCell>
                         <TableCell>
                           {isEditMode ? (
                             <Input
@@ -183,9 +180,17 @@ export default function ViewJmcEntryDialog({
                             item.executedQty
                           )}
                         </TableCell>
-                         <TableCell>{item.previousCertifiedQty}</TableCell>
                         <TableCell>
-                           {item.certifiedQty ?? 'N/A'}
+                           {isEditMode ? (
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              value={item.certifiedQty}
+                              onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
+                            />
+                          ) : (
+                            item.certifiedQty ?? 'N/A'
+                          )}
                         </TableCell>
                         <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                       </TableRow>
