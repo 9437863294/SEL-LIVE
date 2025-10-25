@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -81,6 +82,7 @@ export default function StagePage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  const [allJmcEntries, setAllJmcEntries] = useState<JmcEntry[]>([]);
   const [tasks, setTasks] = useState<JmcEntry[]>([]);
   const [stage, setStage] = useState<WorkflowStep | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
@@ -124,21 +126,21 @@ export default function StagePage() {
           return;
         }
       }
+      
+      const allJmcEntriesQuery = query(collection(db, 'projects', projectSlug, 'jmcEntries'));
 
-      const qTasks = query(
-        collection(db, 'projects', projectSlug, 'jmcEntries'),
-        where('currentStepId', '==', stageId)
-      );
-
-      const [tasksSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
-        getDocs(qTasks),
+      const [allJmcSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
+        getDocs(allJmcEntriesQuery),
         getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
         getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
       ]);
-
-      const tasksData = tasksSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as JmcEntry);
-      setTasks(tasksData);
-
+      
+      const allJmcData = allJmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as JmcEntry);
+      setAllJmcEntries(allJmcData);
+      
+      const stageTasks = allJmcData.filter(t => t.currentStepId === stageId);
+      setTasks(stageTasks);
+      
       setBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
@@ -160,14 +162,14 @@ export default function StagePage() {
       (t) => t.assignees?.includes(user.id) && t.status !== 'Completed' && t.status !== 'Rejected'
     );
 
-    const myCompleted = tasks.filter(
+    const myCompleted = allJmcEntries.filter(
       (t) =>
         !myPending.some((pt) => pt.id === t.id) &&
         (t.history ?? []).some((h) => h.stepName === stage.name && h.userId === user.id)
     );
 
     return { pendingTasks: myPending, completedTasks: myCompleted };
-  }, [tasks, user, stage]);
+  }, [tasks, allJmcEntries, user, stage]);
 
   // Close dialogs when onOpenChange(false)
   const handleDialogOpenChange = (open: boolean) => {
@@ -434,6 +436,7 @@ export default function StagePage() {
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
         jmcEntry={selectedJmc}
+        allJmcEntries={allJmcEntries}
         boqItems={boqItems}
         bills={bills}
         isEditMode={isVerifyOpen}            // edit mode only when triggered by Verify/Verified
