@@ -19,8 +19,9 @@ import {
   Timestamp,
   runTransaction,
   arrayUnion,
+  updateDoc,
 } from 'firebase/firestore';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig, JmcItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -154,6 +155,19 @@ export default function StagePage() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+  
+  const handleUpdateItems = async (jmcEntryId: string, updatedItems: JmcItem[]) => {
+      try {
+        const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntryId);
+        await updateDoc(jmcRef, { items: updatedItems });
+        toast({ title: "Success", description: "JMC items have been updated."});
+        fetchTasks(); // Refresh data
+        setIsVerifyOpen(false); // Close the dialog on successful save
+      } catch (error) {
+        console.error("Error updating JMC items:", error);
+        toast({ title: "Save Failed", description: "Could not save the changes to JMC items.", variant: "destructive"});
+      }
+  };
 
   const { pendingTasks, completedTasks } = useMemo(() => {
     if (!user || !stage) return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
@@ -436,11 +450,11 @@ export default function StagePage() {
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
         jmcEntry={selectedJmc}
-        allJmcEntries={allJmcEntries}
         boqItems={boqItems}
         bills={bills}
         isEditMode={isVerifyOpen}            // edit mode only when triggered by Verify/Verified
         onVerify={handleAction}
+        onSave={handleUpdateItems}
         isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
       />
 

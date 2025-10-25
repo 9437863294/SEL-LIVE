@@ -119,12 +119,6 @@ export default function ViewJmcEntryDialog({
     });
   };
   
-  const handleSaveAndVerify = () => {
-    if (onVerify && jmcEntry) {
-      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
-    }
-  };
-  
   const handleSaveChanges = () => {
     if (onSave && jmcEntry) {
         onSave(jmcEntry.id, editableItems);
@@ -215,11 +209,7 @@ export default function ViewJmcEntryDialog({
                           )}
                         </TableCell>
                         <TableCell>
-                           {isEditMode ? (
-                            item.certifiedQty ?? 'N/A'
-                          ) : (
-                            item.certifiedQty ?? 'N/A'
-                          )}
+                           {item.certifiedQty ?? 'N/A'}
                         </TableCell>
                         <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                       </TableRow>
