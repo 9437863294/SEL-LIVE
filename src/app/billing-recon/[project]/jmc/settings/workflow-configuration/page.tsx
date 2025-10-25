@@ -30,6 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 
 // Helpers to narrow the discriminated union
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -16,7 +15,6 @@ import {
   getDocs,
   doc,
   getDoc,
-  updateDoc,
   Timestamp,
   runTransaction,
   arrayUnion,
@@ -31,8 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
-import { Eye } from 'lucide-react';
-
 
 function formatINR(n: number | undefined) {
   try {
@@ -75,8 +71,6 @@ function pastTense(action: string) {
     Verified: 'verified',
     Reject: 'rejected',
     Revert: 'reverted',
-    Edit: 'saved',
-    Save: 'saved',
   };
   return map[action] ?? `${action.toLowerCase()}ed`;
 }
@@ -93,15 +87,14 @@ export default function StagePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
-
-  // Dialog states
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isVerifyOpen, setIsVerifyOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
   const [isUpdateQtyOpen, setIsUpdateQtyOpen] = useState(false);
-
+  const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+
+  // Accept both spellings from workflow config
+  const isVerifyAction = (name: string) => name === 'Verify' || name === 'Verified';
 
   const handleUpdateQtyClick = (entry: JmcEntry) => {
     setSelectedJmc(entry);
@@ -176,12 +169,11 @@ export default function StagePage() {
     return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [tasks, user, stage]);
 
-  // Close all dialogs together
+  // Close dialogs when onOpenChange(false)
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
       setIsViewOpen(false);
       setIsVerifyOpen(false);
-      setIsEditOpen(false);
       setIsUpdateQtyOpen(false);
       setSelectedJmc(null);
     }
@@ -198,6 +190,7 @@ export default function StagePage() {
     setIsActionLoading(taskId);
 
     try {
+      // Pre-read the task safely (outside transaction)
       const taskRef = doc(db, 'projects', projectSlug, 'jmcEntries', taskId);
       const preSnap = await getDoc(taskRef);
       if (!preSnap.exists()) throw new Error('Task document not found!');
@@ -228,6 +221,7 @@ export default function StagePage() {
           newStatus = 'In Progress';
           newCurrentStepId = nextStep.id;
         } else {
+          // End of workflow
           newStage = 'Completed';
           newStatus = 'Completed';
           newCurrentStepId = null;
@@ -241,7 +235,6 @@ export default function StagePage() {
         newAssignees = [];
         newDeadline = null;
       }
-      // For Edit/Save: we just keep same stage/currentStep; history is still logged.
 
       const newActionLog: ActionLog = {
         action: actionName,
@@ -289,7 +282,6 @@ export default function StagePage() {
     } finally {
       setIsActionLoading(null);
       setIsVerifyOpen(false);
-      setIsEditOpen(false);
     }
   };
 
@@ -301,11 +293,6 @@ export default function StagePage() {
   const handleVerifyClick = (entry: JmcEntry) => {
     setSelectedJmc(entry);
     setIsVerifyOpen(true);
-  };
-
-  const handleEditClick = (entry: JmcEntry) => {
-    setSelectedJmc(entry);
-    setIsEditOpen(true);
   };
 
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
@@ -368,61 +355,30 @@ export default function StagePage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                            {/* Always allow Edit here */}
-                            {type === 'pending' && (
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleEditClick(entry);
-                                }}
-                              >
-                                Edit
-                              </DropdownMenuItem>
-                            )}
-
-                            {/* Show Verify only if workflow allows or if you want it always at this stage */}
                             {type === 'pending' &&
-                              (actions.length === 0 || actions.some(a => (typeof a === 'string' ? a : a.name) === 'Verify')) && (
-                                <DropdownMenuItem
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    handleVerifyClick(entry);
-                                  }}
-                                >
-                                  Verify
-                                </DropdownMenuItem>
-                              )}
-
-                            {/* Render remaining configured actions except Edit/Verify (handled above) */}
-                            {type === 'pending' &&
-                              actions
-                                .filter(a => {
-                                  const name = typeof a === 'string' ? a : a.name;
-                                  return name !== 'Verify' && name !== 'Edit';
-                                })
-                                .map(a => {
-                                  const name = typeof a === 'string' ? a : a.name;
-                                  return (
-                                    <DropdownMenuItem
-                                      key={name}
-                                      onSelect={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        handleAction(entry.id, a);
-                                      }}
-                                    >
-                                      {name}
-                                    </DropdownMenuItem>
-                                  );
-                                })}
-
-                            {type === 'completed' && (
-                              <DropdownMenuItem onSelect={() => handleViewDetails(entry)}>
-                                <Eye className="mr-2 h-4 w-4" /> View Only
-                              </DropdownMenuItem>
-                            )}
+                              (actions as (string | ActionConfig)[]).map((action) => {
+                                const actionName = typeof action === 'string' ? action : action.name;
+                                const isVerify = isVerifyAction(actionName); // ← accept Verify or Verified
+                                const isUpdateQty = actionName === 'Update Certified Qty';
+                                return (
+                                  <DropdownMenuItem
+                                    key={actionName}
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isVerify) {
+                                        handleVerifyClick(entry); // ← opens ViewJmcEntryDialog in edit mode
+                                      } else if (isUpdateQty) {
+                                        handleUpdateQtyClick(entry);
+                                      } else {
+                                        handleAction(entry.id, action);
+                                      }
+                                    }}
+                                  >
+                                    {actionName}
+                                  </DropdownMenuItem>
+                                );
+                              })}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
@@ -432,8 +388,8 @@ export default function StagePage() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  No {type} tasks found in this stage.
+                <TableCell colSpan={6} className="text-center h-24">
+                  No {type} tasks found.
                 </TableCell>
               </TableRow>
             )}
@@ -444,70 +400,56 @@ export default function StagePage() {
   );
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/billing-recon/${projectSlug}/jmc`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">{stage?.name ?? 'JMC Stage'}</h1>
+    <>
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link href={`/billing-recon/${projectSlug}/jmc`}>
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">{stage?.name || 'JMC Stage'}</h1>
+          </div>
         </div>
+        <Tabs defaultValue="pending">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="pending">
+              <Clock className="mr-2 h-4 w-4" /> Pending ({pendingTasks.length})
+            </TabsTrigger>
+            <TabsTrigger value="completed">
+              <Check className="mr-2 h-4 w-4" /> Completed ({completedTasks.length})
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="pending" className="mt-4">
+            {renderTable(pendingTasks, 'pending')}
+          </TabsContent>
+          <TabsContent value="completed" className="mt-4">
+            {renderTable(completedTasks, 'completed')}
+          </TabsContent>
+        </Tabs>
       </div>
 
-      <Tabs defaultValue="pending-tasks">
-        <TabsList>
-          <TabsTrigger value="pending-tasks">Pending Tasks ({pendingTasks.length})</TabsTrigger>
-          <TabsTrigger value="completed-tasks">Completed ({completedTasks.length})</TabsTrigger>
-        </TabsList>
-        <TabsContent value="pending-tasks" className="mt-4">
-          {renderTable(pendingTasks, 'pending')}
-        </TabsContent>
-        <TabsContent value="completed-tasks" className="mt-4">
-          {renderTable(completedTasks, 'completed')}
-        </TabsContent>
-      </Tabs>
-      
       <ViewJmcEntryDialog
-        isOpen={isViewOpen}
+        isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
         jmcEntry={selectedJmc}
         boqItems={boqItems}
         bills={bills}
-        isEditMode={false}
-      />
-      <ViewJmcEntryDialog
-        isOpen={isVerifyOpen}
-        onOpenChange={handleDialogOpenChange}
-        jmcEntry={selectedJmc}
-        boqItems={boqItems}
-        bills={bills}
-        isEditMode={true}
+        isEditMode={isVerifyOpen}            // edit mode only when triggered by Verify/Verified
         onVerify={handleAction}
-        isLoading={!!isActionLoading}
+        isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
       />
-      <ViewJmcEntryDialog
-        isOpen={isEditOpen}
-        onOpenChange={handleDialogOpenChange}
-        jmcEntry={selectedJmc}
-        boqItems={boqItems}
-        bills={bills}
-        isEditMode={true}
-        onVerify={handleAction}
-        isLoading={!!isActionLoading}
-      />
-       <UpdateCertifiedQtyDialog
-        isOpen={isUpdateQtyOpen}
-        onOpenChange={handleDialogOpenChange}
-        jmcEntry={selectedJmc!}
-        projectSlug={projectSlug}
-        onSaveSuccess={() => {
-            handleDialogOpenChange(false);
-            fetchTasks();
-        }}
-      />
-    </div>
+
+      {selectedJmc && (
+        <UpdateCertifiedQtyDialog
+          isOpen={isUpdateQtyOpen}
+          onOpenChange={setIsUpdateQtyOpen}
+          jmcEntry={selectedJmc}
+          projectSlug={projectSlug}
+          onSaveSuccess={fetchTasks} // refresh after save
+        />
+      )}
+    </>
   );
 }
-
