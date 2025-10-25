@@ -1,10 +1,8 @@
-
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, MoreHorizontal, FileSpreadsheet, Trash2, Eye, Download, Edit, XCircle } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, Trash2, Eye, Download, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,7 +16,6 @@ import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +38,6 @@ export default function JmcLogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isCertifyOpen, setIsCertifyOpen] = useState(false);
 
   const allJmcEntries = useMemo(() => jmcEntries, [jmcEntries]);
 
@@ -100,11 +96,6 @@ export default function JmcLogPage() {
     setSelectedEntry(entry);
     setIsViewOpen(true);
   };
-  
-  const handleOpenCertifyDialog = (entry: EnrichedJmcEntry) => {
-    setSelectedEntry(entry);
-    setIsViewOpen(true);
-  }
 
   const handleExportAll = () => {
     const dataToExport = jmcEntries.map(entry => {
@@ -126,7 +117,6 @@ export default function JmcLogPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Workflow Log");
 
-    // Adjust column widths
     const colWidths = Object.keys(dataToExport[0] || {}).map(key => ({
         wch: Math.max(15, key.length, ...dataToExport.map(row => String(row[key] || '').length))
     }));
@@ -138,14 +128,7 @@ export default function JmcLogPage() {
   const formatCurrency = (amount: number) => {
     if (isNaN(amount)) return 'N/A';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  }
-
-  const handleVerify = async () => {
-      // Dummy handler, real logic is in ViewJmcEntryDialog now
-      if (selectedEntry) {
-          setIsViewOpen(true);
-      }
-  }
+  };
 
   return (
     <>
@@ -251,11 +234,7 @@ export default function JmcLogPage() {
         allJmcEntries={allJmcEntries}
         boqItems={boqItems}
         bills={bills}
-        isEditMode={true}
-        onVerify={async (taskId, action, comment, updatedItems) => {
-            console.log('Verification action triggered from log page');
-            // This could be a more complex workflow action call
-        }}
+        isEditMode={false}   // ✅ Edit disabled here
         isLoading={false}
       />
     </>

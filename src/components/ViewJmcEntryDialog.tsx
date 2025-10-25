@@ -159,6 +159,9 @@ export default function ViewJmcEntryDialog({
     if (isNaN(num)) return String(amount);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
+  
+  const itemsToDisplay = isEditMode ? editableItems : initialItems;
+
 
   if (!jmcEntry) return null;
 
@@ -208,7 +211,7 @@ export default function ViewJmcEntryDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {editableItems.map((item, index) => (
+                    {itemsToDisplay.map((item, index) => (
                       <TableRow key={`${item.boqSlNo}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell className="truncate max-w-[200px]">{item.description}</TableCell>
