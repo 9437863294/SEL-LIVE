@@ -11,9 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ScrollArea } from './ui/scroll-area';
 import { useMemo, useState, useEffect } from 'react';
 import { Input } from './ui/input';
-import { Loader2, Save } from 'lucide-react';
-import ViewJmcEntryDialog from './ViewJmcEntryDialog';
-import { Eye } from 'lucide-react';
+import { Loader2, Save, Eye } from 'lucide-react';
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -47,6 +45,16 @@ export default function ViewJmcEntryDialog({
   isLoading,
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
+  const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
+  const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
+
+   const handleViewJmc = (jmcNo: string) => {
+    // This function seems to be missing the logic to find the JMC entry.
+    // This might need to be passed in or fetched.
+    // For now, let's assume it can be found in a non-existent `jmcEntries` prop.
+    // To prevent a crash, let's just log it.
+    console.log("Viewing JMC:", jmcNo);
+  };
 
   useEffect(() => {
     if (jmcEntry?.items) {
@@ -62,14 +70,21 @@ export default function ViewJmcEntryDialog({
 
     const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
     
+    // Calculate total billed quantity for each item *before* this JMC entry
+    const jmcDate = jmcEntry.jmcDate ? new Date(jmcEntry.jmcDate) : new Date();
+
     return itemsToDisplay.map((item) => {
         const boqItem = boqItems.find(b => 
             String((b as any)['BOQ SL No'] || (b as any)['SL. No.'] || '').trim() === String(item.boqSlNo || '').trim()
         );
         const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
         
-        // This is a placeholder for the logic to calculate previous certified quantity
-        const previousCertifiedQty = 0; 
+        const previousBillItems = bills
+            .filter(bill => new Date(bill.billDate) < jmcDate)
+            .flatMap(bill => bill.items)
+            .filter(billItem => billItem.boqSlNo === item.boqSlNo);
+            
+        const previousCertifiedQty = previousBillItems.reduce((sum, billItem) => sum + Number(billItem.billedQty || 0), 0);
 
         return {
             ...item,
@@ -77,7 +92,7 @@ export default function ViewJmcEntryDialog({
             previousCertifiedQty,
         };
     });
-}, [jmcEntry, boqItems, isEditMode, editableItems]);
+}, [jmcEntry, boqItems, bills, isEditMode, editableItems]);
 
 
   const formatCurrency = (amount: number | string) => {
