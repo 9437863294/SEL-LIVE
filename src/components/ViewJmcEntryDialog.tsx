@@ -1,11 +1,19 @@
 
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { JmcEntry, BoqItem, Bill, JmcItem, ActionConfig } from '@/lib/types';
+import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
@@ -25,13 +33,7 @@ interface ViewJmcEntryDialogProps {
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
-  onVerify?: (
-    taskId: string,
-    action: string | ActionConfig,
-    comment: string,
-    updatedItems: JmcItem[]
-  ) => Promise<void>;
-  onSave?: (jmcEntryId: string, items: JmcItem[]) => Promise<void>;
+  onVerify?: (taskId: string, action: string, comment: string, updatedItems: JmcItem[]) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -43,7 +45,6 @@ export default function ViewJmcEntryDialog({
   bills,
   isEditMode = false,
   onVerify,
-  onSave,
   isLoading,
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
@@ -106,7 +107,6 @@ export default function ViewJmcEntryDialog({
       if (!isNaN(numValue)) {
         (item as any)[field] = numValue;
       } else {
-        // Allow clearing the input
         (item as any)[field] = value === '' ? '' : (item as any)[field];
       }
       
@@ -120,8 +120,8 @@ export default function ViewJmcEntryDialog({
   };
   
   const handleSaveChanges = () => {
-    if (onSave && jmcEntry) {
-        onSave(jmcEntry.id, editableItems);
+    if (onVerify && jmcEntry) {
+        onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
     }
   }
 
@@ -176,15 +176,15 @@ export default function ViewJmcEntryDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>BOQ Sl. No.</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead>BOQ Qty</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Prev. Certified</TableHead>
-                      <TableHead>Executed Qty</TableHead>
-                      <TableHead>Certified Qty</TableHead>
-                      <TableHead>Total Amount</TableHead>
+                        <TableHead>BOQ Sl. No.</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead>BOQ Qty</TableHead>
+                        <TableHead>Rate</TableHead>
+                        <TableHead>Prev. Certified</TableHead>
+                        <TableHead>Executed Qty</TableHead>
+                        <TableHead>Certified Qty</TableHead>
+                        <TableHead>Total Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -229,7 +229,7 @@ export default function ViewJmcEntryDialog({
           {isEditMode && (
             <Button onClick={handleSaveChanges} disabled={isLoading}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save Changes
+              Save & Verify
             </Button>
           )}
         </DialogFooter>

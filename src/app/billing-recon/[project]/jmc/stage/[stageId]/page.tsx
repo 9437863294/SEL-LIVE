@@ -19,7 +19,6 @@ import {
   Timestamp,
   runTransaction,
   arrayUnion,
-  updateDoc,
 } from 'firebase/firestore';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig, JmcItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -83,7 +82,6 @@ export default function StagePage() {
   const { toast } = useToast();
   const router = useRouter();
 
-  const [allJmcEntries, setAllJmcEntries] = useState<JmcEntry[]>([]);
   const [tasks, setTasks] = useState<JmcEntry[]>([]);
   const [stage, setStage] = useState<WorkflowStep | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
@@ -137,7 +135,6 @@ export default function StagePage() {
       ]);
       
       const allJmcData = allJmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as JmcEntry);
-      setAllJmcEntries(allJmcData);
       
       const stageTasks = allJmcData.filter(t => t.currentStepId === stageId);
       setTasks(stageTasks);
@@ -156,23 +153,12 @@ export default function StagePage() {
     fetchTasks();
   }, [fetchTasks]);
   
-  const handleUpdateItems = async (jmcEntryId: string, updatedItems: JmcItem[]) => {
-      try {
-        const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntryId);
-        await updateDoc(jmcRef, { items: updatedItems });
-        toast({ title: "Success", description: "JMC items have been updated."});
-        fetchTasks(); // Refresh data
-        setIsVerifyOpen(false); // Close the dialog on successful save
-      } catch (error) {
-        console.error("Error updating JMC items:", error);
-        toast({ title: "Save Failed", description: "Could not save the changes to JMC items.", variant: "destructive"});
-      }
-  };
+  const allJmcEntries = tasks;
 
   const { pendingTasks, completedTasks } = useMemo(() => {
     if (!user || !stage) return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
 
-    const myPending = tasks.filter(
+    const myPending = allJmcEntries.filter(
       (t) => t.assignees?.includes(user.id) && t.status !== 'Completed' && t.status !== 'Rejected'
     );
 
@@ -183,7 +169,7 @@ export default function StagePage() {
     );
 
     return { pendingTasks: myPending, completedTasks: myCompleted };
-  }, [tasks, allJmcEntries, user, stage]);
+  }, [allJmcEntries, user, stage]);
 
   // Close dialogs when onOpenChange(false)
   const handleDialogOpenChange = (open: boolean) => {
@@ -454,7 +440,6 @@ export default function StagePage() {
         bills={bills}
         isEditMode={isVerifyOpen}            // edit mode only when triggered by Verify/Verified
         onVerify={handleAction}
-        onSave={handleUpdateItems}
         isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
       />
 
