@@ -1,8 +1,6 @@
-
-
 'use client';
 
-import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -20,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, where, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -41,21 +39,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { FabricationBomItem, Project, JmcEntry, UserSettings, Bill } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+// import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'; // keep if you’ll enable DnD
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 
-/** TYPES **/
 export type BoqItem = {
   id: string;
   'ERP SL NO'?: string | number;
   'BOQ SL No'?: string | number;
   'Description'?: string;
   'Unit'?: string;
-  'QTY'?: number;
-  'Unit Rate'?: number;
-  'Total Amount'?: number;
+  'QTY'?: number | string;
+  'Unit Rate'?: number | string;
+  'Total Amount'?: number | string;
   bom?: FabricationBomItem[];
   [key: string]: any;
 };
@@ -79,12 +76,10 @@ const baseTableHeaders = [
   'JMC Executed Qty',
   'JMC Certified Qty',
   'JMC Amount',
-  
 ] as const;
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -95,7 +90,6 @@ export default function ViewBoqPage() {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [isClient, setIsClient] = useState(false);
   const [sortKey, setSortKey] = useState<string>('ERP SL NO');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
@@ -104,17 +98,17 @@ export default function ViewBoqPage() {
     [...baseTableHeaders].reduce(
       (acc, h) => ({
         ...acc,
-        [h]: ['BOQ SL No', 
-              'ERP SL NO', 
-              'Description', 
-              'Unit',
-              'QTY',
-              'Unit Rate',
-              'JMC Certified Qty',
-              'JMC Amount',
-              'Total Amount'
-              
-            ].includes(h as string),
+        [h]: [
+          'BOQ SL No',
+          'ERP SL NO',
+          'Description',
+          'Unit',
+          'QTY',
+          'Unit Rate',
+          'JMC Certified Qty',
+          'JMC Amount',
+          'Total Amount',
+        ].includes(h as string),
       }),
       {} as Record<string, boolean>
     )
@@ -130,102 +124,95 @@ export default function ViewBoqPage() {
     'Scope 2': 'all',
     'Category 1': 'all',
   });
-  
+
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  
-  const isInitialMount = React.useRef(true);
 
+  const isInitialMount = useRef(true);
 
-  /*** CLIENT FLAG ***/
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
+  /** SETTINGS KEY **/
   const settingsKey = useMemo(() => {
     if (!projectSlug) return '';
     return `boqTable:${projectSlug}`;
   }, [projectSlug]);
 
-
-  /*** LOAD/SAVE PREFERENCES ***/
-    useEffect(() => {
-    if (!user || !settingsKey) return;
-
+  /** LOAD/SAVE PREFERENCES **/
+  useEffect(() => {
     const fetchSettings = async () => {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
-        const settings = settingsSnap.data() as UserSettings;
-        const pageSettings = settings.columnPreferences?.[settingsKey];
-        if (pageSettings) {
-          setColumnOrder(pageSettings.order || [...baseTableHeaders]);
-          setColumnVisibility(pageSettings.visibility || {});
-          setColumnNames(pageSettings.names || {});
-          if (pageSettings.sort) {
-            setSortKey(pageSettings.sort.key);
-            setSortDirection(pageSettings.sort.direction);
+      try {
+        const settingsRef = doc(db, 'userSettings', 'global'); // or per-user: replace 'global' with user id if available
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const settings = settingsSnap.data() as UserSettings;
+          const pageSettings = settings.columnPreferences?.[settingsKey];
+          if (pageSettings) {
+            setColumnOrder(pageSettings.order || [...baseTableHeaders]);
+            setColumnVisibility(pageSettings.visibility || {});
+            setColumnNames(pageSettings.names || {});
+            if (pageSettings.sort) {
+              setSortKey(pageSettings.sort.key);
+              setSortDirection(pageSettings.sort.direction);
+            }
           }
         }
+      } catch (e) {
+        console.warn('Failed to load column settings from Firestore', e);
       }
     };
-    
-    fetchSettings();
-  }, [user, settingsKey]);
-  
+
+    if (settingsKey) fetchSettings();
+  }, [settingsKey]);
+
   const saveColumnSettings = useCallback(async () => {
-    if (!user || !settingsKey) return;
+    if (!settingsKey) return;
     try {
-        const settingsRef = doc(db, 'userSettings', user.id);
-        const currentSettingsSnap = await getDoc(settingsRef);
-        const currentSettings = currentSettingsSnap.exists() ? currentSettingsSnap.data() : { columnPreferences: {} };
+      const settingsRef = doc(db, 'userSettings', 'global'); // or per-user
+      const currentSettingsSnap = await getDoc(settingsRef);
+      const currentSettings = currentSettingsSnap.exists() ? currentSettingsSnap.data() : { columnPreferences: {} };
 
-        const newPreferences = {
-            ...currentSettings.columnPreferences,
-            [settingsKey]: {
-                order: columnOrder,
-                visibility: columnVisibility,
-                names: columnNames,
-                sort: { key: sortKey, direction: sortDirection },
-            }
-        };
+      const newPreferences = {
+        ...currentSettings.columnPreferences,
+        [settingsKey]: {
+          order: columnOrder,
+          visibility: columnVisibility,
+          names: columnNames,
+          sort: { key: sortKey, direction: sortDirection },
+        },
+      };
 
-        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+      await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
     } catch (e) {
-        console.warn('Failed to save column settings to Firestore', e);
-        toast({ title: "Error", description: "Could not save your column preferences.", variant: "destructive" });
+      console.warn('Failed to save column settings to Firestore', e);
+      toast({ title: 'Error', description: 'Could not save your column preferences.', variant: 'destructive' });
     }
-  }, [user, settingsKey, columnOrder, columnVisibility, columnNames, sortKey, sortDirection, toast]);
-  
-  useEffect(() => {
-      if (isInitialMount.current) {
-          isInitialMount.current = false;
-          return;
-      }
-      if (user) {
-          saveColumnSettings();
-      }
-  }, [columnOrder, columnVisibility, columnNames, sortKey, sortDirection, user, saveColumnSettings]);
+  }, [settingsKey, columnOrder, columnVisibility, columnNames, sortKey, sortDirection, toast]);
 
-  /*** NORMALIZE KEYS FROM FIRESTORE ***/
-  const normalizeKey = (obj: any, targetKey: string): string | undefined => {
-    const foundKey = Object.keys(obj).find(
-      (k) => k.toLowerCase().replace(/\s+/g, '') === targetKey.toLowerCase().replace(/\s+/g, '')
-    );
-    return foundKey;
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    saveColumnSettings();
+  }, [columnOrder, columnVisibility, columnNames, sortKey, sortDirection, saveColumnSettings]);
+
+  /** NORMALIZE KEYS **/
+  const normalizeKey = (obj: Record<string, unknown>, targetKey: string): string | undefined => {
+    const needle = targetKey.toLowerCase().replace(/\s+/g, '');
+    return Object.keys(obj).find((k) => k.toLowerCase().replace(/\s+/g, '') === needle);
   };
 
-  /*** FETCH ***/
+  /** FETCH DATA **/
   const fetchBoqItems = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
+      // NOTE: if `projectSlug` is a slug (not Firestore doc id), you must resolve slug -> id first.
+      // Here we assume it is the document id.
       const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
-      const q = query(boqItemsRef); // simplified query
-      const boqSnapshot = await getDocs(q);
-      const items = boqSnapshot.docs.map((d) => {
-        const data = d.data() as any;
+      const boqSnapshot = await getDocs(query(boqItemsRef));
+      const items: BoqItem[] = boqSnapshot.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>;
         const erpKey = normalizeKey(data, 'ERP SL NO');
         const boqKey = normalizeKey(data, 'BOQ SL No');
         return {
@@ -233,19 +220,15 @@ export default function ViewBoqPage() {
           ...data,
           'ERP SL NO': erpKey ? (data as any)[erpKey] : '',
           'BOQ SL No': boqKey ? (data as any)[boqKey] : '',
-        } as BoqItem;
+        };
       });
       setBoqItems(items);
 
-      const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-      const jmcSnapshot = await getDocs(jmcCollectionRef);
-      const jmcData = jmcSnapshot.docs.map(d => d.data() as JmcEntry);
-      setJmcEntries(jmcData);
-      const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
-      const billsSnapshot = await getDocs(billsCollectionRef);
-      const billsData = billsSnapshot.docs.map(d => d.data() as Bill);
-      setBills(billsData);
+      const jmcSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'jmcEntries'));
+      setJmcEntries(jmcSnapshot.docs.map((d) => d.data() as JmcEntry));
 
+      const billsSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'bills'));
+      setBills(billsSnapshot.docs.map((d) => d.data() as Bill));
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -258,188 +241,194 @@ export default function ViewBoqPage() {
     fetchBoqItems();
   }, [fetchBoqItems]);
 
+  /** JMC QUANTITIES MAP **/
   const jmcQuantities = useMemo(() => {
-    const quantities: Record<string, { executed: number, certified: number }> = {};
-    jmcEntries.forEach(entry => {
-      entry.items.forEach(item => {
-        if (item.boqSlNo) {
-          if (!quantities[item.boqSlNo]) {
-            quantities[item.boqSlNo] = { executed: 0, certified: 0 };
-          }
-          quantities[item.boqSlNo].executed += Number(item.executedQty || 0);
-          quantities[item.boqSlNo].certified += Number(item.certifiedQty || 0);
-        }
+    const quantities: Record<string, { executed: number; certified: number }> = {};
+    jmcEntries.forEach((entry) => {
+      entry.items.forEach((it) => {
+        const key = String(it.boqSlNo ?? '');
+        if (!key) return;
+        if (!quantities[key]) quantities[key] = { executed: 0, certified: 0 };
+        quantities[key].executed += Number(it.executedQty || 0);
+        quantities[key].certified += Number(it.certifiedQty || 0);
       });
     });
     return quantities;
   }, [jmcEntries]);
 
-
+  /** FILTERS **/
   const filteredBoqItems = useMemo(() => {
-    return boqItems.filter(item => {
-      const searchMatch = filters.search === '' || 
-        String(item['ERP SL NO'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
-        String(item['BOQ SL No'] || '').toLowerCase().includes(filters.search.toLowerCase()) ||
-        String(item['Description'] || '').toLowerCase().includes(filters.search.toLowerCase());
-      
-      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
-      const category1Match = filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+    return boqItems.filter((item) => {
+      const search = filters.search.toLowerCase();
+      const searchMatch =
+        filters.search === '' ||
+        String(item['ERP SL NO'] ?? '').toLowerCase().includes(search) ||
+        String(item['BOQ SL No'] ?? '').toLowerCase().includes(search) ||
+        String(item['Description'] ?? '').toLowerCase().includes(search);
+
+      const s1 = filters['Scope 1'];
+      const s2 = filters['Scope 2'];
+      const c1 = filters['Category 1'];
+
+      const scope1Match = s1 === 'all' || item['Scope 1'] === s1;
+      const scope2Match = s2 === 'all' || item['Scope 2'] === s2;
+      const category1Match = c1 === 'all' || item['Category 1'] === c1;
 
       return searchMatch && scope1Match && scope2Match && category1Match;
-    })
+    });
   }, [boqItems, filters]);
 
   const filterOptions = useMemo(() => {
-    let filteredForOptions = boqItems;
+    let base = boqItems;
 
-    const scope1Options = [...new Set(filteredForOptions.map(item => item['Scope 1']).filter(Boolean))];
-    
+    const s1Options = [...new Set(base.map((i) => i['Scope 1']).filter(Boolean))] as string[];
+
     if (filters['Scope 1'] !== 'all') {
-      filteredForOptions = filteredForOptions.filter(item => item['Scope 1'] === filters['Scope 1']);
+      base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
     }
 
-    const scope2Options = [...new Set(filteredForOptions.map(item => item['Scope 2']).filter(Boolean))];
+    const s2Options = [...new Set(base.map((i) => i['Scope 2']).filter(Boolean))] as string[];
 
     if (filters['Scope 2'] !== 'all') {
-      filteredForOptions = filteredForOptions.filter(item => item['Scope 2'] === filters['Scope 2']);
+      base = base.filter((i) => i['Scope 2'] === filters['Scope 2']);
     }
-    
-    const category1Options = [...new Set(filteredForOptions.map(item => item['Category 1']).filter(Boolean))];
 
-    return { 
-      'Scope 1': scope1Options, 
-      'Scope 2': scope2Options, 
-      'Category 1': category1Options 
-    };
+    const c1Options = [...new Set(base.map((i) => i['Category 1']).filter(Boolean))] as string[];
+
+    return { 'Scope 1': s1Options, 'Scope 2': s2Options, 'Category 1': c1Options };
   }, [boqItems, filters]);
 
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
-     setFilters(prev => {
-      const newFilters = { ...prev, [key]: value };
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
       if (key === 'Scope 1') {
-        newFilters['Scope 2'] = 'all';
-        newFilters['Category 1'] = 'all';
+        next['Scope 2'] = 'all';
+        next['Category 1'] = 'all';
+      } else if (key === 'Scope 2') {
+        next['Category 1'] = 'all';
       }
-      if (key === 'Scope 2') {
-        newFilters['Category 1'] = 'all';
-      }
-      return newFilters;
-    });
-  };
-  
-  const clearFilters = () => {
-    setFilters({
-      search: '',
-      'Scope 1': 'all',
-      'Scope 2': 'all',
-      'Category 1': 'all',
+      return next;
     });
   };
 
-  /*** SORTED DATA ***/
+  const clearFilters = () => {
+    setFilters({ search: '', 'Scope 1': 'all', 'Scope 2': 'all', 'Category 1': 'all' });
+  };
+
+  /** SORT **/
+  const parsedNumber = (v: unknown) => {
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') {
+      const s = v.replace(/[, ]/g, '');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    return NaN;
+  };
+
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
-  
-    const getComparableValue = (item: BoqItem, key: string) => {
+
+    const getComparableValue = (item: BoqItem, key: string): unknown => {
       if (key === 'JMC Executed Qty') {
-        return Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
+        return Number(jmcQuantities[String(item['BOQ SL No'] ?? '')]?.executed || 0);
       }
-       if (key === 'JMC Certified Qty') {
-        return Number(jmcQuantities[item['BOQ SL No'] as string]?.certified || 0);
+      if (key === 'JMC Certified Qty') {
+        return Number(jmcQuantities[String(item['BOQ SL No'] ?? '')]?.certified || 0);
       }
       if (key === 'JMC Amount') {
-        const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.executed || 0);
-        const rate = Number(String(item['Unit Rate'] ?? '').replace(/[^0-9.+-]/g, ''));
-        return Number.isFinite(jmcQty) && Number.isFinite(rate) ? jmcQty * rate : NaN;
+        const qty = Number(jmcQuantities[String(item['BOQ SL No'] ?? '')]?.certified || 0);
+        const rate = parsedNumber(item['Unit Rate']);
+        return Number.isFinite(qty) && Number.isFinite(rate) ? qty * (rate as number) : NaN;
       }
       return (item as any)[key];
     };
-  
+
     if (sortKey) {
       sorted.sort((a, b) => {
-        const valA = getComparableValue(a, sortKey);
-        const valB = getComparableValue(b, sortKey);
-  
-        const aBad = valA === undefined || valA === null || Number.isNaN(Number(valA));
-        const bBad = valB === undefined || valB === null || Number.isNaN(Number(valB));
+        const aVal = getComparableValue(a, sortKey);
+        const bVal = getComparableValue(b, sortKey);
+
+        const aNum = parsedNumber(aVal);
+        const bNum = parsedNumber(bVal);
+
+        const bothNumeric = Number.isFinite(aNum) && Number.isFinite(bNum);
+
+        if (bothNumeric) {
+          return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+
+        const aBad = aVal === undefined || aVal === null;
+        const bBad = bVal === undefined || bVal === null;
         if (aBad && !bBad) return 1;
         if (!aBad && bBad) return -1;
         if (aBad && bBad) return 0;
-  
-        const numA = Number(valA);
-        const numB = Number(valB);
-  
-        if (Number.isFinite(numA) && Number.isFinite(numB)) {
-          return sortDirection === 'asc' ? numA - numB : numB - numA;
-        }
-  
-        const strA = String(valA).toLowerCase();
-        const strB = String(valB).toLowerCase();
-        if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
-        if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
+
+        const aStr = String(aVal).toLowerCase();
+        const bStr = String(bVal).toLowerCase();
+        if (aStr < bStr) return sortDirection === 'asc' ? -1 : 1;
+        if (aStr > bStr) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
     }
-  
+
     return sorted;
   }, [filteredBoqItems, sortKey, sortDirection, jmcQuantities]);
-  
 
-  /*** ROW CLICK ***/
+  /** ROW ACTIONS **/
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
     setIsDetailsDialogOpen(true);
   };
-  
+
   const handleOpenEditDialog = (e: React.MouseEvent, item: BoqItem) => {
     e.stopPropagation();
-    setEditingItem({ ...item }); // Clone item to avoid direct state mutation
+    setEditingItem({ ...item });
     setIsEditDialogOpen(true);
   };
-  
+
   const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editingItem) return;
     const { name, value } = e.target;
-    setEditingItem(prev => (prev ? { ...prev, [name]: value } : null));
+    setEditingItem((prev) => (prev ? { ...prev, [name]: value } : null));
   };
-  
+
   const handleSaveChanges = async () => {
     if (!editingItem) return;
     setIsSaving(true);
     try {
+      // NOTE: here we assume projectSlug is the *project document id*.
+      // If your route uses a slug, resolve to id first.
       const itemRef = doc(db, 'projects', projectSlug, 'boqItems', editingItem.id);
-      const { id, ...dataToSave } = editingItem;
-      await updateDoc(itemRef, dataToSave);
+      const { id, ...payload } = editingItem;
+      await updateDoc(itemRef, payload);
       toast({ title: 'Success', description: 'BOQ item updated.' });
       setIsEditDialogOpen(false);
       fetchBoqItems();
     } catch (e) {
-      console.error("Failed to save changes:", e);
+      console.error('Failed to save changes:', e);
       toast({ title: 'Error', description: 'Could not save changes.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
 
-
-  /*** SORT HEADER CLICK ***/
+  /** SORT HEADER CLICK **/
   const handleSort = (key: string) => {
     if (sortKey === key) {
-      const next = sortDirection === 'asc' ? 'desc' : 'asc';
-      setSortDirection(next);
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
       setSortDirection('asc');
     }
   };
 
-  /*** SELECTION ***/
+  /** SELECTION **/
   const allSelected = selectedItemIds.length === boqItems.length && boqItems.length > 0;
   const someSelected = selectedItemIds.length > 0 && selectedItemIds.length < boqItems.length;
 
-  const handleSelectAll = (checked: boolean | 'indeterminate') => {
-    if (checked) setSelectedItemIds(boqItems.map((i) => i.id));
+  const handleSelectAll = (checked: CheckedState) => {
+    if (checked === true) setSelectedItemIds(boqItems.map((i) => i.id));
     else setSelectedItemIds([]);
   };
 
@@ -447,7 +436,7 @@ export default function ViewBoqPage() {
     setSelectedItemIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
   };
 
-  /*** EXPAND/COLLAPSE ***/
+  /** EXPAND/COLLAPSE **/
   const toggleRowExpansion = (itemId: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -456,7 +445,7 @@ export default function ViewBoqPage() {
     });
   };
 
-  /*** DELETE ***/
+  /** DELETE **/
   const handleDelete = async () => {
     if (!projectSlug || selectedItemIds.length === 0) return;
     setIsDeleting(true);
@@ -477,22 +466,9 @@ export default function ViewBoqPage() {
     }
   };
 
-  /*** DND — COLUMN REORDER ***/
-  const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    const { source, destination } = result;
-    if (source.index === destination.index) return;
-    setColumnOrder((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(source.index, 1);
-      next.splice(destination.index, 0, moved);
-      return next;
-    });
-  };
-
-  /*** HELPERS ***/
+  /** HELPERS **/
   const fmtNum = (v: unknown) => {
-    const n = Number(v);
+    const n = parsedNumber(v);
     return Number.isFinite(n)
       ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
       : String(v ?? 'N/A');
@@ -501,9 +477,21 @@ export default function ViewBoqPage() {
   const visibleHeaders = columnOrder.filter((h) => columnVisibility[h]);
 
   const dialogFields: (keyof BoqItem)[] = [
-    'Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2',
-    'Category 1', 'Category 2', 'Category 3', 'ERP SL NO', 'BOQ SL No',
-    'Description', 'Unit', 'QTY', 'Unit Rate', 'Total Amount'
+    'Project Name',
+    'Sub-Division',
+    'Site',
+    'Scope 1',
+    'Scope 2',
+    'Category 1',
+    'Category 2',
+    'Category 3',
+    'ERP SL NO',
+    'BOQ SL No',
+    'Description',
+    'Unit',
+    'QTY',
+    'Unit Rate',
+    'Total Amount',
   ];
 
   return (
@@ -512,7 +500,7 @@ export default function ViewBoqPage() {
       <div className="py-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link href={`/billing-recon/${projectSlug}/boq`}>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
@@ -529,27 +517,44 @@ export default function ViewBoqPage() {
               className="pl-8"
             />
           </div>
-          {Object.keys(filterOptions).map(key => {
-            const options = filterOptions[key as keyof typeof filterOptions];
-            if (options.length === 0) return null;
+
+          {Object.keys(filterOptions).map((key) => {
+            const options = filterOptions[key as keyof typeof filterOptions] as string[];
+            if (!options || options.length === 0) return null;
             return (
-              <Select key={key} value={filters[key as keyof typeof filters]} onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}>
+              <Select
+                key={key}
+                value={filters[key as keyof typeof filters]}
+                onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder={`Filter by ${key}`} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All {key}s</SelectItem>
-                  {options.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                  {options.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            )
+            );
           })}
-           <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
+
+          <Button variant="secondary" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+
           {selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={isDeleting}>
-                  {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  {isDeleting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 h-4 w-4" />
+                  )}
                   Delete ({selectedItemIds.length})
                 </Button>
               </AlertDialogTrigger>
@@ -567,6 +572,7 @@ export default function ViewBoqPage() {
               </AlertDialogContent>
             </AlertDialog>
           )}
+
           <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
             <Settings className="mr-2 h-4 w-4" /> Columns
           </Button>
@@ -575,47 +581,43 @@ export default function ViewBoqPage() {
 
       {/* Table */}
       <div className="flex-1 min-h-0">
-        {/* Outer container ensures the scrollbar track spans full width */}
         <div className="h-full border rounded-lg flex flex-col min-w-0">
-          {/* Header + Body share the same horizontal scroll via this wrapper */}
           <div className="relative flex-1 min-h-0 w-full overflow-auto">
-            {/* Keep table at least as wide as its content */}
             <div className="min-w-max">
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow>
-                    {/* Make every header cell sticky */}
                     <TableHead className="sticky top-0 bg-background z-20 w-[50px]">
                       <Checkbox
                         checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                        onCheckedChange={handleSelectAll}
+                        onCheckedChange={(state) => handleSelectAll(state)}
                         aria-label="Select all rows"
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </TableHead>
-                    <TableHead className="sticky top-0 bg-background z-20 w-12"></TableHead>
+                    <TableHead className="sticky top-0 bg-background z-20 w-12" />
 
-                    {visibleHeaders
-                      .map((header) => (
-                        <TableHead
-                          key={header}
-                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
-                          onClick={() => handleSort(header)}
-                        >
-                          <div className="flex items-center gap-1">
-                            {columnNames[header] || header}
-                            {sortKey === header ? (
-                              sortDirection === 'asc' ? (
-                                <ChevronUp className="h-4 w-4" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4" />
-                              )
+                    {visibleHeaders.map((header) => (
+                      <TableHead
+                        key={header}
+                        className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
+                        onClick={() => handleSort(header)}
+                      >
+                        <div className="flex items-center gap-1">
+                          {columnNames[header] || header}
+                          {sortKey === header ? (
+                            sortDirection === 'asc' ? (
+                              <ChevronUp className="h-4 w-4" />
                             ) : (
-                              <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
-                            )}
-                          </div>
-                        </TableHead>
-                      ))}
-                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                              <ChevronDown className="h-4 w-4" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
+                          )}
+                        </div>
+                      </TableHead>
+                    ))}
+                    <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -629,12 +631,11 @@ export default function ViewBoqPage() {
                         <TableCell className="px-2">
                           <Skeleton className="h-5 w-5" />
                         </TableCell>
-                        {visibleHeaders
-                          .map((header, j) => (
-                            <TableCell key={`${i}-${j}`}>
-                              <Skeleton className="h-5 w-full" />
-                            </TableCell>
-                          ))}
+                        {visibleHeaders.map((_, j) => (
+                          <TableCell key={`${i}-${j}`}>
+                            <Skeleton className="h-5 w-full" />
+                          </TableCell>
+                        ))}
                         <TableCell>
                           <Skeleton className="h-8 w-16" />
                         </TableCell>
@@ -643,7 +644,8 @@ export default function ViewBoqPage() {
                   ) : sortedBoqItems.length > 0 ? (
                     sortedBoqItems.map((item) => {
                       const isExpanded = expandedRows.has(item.id);
-                      const hasBom = item.bom && item.bom.length > 0;
+                      const hasBom = !!(item.bom && item.bom.length > 0);
+
                       return (
                         <Fragment key={item.id}>
                           <TableRow
@@ -651,13 +653,16 @@ export default function ViewBoqPage() {
                             onClick={() => handleRowClick(item)}
                             className="cursor-pointer"
                           >
-                            <TableCell onClick={(e) => e.stopPropagation()}>
+                            <TableCell
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <Checkbox
                                 checked={selectedItemIds.includes(item.id)}
-                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                                onCheckedChange={(state) => handleSelectRow(item.id, state === true)}
                                 aria-label={`Select row ${item.id}`}
                               />
                             </TableCell>
+
                             <TableCell className="px-2">
                               {hasBom && (
                                 <Button
@@ -673,61 +678,67 @@ export default function ViewBoqPage() {
                                 </Button>
                               )}
                             </TableCell>
+
                             {visibleHeaders.map((header) => {
-                                let raw = item[header];
-                                if (header === 'JMC Executed Qty') {
-                                  raw = jmcQuantities[item['BOQ SL No'] as string]?.executed || 0;
-                                }
-                                if (header === 'JMC Certified Qty') {
-                                  raw = jmcQuantities[item['BOQ SL No'] as string]?.certified || 0;
-                                }
+                              let raw: unknown = item[header];
 
-                                const value = (() => {
-                                  if (header === 'Total Amount') {
-                                    const qty = Number(item['QTY']);
-                                    const rate = Number(item['Unit Rate']);
-                                    const explicit = Number(raw);
-                                    if (Number.isFinite(explicit)) return fmtNum(explicit);
-                                    if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
-                                    return 'N/A';
-                                  }
-                                  if (header === 'JMC Amount') {                          // 👈 NEW
-                                    const jmcQty = Number(jmcQuantities[item['BOQ SL No'] as string]?.certified || 0);
-                                    const rate = Number(item['Unit Rate']);
-                                    if (Number.isFinite(jmcQty) && Number.isFinite(rate)) {
-                                      return fmtNum(jmcQty * rate);
-                                    }
-                                    return 'N/A';
-                                  }
-                                  if (['QTY', 'Unit Rate', 'Total Qty', 'JMC Executed Qty', 'JMC Certified Qty'].includes(header)) return fmtNum(raw);
-                                  return raw ?? 'N/A';
-                                })();
+                              if (header === 'JMC Executed Qty') {
+                                raw = jmcQuantities[String(item['BOQ SL No'] ?? '')]?.executed ?? 0;
+                              }
+                              if (header === 'JMC Certified Qty') {
+                                raw = jmcQuantities[String(item['BOQ SL No'] ?? '')]?.certified ?? 0;
+                              }
 
-                                return (
-                                  <TableCell
-                                    key={`${item.id}-${header}`}
-                                    className={cn(
-                                      (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
-                                    )}
-                                    title={typeof value === 'string' ? value : undefined}
-                                  >
-                                    {value}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
-                                  <Edit className="mr-2 h-4 w-4" /> Edit
-                                </Button>
-                              </TableCell>
+                              const value = (() => {
+                                if (header === 'Total Amount') {
+                                  const explicit = parsedNumber(raw);
+                                  if (Number.isFinite(explicit)) return fmtNum(explicit);
+                                  const qty = parsedNumber(item['QTY']);
+                                  const rate = parsedNumber(item['Unit Rate']);
+                                  if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
+                                  return 'N/A';
+                                }
+                                if (header === 'JMC Amount') {
+                                  const jmcQty = parsedNumber(
+                                    jmcQuantities[String(item['BOQ SL No'] ?? '')]?.certified ?? 0
+                                  );
+                                  const rate = parsedNumber(item['Unit Rate']);
+                                  if (Number.isFinite(jmcQty) && Number.isFinite(rate)) return fmtNum(jmcQty * rate);
+                                  return 'N/A';
+                                }
+                                if (['QTY', 'Unit Rate', 'JMC Executed Qty', 'JMC Certified Qty'].includes(header)) {
+                                  return fmtNum(raw);
+                                }
+                                return raw ?? 'N/A';
+                              })();
+
+                              return (
+                                <TableCell
+                                  key={`${item.id}-${header}`}
+                                  className={cn(
+                                    (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
+                                  )}
+                                  title={typeof value === 'string' ? value : undefined}
+                                >
+                                  {value}
+                                </TableCell>
+                              );
+                            })}
+
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleOpenEditDialog(e, item)}
+                              >
+                                <Edit className="mr-2 h-4 w-4" /> Edit
+                              </Button>
+                            </TableCell>
                           </TableRow>
 
                           {isExpanded && hasBom && (
                             <TableRow className="bg-muted/50 hover:bg-muted/50">
-                              <TableCell
-                                colSpan={visibleHeaders.length + 3}
-                                className="p-0"
-                              >
+                              <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
                                 <div className="p-4">
                                   <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
                                   <Table>
@@ -759,10 +770,7 @@ export default function ViewBoqPage() {
                     })
                   ) : (
                     <TableRow>
-                      <TableCell
-                        colSpan={visibleHeaders.length + 3}
-                        className="text-center h-24"
-                      >
+                      <TableCell colSpan={visibleHeaders.length + 3} className="text-center h-24">
                         No BOQ items found.
                       </TableCell>
                     </TableRow>
@@ -776,30 +784,33 @@ export default function ViewBoqPage() {
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
-        onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
+        onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
         jmcEntries={jmcEntries}
-        bills={[]}
+        bills={bills}
       />
-      
+
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit BOQ Item</DialogTitle>
           </DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-              {editingItem && dialogFields.map(key => (
+            {editingItem &&
+              (['Project Name', 'Sub-Division', 'Site', 'Scope 1', 'Scope 2', 'Category 1', 'Category 2', 'Category 3', 'ERP SL NO', 'BOQ SL No', 'Description', 'Unit', 'QTY', 'Unit Rate', 'Total Amount'] as const).map(
+                (key) => (
                   <div className="space-y-1" key={key}>
-                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                      <Input
-                          id={`edit-${String(key)}`}
-                          name={String(key)}
-                          value={editingItem[key] || ''}
-                          onChange={handleEditFormChange}
-                          readOnly={key === 'Project Name'}
-                      />
+                    <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                    <Input
+                      id={`edit-${String(key)}`}
+                      name={String(key)}
+                      value={(editingItem[key] as string | number | undefined) ?? ''}
+                      onChange={handleEditFormChange}
+                      readOnly={key === 'Project Name'}
+                    />
                   </div>
-              ))}
+                )
+              )}
           </div>
           <DialogFooter>
             <DialogClose asChild>

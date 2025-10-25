@@ -1,26 +1,16 @@
-
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  FileSpreadsheet,
-  Loader2,
-  Trash2,
-} from 'lucide-react';
+import { ArrowLeft, UploadCloud, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+
 import * as XLSX from 'xlsx';
+
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -30,27 +20,18 @@ import {
   getDocs,
   query,
 } from 'firebase/firestore';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import type { Project } from '@/lib/types';
 
-
 type BoqItem = Record<string, any>;
 const MAX_BATCH_WRITES = 500;
 
 function isEmptyRow(row: BoqItem): boolean {
-  return Object.values(row).every(
-    (v) => v === null || v === undefined || String(v).trim() === ''
-  );
+  return Object.values(row).every((v) => v === null || v === undefined || String(v).trim() === '');
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -63,7 +44,8 @@ export default function ImportBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
+
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -80,29 +62,47 @@ export default function ImportBoqPage() {
 
   useEffect(() => {
     const fetchProject = async () => {
-        if (!projectSlug) return;
+      if (!projectSlug) return;
+
+      try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-        
+
+        const slugify = (text: string) =>
+          text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+        const projectData = projectsSnapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Project))
+          .find((p) => slugify(p.projectName) === projectSlug);
+
         if (projectData) {
-            setCurrentProject(projectData);
+          setCurrentProject(projectData);
         } else {
-            toast({ title: 'Error', description: 'Project not found.', variant: 'destructive' });
+          toast({
+            title: 'Error',
+            description: 'Project not found.',
+            variant: 'destructive',
+          });
         }
+      } catch (err) {
+        console.error('fetchProject error:', err);
+        toast({
+          title: 'Error',
+          description: 'Failed to load project.',
+          variant: 'destructive',
+        });
+      }
     };
+
     fetchProject();
   }, [projectSlug, toast]);
 
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    const selectedFile = e.target.files[0];
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
 
     const valid =
-      selectedFile.type ===
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       selectedFile.type === 'application/vnd.ms-excel' ||
       selectedFile.name.endsWith('.xlsx') ||
       selectedFile.name.endsWith('.xls');
@@ -129,14 +129,11 @@ export default function ImportBoqPage() {
 
     try {
       const buffer = await fileToParse.arrayBuffer();
-      const workbook = XLSX.read(buffer, {
-        type: 'array',
-        cellDates: true,
-        raw: false,
-      });
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, raw: false });
 
       const names = workbook.SheetNames || [];
       setSheetNames(names);
+
       const sheetName = names[0];
       setActiveSheet(sheetName || null);
 
@@ -163,7 +160,7 @@ export default function ImportBoqPage() {
         return;
       }
 
-      const filteredData = rawJson.filter(row => !isEmptyRow(row));
+      const filteredData = rawJson.filter((row) => !isEmptyRow(row));
 
       setJsonData(filteredData);
       setHeaders(Object.keys(filteredData[0] || {}));
@@ -183,7 +180,6 @@ export default function ImportBoqPage() {
       setIsParsing(false);
     }
   };
-
 
   const handleImport = async () => {
     if (jsonData.length === 0) {
@@ -217,8 +213,7 @@ export default function ImportBoqPage() {
     try {
       const nowMeta = {
         createdAt: serverTimestamp(),
-        createdBy: user.id,
-        // projectId: currentProject.id, // Removed projectSlug from here as it's part of the collection path
+        createdBy: (user as any).id ?? (user as any).uid ?? 'unknown',
         source: 'excel_import',
         fileName: file?.name ?? null,
       };
@@ -242,7 +237,7 @@ export default function ImportBoqPage() {
       }
 
       await logUserActivity({
-        userId: user.id,
+        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
         action: 'Import BOQ',
         details: {
           project: projectSlug,
@@ -284,8 +279,7 @@ export default function ImportBoqPage() {
 
   const previewNote = useMemo(() => {
     if (!totalRows) return '';
-    if (totalRows > 5000)
-      return 'Large dataset detected. Consider splitting the file for faster import.';
+    if (totalRows > 5000) return 'Large dataset detected. Consider splitting the file for faster import.';
     if (totalRows > 1000) return 'This is a big import; it may take a moment.';
     return '';
   }, [totalRows]);
@@ -295,7 +289,7 @@ export default function ImportBoqPage() {
       <div className="mb-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Link href={`/billing-recon/${projectSlug}/boq`}>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
@@ -305,14 +299,10 @@ export default function ImportBoqPage() {
         {jsonData.length > 0 && (
           <div className="flex items-center gap-2">
             <Button onClick={handleImport} disabled={isImporting}>
-              {isImporting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <UploadCloud className="mr-2 h-4 w-4" />
-              )}
+              {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
               {isImporting ? `Importing… ${progress}%` : 'Import Data'}
             </Button>
-            <Button variant="ghost" onClick={handleClear}>
+            <Button variant="ghost" onClick={handleClear} disabled={isImporting || isParsing}>
               Clear
             </Button>
           </div>
@@ -323,9 +313,7 @@ export default function ImportBoqPage() {
         <Card className="flex flex-col shrink-0">
           <CardHeader>
             <CardTitle>Upload File</CardTitle>
-            <CardDescription>
-              Select an Excel file (.xlsx or .xls). The data will be previewed before import.
-            </CardDescription>
+            <CardDescription>Select an Excel file (.xlsx or .xls). The data will be previewed before import.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -385,9 +373,7 @@ export default function ImportBoqPage() {
             </CardHeader>
 
             <CardContent className="flex-1 min-h-0 p-0">
-              <div
-                className="h-full overflow-auto overscroll-contain"
-              >
+              <div className="h-full overflow-auto overscroll-contain">
                 <Table className="min-w-full table-auto">
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
@@ -399,7 +385,7 @@ export default function ImportBoqPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {jsonData.slice(0, 100).map((row, rowIndex) => ( // Preview limited rows for performance
+                    {jsonData.slice(0, 100).map((row, rowIndex) => (
                       <TableRow key={rowIndex}>
                         {headers.map((header) => (
                           <TableCell
@@ -414,8 +400,10 @@ export default function ImportBoqPage() {
                     ))}
                   </TableBody>
                 </Table>
-                 {jsonData.length > 100 && (
-                    <p className="text-center text-sm text-muted-foreground p-4">And {jsonData.length - 100} more rows...</p>
+                {jsonData.length > 100 && (
+                  <p className="text-center text-sm text-muted-foreground p-4">
+                    And {jsonData.length - 100} more rows...
+                  </p>
                 )}
               </div>
             </CardContent>
@@ -425,5 +413,3 @@ export default function ImportBoqPage() {
     </div>
   );
 }
-
-    

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -20,7 +19,7 @@ import {
   runTransaction,
   arrayUnion,
 } from 'firebase/firestore';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig, JmcItem } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -31,11 +30,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
 
-function formatINR(n: number | undefined) {
+/* -------- helpers -------- */
+function formatINR(n?: number) {
+  const v = Number.isFinite(n as number) ? (n as number) : 0;
   try {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n ?? 0);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v);
   } catch {
-    return `₹${(n ?? 0).toFixed(2)}`;
+    return `₹${v.toFixed(2)}`;
   }
 }
 
@@ -48,37 +49,52 @@ function toDateSafe(value: any): Date | null {
     const d = new Date(value);
     return isNaN(+d) ? null : d;
   }
-  if (value?.seconds) {
-    return new Date(value.seconds * 1000);
-  }
+  if (value?.seconds) return new Date(value.seconds * 1000);
   return null;
 }
 
 function humanDate(value: any) {
   const d = toDateSafe(value);
   if (!d) return '-';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function pastTense(action: string) {
   const map: Record<string, string> = {
     Approve: 'approved',
     Verify: 'verified',
-    Complete: 'completed',
     Verified: 'verified',
+    Complete: 'completed',
     Reject: 'rejected',
     Revert: 'reverted',
   };
   return map[action] ?? `${action.toLowerCase()}ed`;
 }
 
+const isVerifyAction = (name: string) => name === 'Verify' || name === 'Verified';
+
+function computeTotalAmount(entry: JmcEntry | undefined): number {
+  if (!entry) return 0;
+  const explicit = (entry as any).totalAmount;
+  if (Number.isFinite(explicit)) return explicit as number;
+  // Fallback: sum of items (executedQty * rate) or (certifiedQty * rate) if present
+  const items = entry.items ?? [];
+  let total = 0;
+  for (const it of items) {
+    const qty = Number(it.certifiedQty ?? it.executedQty ?? 0);
+    const rate = Number(it.rate ?? 0);
+    if (Number.isFinite(qty) && Number.isFinite(rate)) total += qty * rate;
+  }
+  return total;
+}
+
+/* -------- component -------- */
 export default function StagePage() {
   const { project: projectSlug, stageId } = useParams() as { project: string; stageId: string };
   const { user } = useAuth();
+  const userId = (user as any)?.id ?? (user as any)?.uid ?? '';
+  const userName = (user as any)?.name ?? (user as any)?.displayName ?? 'User';
+
   const { toast } = useToast();
   const router = useRouter();
 
@@ -94,82 +110,66 @@ export default function StagePage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
 
-  // Accept both spellings from workflow config
-  const isVerifyAction = (name: string) => name === 'Verify' || name === 'Verified';
-
-  const handleUpdateQtyClick = (entry: JmcEntry) => {
-    setSelectedJmc(entry);
-    setIsUpdateQtyOpen(true);
-  };
-
   const fetchTasks = useCallback(async () => {
-    if (!user || !stageId) return;
+    if (!userId || !stageId) return;
 
     setIsLoading(true);
     try {
+      // 1) Fetch workflow and resolve stage first (so we can bail early if stage is wrong)
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const workflowSnap = await getDoc(workflowRef);
-      if (workflowSnap.exists()) {
-        const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
-        setWorkflow(steps);
-        const currentStage = steps.find((s) => s.id === stageId);
-        if (currentStage) {
-          setStage(currentStage);
-        } else {
-          toast({
-            title: 'Error',
-            description: 'Workflow stage not found.',
-            variant: 'destructive',
-          });
-          router.back();
-          return;
-        }
+      if (!workflowSnap.exists()) {
+        toast({ title: 'Error', description: 'Workflow not found.', variant: 'destructive' });
+        router.back();
+        return;
       }
-      
-      const allJmcEntriesQuery = query(collection(db, 'projects', projectSlug, 'jmcEntries'));
+      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+      setWorkflow(steps);
+      const currentStage = steps.find((s) => s.id === stageId);
+      if (!currentStage) {
+        toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
+        router.back();
+        return;
+      }
+      setStage(currentStage);
 
-      const [allJmcSnapshot, boqSnapshot, billsSnapshot] = await Promise.all([
-        getDocs(allJmcEntriesQuery),
+      // 2) In parallel: fetch tasks filtered by stage, plus BOQ & bills
+      const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'projects', projectSlug, 'jmcEntries'), where('currentStepId', '==', stageId))),
         getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
         getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
       ]);
-      
-      const allJmcData = allJmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as JmcEntry);
-      
-      const stageTasks = allJmcData.filter(t => t.currentStepId === stageId);
-      setTasks(stageTasks);
-      
-      setBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)));
-      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+
+      setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+      setBoqItems(boqSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)));
+      setBills(billsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
       console.error('Error fetching tasks for stage:', error);
       toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [stageId, user, projectSlug, toast, router]);
+  }, [projectSlug, stageId, toast, router, userId]);
 
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
-  
-  const allJmcEntries = tasks;
 
   const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!user || !stage) return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
+    if (!userId || !stage) return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
 
-    const myPending = allJmcEntries.filter(
-      (t) => t.assignees?.includes(user.id) && t.status !== 'Completed' && t.status !== 'Rejected'
+    const myPending = tasks.filter(
+      (t) => (t.assignees ?? []).includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected'
     );
 
-    const myCompleted = allJmcEntries.filter(
+    const myCompleted = tasks.filter(
       (t) =>
         !myPending.some((pt) => pt.id === t.id) &&
-        (t.history ?? []).some((h) => h.stepName === stage.name && h.userId === user.id)
+        (t.history ?? []).some((h) => h.stepName === stage.name && h.userId === userId)
     );
 
     return { pendingTasks: myPending, completedTasks: myCompleted };
-  }, [allJmcEntries, user, stage]);
+  }, [tasks, userId, stage]);
 
   // Close dialogs when onOpenChange(false)
   const handleDialogOpenChange = (open: boolean) => {
@@ -181,18 +181,33 @@ export default function StagePage() {
     }
   };
 
+  const handleUpdateQtyClick = (entry: JmcEntry) => {
+    setSelectedJmc(entry);
+    setIsUpdateQtyOpen(true);
+  };
+
+  const handleViewDetails = (entry: JmcEntry) => {
+    setSelectedJmc(entry);
+    setIsViewOpen(true);
+  };
+
+  const handleVerifyClick = (entry: JmcEntry) => {
+    setSelectedJmc(entry);
+    setIsVerifyOpen(true);
+  };
+
   const handleAction = async (
     taskId: string,
     action: string | ActionConfig,
     comment: string = '',
     updatedItems?: any[]
   ) => {
-    if (!workflow || !user || !stage) return;
+    if (!workflow || !userId || !userName || !stage) return;
     const actionName = typeof action === 'string' ? action : action.name;
     setIsActionLoading(taskId);
 
     try {
-      // Pre-read the task safely (outside transaction)
+      // Read pre state outside transaction
       const taskRef = doc(db, 'projects', projectSlug, 'jmcEntries', taskId);
       const preSnap = await getDoc(taskRef);
       if (!preSnap.exists()) throw new Error('Task document not found!');
@@ -212,7 +227,10 @@ export default function StagePage() {
         nextStep = workflow[idx + 1];
 
         if (nextStep) {
-          const serializableData = { ...preData, createdAt: preData.createdAt.toDate().toISOString() };
+          const serializableData = {
+            ...preData,
+            createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
+          };
           const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
           if (!computedAssignees || computedAssignees.length === 0) {
             throw new Error(`Could not find assignee for step: ${nextStep.name}`);
@@ -242,8 +260,8 @@ export default function StagePage() {
       const newActionLog: ActionLog = {
         action: actionName,
         comment,
-        userId: user.id,
-        userName: user.name,
+        userId,
+        userName,
         timestamp: Timestamp.now(),
         stepName: stage.name,
       };
@@ -253,7 +271,8 @@ export default function StagePage() {
         if (!liveSnap.exists()) throw new Error('Task document not found!');
         const live = liveSnap.data() as JmcEntry;
 
-        if (preData.currentStepId !== live.currentStepId) {
+        // naive optimistic concurrency control on the step pointer
+        if ((preData.currentStepId ?? null) !== (live.currentStepId ?? null)) {
           throw new Error('Task changed while you were taking action. Please refresh.');
         }
 
@@ -288,16 +307,6 @@ export default function StagePage() {
     }
   };
 
-  const handleViewDetails = (entry: JmcEntry) => {
-    setSelectedJmc(entry);
-    setIsViewOpen(true);
-  };
-
-  const handleVerifyClick = (entry: JmcEntry) => {
-    setSelectedJmc(entry);
-    setIsVerifyOpen(true);
-  };
-
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
     <Card>
       <CardContent className="p-0">
@@ -325,6 +334,7 @@ export default function StagePage() {
               data.map((entry) => {
                 const currentStep = workflow?.find((s) => s.id === entry.currentStepId);
                 const actions = (currentStep?.actions ?? []) as (string | ActionConfig)[];
+                const total = computeTotalAmount(entry);
 
                 return (
                   <TableRow
@@ -335,7 +345,7 @@ export default function StagePage() {
                     <TableCell>{entry.jmcNo ?? '-'}</TableCell>
                     <TableCell>{humanDate(entry.jmcDate)}</TableCell>
                     <TableCell>{entry.woNo ?? '-'}</TableCell>
-                    <TableCell>{formatINR((entry as any).totalAmount)}</TableCell>
+                    <TableCell>{formatINR(total)}</TableCell>
                     <TableCell>
                       <Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>
                         {entry.status}
@@ -359,9 +369,9 @@ export default function StagePage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                             {type === 'pending' &&
-                              (actions as (string | ActionConfig)[]).map((action) => {
+                              actions.map((action) => {
                                 const actionName = typeof action === 'string' ? action : action.name;
-                                const isVerify = isVerifyAction(actionName); // ← accept Verify or Verified
+                                const wantsVerify = isVerifyAction(actionName);
                                 const isUpdateQty = actionName === 'Update Certified Qty';
                                 return (
                                   <DropdownMenuItem
@@ -369,12 +379,12 @@ export default function StagePage() {
                                     onSelect={(e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      if (isVerify) {
-                                        handleVerifyClick(entry); // ← opens ViewJmcEntryDialog in edit mode
+                                      if (wantsVerify) {
+                                        handleVerifyClick(entry);
                                       } else if (isUpdateQty) {
                                         handleUpdateQtyClick(entry);
                                       } else {
-                                        handleAction(entry.id, action);
+                                        handleAction(entry.id!, action);
                                       }
                                     }}
                                   >
@@ -439,7 +449,7 @@ export default function StagePage() {
         jmcEntry={selectedJmc}
         boqItems={boqItems}
         bills={bills}
-        isEditMode={isVerifyOpen}            // edit mode only when triggered by Verify/Verified
+        isEditMode={isVerifyOpen}
         onVerify={handleAction}
         isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
       />
@@ -450,7 +460,7 @@ export default function StagePage() {
           onOpenChange={setIsUpdateQtyOpen}
           jmcEntry={selectedJmc}
           projectSlug={projectSlug}
-          onSaveSuccess={fetchTasks} // refresh after save
+          onSaveSuccess={fetchTasks}
         />
       )}
     </>

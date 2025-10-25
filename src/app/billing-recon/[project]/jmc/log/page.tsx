@@ -1,29 +1,80 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, FileSpreadsheet, Trash2, Eye, Download, XCircle } from 'lucide-react';
+import { ArrowLeft, Eye, Download, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, deleteDoc, doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  orderBy,
+  query as fsQuery,
+  deleteDoc,
+  doc,
+  getDoc,
+  Timestamp,
+} from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, JmcItem } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import * as XLSX from 'xlsx';
 import { Badge } from '@/components/ui/badge';
 
-interface EnrichedJmcEntry extends JmcEntry {
-    stageDates: Record<string, string>;
-    totalAmount: number;
-    certifiedValue: number;
+/* ---------- helpers ---------- */
+function toDateSafe(value: any): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value instanceof Timestamp) return value.toDate();
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return isNaN(+d) ? null : d;
+  }
+  if (value?.seconds) return new Date(value.seconds * 1000);
+  return null;
+}
+
+function formatCurrency(amount: number) {
+  const n = Number.isFinite(amount) ? amount : 0;
+  try {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return `₹${n.toFixed(2)}`;
+  }
+}
+
+type EnrichedJmcEntry = JmcEntry & {
+  stageDates: Record<string, string>;
+  totalAmount: number;
+  certifiedValue: number;
+};
+
+/* pick the latest approving action per step */
+const APPROVE_ACTIONS = new Set(['Approve', 'Complete', 'Verified']);
+
+/* remove any id field coming from Firestore doc data to avoid TS2783 (duplicate keys) */
+function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
+  const { id: _ignored, ...rest } = obj as any;
+  return rest as Omit<T, 'id'>;
 }
 
 export default function JmcLogPage() {
@@ -31,104 +82,171 @@ export default function JmcLogPage() {
   const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
+
   const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
   const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
-  const allJmcEntries = useMemo(() => jmcEntries, [jmcEntries]);
+  const userId = (user as any)?.id ?? (user as any)?.uid ?? 'unknown';
 
-  const fetchJmcEntries = async () => {
+  const computeTotals = (items: any[] = []) => {
+    let total = 0;
+    let certified = 0;
+    for (const it of items) {
+      const rate = Number(it?.rate ?? 0);
+      const explicit = Number(it?.totalAmount ?? NaN);
+      const qtyForTotal = Number.isFinite(explicit)
+        ? null
+        : Number(it?.certifiedQty ?? it?.executedQty ?? 0);
+      total += Number.isFinite(explicit)
+        ? explicit
+        : Number.isFinite(qtyForTotal) && Number.isFinite(rate)
+        ? (qtyForTotal as number) * rate
+        : 0;
+
+      const certQty = Number(it?.certifiedQty ?? 0);
+      certified += Number.isFinite(certQty) && Number.isFinite(rate) ? certQty * rate : 0;
+    }
+    return { total, certified };
+  };
+
+  const buildStageDates = (steps: WorkflowStep[], history: ActionLog[] = []) => {
+    const map: Record<string, string> = {};
+    for (const step of steps) {
+      const logsForStep = history.filter(
+        (h) => h.stepName === step.name && APPROVE_ACTIONS.has(h.action)
+      );
+      if (logsForStep.length) {
+        // latest completion for the step
+        const latest = logsForStep.reduce((a, b) => {
+          const da = toDateSafe(a.timestamp) ?? new Date(0);
+          const db = toDateSafe(b.timestamp) ?? new Date(0);
+          return db > da ? b : a;
+        });
+        const d = toDateSafe(latest.timestamp);
+        map[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+      } else {
+        map[step.name] = '-';
+      }
+    }
+    return map;
+  };
+
+  const fetchAll = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-        const [workflowSnap, boqSnap, billsSnap, jmcSnapshot] = await Promise.all([
-          getDoc(doc(db, 'workflows', 'jmc-workflow')),
-          getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
-          getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
-          getDocs(query(collection(db, 'projects', projectSlug, 'jmcEntries'), orderBy('createdAt', 'desc'))),
-        ]);
+      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      const [workflowSnap, boqSnap, billsSnap, jmcSnap] = await Promise.all([
+        getDoc(workflowRef),
+        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'boqItems'))),
+        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'bills'))),
+        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'jmcEntries'), orderBy('createdAt', 'desc'))),
+      ]);
 
-        const steps = workflowSnap.exists() ? workflowSnap.data().steps as WorkflowStep[] : [];
-        setWorkflowSteps(steps);
-        setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()}) as BoqItem));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()}) as Bill));
+      const steps = (workflowSnap.exists() ? (workflowSnap.data().steps as WorkflowStep[]) : []) ?? [];
+      setWorkflowSteps(steps);
 
-        const entries = jmcSnapshot.docs.map(doc => {
-            const data = doc.data();
-            const history = (data.history || []) as ActionLog[];
-            const stageDates: Record<string, string> = {};
+      setBoqItems(
+        boqSnap.docs.map((d) => ({ id: d.id, ...(stripId(d.data() as any)) } as BoqItem))
+      );
+      setBills(
+        billsSnap.docs.map((d) => ({ id: d.id, ...(stripId(d.data() as any)) } as Bill))
+      );
 
-            steps.forEach(step => {
-                const completionLog = history.find(h => h.stepName === step.name && ['Approve', 'Complete', 'Verified'].includes(h.action));
-                if (completionLog) {
-                    stageDates[step.name] = format(completionLog.timestamp.toDate(), 'dd-MM-yyyy');
-                } else {
-                    stageDates[step.name] = '-';
-                }
-            });
+      const entries: EnrichedJmcEntry[] = jmcSnap.docs.map((d) => {
+        const raw = d.data() as JmcEntry & { createdAt?: any; id?: string };
+        const data = stripId(raw);
+        const { total, certified } = computeTotals((data as any).items);
+        const stageDates = buildStageDates(steps, (data as any).history as ActionLog[]);
 
-            return {
-              id: doc.id,
-              ...data,
-              createdAt: data.createdAt,
-              totalAmount: data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0),
-              certifiedValue: data.items.reduce((sum: number, item: any) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0),
-              stageDates,
-            } as EnrichedJmcEntry;
-        });
-        setJmcEntries(entries);
-    } catch (error) {
-        console.error("Error fetching JMC entries: ", error);
-        toast({ title: 'Error', description: 'Failed to fetch JMC entries for this project.', variant: 'destructive' });
+        return {
+          id: d.id,
+          ...(data as any),
+          createdAt: (data as any).createdAt, // keep original timestamp object; View dialog can handle it
+          totalAmount: total,
+          certifiedValue: certified,
+          stageDates,
+        };
+      });
+
+      setJmcEntries(entries);
+    } catch (err) {
+      console.error('Error fetching JMC entries: ', err);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch JMC entries for this project.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  };
+  }, [projectSlug, toast]);
 
   useEffect(() => {
-    fetchJmcEntries();
-  }, [projectSlug, toast]);
-  
+    fetchAll();
+  }, [fetchAll]);
+
   const handleViewDetails = (entry: EnrichedJmcEntry) => {
     setSelectedEntry(entry);
     setIsViewOpen(true);
   };
 
   const handleExportAll = () => {
-    const dataToExport = jmcEntries.map(entry => {
-        const row: Record<string, any> = {
-            'JMC No.': entry.jmcNo,
-            'JMC Date': format(entry.createdAt.toDate(), 'dd MMM, yyyy'),
-        };
-        workflowSteps.forEach(step => {
-            row[step.name] = entry.stageDates[step.name] || '-';
-        });
-        row['JMC Value'] = entry.totalAmount;
-        row['Certified Value'] = entry.certifiedValue;
-        row['Stage'] = entry.stage;
-        row['Status'] = entry.status;
-        return row;
+    if (!jmcEntries.length) return;
+
+    const rows = jmcEntries.map((e) => {
+      const jmcDate = toDateSafe((e as any).jmcDate) ?? toDateSafe((e as any).createdAt);
+      const row: Record<string, any> = {
+        'JMC No.': e.jmcNo,
+        'JMC Date': jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-',
+      };
+      for (const step of workflowSteps) {
+        row[step.name] = e.stageDates[step.name] || '-';
+      }
+      row['JMC Value'] = e.totalAmount;
+      row['Certified Value'] = e.certifiedValue;
+      row['Stage'] = e.stage;
+      row['Status'] = e.status;
+      return row;
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "JMC Workflow Log");
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'JMC Workflow Log');
 
-    const colWidths = Object.keys(dataToExport[0] || {}).map(key => ({
-        wch: Math.max(15, key.length, ...dataToExport.map(row => String(row[key] || '').length))
+    // Autosize columns
+    const keys = Object.keys(rows[0] || {});
+    const colWidths = keys.map((k) => ({
+      wch: Math.max(12, k.length, ...rows.map((r) => String(r[k] ?? '').length)),
     }));
-    worksheet['!cols'] = colWidths;
+    (ws as any)['!cols'] = colWidths;
 
-    XLSX.writeFile(workbook, `jmc_workflow_log_${projectSlug}.xlsx`);
+    XLSX.writeFile(wb, `jmc_workflow_log_${projectSlug}.xlsx`);
   };
-  
-  const formatCurrency = (amount: number) => {
-    if (isNaN(amount)) return 'N/A';
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+
+  const handleDelete = async (entry: EnrichedJmcEntry) => {
+    try {
+      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', entry.id!));
+      await logUserActivity({
+        userId,
+        action: 'Delete JMC Entry',
+        details: { project: projectSlug, jmcNo: entry.jmcNo, entryId: entry.id },
+      });
+      toast({ title: 'Deleted', description: `JMC ${entry.jmcNo} removed.` });
+      fetchAll();
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: 'Failed to delete JMC entry.', variant: 'destructive' });
+    }
   };
+
+  const skeletonCols = 8 + (workflowSteps?.length || 0);
 
   return (
     <>
@@ -142,10 +260,11 @@ export default function JmcLogPage() {
             </Link>
             <h1 className="text-2xl font-bold">JMC Log</h1>
           </div>
-           <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
-              <Download className="mr-2 h-4 w-4" /> Export All as Excel
+          <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
+            <Download className="mr-2 h-4 w-4" /> Export All as Excel
           </Button>
         </div>
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -153,8 +272,8 @@ export default function JmcLogPage() {
                 <TableRow>
                   <TableHead>JMC No.</TableHead>
                   <TableHead>JMC Date</TableHead>
-                  {workflowSteps && workflowSteps.map(step => (
-                      <TableHead key={step.id}>{step.name}</TableHead>
+                  {workflowSteps.map((step) => (
+                    <TableHead key={step.id}>{step.name}</TableHead>
                   ))}
                   <TableHead>JMC Value</TableHead>
                   <TableHead>Certified Value</TableHead>
@@ -167,56 +286,85 @@ export default function JmcLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={7 + (workflowSteps?.length || 0)}><Skeleton className="h-5" /></TableCell>
+                      <TableCell colSpan={skeletonCols}>
+                        <Skeleton className="h-5" />
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
+                    const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
                     return (
-                        <TableRow key={entry.id}>
-                          <TableCell className="font-medium">{entry.jmcNo}</TableCell>
-                          <TableCell>{format(entry.createdAt.toDate(), 'dd MMM, yyyy')}</TableCell>
-                          {workflowSteps && workflowSteps.map(step => (
-                            <TableCell key={step.id}>{entry.stageDates[step.name]}</TableCell>
-                          ))}
-                          <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
-                          <TableCell>{formatCurrency(entry.certifiedValue)}</TableCell>
-                          <TableCell>{entry.stage}</TableCell>
-                          <TableCell>
-                            <Badge variant={entry.status === 'Completed' ? 'default' : (entry.status === 'Rejected' || entry.status === 'Cancelled' ? 'destructive' : 'secondary')}>
-                              {entry.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-1 justify-end">
-                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleViewDetails(entry)}>
-                                  <Eye className="h-4 w-4" />
-                               </Button>
-                                <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8">
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                            <AlertDialogDescription>This will permanently delete this JMC entry.</AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction>Delete</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                    )
-                })
+                      <TableRow key={entry.id}>
+                        <TableCell className="font-medium">{entry.jmcNo ?? '-'}</TableCell>
+                        <TableCell>{jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-'}</TableCell>
+
+                        {workflowSteps.map((step) => (
+                          <TableCell key={step.id}>{entry.stageDates[step.name] ?? '-'}</TableCell>
+                        ))}
+
+                        <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
+                        <TableCell>{formatCurrency(entry.certifiedValue)}</TableCell>
+                        <TableCell>{entry.stage ?? '-'}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              entry.status === 'Completed'
+                                ? 'default'
+                                : entry.status === 'Rejected' || entry.status === 'Cancelled'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                          >
+                            {entry.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleViewDetails(entry)}
+                              aria-label="View"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-destructive h-8 w-8"
+                                  aria-label="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete JMC entry?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete JMC {entry.jmcNo}. This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDelete(entry)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8 + (workflowSteps?.length || 0)} className="text-center h-24">
+                    <TableCell colSpan={skeletonCols} className="text-center h-24">
                       No JMC entries found.
                     </TableCell>
                   </TableRow>
@@ -230,10 +378,10 @@ export default function JmcLogPage() {
       <ViewJmcEntryDialog
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        jmcEntry={selectedEntry}
+        jmcEntry={selectedEntry as any}
         boqItems={boqItems}
         bills={bills}
-        isEditMode={false}   // keep Log view read-only
+        isEditMode={false}
         isLoading={false}
       />
     </>

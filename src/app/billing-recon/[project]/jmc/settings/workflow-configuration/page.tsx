@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
+import { useParams } from 'next/navigation';
 
 // Helpers to narrow the discriminated union
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -62,13 +62,14 @@ const initialSteps: WorkflowStep[] = [
   },
 ];
 
-// Action list (flexible; you can make this stricter if you like)
-const allActions = ['Complete', 'Verified', 'Update Certified Qty'] as const;
+// Suggested action list (you can tailor per org)
+const allActions = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verified', 'Update Certified Qty'] as const;
 
 export default function JmcWorkflowConfigurationPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { project: projectSlug } = useParams() as { project: string };
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -78,21 +79,29 @@ export default function JmcWorkflowConfigurationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const canViewPage = can('View Settings', 'Billing Recon.JMC');
-  const canEditPage = can('Edit Settings', 'Billing Recon.JMC');
+  // Guarded permission checks (avoid calling can() until auth is ready)
+  const canViewPage = useMemo(() => {
+    if (isAuthLoading) return false;
+    try { return can('View Settings', 'Billing Recon.JMC'); } catch { return false; }
+  }, [isAuthLoading, can]);
+
+  const canEditPage = useMemo(() => {
+    if (isAuthLoading) return false;
+    try { return can('Edit Settings', 'Billing Recon.JMC'); } catch { return false; }
+  }, [isAuthLoading, can]);
 
   useEffect(() => {
-    if (!isAuthLoading) {
-      if (canViewPage) {
-        void fetchData();
-      } else {
-        setIsLoading(false);
-      }
+    if (isAuthLoading) return;
+
+    if (canViewPage) {
+      void fetchData();
+    } else {
+      setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthLoading, canViewPage]);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [usersSnap, projectsSnap, deptsSnap, rolesSnap] = await Promise.all([
@@ -112,11 +121,7 @@ export default function JmcWorkflowConfigurationPage() {
 
       if (workflowSnap.exists()) {
         const s = (workflowSnap.data().steps || []) as WorkflowStep[];
-        if (Array.isArray(s) && s.length > 0) {
-          setSteps(s);
-        } else {
-          setSteps(initialSteps);
-        }
+        setSteps(Array.isArray(s) && s.length > 0 ? s : initialSteps);
       } else {
         setSteps(initialSteps);
       }
@@ -126,7 +131,7 @@ export default function JmcWorkflowConfigurationPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [toast]);
 
   function handleAddStep() {
     const newIndex = steps.length + 1;
@@ -135,7 +140,7 @@ export default function JmcWorkflowConfigurationPage() {
       name: `New Step ${newIndex}`,
       tat: 8,
       assignmentType: 'User-based',
-      assignedTo: [], // user-based shape
+      assignedTo: [],
       actions: [],
       upload: 'Optional',
     };
@@ -151,26 +156,26 @@ export default function JmcWorkflowConfigurationPage() {
       prev.map((s) => {
         if (s.id !== id) return s;
 
-        // When switching assignment types, swap assignedTo shape accordingly
         if (field === 'assignmentType') {
           const at = value as WorkflowStep['assignmentType'];
           if (at === 'User-based') {
+            // reset into array shape
             const next: WorkflowStepUser = {
               ...s,
               assignmentType: 'User-based',
-              assignedTo: [], // array shape
+              assignedTo: [],
             } as WorkflowStepUser;
-            // retain other fields
             (next as any).name = s.name;
             (next as any).tat = s.tat;
             (next as any).actions = s.actions;
             (next as any).upload = s.upload as UploadRequirement;
             return next;
           } else {
+            // reset into mapping shape
             const next: WorkflowStepMapped = {
               ...s,
               assignmentType: at as 'Project-based' | 'Department-based',
-              assignedTo: {}, // map shape
+              assignedTo: {},
             } as WorkflowStepMapped;
             (next as any).name = s.name;
             (next as any).tat = s.tat;
@@ -180,7 +185,6 @@ export default function JmcWorkflowConfigurationPage() {
           }
         }
 
-        // Other fields update straightforwardly
         const updated = { ...s } as any;
         updated[field as string] = value;
         return updated as WorkflowStep;
@@ -221,18 +225,68 @@ export default function JmcWorkflowConfigurationPage() {
     );
   }
 
+  function normalizeAndValidateSteps(): { ok: true; steps: WorkflowStep[] } | { ok: false; msg: string } {
+    // Re-index IDs
+    const normalized = steps.map((s, i) => ({ ...s, id: String(i + 1) }));
+
+    for (const s of normalized) {
+      if (!s.name || !s.name.trim()) {
+        return { ok: false, msg: `Step ${s.id}: name is required.` };
+      }
+      const tatNum = Number(s.tat);
+      if (!Number.isFinite(tatNum) || tatNum <= 0) {
+        return { ok: false, msg: `Step ${s.id} (“${s.name}”): TAT must be a positive number.` };
+      }
+      if (isUserBased(s)) {
+        const primary = s.assignedTo?.[0];
+        if (!primary) {
+          return { ok: false, msg: `Step ${s.id} (“${s.name}”): select a primary user.` };
+        }
+      }
+      if (isMapped(s)) {
+        // It’s okay if the admin hasn’t mapped every project/department, but at least one mapping should exist.
+        const hasAnyMapping = Object.values(s.assignedTo || {}).some(
+          (m) => m && (m.primary || m.alternative)
+        );
+        if (!hasAnyMapping) {
+          return {
+            ok: false,
+            msg: `Step ${s.id} (“${s.name}”): add at least one ${s.assignmentType === 'Project-based' ? 'project' : 'department'} mapping.`,
+          };
+        }
+      }
+      // actions and upload can be empty if your process allows; keep flexible
+    }
+
+    return { ok: true, steps: normalized };
+    }
+
   async function handleSave() {
-    if (!user) return;
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please sign in to save changes.', variant: 'destructive' });
+      return;
+    }
+    if (!canEditPage) {
+      toast({ title: 'No permission', description: 'You are not allowed to edit this workflow.', variant: 'destructive' });
+      return;
+    }
+
+    const validation = normalizeAndValidateSteps();
+    if (!validation.ok) {
+      toast({ title: 'Fix required', description: validation.msg, variant: 'destructive' });
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const payload = { steps };
+      const payload = { steps: validation.steps };
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       await setDoc(workflowRef, payload, { merge: true });
 
       await logUserActivity({
-        userId: user.id,
+        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
         action: 'Update JMC Workflow',
-        details: { stepCount: steps.length },
+        details: { stepCount: validation.steps.length },
       });
 
       toast({ title: 'Success', description: 'Workflow configuration saved.' });
@@ -258,7 +312,7 @@ export default function JmcWorkflowConfigurationPage() {
       <div className="w-full max-w-4xl mx-auto pr-14">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href={`/billing-recon/${'project'}/jmc/settings`}>
+            <Link href={`/billing-recon/${projectSlug}/jmc/settings`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
@@ -283,7 +337,7 @@ export default function JmcWorkflowConfigurationPage() {
     <div className="w-full max-w-4xl mx-auto pr-14">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={`/billing-recon/${'project'}/jmc/settings`}>
+          <Link href={`/billing-recon/${projectSlug}/jmc/settings`}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -308,7 +362,11 @@ export default function JmcWorkflowConfigurationPage() {
               <Skeleton className="h-24 w-full" />
             </div>
           ) : (
-            <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
+            <Accordion
+              type="multiple"
+              className="w-full"
+              defaultValue={steps.map((s) => s.id)}
+            >
               {steps.map((step, index) => (
                 <AccordionItem value={step.id} key={step.id} className="border rounded-md px-4 mb-2 bg-background">
                   <div className="flex items-center">
@@ -321,6 +379,7 @@ export default function JmcWorkflowConfigurationPage() {
                       size="icon"
                       onClick={() => handleDeleteStep(step.id)}
                       disabled={!canEditPage}
+                      aria-label={`Delete step ${step.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -356,11 +415,7 @@ export default function JmcWorkflowConfigurationPage() {
                         <RadioGroup
                           value={step.assignmentType}
                           onValueChange={(v) =>
-                            handleStepChange(
-                              step.id,
-                              'assignmentType',
-                              v as WorkflowStep['assignmentType']
-                            )
+                            handleStepChange(step.id, 'assignmentType', v as WorkflowStep['assignmentType'])
                           }
                           className="flex flex-wrap gap-4"
                         >
@@ -533,9 +588,7 @@ export default function JmcWorkflowConfigurationPage() {
                         <Label>Upload</Label>
                         <RadioGroup
                           value={step.upload}
-                          onValueChange={(v) =>
-                            handleStepChange(step.id, 'upload', v as UploadRequirement)
-                          }
+                          onValueChange={(v) => handleStepChange(step.id, 'upload', v as UploadRequirement)}
                           className="flex gap-4"
                         >
                           {(['Required', 'Not Required', 'Optional'] as const).map((opt) => (

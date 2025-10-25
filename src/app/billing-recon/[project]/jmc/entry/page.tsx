@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -10,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog } from '@/lib/types';
@@ -22,400 +20,441 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 const initialJmcDetails = {
-    jmcNo: '',
-    woNo: '',
-    jmcDate: new Date().toISOString().split('T')[0],
+  jmcNo: '',
+  woNo: '',
+  jmcDate: new Date().toISOString().split('T')[0],
 };
 
 const initialItem = {
-    boqSlNo: '',
-    description: '',
-    unit: '',
-    rate: 0,
-    executedQty: 0,
-    totalAmount: 0,
-    boqQty: 0,
-    totalCertifiedQty: 0,
+  boqSlNo: '',
+  description: '',
+  unit: '',
+  rate: 0,
+  executedQty: 0,
+  totalAmount: 0,
+  boqQty: 0,
+  totalCertifiedQty: 0,
 };
 
 type JmcItem = typeof initialItem;
+
+// --- helpers ---
+const normalizeKey = (obj: Record<string, unknown>, target: string) => {
+  const needle = target.toLowerCase().replace(/\s+|\./g, '');
+  return Object.keys(obj).find(
+    (k) => k.toLowerCase().replace(/\s+|\./g, '') === needle
+  );
+};
+
+const getNumber = (v: unknown) => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = Number(v.replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+};
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
+
   const [details, setDetails] = useState(initialJmcDetails);
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
+
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [allJmcEntries, setAllJmcEntries] = useState<JmcEntryType[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
+  // fetch BOQ + JMC
   useEffect(() => {
     const fetchBoqAndJmcData = async () => {
-        if (!projectSlug) return;
-        setIsBoqLoading(true);
-        try {
-            const boqSnapshot = await getDocs(query(collection(db, "projects", projectSlug, "boqItems")));
-            const boqData = boqSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return { 
-                    ...data, 
-                    id: doc.id, 
-                    'SL. No.': String(data['SL. No.'] || '') 
-                } as BoqItem;
-            }).sort((a, b) => {
-                const slNoA = parseFloat(a['SL. No.']);
-                const slNoB = parseFloat(b['SL. No.']);
-                if (isNaN(slNoA) || isNaN(slNoB)) return 0;
-                return slNoA - slNoB;
-            });
-            setBoqItems(boqData);
-            
-            const jmcSnapshot = await getDocs(collection(db, "projects", projectSlug, "jmcEntries"));
-            setAllJmcEntries(jmcSnapshot.docs.map(doc => doc.data() as JmcEntryType));
+      if (!projectSlug) return;
+      setIsBoqLoading(true);
+      try {
+        const boqSnapshot = await getDocs(query(collection(db, 'projects', projectSlug, 'boqItems')));
+        const mapped = boqSnapshot.docs.map((d) => {
+          const data = d.data() as Record<string, unknown>;
 
-        } catch (error) {
-            console.error("Error fetching data:", error);
-            toast({ title: "Error", description: "Could not fetch project data.", variant: "destructive" });
-        }
+          // normalize keys we care about (SL no / BOQ SL / Description / Unit / QTY / Unit Rate)
+          const slKey =
+            normalizeKey(data, 'BOQ SL No') ??
+            normalizeKey(data, 'BOQ SL NO') ??
+            normalizeKey(data, 'SL. No.') ??
+            normalizeKey(data, 'SL No') ??
+            normalizeKey(data, 'SL');
+
+          const descKey = normalizeKey(data, 'Description') ?? 'Description';
+          const unitKey = normalizeKey(data, 'Unit') ?? normalizeKey(data, 'UNIT') ?? 'Unit';
+          const qtyKey = normalizeKey(data, 'QTY') ?? 'QTY';
+          const rateKey =
+            normalizeKey(data, 'Unit Rate') ??
+            normalizeKey(data, 'UNIT PRICE') ??
+            normalizeKey(data, 'Rate');
+
+        return {
+            ...data,
+            id: d.id,
+            // ensure we have standard fields available no matter what the source header was
+            ['BOQ SL No']: slKey ? String((data as any)[slKey] ?? '') : '',
+            ['Description']: (data as any)[descKey] ?? '',
+            ['Unit']: (data as any)[unitKey] ?? '',
+            ['QTY']: getNumber((data as any)[qtyKey]) || 0,
+            ['Unit Rate']: rateKey ? getNumber((data as any)[rateKey]) || 0 : 0,
+          } as BoqItem;
+        });
+
+        // sort numerically by BOQ SL if possible
+        mapped.sort((a, b) => {
+          const aNum = getNumber((a as any)['BOQ SL No']);
+          const bNum = getNumber((b as any)['BOQ SL No']);
+          if (!Number.isFinite(aNum) || !Number.isFinite(bNum)) return String((a as any)['BOQ SL No']).localeCompare(String((b as any)['BOQ SL No']));
+          return (aNum as number) - (bNum as number);
+        });
+
+        setBoqItems(mapped);
+
+        const jmcSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'jmcEntries'));
+        setAllJmcEntries(jmcSnapshot.docs.map((doc) => doc.data() as JmcEntryType));
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast({ title: 'Error', description: 'Could not fetch project data.', variant: 'destructive' });
+      } finally {
         setIsBoqLoading(false);
+      }
     };
     fetchBoqAndJmcData();
   }, [projectSlug, toast]);
 
+  // pre-compute certified qty per BOQ SL
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
-    allJmcEntries.forEach(entry => {
-        entry.items.forEach(item => {
-            if (item.boqSlNo) {
-                map[item.boqSlNo] = (map[item.boqSlNo] || 0) + (item.certifiedQty || 0);
-            }
-        });
+    allJmcEntries.forEach((entry) => {
+      entry.items.forEach((it) => {
+        if (it.boqSlNo) {
+          map[String(it.boqSlNo)] = (map[String(it.boqSlNo)] || 0) + (Number(it.certifiedQty) || 0);
+        }
+      });
     });
     return map;
   }, [allJmcEntries]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setDetails(prev => ({ ...prev, [name]: value }));
+    setDetails((prev) => ({ ...prev, [name]: value }));
   };
-  
+
   const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const knownPriceKeys = ['UNIT PRICE', 'Unit Rate', 'Rate', 'UNIT PRICE'];
-    for (const key of knownPriceKeys) {
-        if (boqItem.hasOwnProperty(key)) {
-            return key;
-        }
+    const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate'];
+    for (const k of candidates) {
+      const key = normalizeKey(boqItem as any, k);
+      if (key) return key;
     }
-    // Fallback for other possible rate columns
-    return Object.keys(boqItem).find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
-};
+    // last resort: any "rate" that is not "total"
+    return Object.keys(boqItem).find(
+      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total')
+    );
+  };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     const newItems = [...items];
-    const item = newItems[index];
-    const updatedItem = { ...item, [name]: value };
-
-    if (name === 'executedQty' || name === 'rate') {
-        const qty = parseFloat(String(updatedItem.executedQty));
-        const rate = parseFloat(String(updatedItem.rate));
-        if (!isNaN(qty) && !isNaN(rate)) {
-            updatedItem.totalAmount = qty * rate;
-        } else {
-            updatedItem.totalAmount = 0;
-        }
-    }
-
-    newItems[index] = updatedItem;
+    const it = { ...newItems[index], [name]: value };
+    const qty = getNumber(it.executedQty);
+    const rate = getNumber(it.rate);
+    it.totalAmount = Number.isFinite(qty) && Number.isFinite(rate) ? (qty as number) * (rate as number) : 0;
+    newItems[index] = it;
     setItems(newItems);
   };
-  
+
+  const extractSlNo = (boqItem: BoqItem): string => {
+    const slKey =
+      normalizeKey(boqItem as any, 'BOQ SL No') ??
+      normalizeKey(boqItem as any, 'BOQ SL NO') ??
+      normalizeKey(boqItem as any, 'SL. No.') ??
+      normalizeKey(boqItem as any, 'SL No') ??
+      normalizeKey(boqItem as any, 'SL');
+    return slKey ? String((boqItem as any)[slKey] ?? '') : '';
+  };
+
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
-    const itemToUpdate = newItems[index];
-  
+    const itemToUpdate = { ...newItems[index] };
+
     if (boqItem) {
       const rateKey = findBasicPriceKey(boqItem);
-      const rawRate = rateKey ? boqItem[rateKey] : 0;
-      const rateNum =
-        typeof rawRate === 'number'
-          ? rawRate
-          : Number(String(rawRate ?? '0').replace(/,/g, '').trim());
-      
-      const boqSlNo = String((boqItem as any)['BOQ SL No'] ?? '');
-  
-      Object.assign(itemToUpdate, {
-        boqSlNo: boqSlNo,
-        description: String((boqItem as any)['Description'] ?? ''),
-        unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
-        rate: Number.isFinite(rateNum) ? rateNum : 0,
-        boqQty: Number((boqItem as any)['QTY'] || 0),
-        totalCertifiedQty: totalCertifiedQtyMap[boqSlNo] || 0
-      });
-  
-      const qty = Number(itemToUpdate.executedQty) || 0;
-      itemToUpdate.totalAmount = qty * (Number(itemToUpdate.rate) || 0);
+      const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
+      const boqSlNo = extractSlNo(boqItem);
+
+      itemToUpdate.boqSlNo = boqSlNo;
+      itemToUpdate.description = String((boqItem as any)['Description'] ?? '');
+      itemToUpdate.unit = (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '';
+      itemToUpdate.rate = Number.isFinite(rateNum) ? (rateNum as number) : 0;
+      itemToUpdate.boqQty = Number((boqItem as any)['QTY'] || 0);
+      itemToUpdate.totalCertifiedQty = totalCertifiedQtyMap[boqSlNo] || 0;
+
+      const qty = getNumber(itemToUpdate.executedQty);
+      itemToUpdate.totalAmount =
+        Number.isFinite(qty) && Number.isFinite(itemToUpdate.rate)
+          ? (qty as number) * itemToUpdate.rate
+          : 0;
     } else {
       Object.assign(itemToUpdate, initialItem);
     }
-  
+
+    newItems[index] = itemToUpdate;
     setItems(newItems);
   };
-  
-  
-    const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
-        const newJmcItems = selectedBoqItems.map((boqItem) => {
-        const rateKey = findBasicPriceKey(boqItem);
-        const rawRate = rateKey ? (boqItem as any)[rateKey] : 0;
-        const rateNum =
-            typeof rawRate === 'number'
-            ? rawRate
-            : Number(String(rawRate ?? '0').replace(/,/g, '').trim());
-    
-        const slNo = String(
-            (boqItem as any)['BOQ SL No'] ??
-            ''
-        );
-    
-        return {
-            ...initialItem,
-            boqSlNo: slNo,
-            description: (boqItem as any)['Description'] ?? '',
-            unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
-            rate: Number.isFinite(rateNum) ? rateNum : 0,
-            boqQty: Number((boqItem as any)['QTY'] || 0),
-            totalCertifiedQty: totalCertifiedQtyMap[slNo] || 0,
-        };
-        });
-    
-        const existingItems =
-        items.length === 1 && items[0].boqSlNo === '' ? [] : items;
-    
-        setItems([...existingItems, ...newJmcItems]);
-    };
-  
 
-  const addItem = () => {
-    setItems([...items, { ...initialItem }]);
+  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
+    const newJmcItems = selectedBoqItems.map((boqItem) => {
+      const rateKey = findBasicPriceKey(boqItem);
+      const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
+      const slNo = extractSlNo(boqItem);
+
+      return {
+        ...initialItem,
+        boqSlNo: slNo,
+        description: (boqItem as any)['Description'] ?? '',
+        unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
+        rate: Number.isFinite(rateNum) ? (rateNum as number) : 0,
+        boqQty: Number((boqItem as any)['QTY'] || 0),
+        totalCertifiedQty: totalCertifiedQtyMap[slNo] || 0,
+      };
+    });
+
+    const existing =
+      items.length === 1 && items[0].boqSlNo === '' ? [] : items;
+
+    setItems([...existing, ...newJmcItems]);
   };
 
+  const addItem = () => setItems((prev) => [...prev, { ...initialItem }]);
+
   const removeItem = (index: number) => {
-    if (items.length > 1) {
-        const newItems = items.filter((_, i) => i !== index);
-        setItems(newItems);
-    } else {
-        setItems([{...initialItem}]);
-    }
+    if (items.length > 1) setItems(items.filter((_, i) => i !== index));
+    else setItems([{ ...initialItem }]);
   };
 
   const handleSave = async () => {
     if (!user) {
-        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
-        return;
+      toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
+      return;
     }
     setIsSaving(true);
-    if (!details.jmcNo || !details.woNo || items.some(item => !item.boqSlNo)) {
-        toast({
-            title: 'Missing Required Fields',
-            description: 'Please fill in JMC No, WO No, and ensure all items have a BOQ Sl. No.',
-            variant: 'destructive',
-        });
-        setIsSaving(false);
-        return;
+
+    if (!details.jmcNo || !details.woNo || items.some((it) => !it.boqSlNo)) {
+      toast({
+        title: 'Missing Required Fields',
+        description: 'Please fill in JMC No, WO No, and ensure all items have a BOQ Sl. No.',
+        variant: 'destructive',
+      });
+      setIsSaving(false);
+      return;
     }
-    
+
     try {
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-        const workflowSnap = await getDoc(workflowRef);
-        if (!workflowSnap.exists()) throw new Error("Workflow not configured for JMC.");
-        
-        const steps = workflowSnap.data().steps as WorkflowStep[];
-        if (!steps || steps.length === 0) throw new Error("Workflow has no steps.");
+      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error('Workflow not configured for JMC.');
 
-        const firstStep = steps[0];
-        
-        const tempJmcData = {
-          ...details,
-          items,
-          projectId: projectSlug, // Assuming projectSlug is the ID, adjust if not
-        };
+      const steps = (workflowSnap.data()?.steps as WorkflowStep[]) ?? [];
+      if (steps.length === 0) throw new Error('Workflow has no steps.');
+      const firstStep = steps[0];
 
-        const assignees = await getAssigneeForStep(firstStep, tempJmcData);
-        if (assignees.length === 0) throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
-        
-        const deadline = await calculateDeadline(new Date(), firstStep.tat);
-        
-        const initialLog: ActionLog = {
-            action: 'Created',
-            comment: 'JMC created.',
-            userId: user.id,
-            userName: user.name,
-            timestamp: Timestamp.now(),
-            stepName: 'Creation',
-        };
+      const tempJmcData = {
+        ...details,
+        items,
+        projectId: projectSlug,
+      };
 
-        const jmcData = {
-            ...details,
-            items,
-            createdAt: Timestamp.now(),
-            status: 'Pending' as const,
-            stage: firstStep.name,
-            currentStepId: firstStep.id,
-            assignees: assignees,
-            deadline: Timestamp.fromDate(deadline),
-            history: [initialLog],
-        };
+      const assignees = await getAssigneeForStep(firstStep, tempJmcData);
+      if (!assignees || assignees.length === 0) {
+        throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
+      }
 
-        await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
+      const deadline = await calculateDeadline(new Date(), firstStep.tat);
 
-        await logUserActivity({
-            userId: user.id,
-            action: 'Create JMC Entry',
-            details: {
-                project: projectSlug,
-                jmcNo: details.jmcNo,
-                workOrderNo: details.woNo,
-                itemCount: items.length,
-            }
-        });
+      const initialLog: ActionLog = {
+        action: 'Created',
+        comment: 'JMC created.',
+        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userName: (user as any).name ?? (user as any).displayName ?? 'User',
+        timestamp: Timestamp.now(),
+        stepName: 'Creation',
+      };
 
-        toast({
-            title: 'JMC Entry Created',
-            description: 'The new JMC entry has been successfully saved and workflow started.',
-        });
-        setDetails(initialJmcDetails);
-        setItems([initialItem]);
+      const jmcData = {
+        ...details,
+        items,
+        createdAt: Timestamp.now(),
+        status: 'Pending' as const,
+        stage: firstStep.name,
+        currentStepId: firstStep.id,
+        assignees,
+        deadline: Timestamp.fromDate(deadline),
+        history: [initialLog],
+      };
+
+      await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
+
+      await logUserActivity({
+        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        action: 'Create JMC Entry',
+        details: {
+          project: projectSlug,
+          jmcNo: details.jmcNo,
+          workOrderNo: details.woNo,
+          itemCount: items.length,
+        },
+      });
+
+      toast({
+        title: 'JMC Entry Created',
+        description: 'The new JMC entry has been successfully saved and workflow started.',
+      });
+
+      setDetails(initialJmcDetails);
+      setItems([initialItem]);
     } catch (error: any) {
-        console.error("Error creating JMC entry: ", error);
-        toast({
-            title: 'Save Failed',
-            description: error.message || 'An error occurred while saving the JMC entry.',
-            variant: 'destructive',
-        });
+      console.error('Error creating JMC entry: ', error);
+      toast({
+        title: 'Save Failed',
+        description: error?.message || 'An error occurred while saving the JMC entry.',
+        variant: 'destructive',
+      });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  }
-
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(
+      Number.isFinite(amount) ? amount : 0
+    );
 
   return (
     <>
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <Link href={`/billing-recon/${projectSlug}/jmc`}>
-                <Button variant="ghost" size="icon">
-                    <ArrowLeft className="h-6 w-6" />
-                </Button>
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
             </Link>
             <h1 className="text-xl font-bold">Create JMC Entry</h1>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+          </div>
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Entry
-        </Button>
-      </div>
+          </Button>
+        </div>
 
-      <Card className="mb-6">
-        <CardHeader>
+        <Card className="mb-6">
+          <CardHeader>
             <CardTitle>JMC Details</CardTitle>
             <CardDescription>Provide the main details for this Joint Measurement Certificate.</CardDescription>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                    <Label htmlFor="jmcNo">JMC No</Label>
-                    <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="woNo">WO No</Label>
-                    <Input id="woNo" name="woNo" value={details.woNo} onChange={handleDetailChange} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="jmcDate">JMC Date</Label>
-                    <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="jmcNo">JMC No</Label>
+                <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="woNo">WO No</Label>
+                <Input id="woNo" name="woNo" value={details.woNo} onChange={handleDetailChange} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="jmcDate">JMC Date</Label>
+                <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
+              </div>
             </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-             <div className="flex items-center justify-between">
-                <div>
-                    <CardTitle>JMC Items</CardTitle>
-                    <CardDescription>Add one or more items executed under this JMC.</CardDescription>
-                </div>
-                <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}>
-                    <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
-                </Button>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>JMC Items</CardTitle>
+                <CardDescription>Add one or more items executed under this JMC.</CardDescription>
+              </div>
+              <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}>
+                <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
+              </Button>
             </div>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Unit</TableHead>
-                            <TableHead>BOQ Qty</TableHead>
-                            <TableHead>Total Certified Qty</TableHead>
-                            <TableHead className="w-[120px]">Rate</TableHead>
-                            <TableHead className="w-[120px]">Executed Qty</TableHead>
-                            <TableHead className="w-[150px]">Total Amount</TableHead>
-                            <TableHead className="w-[50px]">Action</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {items.map((item, index) => (
-                            <TableRow key={index}>
-                                <TableCell>
-                                    <BoqItemSelector
-                                        boqItems={boqItems}
-                                        selectedSlNo={item.boqSlNo}
-                                        onSelect={(boqItem) => handleBoqSelect(index, boqItem)}
-                                        isLoading={isBoqLoading}
-                                    />
-                                </TableCell>
-                                <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.unit}</TableCell>
-                                <TableCell>{item.boqQty}</TableCell>
-                                <TableCell>{item.totalCertifiedQty}</TableCell>
-                                <TableCell>{item.rate}</TableCell>
-                                <TableCell>
-                                    <Input name="executedQty" value={item.executedQty} onChange={(e) => handleItemChange(index, e)} type="number" />
-                                </TableCell>
-                                <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
-                                <TableCell>
-                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>BOQ Qty</TableHead>
+                    <TableHead>Total Certified Qty</TableHead>
+                    <TableHead className="w-[120px]">Rate</TableHead>
+                    <TableHead className="w-[140px]">Executed Qty</TableHead>
+                    <TableHead className="w-[150px]">Total Amount</TableHead>
+                    <TableHead className="w-[50px]">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <BoqItemSelector
+                          boqItems={boqItems}
+                          selectedSlNo={item.boqSlNo}
+                          onSelect={(boq) => handleBoqSelect(index, boq)}
+                          isLoading={isBoqLoading}
+                        />
+                      </TableCell>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell>{item.unit}</TableCell>
+                      <TableCell>{item.boqQty}</TableCell>
+                      <TableCell>{item.totalCertifiedQty}</TableCell>
+                      <TableCell>{item.rate}</TableCell>
+                      <TableCell>
+                        <Input
+                          name="executedQty"
+                          type="number"
+                          step="any"
+                          min={0}
+                          value={item.executedQty}
+                          onChange={(e) => handleItemChange(index, e)}
+                        />
+                      </TableCell>
+                      <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
             <Button variant="outline" onClick={addItem} className="mt-4">
-                <Plus className="mr-2 h-4 w-4" /> Add Item
+              <Plus className="mr-2 h-4 w-4" /> Add Item
             </Button>
-        </CardContent>
-      </Card>
-    </div>
-    <BoqMultiSelectDialog
+          </CardContent>
+        </Card>
+      </div>
+
+      <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
-    />
+      />
     </>
   );
 }

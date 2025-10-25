@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -13,19 +12,36 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
+import type {
+  Requisition,
+  Project,
+  Department,
+  WorkflowStep,
+  ActionLog,
+  User,
+  ActionConfig,
+  AccountHead,
+  SubAccountHead,
+} from '@/lib/types';
 import { db, storage } from '@/lib/firebase';
-import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc, query, where, writeBatch } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  runTransaction,
+  Timestamp,
+  arrayUnion,
+  collection,
+  getDocs,
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
+import { Loader2, ChevronDown, Paperclip, Download, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
-import Link from 'next/link';
 import { createExpenseRequest } from '@/ai';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -33,6 +49,43 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+/* ---------- helpers ---------- */
+function toDateSafe(value: any): Date | null {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') return value.toDate(); // Firestore Timestamp
+  if (value instanceof Date) return value;
+  const asNum = typeof value === 'number' ? value : Date.parse(value);
+  const d = new Date(asNum);
+  return isNaN(d.valueOf()) ? null : d;
+}
+
+function formatMaybeDate(value: any, fmt = 'dd MMM, yy HH:mm'): string {
+  const d = toDateSafe(value);
+  return d ? format(d, fmt) : '-';
+}
+
+/** Some WorkflowStep variants may not have `name`. Prefer name → label → id */
+function stepDisplay(step: Partial<WorkflowStep> & { id: string } | any): string {
+  return step?.name ?? step?.label ?? step?.title ?? step?.id ?? '—';
+}
+
+/** Narrow an action object that may carry departmentId for "Create Expense Request" */
+function hasDeptId(
+  a: unknown,
+): a is ActionConfig & { departmentId?: string } {
+  return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
+}
+
+/* ---------- types ---------- */
+/** Use a type intersection instead of `interface extends ...` */
+type EnrichedStep = WorkflowStep & {
+  assignedUserName?: string;
+  completionDate?: string;
+  deadline?: string;
+  status: 'Pending' | 'Completed' | 'Current';
+  /** add optional name to satisfy rendering even if WorkflowStep doesn’t declare it */
+  name?: string;
+};
 
 interface ViewRequisitionDialogProps {
   isOpen: boolean;
@@ -43,14 +96,15 @@ interface ViewRequisitionDialogProps {
   onRequisitionUpdate: () => void;
 }
 
-interface EnrichedStep extends WorkflowStep {
-    assignedUserName?: string;
-    completionDate?: string;
-    deadline?: string;
-    status: 'Pending' | 'Completed' | 'Current';
-}
-
-export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisition, projects, departments, onRequisitionUpdate }: ViewRequisitionDialogProps) {
+/* ---------- component ---------- */
+export default function ViewRequisitionDialog({
+  isOpen,
+  onOpenChange,
+  requisition,
+  projects,
+  departments,
+  onRequisitionUpdate,
+}: ViewRequisitionDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
@@ -60,7 +114,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   const [actionComment, setActionComment] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
-  
+
   const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
   const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
@@ -69,10 +123,10 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
 
   const currentStep = useMemo(() => {
     if (!requisition || !workflow) return null;
-    return workflow.find(s => s.id === requisition.currentStepId) || null;
+    return workflow.find((s) => s.id === requisition.currentStepId) || null;
   }, [requisition, workflow]);
 
-
+  /* load workflow/users/heads when opened */
   useEffect(() => {
     const fetchWorkflowAndUsers = async () => {
       if (!requisition) return;
@@ -84,231 +138,274 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
           getDocs(collection(db, 'accountHeads')),
           getDocs(collection(db, 'subAccountHeads')),
         ]);
-        
-        if (workflowSnap.exists()) {
-          const steps = workflowSnap.data().steps as WorkflowStep[];
-          setWorkflow(steps);
-        } else {
-           toast({ title: 'Error', description: 'Workflow configuration not found.', variant: 'destructive' });
-        }
-        
-        const usersData = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-        setUsers(usersData);
-        setAccountHeads(headsSnap.docs.map(d => ({id: d.id, ...d.data()} as AccountHead)));
-        setSubAccountHeads(subHeadsSnap.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
 
+        if (workflowSnap.exists()) {
+          const steps = (workflowSnap.data()?.steps || []) as WorkflowStep[];
+          setWorkflow(Array.isArray(steps) ? steps : []);
+        } else {
+          toast({
+            title: 'Error',
+            description: 'Workflow configuration not found.',
+            variant: 'destructive',
+          });
+          setWorkflow([]);
+        }
+
+        const usersData =
+          usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User)) || [];
+        setUsers(usersData);
+
+        setAccountHeads(
+          headsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as AccountHead)),
+        );
+        setSubAccountHeads(
+          subHeadsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as SubAccountHead)),
+        );
       } catch (error) {
-        console.error("Error fetching workflow/users:", error);
-        toast({ title: 'Error', description: 'Could not load workflow or user data.', variant: 'destructive' });
+        console.error('Error fetching workflow/users:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not load workflow or user data.',
+          variant: 'destructive',
+        });
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     if (isOpen && requisition) {
-        fetchWorkflowAndUsers();
+      fetchWorkflowAndUsers();
     } else {
-        setWorkflow(null);
-        setActionComment('');
-        setFile(null);
-        setEnrichedSteps([]);
-        setIsWorkflowOpen(false);
-        setExpenseToCreate(null);
+      setWorkflow(null);
+      setActionComment('');
+      setFile(null);
+      setEnrichedSteps([]);
+      setIsWorkflowOpen(false);
+      setExpenseToCreate(null);
     }
   }, [requisition, isOpen, toast]);
 
-   useEffect(() => {
+  /* build enriched workflow table */
+  useEffect(() => {
     if (requisition && workflow && users.length > 0) {
-      
-      const getStepAssigneeName = (step: WorkflowStep): string => {
-        if (step.assignmentType === 'User-based' && Array.isArray(step.assignedTo) && step.assignedTo.length > 0) {
-            return users.find(u => u.id === step.assignedTo[0])?.name || 'N/A';
-        }
-        // Simplified for brevity, add other assignment types if needed
-        return 'N/A';
-      };
-
       const history = requisition.history || [];
-      const currentStepIndex = workflow.findIndex(s => s.id === requisition.currentStepId);
-      
+      const currentStepIndex = workflow.findIndex((s) => s.id === requisition.currentStepId);
+
       const allStepsWithDetails = workflow.map((wfStep, index) => {
-          const historyEntries = history.filter(h => h.stepName === wfStep.name);
-          const completionEntry = historyEntries.find(h => ['Complete', 'Approve', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(h.action));
-          
-          let status: EnrichedStep['status'] = 'Pending';
-           if (requisition.status === 'Completed' || requisition.status === 'Rejected') {
-                if (historyEntries.length > 0 || (index <= currentStepIndex && currentStepIndex !== -1)) { 
-                    status = 'Completed';
-                }
-            } else if (wfStep.id === requisition.currentStepId) {
-                status = 'Current';
-            } else if (completionEntry || (currentStepIndex > -1 && index < currentStepIndex)) {
-                status = 'Completed';
-            }
+        const wfStepLabel = stepDisplay(wfStep);
+        const historyEntries = history.filter((h) => h.stepName === wfStepLabel);
+        const completionEntry = historyEntries.find((h) =>
+          ['Complete', 'Approve', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(
+            h.action,
+          ),
+        );
 
-          let assignedUserName = 'N/A';
-          const completionUser = completionEntry ? completionEntry.userName : null;
-          if(completionUser) {
-              assignedUserName = completionUser;
-          } else if (status === 'Current' && requisition.assignees) {
-              assignedUserName = requisition.assignees.map(id => users.find(u => u.id === id)?.name || 'Unknown').join(', ');
-          } else {
-            const lastEntry = historyEntries[historyEntries.length -1];
-            if(lastEntry) assignedUserName = lastEntry.userName;
+        let status: EnrichedStep['status'] = 'Pending';
+        if (requisition.status === 'Completed' || requisition.status === 'Rejected') {
+          if (historyEntries.length > 0 || (index <= currentStepIndex && currentStepIndex !== -1)) {
+            status = 'Completed';
           }
+        } else if (wfStep.id === requisition.currentStepId) {
+          status = 'Current';
+        } else if (completionEntry || (currentStepIndex > -1 && index < currentStepIndex)) {
+          status = 'Completed';
+        }
 
-          return {
-              ...wfStep,
-              assignedUserName,
-              completionDate: completionEntry ? format(completionEntry.timestamp.toDate(), 'dd MMM, yy HH:mm') : '-',
-              deadline: (status === 'Current' && requisition.deadline) ? format(requisition.deadline.toDate(), 'dd MMM, yy HH:mm') : '-',
-              status: status,
-          };
+        let assignedUserName = 'N/A';
+        const completionUser = completionEntry ? completionEntry.userName : null;
+        if (completionUser) {
+          assignedUserName = completionUser;
+        } else if (status === 'Current' && Array.isArray(requisition.assignees)) {
+          assignedUserName = requisition.assignees
+            .map((id) => users.find((u) => u.id === id)?.name || 'Unknown')
+            .join(', ');
+        } else {
+          const lastEntry = historyEntries[historyEntries.length - 1];
+          if (lastEntry?.userName) assignedUserName = lastEntry.userName;
+        }
+
+        return {
+          ...wfStep,
+          assignedUserName,
+          completionDate: completionEntry ? formatMaybeDate(completionEntry.timestamp) : '-',
+          deadline:
+            status === 'Current' && requisition.deadline
+              ? formatMaybeDate(requisition.deadline)
+              : '-',
+          status,
+          // ensure TS knows name could exist
+          name: (wfStep as any).name,
+        } as EnrichedStep;
       });
+
       setEnrichedSteps(allStepsWithDetails);
     }
-   }, [requisition, workflow, users, isOpen]);
-  
+  }, [requisition, workflow, users, isOpen]);
+
+  /* actions */
   const handleAction = async (action: string | ActionConfig) => {
     if (!user || !requisition || !workflow || !currentStep) return;
-    
+
     const actionName = typeof action === 'string' ? action : action.name;
-    
+
+    // Create Expense Request
     if (actionName === 'Create Expense Request') {
-        const targetDepartmentId = (action as ActionConfig).departmentId;
-        if (!targetDepartmentId) {
-            toast({ title: "Configuration Error", description: "Department not specified for expense request creation.", variant: "destructive" });
-            return;
-        }
+      const targetDepartmentId = typeof action !== 'string' && hasDeptId(action)
+        ? action.departmentId
+        : undefined;
 
-        const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
-        const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
-        
-        let previewRequestNo = 'Generating...';
-        try {
-            const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
-            const configDoc = await getDoc(configRef);
-            if (configDoc.exists()) {
-                const configData = configDoc.data() as any;
-                const newIndex = configData.startingIndex;
-                const formattedIndex = String(newIndex).padStart(4, '0');
-                previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-            } else {
-                previewRequestNo = 'Config not found';
-            }
-        } catch (error) {
-            previewRequestNo = 'Error generating ID';
-        }
-
-        setExpenseToCreate({
-            departmentId: targetDepartmentId || '',
-            projectId: requisition.projectId || '',
-            amount: requisition.amount || 0,
-            partyName: requisition.partyName || '',
-            description: requisition.description || '',
-            headOfAccount: defaultHead || 'Liability',
-            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
-            remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}` || '',
-            requestNo: previewRequestNo,
+      if (!targetDepartmentId) {
+        toast({
+          title: 'Configuration Error',
+          description: 'Department not specified for expense request creation.',
+          variant: 'destructive',
         });
-        setIsConfirmExpenseOpen(true);
         return;
+      }
+
+      const unsecuredLoanSubHead = subAccountHeads.find(
+        (sh) => sh.name?.toLowerCase() === 'unsecured loan',
+      );
+      const defaultHead = unsecuredLoanSubHead
+        ? accountHeads.find((h) => h.id === unsecuredLoanSubHead.headId)?.name
+        : 'Liability';
+
+      let previewRequestNo = 'Generating...';
+      try {
+        const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
+        const configDoc = await getDoc(configRef);
+        if (configDoc.exists()) {
+          const configData = configDoc.data() as any;
+          const newIndex = configData.startingIndex;
+          const formattedIndex = String(newIndex).padStart(4, '0');
+          previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${
+            configData.suffix || ''
+          }`;
+        } else {
+          previewRequestNo = 'Config not found';
+        }
+      } catch {
+        previewRequestNo = 'Error generating ID';
+      }
+
+      setExpenseToCreate({
+        departmentId: targetDepartmentId || '',
+        projectId: requisition.projectId || '',
+        amount: requisition.amount || 0,
+        partyName: requisition.partyName || '',
+        description: requisition.description || '',
+        headOfAccount: defaultHead || 'Liability',
+        subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
+        remarks: `Generated from Site Fund Requisition ${requisition.requisitionId}` || '',
+        requestNo: previewRequestNo,
+      });
+      setIsConfirmExpenseOpen(true);
+      return;
     }
-    
+
     setIsLoading(true);
     try {
-        const requisitionRef = doc(db, 'requisitions', requisition.id);
-        
-        let attachmentData: { name: string; url: string } | undefined;
-        if (file) {
-            const storagePath = `requisition-actions/${requisition.id}/${currentStep.name}/${file.name}`;
-            const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(storageRef);
-            attachmentData = { name: file.name, url: downloadURL };
-        }
+      const requisitionRef = doc(db, 'requisitions', requisition.id);
 
-        const newActionLog: ActionLog = {
-            action: actionName,
-            comment: actionComment,
-            userId: user.id,
-            userName: user.name,
-            timestamp: Timestamp.now(),
-            stepName: currentStep.name,
-            attachment: attachmentData,
+      let attachmentData: { name: string; url: string } | undefined;
+      if (file) {
+        const currStepName = stepDisplay(currentStep as any);
+        const storagePath = `requisition-actions/${requisition.id}/${currStepName}/${file.name}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(storageRef);
+        attachmentData = { name: file.name, url: downloadURL };
+      }
+
+      const newActionLog: ActionLog = {
+        action: actionName,
+        comment: actionComment,
+        userId: user.id,
+        userName: user.name,
+        timestamp: Timestamp.now(),
+        stepName: stepDisplay(currentStep as any),
+        attachment: attachmentData,
+      };
+
+      await runTransaction(db, async (transaction) => {
+        const reqDoc = await transaction.get(requisitionRef);
+        if (!reqDoc.exists()) throw new Error('Requisition document not found!');
+
+        const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
+
+        const currentDate = toDateSafe((currentRequisitionData as any).date) || new Date();
+        const tempReqForAssignment = {
+          ...currentRequisitionData,
+          date: format(currentDate, 'yyyy-MM-dd'),
         };
 
-        await runTransaction(db, async (transaction) => {
-            const reqDoc = await transaction.get(requisitionRef);
-            if (!reqDoc.exists()) throw new Error("Requisition document not found!");
+        let nextStep: WorkflowStep | undefined;
+        let newStatus: Requisition['status'] = currentRequisitionData.status;
+        let newStage = currentRequisitionData.stage;
+        let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
+        let newAssignees: string[] = [];
+        let newDeadline: Timestamp | null = null;
 
-            const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
-            
-            const tempReqForAssignment = {
-              ...currentRequisitionData,
-              date: format(new Date(currentRequisitionData.date), 'yyyy-MM-dd'),
-            };
+        const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(actionName);
 
-            let nextStep: WorkflowStep | undefined;
-            let newStatus: Requisition['status'] = currentRequisitionData.status;
-            let newStage = currentRequisitionData.stage;
-            let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
-            let newAssignees: string[] = [];
-            let newDeadline: Timestamp | null = null;
-            
-            const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(actionName);
+        if (isCompletionAction) {
+          const currentStepIndexTx = (workflow || []).findIndex((s) => s.id === currentStep.id);
+          nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
 
-            if (isCompletionAction) {
-                const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
-                nextStep = workflow[currentStepIndex + 1];
+          if (nextStep) {
+            newStage = stepDisplay(nextStep as any);
+            newStatus = 'In Progress';
+            newCurrentStepId = nextStep.id;
 
-                if (nextStep) {
-                    newStage = nextStep.name;
-                    newStatus = 'In Progress';
-                    newCurrentStepId = nextStep.id;
-                    newAssignees = await getAssigneeForStep(nextStep, tempReqForAssignment);
-                    if (newAssignees.length === 0) throw new Error(`Could not determine assignee for step: ${nextStep.name}`);
-                    const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
-                    newDeadline = Timestamp.fromDate(deadlineDate);
-                } else {
-                    newStage = 'Completed';
-                    newStatus = 'Completed';
-                    newCurrentStepId = null;
-                    newAssignees = []; 
-                    newDeadline = null;
-                }
-            } else if (actionName === 'Reject') {
-                 newStage = 'Rejected';
-                 newStatus = 'Rejected';
-                 newCurrentStepId = null;
-                 newAssignees = [];
-                 newDeadline = null;
-            } else {
-                newAssignees = currentRequisitionData.assignees || [];
-                newDeadline = currentRequisitionData.deadline;
+            const assignees = await getAssigneeForStep(nextStep, tempReqForAssignment);
+            if (!Array.isArray(assignees) || assignees.length === 0) {
+              throw new Error(`Could not determine assignee for step: ${stepDisplay(nextStep as any)}`);
             }
+            newAssignees = assignees;
 
-            const updatedData = {
-                status: newStatus,
-                stage: newStage,
-                currentStepId: newCurrentStepId,
-                assignees: newAssignees,
-                deadline: newDeadline,
-                history: arrayUnion(newActionLog),
-            };
+            const deadlineDate = await calculateDeadline(new Date(), (nextStep as any).tat);
+            newDeadline = Timestamp.fromDate(deadlineDate);
+          } else {
+            newStage = 'Completed';
+            newStatus = 'Completed';
+            newCurrentStepId = null;
+            newAssignees = [];
+            newDeadline = null;
+          }
+        } else if (actionName === 'Reject') {
+          newStage = 'Rejected';
+          newStatus = 'Rejected';
+          newCurrentStepId = null;
+          newAssignees = [];
+          newDeadline = null;
+        } else {
+          newAssignees = currentRequisitionData.assignees || [];
+          newDeadline = currentRequisitionData.deadline || null;
+        }
 
-            transaction.update(requisitionRef, updatedData);
-        });
-        
-        toast({ title: 'Success', description: `Requisition has been successfully ${actionName.toLowerCase()}ed.` });
-        onRequisitionUpdate();
-        onOpenChange(false);
+        const updatedData = {
+          status: newStatus,
+          stage: newStage,
+          currentStepId: newCurrentStepId,
+          assignees: newAssignees,
+          deadline: newDeadline,
+          history: arrayUnion(newActionLog),
+        };
 
+        transaction.update(requisitionRef, updatedData);
+      });
+
+      toast({
+        title: 'Success',
+        description: `Requisition has been successfully ${actionName.toLowerCase()}ed.`,
+      });
+      onRequisitionUpdate();
+      onOpenChange(false);
     } catch (error: any) {
-        console.error("Error processing action:", error);
-        toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+      console.error('Error processing action:', error);
+      toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -316,92 +413,95 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
     if (!expenseToCreate || !requisition || !user || !workflow || !currentStep) return;
     setIsCreatingExpense(true);
     try {
-        const { requestNo, ...dataToSave } = expenseToCreate;
+      const { requestNo, ...dataToSave } = expenseToCreate;
 
-        // 1. Create Expense Request
-        const result = await createExpenseRequest(dataToSave);
-        if (!result.success || !result.requestNo) {
-            throw new Error(result.message || 'Failed to create expense request.');
+      const result = await createExpenseRequest(dataToSave);
+      if (!result?.success || !result?.requestNo) {
+        throw new Error(result?.message || 'Failed to create expense request.');
+      }
+
+      const requisitionRef = doc(db, 'requisitions', requisition.id);
+
+      await runTransaction(db, async (transaction) => {
+        const reqDoc = await transaction.get(requisitionRef);
+        if (!reqDoc.exists()) throw new Error('Requisition document not found!');
+
+        const newActionLog: ActionLog = {
+          action: 'Create Expense Request',
+          comment: `Created Expense Request: ${result.requestNo}`,
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: stepDisplay(currentStep as any),
+        };
+
+        const currentStepIndexTx = (workflow || []).findIndex((s) => s.id === currentStep.id);
+        const nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
+
+        let newStatus: Requisition['status'];
+        let newStage: string;
+        let newCurrentStepId: string | null;
+        let newAssignees: string[] = [];
+        let newDeadline: Timestamp | null = null;
+
+        if (nextStep) {
+          newStage = stepDisplay(nextStep as any);
+          newStatus = 'In Progress';
+          newCurrentStepId = nextStep.id;
+
+          const assignees = await getAssigneeForStep(nextStep, { ...requisition, ...dataToSave });
+          if (!Array.isArray(assignees) || assignees.length === 0) {
+            throw new Error(`No assignee for step: ${stepDisplay(nextStep as any)}`);
+          }
+          newAssignees = assignees;
+
+          const deadlineDate = await calculateDeadline(new Date(), (nextStep as any).tat);
+          newDeadline = Timestamp.fromDate(deadlineDate);
+        } else {
+          newStage = 'Completed';
+          newStatus = 'Completed';
+          newCurrentStepId = null;
+          newAssignees = [];
+          newDeadline = null;
         }
 
-        // 2. Update Requisition and move to next step in a single transaction
-        const requisitionRef = doc(db, 'requisitions', requisition.id);
+        const requisitionUpdateData: any = {
+          history: arrayUnion(newActionLog),
+          expenseRequestNo: result.requestNo,
+          status: newStatus,
+          stage: newStage,
+          currentStepId: newCurrentStepId,
+          assignees: newAssignees,
+          deadline: newDeadline,
+        };
 
-        await runTransaction(db, async (transaction) => {
-            const reqDoc = await transaction.get(requisitionRef);
-            if (!reqDoc.exists()) throw new Error("Requisition document not found!");
+        transaction.update(requisitionRef, requisitionUpdateData);
+      });
 
-            const newActionLog: ActionLog = {
-                action: 'Create Expense Request',
-                comment: `Created Expense Request: ${result.requestNo}`,
-                userId: user.id,
-                userName: user.name,
-                timestamp: Timestamp.now(),
-                stepName: currentStep.name,
-            };
-
-            const currentStepIndex = workflow.findIndex(s => s.id === currentStep.id);
-            const nextStep = workflow[currentStepIndex + 1];
-
-            let newStatus: Requisition['status'];
-            let newStage: string;
-            let newCurrentStepId: string | null;
-            let newAssignees: string[] = [];
-            let newDeadline: Timestamp | null = null;
-            
-             if (nextStep) {
-                newStage = nextStep.name;
-                newStatus = 'In Progress';
-                newCurrentStepId = nextStep.id;
-                newAssignees = await getAssigneeForStep(nextStep, { ...requisition, ...dataToSave });
-                if (newAssignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
-                newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
-            } else {
-                newStage = 'Completed';
-                newStatus = 'Completed';
-                newCurrentStepId = null;
-                newAssignees = [];
-                newDeadline = null;
-            }
-
-            const requisitionUpdateData: any = {
-                history: arrayUnion(newActionLog),
-                expenseRequestNo: result.requestNo,
-                status: newStatus,
-                stage: newStage,
-                currentStepId: newCurrentStepId,
-                assignees: newAssignees,
-                deadline: newDeadline,
-            };
-
-            transaction.update(requisitionRef, requisitionUpdateData);
-        });
-
-        toast({
-            title: 'Expense Record Created & Workflow Advanced',
-            description: `Request No: ${result.requestNo}`,
-        });
-        onRequisitionUpdate();
-        onOpenChange(false);
-
+      toast({
+        title: 'Expense Record Created & Workflow Advanced',
+        description: `Request No: ${result.requestNo}`,
+      });
+      onRequisitionUpdate();
+      onOpenChange(false);
     } catch (error: any) {
-        toast({
-            title: 'Error',
-            description: `Failed to create expense record: ${error.message}`,
-            variant: 'destructive',
-        });
+      toast({
+        title: 'Error',
+        description: `Failed to create expense record: ${error.message}`,
+        variant: 'destructive',
+      });
     } finally {
-        setIsCreatingExpense(false);
-        setIsConfirmExpenseOpen(false);
-        setExpenseToCreate(null);
+      setIsCreatingExpense(false);
+      setIsConfirmExpenseOpen(false);
+      setExpenseToCreate(null);
     }
-};
-  
+  };
+
   const handleSubHeadChange = (subHeadName: string) => {
-    if(!expenseToCreate) return;
-    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
-    const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
-  
+    if (!expenseToCreate) return;
+    const selectedSubHead = subAccountHeads.find((sh) => sh.name === subHeadName);
+    const parentHead = accountHeads.find((h) => h.id === selectedSubHead?.headId);
+
     setExpenseToCreate({
       ...expenseToCreate,
       subHeadOfAccount: subHeadName,
@@ -410,7 +510,7 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
   };
 
   const formatAsCurrency = (value: number | undefined) => {
-    if (value === undefined || isNaN(value)) return '';
+    if (value === undefined || isNaN(value as any)) return '';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -418,62 +518,96 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
       maximumFractionDigits: 2,
     }).format(value);
   };
-  
+
   const parseCurrency = (value: string): number => {
     return Number(value.replace(/[^0-9.-]+/g, ''));
   };
 
   if (!requisition) return null;
 
-  const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || 'N/A';
-  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || 'N/A';
-  
-  const isActionAllowed = user && requisition.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+  const getProjectName = (id: string) =>
+    projects.find((p) => p.id === id)?.projectName || 'N/A';
+  const getDepartmentName = (id: string) =>
+    departments.find((d) => d.id === id)?.name || 'N/A';
+
+  const isActionAllowed =
+    !!user &&
+    Array.isArray(requisition.assignees) &&
+    requisition.assignees.includes(user.id) &&
+    requisition.status !== 'Completed' &&
+    requisition.status !== 'Rejected';
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
-          <div className="space-y-4">
+      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div><Label>Project</Label><p className="font-medium">{getProjectName(requisition.projectId)}</p></div>
-                  <div><Label>Department</Label><p className="font-medium">{getDepartmentName(requisition.departmentId)}</p></div>
-                  <div><Label>Amount</Label><p className="font-medium">₹ {requisition.amount.toLocaleString()}</p></div>
-                  <div><Label>Date</Label><p className="font-medium">{format(new Date(requisition.date), 'dd MMM, yyyy')}</p></div>
-                  <div><Label>Raised By</Label><p className="font-medium">{requisition.raisedBy}</p></div>
-                  <div><Label>Party Name</Label><p className="font-medium">{requisition.partyName}</p></div>
-              </div>
-              <div>
-                  <Label>Description</Label>
-                  <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">{requisition.description || 'No description provided.'}</p>
+                <div>
+                  <Label>Project</Label>
+                  <p className="font-medium">{getProjectName(requisition.projectId)}</p>
+                </div>
+                <div>
+                  <Label>Department</Label>
+                  <p className="font-medium">{getDepartmentName(requisition.departmentId)}</p>
+                </div>
+                <div>
+                  <Label>Amount</Label>
+                  <p className="font-medium">₹ {requisition.amount.toLocaleString()}</p>
+                </div>
+                <div>
+                  <Label>Date</Label>
+                  <p className="font-medium">
+                    {formatMaybeDate((requisition as any).date, 'dd MMM, yyyy')}
+                  </p>
+                </div>
+                <div>
+                  <Label>Raised By</Label>
+                  <p className="font-medium">{requisition.raisedBy}</p>
+                </div>
+                <div>
+                  <Label>Party Name</Label>
+                  <p className="font-medium">{requisition.partyName}</p>
+                </div>
               </div>
 
-              {requisition.attachments && requisition.attachments.length > 0 && (
+              <div>
+                <Label>Description</Label>
+                <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">
+                  {requisition.description || 'No description provided.'}
+                </p>
+              </div>
+
+              {!!requisition.attachments?.length && (
                 <div>
                   <Label>Attachments</Label>
                   <div className="mt-2 space-y-2">
                     {requisition.attachments.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                         <div className="flex items-center gap-2 overflow-hidden">
-                           <Paperclip className="h-4 w-4 shrink-0" />
-                           <span className="text-sm font-medium truncate">{file.name}</span>
-                         </div>
-                         <div className="flex items-center shrink-0">
-                             <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                               <a href={file.url} target="_blank" rel="noopener noreferrer">
-                                  <Eye className="mr-2 h-3 w-3" /> View
-                               </a>
-                             </Button>
-                             <Button asChild variant="outline" size="sm" className="h-7">
-                               <a href={file.url} download={file.name}>
-                                  <Download className="mr-2 h-3 w-3" /> Download
-                               </a>
-                             </Button>
-                         </div>
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-muted rounded-md"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <Paperclip className="h-4 w-4 shrink-0" />
+                          <span className="text-sm font-medium truncate">{file.name}</span>
+                        </div>
+                        <div className="flex items-center shrink-0">
+                          <Button asChild variant="outline" size="sm" className="mr-2 h-7">
+                            <a href={file.url} target="_blank" rel="noopener noreferrer">
+                              <Eye className="mr-2 h-3 w-3" /> View
+                            </a>
+                          </Button>
+                          <Button asChild variant="outline" size="sm" className="h-7">
+                            <a href={file.url} download={file.name}>
+                              <Download className="mr-2 h-3 w-3" /> Download
+                            </a>
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -481,183 +615,253 @@ export default function ViewRequisitionDialog({ isOpen, onOpenChange, requisitio
               )}
 
               {isActionAllowed && (
-                  <div className="space-y-4 pt-4 border-t">
-                      {currentStep?.upload === 'Required' && (
-                        <div>
-                            <Label htmlFor="file-upload" className="font-semibold text-destructive">Upload Required Document</Label>
-                            <Input id="file-upload" type="file" className="mt-1" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                        </div>
-                      )}
-                      <div>
-                          <Label>Action Comment</Label>
-                          <Textarea 
-                              placeholder="Add a comment for your action (optional)" 
-                              value={actionComment}
-                              onChange={(e) => setActionComment(e.target.value)}
-                          />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                         {currentStep?.actions.map(action => {
-                              const actionName = typeof action === 'string' ? action : action.name;
-                              const isCreateExpenseAction = actionName === 'Create Expense Request';
-                              const isDisabled = isLoading || (isCreateExpenseAction && !!requisition.expenseRequestNo);
-                              
-                              return (
-                                  <TooltipProvider key={actionName}>
-                                      <Tooltip>
-                                          <TooltipTrigger asChild>
-                                             <div className="inline-block">
-                                                 <Button onClick={() => handleAction(action)} disabled={isDisabled}>
-                                                      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                                      {actionName}
-                                                  </Button>
-                                             </div>
-                                          </TooltipTrigger>
-                                          {isDisabled && isCreateExpenseAction && (
-                                              <TooltipContent>
-                                                  <p>An expense request has already been created for this item.</p>
-                                              </TooltipContent>
-                                          )}
-                                      </Tooltip>
-                                  </TooltipProvider>
-                              );
-                          })}
-                      </div>
+                <div className="space-y-4 pt-4 border-t">
+                  {((currentStep as any)?.upload === 'Required') && (
+                    <div>
+                      <Label htmlFor="file-upload" className="font-semibold text-destructive">
+                        Upload Required Document
+                      </Label>
+                      <Input
+                        id="file-upload"
+                        type="file"
+                        className="mt-1"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <Label>Action Comment</Label>
+                    <Textarea
+                      placeholder="Add a comment for your action (optional)"
+                      value={actionComment}
+                      onChange={(e) => setActionComment(e.target.value)}
+                    />
                   </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <TooltipProvider>
+                      {(currentStep as any)?.actions?.map((action: string | ActionConfig) => {
+                        const actionName = typeof action === 'string' ? action : action.name;
+                        const isCreateExpenseAction = actionName === 'Create Expense Request';
+                        const isDisabled =
+                          isLoading || (isCreateExpenseAction && !!requisition.expenseRequestNo);
+
+                        return (
+                          <Tooltip key={actionName}>
+                            <TooltipTrigger asChild>
+                              <div className="inline-block">
+                                <Button onClick={() => handleAction(action)} disabled={isDisabled}>
+                                  {isLoading && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  {actionName}
+                                </Button>
+                              </div>
+                            </TooltipTrigger>
+                            {isDisabled && isCreateExpenseAction && (
+                              <TooltipContent>
+                                <p>An expense request has already been created for this item.</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        );
+                      })}
+                    </TooltipProvider>
+                  </div>
+                </div>
               )}
 
-             <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen} className="border-t pt-2">
+              <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen} className="border-t pt-2">
                 <CollapsibleTrigger asChild>
-                   <Button variant="ghost" className="w-full justify-between px-2">
-                     Workflow Status
-                     <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
-                   </Button>
+                  <Button variant="ghost" className="w-full justify-between px-2">
+                    Workflow Status
+                    <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
+                  </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                   <ScrollArea className="h-72 mt-2 border rounded-md">
-                      <Table>
-                          <TableHeader>
-                              <TableRow>
-                                  <TableHead>Stage</TableHead>
-                                  <TableHead>User</TableHead>
-                                  <TableHead>Deadline</TableHead>
-                                  <TableHead>Completed</TableHead>
-                                  <TableHead>Status</TableHead>
-                              </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                          {enrichedSteps.length > 0 ? (
-                            enrichedSteps.map((step, index) => (
-                                  <TableRow key={index}>
-                                      <TableCell className="font-medium">{step.name}</TableCell>
-                                      <TableCell>{step.assignedUserName}</TableCell>
-                                      <TableCell>{step.deadline}</TableCell>
-                                      <TableCell>{step.completionDate}</TableCell>
-                                      <TableCell>
-                                        <Badge 
-                                          variant={
-                                            step.status === 'Completed' ? 'default' : 
-                                            step.status === 'Current' ? 'secondary' : 'outline'
-                                          }
-                                          className={step.status === 'Completed' ? 'bg-green-500 hover:bg-green-600' : ''}
-                                        >
-                                          {step.status}
-                                        </Badge>
-                                      </TableCell>
-                                  </TableRow>
-                              ))
-                          ) : (
-                              <TableRow>
-                                  <TableCell colSpan={5} className="text-center h-24">
-                                      {isLoading ? 'Loading workflow...' : 'No workflow data.'}
-                                  </TableCell>
-                              </TableRow>
-                          )}
-                          </TableBody>
-                      </Table>
+                  <ScrollArea className="h-72 mt-2 border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Stage</TableHead>
+                          <TableHead>User</TableHead>
+                          <TableHead>Deadline</TableHead>
+                          <TableHead>Completed</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {enrichedSteps.length > 0 ? (
+                          enrichedSteps.map((step, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="font-medium">{stepDisplay(step)}</TableCell>
+                              <TableCell>{step.assignedUserName}</TableCell>
+                              <TableCell>{step.deadline}</TableCell>
+                              <TableCell>{step.completionDate}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    step.status === 'Completed'
+                                      ? 'default'
+                                      : step.status === 'Current'
+                                      ? 'secondary'
+                                      : 'outline'
+                                  }
+                                  className={
+                                    step.status === 'Completed'
+                                      ? 'bg-green-500 hover:bg-green-600'
+                                      : ''
+                                  }
+                                >
+                                  {step.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center h-24">
+                              {isLoading ? 'Loading workflow...' : 'No workflow data.'}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </ScrollArea>
                 </CollapsibleContent>
               </Collapsible>
+            </div>
           </div>
-        </div>
-        <DialogFooter className="mt-4">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-     {expenseToCreate && (
+
+          <DialogFooter className="mt-4">
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {expenseToCreate && (
         <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
           <DialogContent>
-              <DialogHeader>
-                  <DialogTitle>Confirm Expense Creation</DialogTitle>
-                  <DialogDescription>Review and edit the details below before creating the expense request.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <Label>Request No.</Label>
-                        <Input value={expenseToCreate.requestNo || ''} disabled />
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Project</Label>
-                        <Input value={getProjectName(expenseToCreate.projectId) || ''} disabled />
-                    </div>
-                  </div>
-                   <div className="space-y-1">
-                      <Label>Party Name</Label>
-                      <Input value={expenseToCreate.partyName || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, partyName: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                      <Label>Amount</Label>
-                      <Input
-                        type="text"
-                        value={formatAsCurrency(expenseToCreate.amount || 0)}
-                        onChange={(e) => {
-                          const numericValue = parseCurrency(e.target.value);
-                          setExpenseToCreate({...expenseToCreate, amount: numericValue });
-                        }}
-                      />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <Label>Head of A/c</Label>
-                         <Select value={expenseToCreate.headOfAccount || ''} onValueChange={(value) => setExpenseToCreate({...expenseToCreate, headOfAccount: value })} disabled>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                             <SelectContent>
-                                {accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Sub-Head of A/c</Label>
-                         <Select value={expenseToCreate.subHeadOfAccount || ''} onValueChange={handleSubHeadChange}>
-                            <SelectTrigger><SelectValue placeholder="Select Sub-Head"/></SelectTrigger>
-                            <SelectContent>{subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                      <Label>Description:</Label>
-                      <Textarea value={expenseToCreate.description || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, description: e.target.value})} />
-                  </div>
-                   <div className="space-y-1">
-                      <Label>Remarks:</Label>
-                      <Textarea value={expenseToCreate.remarks || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, remarks: e.target.value})} />
-                  </div>
+            <DialogHeader>
+              <DialogTitle>Confirm Expense Creation</DialogTitle>
+              <DialogDescription>
+                Review and edit the details below before creating the expense request.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Request No.</Label>
+                  <Input value={expenseToCreate.requestNo || ''} disabled />
+                </div>
+                <div className="space-y-1">
+                  <Label>Project</Label>
+                  <Input value={projects.find(p => p.id === expenseToCreate.projectId)?.projectName || ''} disabled />
+                </div>
               </div>
-              <DialogFooter>
-                  <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                  <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
-                      {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Confirm & Create
-                  </Button>
-              </DialogFooter>
+
+              <div className="space-y-1">
+                <Label>Party Name</Label>
+                <Input
+                  value={expenseToCreate.partyName || ''}
+                  onChange={(e) =>
+                    setExpenseToCreate({ ...expenseToCreate, partyName: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Amount</Label>
+                <Input
+                  type="text"
+                  value={formatAsCurrency(expenseToCreate.amount || 0)}
+                  onChange={(e) => {
+                    const numericValue = Number(e.target.value.replace(/[^0-9.-]+/g, ''));
+                    setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
+                  }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Head of A/c</Label>
+                  <Select
+                    value={expenseToCreate.headOfAccount || ''}
+                    onValueChange={(value) =>
+                      setExpenseToCreate({ ...expenseToCreate, headOfAccount: value })
+                    }
+                    disabled
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accountHeads.map((h) => (
+                        <SelectItem key={h.id} value={h.name}>
+                          {h.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Sub-Head of A/c</Label>
+                  <Select
+                    value={expenseToCreate.subHeadOfAccount || ''}
+                    onValueChange={handleSubHeadChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Sub-Head" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subAccountHeads.map((s) => (
+                        <SelectItem key={s.id} value={s.name}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Description:</Label>
+                <Textarea
+                  value={expenseToCreate.description || ''}
+                  onChange={(e) =>
+                    setExpenseToCreate({ ...expenseToCreate, description: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Remarks:</Label>
+                <Textarea
+                  value={expenseToCreate.remarks || ''}
+                  onChange={(e) =>
+                    setExpenseToCreate({ ...expenseToCreate, remarks: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
+                {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Confirm & Create
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
     </>
   );
 }
-

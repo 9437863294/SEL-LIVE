@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -16,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -37,9 +36,9 @@ interface JmcItemSelectorDialogProps {
   alreadyAddedItems?: BillItem[];
 }
 
-// ⚠️ Do NOT change types from JmcItem (e.g., unit stays `string` if that's what JmcItem declares)
+// Keep JmcItem field types intact
 type JmcItemWithDetails = JmcItem & {
-  id: string;
+  id: string;              // synthetic: `${entry.id}-${index}`
   jmcEntryId: string;
   jmcNo: string;
   billedQty: number;
@@ -48,6 +47,12 @@ type JmcItemWithDetails = JmcItem & {
   ['Scope 2']?: string;
   ['Category 1']?: string;
 };
+
+/* Utility to avoid TS2783 (`id` duplicated when spreading Firestore data) */
+function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
+  const { id: _ignored, ...rest } = obj as any;
+  return rest as Omit<T, 'id'>;
+}
 
 export function JmcItemSelectorDialog({
   isOpen,
@@ -78,12 +83,13 @@ export function JmcItemSelectorDialog({
     'Category 1': 'all',
   });
 
-  // Debounce search
+  // Debounce search input -> searchTerm
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // Fetch JMC entries and bills when dialog opens
   useEffect(() => {
     if (!isOpen || !projectSlug) return;
 
@@ -99,10 +105,10 @@ export function JmcItemSelectorDialog({
         ]);
 
         const allJmcEntries = jmcSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as JmcEntry)
+          (doc) => ({ id: doc.id, ...stripId(doc.data() as any) } as JmcEntry)
         );
         const allBills = billsSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as Bill)
+          (doc) => ({ id: doc.id, ...stripId(doc.data() as any) } as Bill)
         );
 
         // Accumulate billed quantities keyed by our synthetic item id
@@ -110,8 +116,8 @@ export function JmcItemSelectorDialog({
         allBills.forEach((bill) => {
           (bill.items ?? []).forEach((it) => {
             const k = it.jmcItemId;
-            const inc = Number.parseFloat(it.billedQty || '0') || 0;
-            billedQuantities[k] = (billedQuantities[k] || 0) + inc;
+            const inc = Number(it.billedQty ?? 0);
+            billedQuantities[k] = (billedQuantities[k] || 0) + (Number.isFinite(inc) ? inc : 0);
           });
         });
 
@@ -119,7 +125,7 @@ export function JmcItemSelectorDialog({
         allJmcEntries.forEach((entry) => {
           (entry.items ?? []).forEach((item, index) => {
             const jmcItemId = `${entry.id}-${index}`;
-            const executedQty = Number.parseFloat((item as any).executedQty ?? '0') || 0;
+            const executedQty = Number((item as any).executedQty ?? 0) || 0;
             const billedQty = billedQuantities[jmcItemId] || 0;
             const availableQty = executedQty - billedQty;
 
@@ -127,7 +133,7 @@ export function JmcItemSelectorDialog({
               processed.push({
                 ...(item as JmcItem),
                 id: jmcItemId,
-                jmcEntryId: entry.id,
+                jmcEntryId: entry.id!,
                 jmcNo: String((entry as any).jmcNo ?? ''),
                 billedQty,
                 availableQty,
@@ -225,8 +231,8 @@ export function JmcItemSelectorDialog({
       if (!q) return true;
       return (
         item.jmcNo?.toLowerCase().includes(q) ||
-        (item as any).boqSlNo?.toLowerCase?.().includes(q) || // if present on JmcItem
-        (item as any).description?.toLowerCase?.().includes(q)
+        String((item as any).boqSlNo ?? '').toLowerCase().includes(q) ||
+        String((item as any).description ?? '').toLowerCase().includes(q)
       );
     });
 
@@ -244,7 +250,6 @@ export function JmcItemSelectorDialog({
           if (sortKey === 'availableQty') {
             cmp = ((A.availableQty ?? 0) - (B.availableQty ?? 0)) * dir;
           } else if (sortKey === 'rate') {
-            // rate lives on JmcItem (string | number). We normalize.
             cmp = (getRateNumber((A as any).rate) - getRateNumber((B as any).rate)) * dir;
           } else {
             cmp =
@@ -443,7 +448,9 @@ export function JmcItemSelectorDialog({
                     >
                       <div className="w-[50px] flex justify-center">
                         <Checkbox
-                          aria-label={`Select ${String((item as any).description ?? (item as any).boqSlNo ?? item.jmcNo)}`}
+                          aria-label={`Select ${String(
+                            (item as any).description ?? (item as any).boqSlNo ?? item.jmcNo
+                          )}`}
                           checked={rowChecked}
                           onCheckedChange={(checked) => {
                             // Avoid double-toggle from parent onClick
@@ -489,5 +496,3 @@ export function JmcItemSelectorDialog({
     </Dialog>
   );
 }
-
-    
