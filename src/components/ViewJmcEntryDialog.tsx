@@ -165,19 +165,19 @@ export default function ViewJmcEntryDialog({
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>
-                            {item.executedQty}
-                        </TableCell>
-                        <TableCell>
                           {isEditMode ? (
                             <Input
                               type="number"
                               inputMode="decimal"
-                              value={item.certifiedQty ?? ''}
-                              onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
+                              value={item.executedQty}
+                              onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
                             />
                           ) : (
-                            item.certifiedQty ?? 'N/A'
+                            item.executedQty
                           )}
+                        </TableCell>
+                        <TableCell>
+                           {item.certifiedQty ?? 'N/A'}
                         </TableCell>
                         <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                       </TableRow>
