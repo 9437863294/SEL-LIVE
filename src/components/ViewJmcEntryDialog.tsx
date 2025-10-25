@@ -33,9 +33,8 @@ interface ViewJmcEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
-  allJmcEntries?: JmcEntry[];
   boqItems: BoqItem[];
-  bills: Bill[];
+  bills: Bill[]; // kept for API parity, not used here
   isEditMode?: boolean;
   onVerify?: (
     taskId: string,
@@ -46,53 +45,67 @@ interface ViewJmcEntryDialogProps {
   isLoading?: boolean;
 }
 
+function safeFormatDate(d: unknown): string {
+  try {
+    // Firestore Timestamp support
+    // @ts-expect-error - runtime guard
+    if (d && typeof d === 'object' && typeof (d as any).toDate === 'function') {
+      return format((d as any).toDate(), 'dd MMM, yyyy');
+    }
+    if (typeof d === 'number') return format(new Date(d), 'dd MMM, yyyy');
+    if (typeof d === 'string') return format(new Date(d), 'dd MMM, yyyy');
+    if (d instanceof Date) return format(d, 'dd MMM, yyyy');
+  } catch {
+    /* noop */
+  }
+  return '—';
+}
+
 export default function ViewJmcEntryDialog({
   isOpen,
   onOpenChange,
   jmcEntry,
-  allJmcEntries = [],
   boqItems,
-  bills,
+  bills, // eslint-disable-line @typescript-eslint/no-unused-vars
   isEditMode = false,
   onVerify,
   isLoading,
 }: ViewJmcEntryDialogProps) {
-  const [editableItems, setEditableItems] = useState<EnrichedJmcItem[]>([]);
-  const [initialItems, setInitialItems] = useState<EnrichedJmcItem[]>([]);
   const { toast } = useToast();
 
+  const [editableItems, setEditableItems] = useState<EnrichedJmcItem[]>([]);
+  const [initialItems, setInitialItems] = useState<EnrichedJmcItem[]>([]);
+
+
+  // Build the initial enriched items only when the dialog opens for a specific entry.
   useEffect(() => {
     if (!isOpen || !jmcEntry) {
-      setEditableItems([]);
       setInitialItems([]);
+      setEditableItems([]);
       return;
-    }
+    };
+    
+    const enriched: EnrichedJmcItem[] = (jmcEntry.items || []).map(item => {
+        const boqItem = boqItems.find(b => b['BOQ SL No'] === item.boqSlNo);
+        const boqQty = Number(boqItem?.QTY || 0);
 
-    const enriched = (jmcEntry.items || []).map((item) => {
-      const boqItem = boqItems.find(
-        (b) => (b as any)['BOQ SL No'] === item.boqSlNo || (b as any)['SL. No.'] === item.boqSlNo
-      );
-      const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
-      
-      const totalCertifiedQty = allJmcEntries
-        .filter(entry => entry.id !== jmcEntry.id)
-        .flatMap(entry => entry.items)
-        .filter(i => i.boqSlNo === item.boqSlNo)
-        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
-
-      const certQtyString = item.certifiedQty ?? item.certifiedQty === 0 ? String(item.certifiedQty) : '';
-
-      return {
-        ...item,
-        boqQty,
-        totalCertifiedQty,
-        __certStr: certQtyString,
-        __error: null,
-      };
+        return {
+            ...item,
+            boqQty,
+            totalCertifiedQty: 0, // This will be calculated in another effect if needed.
+            __certStr: String(item.certifiedQty ?? ''),
+            __error: null,
+        }
     });
+
     setInitialItems(enriched);
     setEditableItems(enriched);
-  }, [jmcEntry, isOpen]);
+
+  }, [jmcEntry, isOpen, boqItems]);
+
+
+  const hasErrors = useMemo(() => editableItems.some((i) => i.__error), [editableItems]);
+  const itemsToDisplay = isEditMode ? editableItems : initialItems;
 
 
   const handleItemChange = (
@@ -106,61 +119,69 @@ export default function ViewJmcEntryDialog({
       const item = { ...next[index] };
 
       if (field === 'executedQty') {
-        (item as any)[field] = numValue;
-      } else if (field === 'certifiedQty') {
+        (item as any).executedQty = Number.isFinite(numValue) ? numValue : undefined;
+      } else {
         item.__certStr = value;
-      }
+        if (!Number.isNaN(numValue)) {
+          const executedQty = Number(item.executedQty) || 0;
+          const totalPreviousCertified = item.totalCertifiedQty || 0;
+          const availableToCertify = executedQty - totalPreviousCertified;
 
-      if (!Number.isNaN(numValue) && field === 'certifiedQty') {
-        const executedQty = Number(item.executedQty) || 0;
-        const totalPreviousCertified = item.totalCertifiedQty || 0;
-        const availableToCertify = executedQty - totalPreviousCertified;
-        
-        if (numValue < 0) {
-          item.__error = 'Cannot be negative';
-        } else if (numValue > availableToCertify) {
-          item.__error = `Max available: ${availableToCertify.toFixed(3)}`;
+          if (numValue < 0) {
+            item.__error = 'Cannot be negative';
+          } else if (numValue > availableToCertify) {
+            item.__error = `Max available: ${availableToCertify.toFixed(3)}`;
+          } else {
+            item.__error = null;
+          }
+          item.certifiedQty = numValue;
         } else {
+          // Empty or invalid input resets certified value
+          item.certifiedQty = undefined as any;
           item.__error = null;
         }
-        item.certifiedQty = numValue;
       }
-      
+
       const rate = Number(item.rate) || 0;
       const executedQty = Number(item.executedQty) || 0;
       item.totalAmount = executedQty * rate;
+
       next[index] = item;
       return next;
     });
   };
-  
-  const hasErrors = useMemo(() => editableItems.some(item => item.__error), [editableItems]);
+
 
   const handleSaveAndVerify = () => {
     if (hasErrors) {
-        toast({
-            title: "Validation Error",
-            description: "Please correct the errors in the certified quantities before saving.",
-            variant: "destructive"
-        });
-        return;
+      toast({
+        title: 'Validation Error',
+        description: 'Please correct the errors in the certified quantities before saving.',
+        variant: 'destructive',
+      });
+      return;
     }
     if (onVerify && jmcEntry) {
-      const itemsToSave = editableItems.map(({ boqQty, totalCertifiedQty, __error, __certStr, ...rest }) => ({
-        ...rest,
-        certifiedQty: Number(rest.certifiedQty)
-      }));
-      onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
+      const itemsToSave: JmcItem[] = editableItems.map(
+        ({ boqQty, totalCertifiedQty, __error, __certStr, ...rest }) => ({
+          ...rest,
+          certifiedQty:
+            rest.certifiedQty === undefined || rest.certifiedQty === null
+              ? undefined
+              : Number(rest.certifiedQty),
+        })
+      );
+      // fire-and-forget; parent can handle promise state via isLoading
+      void onVerify(jmcEntry.id, 'Verified', 'Verified with edits', itemsToSave);
     }
   };
 
   const formatCurrency = (amount: number | string) => {
     const num = Number(amount);
-    if (isNaN(num)) return String(amount);
+    if (Number.isNaN(num)) return String(amount ?? '');
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+    // If you need raw number: return new Intl.NumberFormat('en-IN').format(num);
   };
-  
-  const itemsToDisplay = isEditMode ? editableItems : initialItems;
 
 
   if (!jmcEntry) return null;
@@ -185,9 +206,7 @@ export default function ViewJmcEntryDialog({
               </div>
               <div>
                 <Label>JMC Date</Label>
-                <p className="font-medium">
-                  {jmcEntry.jmcDate ? format(new Date(jmcEntry.jmcDate), 'dd MMM, yyyy') : '—'}
-                </p>
+                <p className="font-medium">{safeFormatDate(jmcEntry.jmcDate)}</p>
               </div>
             </div>
 
@@ -212,7 +231,7 @@ export default function ViewJmcEntryDialog({
                   </TableHeader>
                   <TableBody>
                     {itemsToDisplay.map((item, index) => (
-                      <TableRow key={`${item.boqSlNo}-${index}`}>
+                      <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell className="truncate max-w-[200px]">{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
@@ -224,7 +243,11 @@ export default function ViewJmcEntryDialog({
                             <Input
                               type="number"
                               inputMode="decimal"
-                              value={Number.isFinite(item.executedQty) ? item.executedQty : ''}
+                              value={
+                                Number.isFinite(Number(item.executedQty))
+                                  ? String(item.executedQty)
+                                  : ''
+                              }
                               onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
                             />
                           ) : (
@@ -234,14 +257,16 @@ export default function ViewJmcEntryDialog({
                         <TableCell>
                           {isEditMode ? (
                             <div>
-                                <Input
+                              <Input
                                 type="number"
                                 inputMode="decimal"
                                 value={item.__certStr ?? ''}
                                 onChange={(e) => handleItemChange(index, 'certifiedQty', e.target.value)}
                                 className={item.__error ? 'border-destructive' : ''}
-                                />
-                                {item.__error && <p className="text-xs text-destructive mt-1">{item.__error}</p>}
+                              />
+                              {item.__error && (
+                                <p className="text-xs text-destructive mt-1">{item.__error}</p>
+                              )}
                             </div>
                           ) : (
                             item.certifiedQty ?? 'N/A'
@@ -258,17 +283,22 @@ export default function ViewJmcEntryDialog({
         </ScrollArea>
 
         <DialogFooter className="mt-4 pr-4">
-            <DialogClose asChild>
-                <Button variant="outline">Close</Button>
-            </DialogClose>
-            {isEditMode && (
-                <Button onClick={handleSaveAndVerify} disabled={isLoading || hasErrors}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save & Verify
-                </Button>
-            )}
+          <DialogClose asChild>
+            <Button variant="outline">Close</Button>
+          </DialogClose>
+          {isEditMode && (
+            <Button onClick={handleSaveAndVerify} disabled={isLoading || hasErrors}>
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save &amp; Verify
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
