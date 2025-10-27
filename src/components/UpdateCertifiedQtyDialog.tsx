@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -16,11 +17,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import type { JmcEntry, JmcItem, ActionConfig } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import type { JmcEntry, JmcItem, ActionConfig, Project } from '@/lib/types';
+import { Loader2, Upload, File as FileIcon, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Progress } from './ui/progress';
 
 interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
@@ -53,18 +55,40 @@ export function UpdateCertifiedQtyDialog({
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
 
-  // qty editor
   const [items, setItems] = useState<EditableItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
-  // uploads
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [uploaded, setUploaded] = useState<CertifiedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  // hydrate editable rows when dialog opens
+  useEffect(() => {
+    const fetchProject = async () => {
+        if (!projectSlug) return;
+        const projectsQuery = query(collection(db, 'projects'), where('slug', '==', projectSlug));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        if (!projectsSnapshot.empty) {
+            const projectDoc = projectsSnapshot.docs[0];
+            setCurrentProject({ id: projectDoc.id, ...projectDoc.data() } as Project);
+        } else {
+             // Fallback for older data that might not have slug
+            const allProjectsSnap = await getDocs(collection(db, 'projects'));
+            const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+            const foundProject = allProjectsSnap.docs.map(d => ({id: d.id, ...d.data()} as Project)).find(p => slugify(p.projectName) === projectSlug);
+            if (foundProject) {
+              setCurrentProject(foundProject);
+            } else {
+              toast({ title: "Error", description: "Project context not found.", variant: "destructive" });
+            }
+        }
+    };
+    fetchProject();
+  }, [projectSlug, toast]);
+
+
   useEffect(() => {
     if (isOpen && jmcEntry) {
       const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items || []));
@@ -73,11 +97,10 @@ export function UpdateCertifiedQtyDialog({
         it.__error = null;
       });
       setItems(cloned);
-
-      // reset upload UI
+      setUploaded((jmcEntry as any).certifiedAttachments || []);
+      
       setSelectedFiles([]);
       setUploadProgress({});
-      setUploaded([]);
       setIsDragging(false);
     }
   }, [isOpen, jmcEntry]);
@@ -116,7 +139,6 @@ export function UpdateCertifiedQtyDialog({
     });
   };
 
-  // File selection & DnD
   const onPickFiles: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -160,7 +182,7 @@ export function UpdateCertifiedQtyDialog({
   };
 
   async function uploadAllSelectedConcurrent(): Promise<CertifiedAttachment[]> {
-    if (!jmcEntry || selectedFiles.length === 0) return [];
+    if (!jmcEntry || !currentProject || selectedFiles.length === 0) return [];
     setIsUploading(true);
 
     const queue = [...selectedFiles];
@@ -170,7 +192,7 @@ export function UpdateCertifiedQtyDialog({
       new Promise<void>((resolve, reject) => {
         if (queue.length === 0) return resolve();
         const file = queue.shift()!;
-        const path = `projects/${projectSlug}/jmcEntries/${jmcEntry.id}/attachments/${Date.now()}-${file.name}`;
+        const path = `projects/${currentProject.id}/jmcEntries/${jmcEntry.id}/attachments/${Date.now()}-${file.name}`;
         const ref = storageRef(storage, path);
         const task = uploadBytesResumable(ref, file);
 
@@ -213,9 +235,8 @@ export function UpdateCertifiedQtyDialog({
     }
   }
 
-  // Save
   const handleSave = async () => {
-    if (!jmcEntry) return;
+    if (!jmcEntry || !currentProject) return;
 
     if (hasErrors) {
       toast({
@@ -227,8 +248,6 @@ export function UpdateCertifiedQtyDialog({
     }
 
     setIsSaving(true);
-
-    // Auto-upload any files still pending
     let newAttachments: CertifiedAttachment[] = [];
     try {
       if (selectedFiles.length > 0) {
@@ -254,11 +273,8 @@ export function UpdateCertifiedQtyDialog({
     }));
 
     try {
-      const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
-
-      const snap = await getDoc(jmcRef);
-      const existing = (snap.exists() ? (snap.data().certifiedAttachments as CertifiedAttachment[] | undefined) : []) || [];
-      const mergedAttachments = [...existing, ...uploaded, ...newAttachments];
+      const jmcRef = doc(db, 'projects', currentProject.id, 'jmcEntries', jmcEntry.id);
+      const mergedAttachments = [...uploaded, ...newAttachments];
 
       if (onAction) {
         await onAction(jmcEntry.id, 'Verified', 'Verified with edits', payloadItems);
@@ -288,40 +304,36 @@ export function UpdateCertifiedQtyDialog({
           <DialogDescription>JMC No: {jmcEntry?.jmcNo}</DialogDescription>
         </DialogHeader>
 
-        {/* TABLE (compact widths; no <colgroup>) */}
         <ScrollArea className="max-h-[60vh] border rounded-md">
           <div className="overflow-x-auto">
             <Table className="w-full table-fixed">
+                <colgroup>
+                    <col style={{ width: '6rem' }}/>
+                    <col style={{ width: '20rem' }}/>
+                    <col style={{ width: '8rem' }}/>
+                    <col style={{ width: '10rem' }}/>
+                </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-24 text-center">BOQ Sl. No.</TableHead>
-                  {/* cap description to ~40 characters on larger screens */}
-                  <TableHead className="max-w-[28ch] sm:max-w-[40ch]">Description</TableHead>
-                  <TableHead className="w-28 text-right whitespace-nowrap">Executed Qty</TableHead>
-                  <TableHead className="w-40 whitespace-nowrap">Certified Qty</TableHead>
+                  <TableHead className="text-center">BOQ Sl. No.</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Executed Qty</TableHead>
+                  <TableHead className="whitespace-nowrap">Certified Qty</TableHead>
                 </TableRow>
               </TableHeader>
-
               <TableBody>
                 {items.map((item, idx) => (
                   <TableRow key={`${item.boqSlNo}-${idx}`}>
-                    <TableCell className="w-24 text-center font-medium" title={String(item.boqSlNo ?? '')}>
+                    <TableCell className="text-center font-medium" title={String(item.boqSlNo ?? '')}>
                       {item.boqSlNo ?? '-'}
                     </TableCell>
-
-                    {/* show short text; ellipsis on one line */}
-                    <TableCell
-                      className="align-top max-w-[28ch] sm:max-w-[40ch] truncate"
-                      title={item.description ?? ''}
-                    >
+                    <TableCell className="align-top truncate" title={item.description ?? ''}>
                       {item.description}
                     </TableCell>
-
-                    <TableCell className="w-28 text-right align-top whitespace-nowrap">
+                    <TableCell className="text-right align-top whitespace-nowrap">
                       {item.executedQty}
                     </TableCell>
-
-                    <TableCell className="w-40 align-top">
+                    <TableCell className="align-top">
                       <Input
                         className="w-full"
                         type="number"
@@ -346,9 +358,7 @@ export function UpdateCertifiedQtyDialog({
             </Table>
           </div>
         </ScrollArea>
-
-
-        {/* Attachments */}
+        
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-medium">Attachments (optional)</h4>
           <p className="text-xs text-muted-foreground">
@@ -376,89 +386,51 @@ export function UpdateCertifiedQtyDialog({
             </div>
           </div>
 
-          {selectedFiles.length > 0 && (
-            <div className="border rounded-md p-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium">Selected files ({selectedFiles.length})</div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await uploadAllSelectedConcurrent();
-                        toast({ title: 'Uploaded', description: 'Files are ready to save.' });
-                      } catch {
-                        toast({
-                          title: 'Upload failed',
-                          description: 'Some files could not be uploaded.',
-                          variant: 'destructive',
-                        });
-                      }
-                    }}
-                    disabled={isUploading || isSaving}
-                  >
-                    {isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Upload files
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedFiles([]);
-                      setUploadProgress({});
-                    }}
-                    disabled={isUploading || isSaving}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </div>
-
-              <ul className="mt-2 space-y-2">
-                {selectedFiles.map((f) => (
-                  <li key={f.name} className="text-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate">{f.name}</div>
-                        <div className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeFile(f.name)}
-                        disabled={isUploading || isSaving}
-                      >
-                        Remove
-                      </Button>
+          {(selectedFiles.length > 0 || uploaded.length > 0) && (
+            <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
+                {uploaded.length > 0 && (
+                    <div className="space-y-1 mb-2">
+                        <p className="text-xs font-medium">Already Uploaded:</p>
+                        <ul className="space-y-1">
+                          {uploaded.map((f) => (
+                            <li key={f.url} className="text-xs flex items-center justify-between">
+                              <a className="underline truncate" href={f.url} target="_blank" rel="noreferrer">
+                                {f.name}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
                     </div>
-                    {uploadProgress[f.name] != null && (
-                      <div className="mt-1 h-2 w-full rounded bg-muted overflow-hidden">
-                        <div className="h-2 bg-primary" style={{ width: `${uploadProgress[f.name]}%` }} />
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {uploaded.length > 0 && (
-            <div className="border rounded-md p-3">
-              <div className="text-xs font-medium mb-2">Ready to save ({uploaded.length})</div>
-              <ul className="space-y-1">
-                {uploaded.map((f) => (
-                  <li key={f.url} className="text-xs">
-                    <a className="underline" href={f.url} target="_blank" rel="noreferrer">
-                      {f.name}
-                    </a>{' '}
-                    • {(f.size / 1024).toFixed(1)} KB
-                  </li>
-                ))}
-              </ul>
+                )}
+                {selectedFiles.length > 0 && (
+                     <div className="space-y-1">
+                        <p className="text-xs font-medium">To Upload:</p>
+                        <ul className="space-y-2">
+                            {selectedFiles.map((f) => (
+                            <li key={f.name} className="text-sm">
+                                <div className="flex items-center justify-between">
+                                <div className="min-w-0">
+                                    <div className="truncate">{f.name}</div>
+                                    <div className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</div>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeFile(f.name)}
+                                    disabled={isUploading || isSaving}
+                                >
+                                    Remove
+                                </Button>
+                                </div>
+                                {uploadProgress[f.name] != null && (
+                                <Progress value={uploadProgress[f.name]} className="h-1 mt-1" />
+                                )}
+                            </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </div>
           )}
         </div>
