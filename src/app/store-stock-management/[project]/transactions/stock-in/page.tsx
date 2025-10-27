@@ -198,7 +198,7 @@ export default function StockInPage() {
         
         if (projectData) {
             setCurrentProject(projectData);
-            const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+            const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
             const boqSnapshot = await getDocs(boqQuery);
             const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
             setBoqItems(boqData);
@@ -207,7 +207,7 @@ export default function StockInPage() {
         }
         
         const unitsSnap = await getDocs(collection(db, 'units'));
-        const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectSlug', '==', projectSlug));
+        const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData?.id));
         const inventorySnapshot = await getDocs(inventoryQuery);
         const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryLog));
         setAvailableItems(inventoryData);
@@ -615,6 +615,7 @@ export default function StockInPage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle>Items Received</CardTitle>
+                             <Button variant="outline" type="button" onClick={() => setIsBoqMultiSelectOpen(true)}><Library className="mr-2 h-4 w-4" /> Add From BOM</Button>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -740,6 +741,7 @@ export default function StockInPage() {
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleAddFromBom}
+        alreadyAddedItems={form.getValues('items')}
     />
     </>
   );
