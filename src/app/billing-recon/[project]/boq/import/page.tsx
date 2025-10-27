@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -39,6 +40,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
+
+const toNum = (v: any) => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = parseFloat(v.replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  }
+  return 0;
+};
+
 
 export default function ImportBoqPage() {
   const { toast } = useToast();
@@ -213,15 +224,27 @@ export default function ImportBoqPage() {
     try {
       const nowMeta = {
         createdAt: serverTimestamp(),
-        createdBy: (user as any).id ?? (user as any).uid ?? 'unknown',
+        createdBy: user.id,
         source: 'excel_import',
         fileName: file?.name ?? null,
       };
 
-      const items = jsonData.map((row) => ({
-        ...row,
-        ...nowMeta,
-      }));
+      const items = jsonData.map((row) => {
+        const qty = toNum(row['QTY']);
+        const unitRate = toNum(row['Unit Rate']);
+        let totalAmount = toNum(row['Total Amount']);
+        if (totalAmount === 0 && qty > 0 && unitRate > 0) {
+            totalAmount = qty * unitRate;
+        }
+
+        return {
+          ...row,
+          ...nowMeta,
+          'QTY': qty,
+          'Unit Rate': unitRate,
+          'Total Amount': totalAmount,
+        };
+      });
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
       const boqCollectionRef = collection(db, 'projects', currentProject.id, 'boqItems');
@@ -237,7 +260,7 @@ export default function ImportBoqPage() {
       }
 
       await logUserActivity({
-        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userId: user.id,
         action: 'Import BOQ',
         details: {
           project: projectSlug,
