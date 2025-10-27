@@ -855,6 +855,32 @@ export default function ViewBoqPage() {
         jmcEntries={jmcEntries}
         bills={bills}
       />
+      
+      {/* Column Settings Dialog */}
+      <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+        <DialogContent className="max-w-md">
+            <DialogHeader>
+                <DialogTitle>Customize Columns</DialogTitle>
+                <p className="text-sm text-muted-foreground">Reorder and toggle visibility of columns.</p>
+            </DialogHeader>
+            <div className="py-4 space-y-2">
+                {columnOrder.map((header) => (
+                    <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                        <Checkbox
+                            id={`vis-${header}`}
+                            checked={columnVisibility[header]}
+                            onCheckedChange={(checked) => setColumnVisibility(prev => ({...prev, [header]: !!checked}))}
+                        />
+                        <Label htmlFor={`vis-${header}`} className="flex-1">{columnNames[header] || header}</Label>
+                    </div>
+                ))}
+            </div>
+            <DialogFooter>
+                <DialogClose asChild><Button>Done</Button></DialogClose>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Edit BOQ Item */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -863,34 +889,17 @@ export default function ViewBoqPage() {
             <DialogTitle>Edit BOQ Item</DialogTitle>
           </DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-            {editingItem &&
-              ([
-                'Project Name',
-                'Sub-Division',
-                'Site',
-                'Scope 1',
-                'Scope 2',
-                'Category 1',
-                'Category 2',
-                'Category 3',
-                'ERP SL NO',
-                'BOQ SL No',
-                'Description',
-                'Unit',
-                'QTY',
-                'Unit Rate',
-                'Total Amount',
-              ] as const).map((key) => (
-                <div className="space-y-1" key={key}>
-                  <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                  <Input
-                    id={`edit-${String(key)}`}
-                    name={String(key)}
-                    value={(editingItem[key] as string | number | undefined) ?? ''}
-                    onChange={handleEditFormChange}
-                    readOnly={key === 'Project Name'}
-                  />
-                </div>
+              {editingItem && dialogFields.map(key => (
+                  <div className="space-y-1" key={key}>
+                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                      <Input
+                          id={`edit-${String(key)}`}
+                          name={String(key)}
+                          value={editingItem[key] || ''}
+                          onChange={handleEditFormChange}
+                          readOnly={key === 'Project Name'}
+                      />
+                  </div>
               ))}
           </div>
           <DialogFooter>
