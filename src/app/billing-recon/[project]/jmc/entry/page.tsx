@@ -19,6 +19,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const initialJmcDetails = {
   jmcNo: '',
@@ -68,110 +69,80 @@ export default function JmcEntryPage() {
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
   const [allJmcEntries, setAllJmcEntries] = useState<JmcEntryType[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
-  /* ---------- resolve project by slug & prefill WO No (read-only) ---------- */
+  const currentProject = useMemo(() => {
+    return allProjects.find(p => p.id === selectedProjectId) || null;
+  }, [allProjects, selectedProjectId]);
+
+  const boqItems = useMemo(() => {
+    if (!currentProject) return [];
+    return allBoqItems.filter(item => (item as any).projectId === currentProject.id);
+  }, [allBoqItems, currentProject]);
+
   useEffect(() => {
-    const loadProjectAndWoNo = async () => {
-      if (!projectSlug) return;
-      try {
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const slugify = (text: string) =>
-          text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-
-        const projectData = projectsSnapshot.docs
-          .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-          .find((p) => slugify(p.projectName) === projectSlug);
-
-        if (!projectData) {
-          toast({
-            title: 'Project Not Found',
-            description: `Could not find a project with slug "${projectSlug}".`,
-            variant: 'destructive',
-          });
-          return;
-        }
-
-        setCurrentProject(projectData);
-
-        const woNo = (projectData as any).woNo || (projectData as any).workOrderNo || '';
-        setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
-      } catch (e) {
-        console.warn('Failed to resolve project/woNo', e);
-        setDetails((prev) => ({ ...prev, woNo: '' }));
-      }
-    };
-    loadProjectAndWoNo();
-  }, [projectSlug, toast]);
-
-  /* ---------- fetch BOQ + JMC from subcollections under the resolved project ---------- */
-  useEffect(() => {
-    const fetchBoqAndJmcData = async () => {
-      if (!currentProject) return;
+    const loadInitialData = async () => {
       setIsBoqLoading(true);
       try {
-        // BOQ items: projects/{projectId}/boqItems
-        const boqSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'boqItems'));
-        const mapped = boqSnapshot.docs.map((d) => {
-          const data = d.data() as Record<string, unknown>;
-          const slKey =
-            normalizeKey(data, 'BOQ SL No') ??
-            normalizeKey(data, 'BOQ SL NO') ??
-            normalizeKey(data, 'SL. No.') ??
-            normalizeKey(data, 'SL No') ??
-            normalizeKey(data, 'SL');
-          const descKey = normalizeKey(data, 'Description') ?? 'Description';
-          const unitKey = normalizeKey(data, 'Unit') ?? normalizeKey(data, 'UNIT') ?? 'Unit';
-          const qtyKey = normalizeKey(data, 'QTY') ?? 'QTY';
-          const rateKey =
-            normalizeKey(data, 'Unit Rate') ??
-            normalizeKey(data, 'UNIT PRICE') ??
-            normalizeKey(data, 'Rate');
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const projectsData = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+        setAllProjects(projectsData);
+        
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const initialProject = projectsData.find(p => slugify(p.projectName) === projectSlug);
+        
+        if (initialProject) {
+            setSelectedProjectId(initialProject.id);
+            setDetails(prev => ({...prev, woNo: (initialProject as any).woNo || ''}));
+        }
 
-          return {
-            ...data,
-            id: d.id,
-            ['BOQ SL No']: slKey ? String((data as any)[slKey] ?? '') : '',
-            ['Description']: (data as any)[descKey] ?? '',
-            ['Unit']: (data as any)[unitKey] ?? '',
-            ['QTY']: getNumber((data as any)[qtyKey]) || 0,
-            ['Unit Rate']: rateKey ? getNumber((data as any)[rateKey]) || 0 : 0,
-          } as BoqItem;
-        });
+        // Fetch all BOQ items and JMC entries for all projects initially
+        const boqPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'boqItems')));
+        const jmcPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'jmcEntries')));
 
-        // natural sort by BOQ SL No
-        mapped.sort((a, b) => {
-          const aNum = getNumber((a as any)['BOQ SL No']);
-          const bNum = getNumber((b as any)['BOQ SL No']);
-          if (!Number.isFinite(aNum) || !Number.isFinite(bNum))
-            return String((a as any)['BOQ SL No']).localeCompare(String((b as any)['BOQ SL No']));
-          return (aNum as number) - (bNum as number);
-        });
+        const boqSnaps = await Promise.all(boqPromises);
+        const jmcSnaps = await Promise.all(jmcPromises);
+        
+        const allBoq = boqSnaps.flatMap((snap, index) => 
+            snap.docs.map(d => ({...d.data(), id: d.id, projectId: projectsData[index].id} as BoqItem))
+        );
+        setAllBoqItems(allBoq);
 
-        setBoqItems(mapped);
+        const allJmc = jmcSnaps.flatMap((snap, index) => 
+            snap.docs.map(d => ({...d.data(), id: d.id, projectId: projectsData[index].id} as JmcEntryType))
+        );
+        setAllJmcEntries(allJmc);
 
-        // JMC entries: projects/{projectId}/jmcEntries
-        const jmcSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'jmcEntries'));
-        setAllJmcEntries(jmcSnapshot.docs.map((doc) => doc.data() as JmcEntryType));
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        toast({ title: 'Error', description: 'Could not fetch project data.', variant: 'destructive' });
+      } catch (e) {
+        console.error('Failed to load initial data:', e);
+        toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
       } finally {
         setIsBoqLoading(false);
       }
     };
-
-    fetchBoqAndJmcData();
-  }, [currentProject, toast]);
+    loadInitialData();
+  }, [projectSlug, toast]);
+  
+  const handleProjectChange = (projectId: string) => {
+      const project = allProjects.find(p => p.id === projectId);
+      if (project) {
+          setSelectedProjectId(projectId);
+          setDetails(prev => ({...prev, woNo: (project as any).woNo || ''}));
+          setItems([initialItem]); // Reset items when project changes
+      }
+  };
 
   /* ---------- pre-compute certified qty per (Scope2 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
-    allJmcEntries.forEach((entry) => {
+    const relevantJmcEntries = allJmcEntries.filter(e => e.projectId === selectedProjectId);
+    relevantJmcEntries.forEach((entry) => {
       entry.items.forEach((it: any) => {
         const key = compositeKey(it.scope2, it.boqSlNo);
         if (!String(it.boqSlNo || '').trim()) return;
@@ -179,7 +150,7 @@ export default function JmcEntryPage() {
       });
     });
     return map;
-  }, [allJmcEntries]);
+  }, [allJmcEntries, selectedProjectId]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -289,13 +260,10 @@ export default function JmcEntryPage() {
     }
     setIsSaving(true);
 
-    if (!details.jmcNo || !details.woNo || items.some((it) => !it.boqSlNo)) {
+    if (!currentProject || !details.jmcNo || !details.woNo || items.some((it) => !it.boqSlNo)) {
       toast({
         title: 'Missing Required Fields',
-        description:
-          !details.woNo
-            ? 'Work Order No (WO No) is not set for this project. Please set WO No under Billing Settings first.'
-            : 'Please fill in JMC No and ensure all items have a BOQ Sl. No.',
+        description: 'Please select a project, fill in JMC No, WO No, and add at least one item.',
         variant: 'destructive',
       });
       setIsSaving(false);
@@ -314,7 +282,7 @@ export default function JmcEntryPage() {
       const tempJmcData = {
         ...details,
         items,
-        projectId: currentProject?.id || projectSlug,
+        projectId: currentProject.id,
       };
 
       const assignees = await getAssigneeForStep(firstStep, tempJmcData as any);
@@ -337,7 +305,7 @@ export default function JmcEntryPage() {
         ...details,
         items,
         projectSlug,
-        projectId: currentProject!.id,
+        projectId: currentProject.id,
         createdAt: Timestamp.now(),
         status: 'Pending' as const,
         stage: firstStep.name,
@@ -347,7 +315,7 @@ export default function JmcEntryPage() {
         history: [initialLog],
       };
 
-      await addDoc(collection(db, 'projects', currentProject!.id, 'jmcEntries'), jmcData);
+      await addDoc(collection(db, 'projects', currentProject.id, 'jmcEntries'), jmcData);
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
@@ -403,13 +371,24 @@ export default function JmcEntryPage() {
             <CardDescription>Provide the main details for this Joint Measurement Certificate.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="project">Project</Label>
+                <Select value={selectedProjectId} onValueChange={handleProjectChange}>
+                    <SelectTrigger id="project">
+                        <SelectValue placeholder="Select a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {allProjects.map(p => (
+                            <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="jmcNo">JMC No</Label>
                 <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
               </div>
-
-              {/* WO No is prefilled from project and locked */}
               <div className="space-y-2">
                 <Label htmlFor="woNo">WO No</Label>
                 <Input
@@ -420,7 +399,6 @@ export default function JmcEntryPage() {
                   className="bg-muted/50 cursor-not-allowed"
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="jmcDate">JMC Date</Label>
                 <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
@@ -483,12 +461,9 @@ export default function JmcEntryPage() {
                           isLoading={isBoqLoading}
                         />
                       </TableCell>
-
-                      {/* one-line, ellipsized description with tooltip */}
                       <TableCell className="truncate" title={item.description}>
                         {item.description}
                       </TableCell>
-
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
                       <TableCell>{item.scope2 || '-'}</TableCell>
