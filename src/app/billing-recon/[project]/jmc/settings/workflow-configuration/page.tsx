@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -19,6 +20,7 @@ import type {
   Department,
   AssignedTo,
   UploadRequirement,
+  ActionConfig,
 } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
@@ -64,13 +66,14 @@ const initialSteps: WorkflowStep[] = [
 ];
 
 /** Suggested actions */
-const allActions = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verified', 'Update Certified Qty'] as const;
+const allActions: (string | ActionConfig)[] = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verified', 'Update Certified Qty'];
 
 export default function JmcWorkflowConfigurationPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const { project: projectSlug } = useParams() as { project: string };
+  const params = useParams();
+  const projectSlug = params.project as string;
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -199,7 +202,7 @@ export default function JmcWorkflowConfigurationPage() {
 
         // Keep actions unique
         if (field === 'actions') {
-          const uniq = Array.from(new Set((value as string[]) ?? [])).sort();
+          const uniq = Array.from(new Set((value as (string | ActionConfig)[]) ?? [])).sort();
           return { ...s, actions: uniq };
         }
 
@@ -234,14 +237,20 @@ export default function JmcWorkflowConfigurationPage() {
     );
   };
 
-  function handleActionToggle(stepId: string, action: string, checked: boolean) {
+  function handleActionToggle(stepId: string, action: string | ActionConfig, checked: boolean) {
+    const actionName = typeof action === 'string' ? action : action.name;
     setSteps((prev) =>
       prev.map((s) => {
         if (s.id !== stepId) return s;
-        const set = new Set(s.actions);
-        if (checked) set.add(action);
-        else set.delete(action);
-        return { ...s, actions: Array.from(set).sort() };
+        let newActions = [...s.actions];
+        if (checked) {
+          if (!newActions.some(a => (typeof a === 'string' ? a : a.name) === actionName)) {
+            newActions.push(action);
+          }
+        } else {
+          newActions = newActions.filter(a => (typeof a === 'string' ? a : a.name) !== actionName);
+        }
+        return { ...s, actions: newActions };
       })
     );
   }
@@ -609,9 +618,10 @@ export default function JmcWorkflowConfigurationPage() {
                       <div className="space-y-4">
                         <Label>Actions</Label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {[...allActions].map((actionName) => {
-                            const isChecked = step.actions.includes(actionName);
-                            const id = `${step.id}-action-${actionName}`;
+                          {[...allActions].map((action) => {
+                             const actionName = typeof action === 'string' ? action : action.name;
+                             const isChecked = step.actions.some(a => (typeof a === 'string' ? a : a.name) === actionName);
+                             const id = `${step.id}-action-${actionName}`;
                             return (
                               <div key={id} className="space-y-2">
                                 <div className="flex items-center space-x-2">
@@ -619,7 +629,7 @@ export default function JmcWorkflowConfigurationPage() {
                                     id={id}
                                     checked={isChecked}
                                     onCheckedChange={(checked) =>
-                                      handleActionToggle(step.id, actionName, Boolean(checked))
+                                      handleActionToggle(step.id, action, Boolean(checked))
                                     }
                                     disabled={!canEditPage}
                                   />
@@ -682,3 +692,5 @@ function safeCan3(canFn: CanFn3, action: string, module: string, scope?: string)
 function normalizeIds(arr: WorkflowStep[]): WorkflowStep[] {
   return arr.map((s, i) => ({ ...s, id: String(i + 1) }));
 }
+
+    
