@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -9,6 +10,7 @@ import {
   type LucideIcon,
   Settings,
   GitMerge,
+  BarChart3,
 } from 'lucide-react';
 import {
   Card,
@@ -120,6 +122,15 @@ export default function JmcPage() {
       return false;
     }
   }, [authIsLoading, can]);
+  
+  const canViewReports = useMemo(() => {
+    if (authIsLoading) return false;
+    try {
+      return can('View Reports', 'Billing Recon.JMC');
+    } catch {
+      return false;
+    }
+  }, [authIsLoading, can]);
 
   const canViewSettings = useMemo(() => {
     if (authIsLoading) return false;
@@ -187,6 +198,13 @@ export default function JmcPage() {
         disabled: !canViewLog,
       },
       {
+        icon: BarChart3,
+        text: 'Reports',
+        href: `/billing-recon/${projectSlug}/jmc/reports`,
+        description: 'View JMC-related reports.',
+        disabled: !canViewReports,
+      },
+      {
         icon: Settings,
         text: 'Settings',
         href: `/billing-recon/${projectSlug}/jmc/settings`,
@@ -205,7 +223,7 @@ export default function JmcPage() {
 
     // Place “Create JMC” first, then stages, then Log & Settings.
     return [staticItems[0], ...workflowItems, ...staticItems.slice(1)];
-  }, [projectSlug, authIsLoading, isWorkflowLoading, workflowSteps, canCreate, canViewLog, canViewSettings, canViewStages]);
+  }, [projectSlug, authIsLoading, isWorkflowLoading, workflowSteps, canCreate, canViewLog, canViewSettings, canViewStages, canViewReports]);
 
   const isLoading = authIsLoading || isWorkflowLoading;
 
