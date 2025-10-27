@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -160,9 +161,8 @@ export default function ProjectDashboardPage() {
   }, [currentProject, projectSlugParam]);
 
   const selectedValue = useMemo(() => {
-    // Keep the current slug if it exists in options; otherwise, leave it so the `Select` shows placeholder
-    const slugSet = new Set(projects.map((p) => slugify(p.projectName)));
-    return slugSet.has(projectSlugParam) ? projectSlugParam : undefined;
+    const found = projects.find(p => slugify(p.projectName) === projectSlugParam);
+    return found ? projectSlugParam : undefined;
   }, [projects, projectSlugParam]);
 
   const handleProjectChange = (slug: string) => {
