@@ -421,7 +421,7 @@ export default function JmcEntryPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <Table className="table-fixed w-full min-w-[72rem]">
+              <Table>
                 <colgroup>
                   <col className="w-[240px]" />
                   <col className="w-[480px]" />
@@ -504,14 +504,14 @@ export default function JmcEntryPage() {
       </div>
 
       <BoqMultiSelectDialog
-        key={currentProject?.id || 'no-project'}   // ensures remount when project changes
+        key={currentProject?.id || 'no-project'}
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
+        projectId={selectedProjectId}
       />
     </>
   );
 }
 
-    

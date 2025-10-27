@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -14,16 +15,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { BillItem, BoqItem } from '@/lib/types';
+import { db } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown, X } from 'lucide-react';
-import type { CheckedState } from '@radix-ui/react-checkbox';
+import { useToast } from '@/hooks/use-toast';
+import { useParams } from 'next/navigation';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from './ui/select';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 
 interface BoqMultiSelectDialogProps {
   isOpen: boolean;
@@ -31,9 +36,26 @@ interface BoqMultiSelectDialogProps {
   onConfirm: (selectedItems: BoqItem[]) => void;
   boqItems: BoqItem[];
   alreadyAddedItems?: BillItem[];
+  projectId: string; // New prop
 }
 
-type SortKey = 'erpSlNo' | 'boqSlNo' | 'description' | 'boqQty' | 'unit' | 'rate';
+// Keep JmcItem field types intact
+type JmcItemWithDetails = JmcItem & {
+  id: string;              // synthetic: `${entry.id}-${index}`
+  jmcEntryId: string;
+  jmcNo: string;
+  billedQty: number;
+  availableQty: number;
+  ['Scope 1']?: string;
+  ['Scope 2']?: string;
+  ['Category 1']?: string;
+};
+
+/* Utility to avoid TS2783 (`id` duplicated when spreading Firestore data) */
+function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
+  const { id: _ignored, ...rest } = obj as any;
+  return rest as Omit<T, 'id'>;
+}
 
 export function BoqMultiSelectDialog({
   isOpen,
@@ -41,132 +63,144 @@ export function BoqMultiSelectDialog({
   onConfirm,
   boqItems,
   alreadyAddedItems = [],
+  projectId,
 }: BoqMultiSelectDialogProps) {
+  const { toast } = useToast();
+  
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // debounced
+  const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortKey, setSortKey] =
+    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [filters, setFilters] = useState<{
-    Site: 'all' | string;
     'Scope 1': 'all' | string;
     'Scope 2': 'all' | string;
     'Category 1': 'all' | string;
   }>({
-    Site: 'all',
     'Scope 1': 'all',
     'Scope 2': 'all',
     'Category 1': 'all',
   });
 
-  // Debounce search
+  // Debounce search input -> searchTerm
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // When dialog opens, show a light loading shimmer
+  // Fetch JMC entries and bills when dialog opens
   useEffect(() => {
-    if (!isOpen) return;
-    setIsLoading(true);
-    const t = setTimeout(() => setIsLoading(false), 150);
-    return () => clearTimeout(t);
-  }, [isOpen]);
+    if (!isOpen || !projectId) return;
 
-  // Reset selection when the incoming list changes
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [boqItems]);
+    const fetchJmcAndBillData = async () => {
+      setIsLoading(true);
+      try {
+        const jmcCollectionRef = collection(db, 'projects', projectId, 'jmcEntries');
+        const billsCollectionRef = collection(db, 'projects', projectId, 'bills');
 
-  const resetFilters = () => {
-    setFilters({ Site: 'all', 'Scope 1': 'all', 'Scope 2': 'all', 'Category 1': 'all' });
-  };
+        const [jmcSnapshot, billsSnapshot] = await Promise.all([
+          getDocs(jmcCollectionRef),
+          getDocs(billsCollectionRef),
+        ]);
 
-  const clearSearch = () => {
-    setSearchInput('');
-    setSearchTerm('');
-  };
+        const allJmcEntries = jmcSnapshot.docs.map(
+          (doc) => ({ id: doc.id, ...stripId(doc.data() as any) } as JmcEntry)
+        );
+        const allBills = billsSnapshot.docs.map(
+          (doc) => ({ id: doc.id, ...stripId(doc.data() as any) } as Bill)
+        );
 
-  // helpers
-  const parseNumber = (v: unknown) => {
-    if (typeof v === 'number') return v;
-    if (typeof v === 'string') {
-      const n = Number(v.replace(/,/g, '').trim());
-      return Number.isFinite(n) ? n : 0;
-    }
-    return 0;
+        // Accumulate billed quantities keyed by our synthetic item id
+        const billedQuantities: Record<string, number> = {};
+        allBills.forEach((bill) => {
+          (bill.items ?? []).forEach((it) => {
+            const k = it.jmcItemId;
+            const inc = Number(it.billedQty ?? 0);
+            billedQuantities[k] = (billedQuantities[k] || 0) + (Number.isFinite(inc) ? inc : 0);
+          });
+        });
+
+        const processed: JmcItemWithDetails[] = [];
+        allJmcEntries.forEach((entry) => {
+          (entry.items ?? []).forEach((item, index) => {
+            const jmcItemId = `${entry.id}-${index}`;
+            const executedQty = Number((item as any).executedQty ?? 0) || 0;
+            const billedQty = billedQuantities[jmcItemId] || 0;
+            const availableQty = executedQty - billedQty;
+
+            if (availableQty > 0) {
+              processed.push({
+                ...(item as JmcItem),
+                id: jmcItemId,
+                jmcEntryId: entry.id!,
+                jmcNo: String((entry as any).jmcNo ?? ''),
+                billedQty,
+                availableQty,
+              });
+            }
+          });
+        });
+
+        setJmcItems(processed);
+      } catch (error) {
+        console.error('Error fetching data for item selection:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not load available JMC items for this project.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchJmcAndBillData();
+  }, [isOpen, projectId, toast]);
+
+  // Helpers
+  const getRateNumber = (rate: unknown) => {
+    if (typeof rate === 'number') return rate;
+    const n = Number(rate);
+    return Number.isFinite(n) ? n : 0;
   };
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
 
-  const findBasicPriceKey = (item: BoqItem): string | undefined => {
-    const known = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Unit Price', 'UNIT RATE'];
-    for (const k of known) if (k in item) return k;
-    return Object.keys(item).find(
-      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total')
-    );
-  };
-
-  const getSortValue = (item: BoqItem, key: SortKey) => {
-    switch (key) {
-      case 'erpSlNo':
-        return (item as any)['ERP SL NO'] ?? '';
-      case 'boqSlNo':
-        return (item as any)['BOQ SL No'] ?? (item as any)['SL. No.'] ?? '';
-      case 'description':
-        return (item as any)['Description'] ?? '';
-      case 'boqQty':
-        return (item as any)['QTY'] ?? (item as any)['Total Qty'] ?? 0;
-      case 'unit':
-        return (item as any)['Unit'] ?? (item as any)['UNIT'] ?? '';
-      case 'rate': {
-        const rateKey = findBasicPriceKey(item);
-        return rateKey ? (item as any)[rateKey] : 0;
-      }
-      default:
-        return '';
-    }
-  };
-
-  // Build filter option lists (guard falsy values)
+  // Cascading filter options
   const filterOptions = useMemo(() => {
-    const clean = (arr: any[]) =>
-      [...new Set(arr.filter((v) => typeof v === 'string' && v.trim() !== ''))] as string[];
+    let base = [...jmcItems];
 
-    let base = [...boqItems];
+    const scope1Options = [...new Set(base.map((i) => i['Scope 1']).filter(Boolean))] as string[];
 
-    const siteOptions = clean(base.map((i: any) => i['Site']));
-    if (filters.Site !== 'all') base = base.filter((i: any) => i['Site'] === filters.Site);
+    if (filters['Scope 1'] !== 'all') {
+      base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
+    }
 
-    const scope1Options = clean(base.map((i: any) => i['Scope 1']));
-    if (filters['Scope 1'] !== 'all') base = base.filter((i: any) => i['Scope 1'] === filters['Scope 1']);
+    const scope2Options = [...new Set(base.map((i) => i['Scope 2']).filter(Boolean))] as string[];
 
-    const scope2Options = clean(base.map((i: any) => i['Scope 2']));
-    if (filters['Scope 2'] !== 'all') base = base.filter((i: any) => i['Scope 2'] === filters['Scope 2']);
+    if (filters['Scope 2'] !== 'all') {
+      base = base.filter((i) => i['Scope 2'] === filters['Scope 2']);
+    }
 
-    const category1Options = clean(base.map((i: any) => i['Category 1']));
+    const category1Options = [
+      ...new Set(base.map((i) => i['Category 1']).filter(Boolean)),
+    ] as string[];
 
     return {
-      Site: siteOptions,
       'Scope 1': scope1Options,
       'Scope 2': scope2Options,
       'Category 1': category1Options,
     };
-  }, [boqItems, filters]);
+  }, [jmcItems, filters]);
 
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
     setFilters((prev) => {
-      const next = { ...prev, [key]: value as any };
-      // Reset downstream on change
-      if (key === 'Site') {
-        next['Scope 1'] = 'all';
-        next['Scope 2'] = 'all';
-        next['Category 1'] = 'all';
-      }
+      const next = { ...prev, [key]: value };
       if (key === 'Scope 1') {
         next['Scope 2'] = 'all';
         next['Category 1'] = 'all';
@@ -179,8 +213,6 @@ export function BoqMultiSelectDialog({
     setSelectedIds(new Set());
   };
 
-  // If you want to hide items already added to the JMC, flip this to true.
-  const HIDE_ALREADY_ADDED = false;
   const addedItemIds = useMemo(
     () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)),
     [alreadyAddedItems]
@@ -189,24 +221,22 @@ export function BoqMultiSelectDialog({
   const filteredItems = useMemo(() => {
     const q = searchTerm.toLowerCase();
 
-    let items = boqItems.filter((item: any) => {
-      if (HIDE_ALREADY_ADDED && addedItemIds.has(item.id)) return false;
+    let items = jmcItems.filter((item) => {
+      if (addedItemIds.has(item.id)) return false;
 
-      const siteMatch = filters['Site'] === 'all' || item['Site'] === filters['Site'];
       const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
       const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
       const category1Match =
         filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
 
-      if (!(siteMatch && scope1Match && scope2Match && category1Match)) return false;
+      if (!(scope1Match && scope2Match && category1Match)) return false;
 
       if (!q) return true;
-
-      const erp = String(item['ERP SL NO'] ?? '').toLowerCase();
-      const boq = String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').toLowerCase();
-      const desc = String(item['Description'] ?? '').toLowerCase();
-
-      return erp.includes(q) || boq.includes(q) || desc.includes(q);
+      return (
+        item.jmcNo?.toLowerCase().includes(q) ||
+        String((item as any).boqSlNo ?? '').toLowerCase().includes(q) ||
+        String((item as any).description ?? '').toLowerCase().includes(q)
+      );
     });
 
     if (sortKey) {
@@ -214,39 +244,43 @@ export function BoqMultiSelectDialog({
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
       items = items
-        .map((v, i) => ({ v, i }))
+        .map((v, i) => ({ v, i })) // stable
         .sort((a, b) => {
-          const A = getSortValue(a.v, sortKey);
-          const B = getSortValue(b.v, sortKey);
+          const A = a.v;
+          const B = b.v;
 
           let cmp = 0;
-          if (sortKey === 'boqQty' || sortKey === 'rate') {
-            cmp = (parseNumber(A) - parseNumber(B)) * dir;
+          if (sortKey === 'availableQty') {
+            cmp = ((A.availableQty ?? 0) - (B.availableQty ?? 0)) * dir;
+          } else if (sortKey === 'rate') {
+            cmp = (getRateNumber((A as any).rate) - getRateNumber((B as any).rate)) * dir;
           } else {
-            cmp = collator.compare(String(A ?? ''), String(B ?? '')) * dir;
+            cmp =
+              collator.compare(String((A as any)[sortKey] ?? ''), String((B as any)[sortKey] ?? '')) *
+              dir;
           }
-          // stable sort
-          return cmp || (a.i - b.i);
+
+          return cmp || a.i - b.i;
         })
         .map((x) => x.v);
     }
 
     return items;
-  }, [boqItems, searchTerm, filters, sortKey, sortDirection, addedItemIds]);
+  }, [jmcItems, searchTerm, filters, sortKey, sortDirection, addedItemIds]);
 
   // Select-all logic
   const allOnPageSelected =
-    filteredItems.length > 0 && filteredItems.every((it: any) => selectedIds.has(it.id));
-  const noneSelected = filteredItems.every((it: any) => !selectedIds.has(it.id));
+    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
+  const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
   const selectAllState: CheckedState =
     allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
 
   const handleSelectAll = (checked: CheckedState) => {
     if (checked) {
-      setSelectedIds(new Set(filteredItems.map((i: any) => i.id)));
+      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
     } else {
       const next = new Set(selectedIds);
-      filteredItems.forEach((i: any) => next.delete(i.id));
+      filteredItems.forEach((i) => next.delete(i.id));
       setSelectedIds(next);
     }
   };
@@ -260,29 +294,43 @@ export function BoqMultiSelectDialog({
     });
   }, []);
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
-    else {
+  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate') => {
+    if (sortKey === key) {
+      setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
+    } else {
       setSortKey(key);
       setSortDirection('asc');
     }
   };
 
   const handleConfirm = () => {
-    const selectedBoqItems = boqItems.filter((item: any) => selectedIds.has(item.id));
-    onConfirm(selectedBoqItems);
+    const selectedJmcItems = jmcItems.filter((item) => selectedIds.has(item.id));
+    const billItems: BillItem[] = selectedJmcItems.map((item) => ({
+      jmcItemId: item.id,
+      jmcEntryId: item.jmcEntryId,
+      jmcNo: item.jmcNo,
+      boqSlNo: String((item as any).boqSlNo ?? ''),
+      description: String((item as any).description ?? ''),
+      unit: (item as any).unit ?? '', // keep type compatible with BillItem
+      rate: String((item as any).rate ?? 0),
+      executedQty: String(item.availableQty ?? 0), // default to available
+      billedQty: '', // user will fill
+      totalAmount: '',
+    }));
+    onConfirm(billItems);
     onOpenChange(false);
     setSelectedIds(new Set());
-    clearSearch();
+    setSearchInput('');
+    setSearchTerm('');
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Select BOQ Items</DialogTitle>
+          <DialogTitle>Select Items to Add to Bill</DialogTitle>
           <DialogDescription>
-            Filter by Site / Scope and select multiple BOQ items to add.
+            Only items with a remaining quantity to be billed are shown.
           </DialogDescription>
         </DialogHeader>
 
@@ -291,25 +339,15 @@ export function BoqMultiSelectDialog({
             <div className="relative flex-grow w-full">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by ERP/BOQ Sl. No. or Description..."
+                placeholder="Search by JMC No, Sl. No. or Description..."
                 aria-label="Search items"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-8"
               />
-              {searchInput && (
-                <button
-                  type="button"
-                  className="absolute right-2.5 top-2.5"
-                  aria-label="Clear search"
-                  onClick={clearSearch}
-                >
-                  <X className="h-4 w-4 text-muted-foreground" />
-                </button>
-              )}
             </div>
 
-            {(['Site', 'Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
+            {(['Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
               const options = filterOptions[key];
               if (!options || options.length === 0) return null;
               return (
@@ -332,15 +370,11 @@ export function BoqMultiSelectDialog({
                 </Select>
               );
             })}
-
-            <Button variant="ghost" onClick={resetFilters}>
-              Reset filters
-            </Button>
           </div>
 
           <ScrollArea className="h-96 border rounded-md">
             <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+              <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                 <div className="w-[50px] flex justify-center">
                   <Checkbox
                     aria-label="Select all"
@@ -349,59 +383,47 @@ export function BoqMultiSelectDialog({
                   />
                 </div>
 
-                <div
+                <button
+                  type="button"
                   className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('erpSlNo')}
-                  aria-label="Sort by ERP Sl No"
+                  onClick={() => toggleSort('jmcNo')}
+                  aria-label="Sort by JMC No"
                 >
-                  ERP Sl. No.
-                  {sortKey === 'erpSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
+                  JMC No.
+                  {sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
 
-                <div
+                <button
+                  type="button"
                   className="cursor-pointer flex items-center text-left"
                   onClick={() => toggleSort('boqSlNo')}
                   aria-label="Sort by BOQ Sl No"
                 >
-                  BOQ Sl. No.
+                  BOQ Sl.No.
                   {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
+                </button>
 
-                <div
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('description')}
-                  aria-label="Sort by Description"
-                >
-                  Description
-                  {sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
+                <div>Description</div>
 
-                <div
+                <button
+                  type="button"
                   className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('boqQty')}
-                  aria-label="Sort by BOQ Qty"
+                  onClick={() => toggleSort('availableQty')}
+                  aria-label="Sort by Available Qty"
                 >
-                  BOQ Qty
-                  {sortKey === 'boqQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
+                  Available Qty
+                  {sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
 
-                <div
-                  className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('unit')}
-                  aria-label="Sort by Unit"
-                >
-                  Unit
-                  {sortKey === 'unit' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
-
-                <div
+                <button
+                  type="button"
                   className="text-right cursor-pointer flex items-center justify-end"
                   onClick={() => toggleSort('rate')}
                   aria-label="Sort by Unit Rate"
                 >
                   Unit Rate
                   {sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </div>
+                </button>
               </div>
 
               {isLoading ? (
@@ -409,14 +431,13 @@ export function BoqMultiSelectDialog({
                   <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                 </div>
               ) : filteredItems.length > 0 ? (
-                filteredItems.map((item: any) => {
+                filteredItems.map((item) => {
                   const rowChecked = selectedIds.has(item.id);
-                  const rateKey = findBasicPriceKey(item);
-                  const rate = parseNumber(rateKey ? item[rateKey] : 0);
+                  const rate = getRateNumber((item as any).rate);
                   return (
                     <div
                       key={item.id}
-                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                      className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow(item.id, !rowChecked)}
@@ -432,7 +453,7 @@ export function BoqMultiSelectDialog({
                       <div className="w-[50px] flex justify-center">
                         <Checkbox
                           aria-label={`Select ${String(
-                            item['Description'] ?? item['BOQ SL No'] ?? item['SL. No.'] ?? ''
+                            (item as any).description ?? (item as any).boqSlNo ?? item.jmcNo
                           )}`}
                           checked={rowChecked}
                           onCheckedChange={(checked) => {
@@ -442,12 +463,13 @@ export function BoqMultiSelectDialog({
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>
-                      <div className="truncate pr-2">{item['ERP SL NO'] ?? '-'}</div>
-                      <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.'] || '-'}</div>
-                      <div className="truncate pr-2">{item['Description'] ?? '-'}</div>
-                      <div className="text-right pr-2">{item['QTY'] ?? item['Total Qty'] ?? 0}</div>
-                      <div className="text-right pr-2">{item['Unit'] ?? item['UNIT'] ?? '-'}</div>
-                      <div className="text-right pr-2">{formatCurrency(rate)}</div>
+                      <div className="truncate pr-2">{item.jmcNo}</div>
+                      <div className="truncate pr-2">{String((item as any).boqSlNo ?? '')}</div>
+                      <div className="truncate pr-2">{String((item as any).description ?? '')}</div>
+                      <div className="text-right pr-2">{item.availableQty}</div>
+                      <div className="text-right pr-2">
+                        {formatCurrency(rate)}
+                      </div>
                     </div>
                   );
                 })
@@ -466,7 +488,11 @@ export function BoqMultiSelectDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0 || boqItems.length === 0}>
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={selectedIds.size === 0 || boqItems.length === 0}
+          >
             Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </DialogFooter>
@@ -474,3 +500,4 @@ export function BoqMultiSelectDialog({
     </Dialog>
   );
 }
+
