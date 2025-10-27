@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, doc, getDoc, Timestamp, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, getDoc, Timestamp, query, where } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog, Project } from '@/lib/types';
@@ -74,39 +74,47 @@ export default function JmcEntryPage() {
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
-  /* ---------- Prefill WO No from project and lock it ---------- */
+  /* ---------- resolve project by slug & prefill WO No (read-only) ---------- */
   useEffect(() => {
-    const loadWoNo = async () => {
+    const loadProjectAndWoNo = async () => {
       if (!projectSlug) return;
       try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-        
-        if (projectData) {
-            setCurrentProject(projectData);
-            const woNo = projectData.woNo || (projectData as any).workOrderNo || '';
-            setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
-        } else {
-            toast({ title: 'Project Not Found', description: `Could not find a project with slug "${projectSlug}".`, variant: 'destructive'});
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const slugify = (text: string) =>
+          text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+        const projectData = projectsSnapshot.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+          .find((p) => slugify(p.projectName) === projectSlug);
+
+        if (!projectData) {
+          toast({
+            title: 'Project Not Found',
+            description: `Could not find a project with slug "${projectSlug}".`,
+            variant: 'destructive',
+          });
+          return;
         }
 
+        setCurrentProject(projectData);
+
+        const woNo = (projectData as any).woNo || (projectData as any).workOrderNo || '';
+        setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
       } catch (e) {
-        console.warn('Failed to fetch project woNo', e);
+        console.warn('Failed to resolve project/woNo', e);
         setDetails((prev) => ({ ...prev, woNo: '' }));
       }
     };
-    loadWoNo();
+    loadProjectAndWoNo();
   }, [projectSlug, toast]);
 
-  /* ---------- fetch BOQ + JMC ---------- */
+  /* ---------- fetch BOQ + JMC from subcollections under the resolved project ---------- */
   useEffect(() => {
     const fetchBoqAndJmcData = async () => {
-      if (!projectSlug || !currentProject) return;
+      if (!currentProject) return;
       setIsBoqLoading(true);
       try {
+        // BOQ items: projects/{projectId}/boqItems
         const boqSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'boqItems'));
         const mapped = boqSnapshot.docs.map((d) => {
           const data = d.data() as Record<string, unknown>;
@@ -135,6 +143,7 @@ export default function JmcEntryPage() {
           } as BoqItem;
         });
 
+        // natural sort by BOQ SL No
         mapped.sort((a, b) => {
           const aNum = getNumber((a as any)['BOQ SL No']);
           const bNum = getNumber((b as any)['BOQ SL No']);
@@ -145,6 +154,7 @@ export default function JmcEntryPage() {
 
         setBoqItems(mapped);
 
+        // JMC entries: projects/{projectId}/jmcEntries
         const jmcSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'jmcEntries'));
         setAllJmcEntries(jmcSnapshot.docs.map((doc) => doc.data() as JmcEntryType));
       } catch (error) {
@@ -154,10 +164,9 @@ export default function JmcEntryPage() {
         setIsBoqLoading(false);
       }
     };
-    if (currentProject) {
-        fetchBoqAndJmcData();
-    }
-  }, [projectSlug, toast, currentProject]);
+
+    fetchBoqAndJmcData();
+  }, [currentProject, toast]);
 
   /* ---------- pre-compute certified qty per (Scope2 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
@@ -427,16 +436,15 @@ export default function JmcEntryPage() {
                 <CardTitle>JMC Items</CardTitle>
                 <CardDescription>Add one or more items executed under this JMC.</CardDescription>
               </div>
-              <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)}>
+              <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={!currentProject}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
               </Button>
             </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              {/* Fixed layout + explicit column widths to keep layout stable */}
               <Table className="table-fixed w-full min-w-[72rem]">
-                <colgroup>
+                 <colgroup>
                   <col className="w-[240px]" />
                   <col className="w-[480px]" />
                   <col className="w-[120px]" />
@@ -521,6 +529,7 @@ export default function JmcEntryPage() {
       </div>
 
       <BoqMultiSelectDialog
+        key={currentProject?.id || 'no-project'}   // ensures remount when project changes
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}

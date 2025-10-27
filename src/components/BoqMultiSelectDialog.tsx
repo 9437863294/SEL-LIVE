@@ -15,17 +15,15 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { BillItem, BoqItem } from '@/lib/types';
-import { Search, Loader2, ArrowUpDown } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { Search, Loader2, ArrowUpDown, X } from 'lucide-react';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select';
-import type { CheckedState } from '@radix-ui/react-checkbox';
-import { usePathname } from 'next/navigation';
+} from '@/components/ui/select';
 
 interface BoqMultiSelectDialogProps {
   isOpen: boolean;
@@ -44,9 +42,6 @@ export function BoqMultiSelectDialog({
   boqItems,
   alreadyAddedItems = [],
 }: BoqMultiSelectDialogProps) {
-  const { toast } = useToast();
-  const pathname = usePathname();
-
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // debounced
@@ -55,7 +50,6 @@ export function BoqMultiSelectDialog({
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // Filters with Site added
   const [filters, setFilters] = useState<{
     Site: 'all' | string;
     'Scope 1': 'all' | string;
@@ -74,36 +68,30 @@ export function BoqMultiSelectDialog({
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Default "Scope 2 = Civil" when dialog opens at the given path (but only if present in data)
+  // When dialog opens, show a light loading shimmer
   useEffect(() => {
     if (!isOpen) return;
-    const onMadanpurEntryPage = pathname?.startsWith('/billing-recon/madanpur-rampur/jmc/entry');
-    if (!onMadanpurEntryPage) return;
+    setIsLoading(true);
+    const t = setTimeout(() => setIsLoading(false), 150);
+    return () => clearTimeout(t);
+  }, [isOpen]);
 
-    const hasCivil = boqItems.some(
-      (i: any) => String(i['Scope 2'] ?? '').toLowerCase() === 'civil'
-    );
+  // Reset selection when the incoming list changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [boqItems]);
 
-    if (!hasCivil) return;
-
-    setFilters(prev => {
-      // don't override if user already set a specific Scope 2
-      if (prev['Scope 2'] !== 'all') return prev;
-      return { ...prev, 'Scope 2': 'Civil', 'Category 1': 'all' };
-    });
-  }, [isOpen, pathname, boqItems]);
-
-  // helpers
-  const getRateNumber = (rate: unknown) => {
-    if (typeof rate === 'number') return rate;
-    const n = Number(typeof rate === 'string' ? rate.replace(/,/g, '').trim() : rate);
-    return Number.isFinite(n) ? n : 0;
+  const resetFilters = () => {
+    setFilters({ Site: 'all', 'Scope 1': 'all', 'Scope 2': 'all', 'Category 1': 'all' });
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
+  const clearSearch = () => {
+    setSearchInput('');
+    setSearchTerm('');
+  };
 
-  const getNumeric = (v: unknown) => {
+  // helpers
+  const parseNumber = (v: unknown) => {
     if (typeof v === 'number') return v;
     if (typeof v === 'string') {
       const n = Number(v.replace(/,/g, '').trim());
@@ -111,6 +99,9 @@ export function BoqMultiSelectDialog({
     }
     return 0;
   };
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
 
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const known = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Unit Price', 'UNIT RATE'];
@@ -141,29 +132,23 @@ export function BoqMultiSelectDialog({
     }
   };
 
-  // Filter options: Site → Scope 1 → Scope 2 → Category 1
+  // Build filter option lists (guard falsy values)
   const filterOptions = useMemo(() => {
+    const clean = (arr: any[]) =>
+      [...new Set(arr.filter((v) => typeof v === 'string' && v.trim() !== ''))] as string[];
+
     let base = [...boqItems];
 
-    const siteOptions = [...new Set(base.map((i: any) => i['Site']).filter(Boolean))] as string[];
+    const siteOptions = clean(base.map((i: any) => i['Site']));
+    if (filters.Site !== 'all') base = base.filter((i: any) => i['Site'] === filters.Site);
 
-    if (filters.Site !== 'all') {
-      base = base.filter((i: any) => i['Site'] === filters.Site);
-    }
+    const scope1Options = clean(base.map((i: any) => i['Scope 1']));
+    if (filters['Scope 1'] !== 'all') base = base.filter((i: any) => i['Scope 1'] === filters['Scope 1']);
 
-    const scope1Options = [...new Set(base.map((i: any) => i['Scope 1']).filter(Boolean))] as string[];
+    const scope2Options = clean(base.map((i: any) => i['Scope 2']));
+    if (filters['Scope 2'] !== 'all') base = base.filter((i: any) => i['Scope 2'] === filters['Scope 2']);
 
-    if (filters['Scope 1'] !== 'all') {
-      base = base.filter((i: any) => i['Scope 1'] === filters['Scope 1']);
-    }
-
-    const scope2Options = [...new Set(base.map((i: any) => i['Scope 2']).filter(Boolean))] as string[];
-
-    if (filters['Scope 2'] !== 'all') {
-      base = base.filter((i: any) => i['Scope 2'] === filters['Scope 2']);
-    }
-
-    const category1Options = [...new Set(base.map((i: any) => i['Category 1']).filter(Boolean))] as string[];
+    const category1Options = clean(base.map((i: any) => i['Category 1']));
 
     return {
       Site: siteOptions,
@@ -194,6 +179,8 @@ export function BoqMultiSelectDialog({
     setSelectedIds(new Set());
   };
 
+  // If you want to hide items already added to the JMC, flip this to true.
+  const HIDE_ALREADY_ADDED = false;
   const addedItemIds = useMemo(
     () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)),
     [alreadyAddedItems]
@@ -203,7 +190,7 @@ export function BoqMultiSelectDialog({
     const q = searchTerm.toLowerCase();
 
     let items = boqItems.filter((item: any) => {
-      // if (addedItemIds.has(item.id)) return false; // optional
+      if (HIDE_ALREADY_ADDED && addedItemIds.has(item.id)) return false;
 
       const siteMatch = filters['Site'] === 'all' || item['Site'] === filters['Site'];
       const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
@@ -214,11 +201,12 @@ export function BoqMultiSelectDialog({
       if (!(siteMatch && scope1Match && scope2Match && category1Match)) return false;
 
       if (!q) return true;
-      return (
-        String(item['ERP SL NO'] ?? '').toLowerCase().includes(q) ||
-        String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').toLowerCase().includes(q) ||
-        String(item['Description'] ?? '').toLowerCase().includes(q)
-      );
+
+      const erp = String(item['ERP SL NO'] ?? '').toLowerCase();
+      const boq = String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').toLowerCase();
+      const desc = String(item['Description'] ?? '').toLowerCase();
+
+      return erp.includes(q) || boq.includes(q) || desc.includes(q);
     });
 
     if (sortKey) {
@@ -233,10 +221,11 @@ export function BoqMultiSelectDialog({
 
           let cmp = 0;
           if (sortKey === 'boqQty' || sortKey === 'rate') {
-            cmp = (getNumeric(A) - getNumeric(B)) * dir;
+            cmp = (parseNumber(A) - parseNumber(B)) * dir;
           } else {
             cmp = collator.compare(String(A ?? ''), String(B ?? '')) * dir;
           }
+          // stable sort
           return cmp || (a.i - b.i);
         })
         .map((x) => x.v);
@@ -284,17 +273,8 @@ export function BoqMultiSelectDialog({
     onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
-    setSearchInput('');
-    setSearchTerm('');
+    clearSearch();
   };
-
-  // mimic loading state on open (optional)
-  useEffect(() => {
-    if (!isOpen) return;
-    setIsLoading(true);
-    const t = setTimeout(() => setIsLoading(false), 150);
-    return () => clearTimeout(t);
-  }, [isOpen]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -311,12 +291,22 @@ export function BoqMultiSelectDialog({
             <div className="relative flex-grow w-full">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by Sl. No. or Description..."
+                placeholder="Search by ERP/BOQ Sl. No. or Description..."
                 aria-label="Search items"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-8"
               />
+              {searchInput && (
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-2.5"
+                  aria-label="Clear search"
+                  onClick={clearSearch}
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
             </div>
 
             {(['Site', 'Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
@@ -342,6 +332,10 @@ export function BoqMultiSelectDialog({
                 </Select>
               );
             })}
+
+            <Button variant="ghost" onClick={resetFilters}>
+              Reset filters
+            </Button>
           </div>
 
           <ScrollArea className="h-96 border rounded-md">
@@ -369,7 +363,7 @@ export function BoqMultiSelectDialog({
                   onClick={() => toggleSort('boqSlNo')}
                   aria-label="Sort by BOQ Sl No"
                 >
-                  BOQ Sl.No.
+                  BOQ Sl. No.
                   {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </div>
 
@@ -418,7 +412,7 @@ export function BoqMultiSelectDialog({
                 filteredItems.map((item: any) => {
                   const rowChecked = selectedIds.has(item.id);
                   const rateKey = findBasicPriceKey(item);
-                  const rate = rateKey ? item[rateKey] : 0;
+                  const rate = parseNumber(rateKey ? item[rateKey] : 0);
                   return (
                     <div
                       key={item.id}
@@ -448,12 +442,12 @@ export function BoqMultiSelectDialog({
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>
-                      <div className="truncate pr-2">{item['ERP SL NO']}</div>
-                      <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.']}</div>
-                      <div className="truncate pr-2">{item['Description']}</div>
-                      <div className="text-right pr-2">{item['QTY'] || item['Total Qty']}</div>
-                      <div className="text-right pr-2">{item['Unit']}</div>
-                      <div className="text-right pr-2">{formatCurrency(getRateNumber(rate))}</div>
+                      <div className="truncate pr-2">{item['ERP SL NO'] ?? '-'}</div>
+                      <div className="truncate pr-2">{item['BOQ SL No'] || item['SL. No.'] || '-'}</div>
+                      <div className="truncate pr-2">{item['Description'] ?? '-'}</div>
+                      <div className="text-right pr-2">{item['QTY'] ?? item['Total Qty'] ?? 0}</div>
+                      <div className="text-right pr-2">{item['Unit'] ?? item['UNIT'] ?? '-'}</div>
+                      <div className="text-right pr-2">{formatCurrency(rate)}</div>
                     </div>
                   );
                 })
@@ -472,7 +466,7 @@ export function BoqMultiSelectDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
+          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0 || boqItems.length === 0}>
             Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </DialogFooter>
