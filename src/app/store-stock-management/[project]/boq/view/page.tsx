@@ -41,7 +41,6 @@ import type { FabricationBomItem, Project } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -139,8 +138,8 @@ export default function ViewBoqPage() {
         }
         setCurrentProject(projectData);
 
-        const boqItemsRef = collection(db, 'boqItems');
-        const boqSnapshot = await getDocs(query(boqItemsRef, where('projectSlug', '==', projectSlug)));
+        const boqItemsRef = collection(db, 'projects', projectData.id, 'boqItems');
+        const boqSnapshot = await getDocs(query(boqItemsRef));
         const items = boqSnapshot.docs.map((d) => {
             const data = d.data() as any;
             const erpKey = normalizeKey(data, 'ERP SL NO');
@@ -327,7 +326,7 @@ export default function ViewBoqPage() {
 
   const fmtNum = (v: unknown) => {
     const n = Number(v);
-    return Number.is.Finite(n)
+    return Number.isFinite(n)
       ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
       : String(v ?? 'N/A');
   };
@@ -447,8 +446,8 @@ export default function ViewBoqPage() {
                                     const qty = Number(item['QTY']);
                                     const rate = Number(item['Unit Rate']);
                                     const explicit = Number(raw);
-                                    if (Number.is.Finite(explicit)) return fmtNum(explicit);
-                                    if (Number.is.Finite(qty) && Number.is.Finite(rate)) return fmtNum(qty * rate);
+                                    if (Number.isFinite(explicit)) return fmtNum(explicit);
+                                    if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
                                   if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
