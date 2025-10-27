@@ -91,7 +91,7 @@ export default function ViewBoqPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [jmcEntries, setJmcEntries = useState<JmcEntry[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -284,7 +284,10 @@ export default function ViewBoqPage() {
         filters.search === '' ||
         String(item['ERP SL NO'] ?? '').toLowerCase().includes(search) ||
         String(item['BOQ SL No'] ?? '').toLowerCase().includes(search) ||
-        String(item['Description'] ?? '').toLowerCase().includes(search);
+        String(item['Description'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 1'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 2'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 3'] ?? '').toLowerCase().includes(search);
 
       const s1 = filters['Scope 1'];
       const s2 = filters['Scope 2'];
@@ -910,5 +913,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-    
