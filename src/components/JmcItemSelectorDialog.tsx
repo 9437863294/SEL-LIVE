@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -15,8 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem } from '@/lib/types';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem, Project } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
@@ -96,8 +97,23 @@ export function JmcItemSelectorDialog({
     const fetchJmcAndBillData = async () => {
       setIsLoading(true);
       try {
-        const jmcCollectionRef = collection(db, 'projects', projectSlug, 'jmcEntries');
-        const billsCollectionRef = collection(db, 'projects', projectSlug, 'bills');
+        // 1. Find the project ID from the slug
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const project = projectsSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+            .find(p => slugify(p.projectName) === projectSlug);
+
+        if (!project) {
+            throw new Error("Project could not be found from the URL slug.");
+        }
+
+        const projectId = project.id;
+
+        // 2. Use the found project ID to fetch subcollections
+        const jmcCollectionRef = collection(db, 'projects', projectId, 'jmcEntries');
+        const billsCollectionRef = collection(db, 'projects', projectId, 'bills');
 
         const [jmcSnapshot, billsSnapshot] = await Promise.all([
           getDocs(jmcCollectionRef),
@@ -496,3 +512,4 @@ export function JmcItemSelectorDialog({
     </Dialog>
   );
 }
+
