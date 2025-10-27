@@ -95,7 +95,7 @@ export default function ViewBoqPage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState(isDeleting);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -904,127 +904,6 @@ export default function ViewBoqPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Column Editor */}
-      <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Columns</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-            {columnOrder.map((h, idx) => (
-              <div key={h} className="grid grid-cols-12 items-center gap-3 border rounded-md p-3">
-                {/* Visibility */}
-                <div className="col-span-2 flex items-center gap-2">
-                  <Checkbox
-                    checked={!!columnVisibility[h]}
-                    onCheckedChange={(checked) =>
-                      setColumnVisibility((prev) => ({ ...prev, [h]: checked === true }))
-                    }
-                    id={`vis-${h}`}
-                  />
-                  <label htmlFor={`vis-${h}`} className="text-sm">Visible</label>
-                </div>
-
-                {/* Display name */}
-                <div className="col-span-7">
-                  <Label htmlFor={`name-${h}`} className="text-xs text-muted-foreground">
-                    Display name
-                  </Label>
-                  <Input
-                    id={`name-${h}`}
-                    value={columnNames[h] ?? h}
-                    onChange={(e) =>
-                      setColumnNames((prev) => ({ ...prev, [h]: e.target.value }))
-                    }
-                  />
-                  <div className="text-xs text-muted-foreground mt-1">Key: {h}</div>
-                </div>
-
-                {/* Reorder */}
-                <div className="col-span-3 flex items-center justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setColumnOrder((prev) => {
-                        if (idx === 0) return prev;
-                        const copy = [...prev];
-                        [copy[idx - 1], copy[idx]] = [copy[idx], copy[idx - 1]];
-                        return copy;
-                      })
-                    }
-                    disabled={idx === 0}
-                    aria-label="Move up"
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setColumnOrder((prev) => {
-                        if (idx === prev.length - 1) return prev;
-                        const copy = [...prev];
-                        [copy[idx + 1], copy[idx]] = [copy[idx], copy[idx + 1]];
-                        return copy;
-                      })
-                    }
-                    disabled={idx === columnOrder.length - 1}
-                    aria-label="Move down"
-                  >
-                    ↓
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                // quick reset to defaults
-                setColumnOrder([...baseTableHeaders]);
-                setColumnVisibility(
-                  [...baseTableHeaders].reduce((acc, h) => {
-                    acc[h as string] = [
-                      'BOQ SL No', 'ERP SL NO', 'Description', 'Unit', 'QTY',
-                      'Unit Rate', 'JMC Certified Qty', 'JMC Amount', 'Total Amount',
-                    ].includes(h as string);
-                    return acc;
-                  }, {} as Record<string, boolean>)
-                );
-                setColumnNames([...baseTableHeaders].reduce(
-                  (acc, h) => ({ ...acc, [h]: h as string }), {} as Record<string, string>
-                ));
-              }}
-            >
-              Reset
-            </Button>
-            <DialogClose asChild>
-              <Button variant="outline">Close</Button>
-            </DialogClose>
-            <Button
-              onClick={async () => {
-                try {
-                  await saveColumnSettings();
-                } finally {
-                  setIsColumnEditorOpen(false);
-                }
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-
-    
