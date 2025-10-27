@@ -50,7 +50,8 @@ export default function SerialNoConfigPage() {
             const allScopes: Record<string, string[]> = {};
 
             for (const project of projectsData) {
-                const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', project.id));
+                // Corrected query to look inside the subcollection
+                const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
                 const boqSnapshot = await getDocs(boqQuery);
                 const projectScopes = [...new Set(boqSnapshot.docs.map(doc => doc.data()['Scope 1']).filter(Boolean))];
                 allScopes[project.id] = projectScopes as string[];
@@ -62,7 +63,9 @@ export default function SerialNoConfigPage() {
                     if (configDocSnap.exists()) {
                         allConfigs[slug] = configDocSnap.data() as SerialNumberConfig;
                     } else {
-                        allConfigs[slug] = { ...initialConfigState, prefix: `${project.projectName.substring(0,3).toUpperCase()}/${scope.substring(0,3).toUpperCase()}/` };
+                        const projectNameAbbr = project.projectName.substring(0, 3).toUpperCase();
+                        const scopeAbbr = String(scope).substring(0, 3).toUpperCase();
+                        allConfigs[slug] = { ...initialConfigState, prefix: `${projectNameAbbr}/${scopeAbbr}/` };
                     }
                 }
             }
