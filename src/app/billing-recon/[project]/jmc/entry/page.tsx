@@ -308,7 +308,7 @@ export default function JmcEntryPage() {
         projectId: currentProject?.id || projectSlug,
       };
 
-      const assignees = await getAssigneeForStep(firstStep, tempJmcData);
+      const assignees = await getAssigneeForStep(firstStep, tempJmcData as any);
       if (!assignees || assignees.length === 0) {
         throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
       }
@@ -437,16 +437,16 @@ export default function JmcEntryPage() {
               {/* Fixed layout + explicit column widths to keep layout stable */}
               <Table className="table-fixed w-full min-w-[72rem]">
                 <colgroup>
-                  <col className="w-[240px]" />  {/* BOQ selector */}
-                  <col className="w-[480px]" />  {/* Description */}
-                  <col className="w-[120px]" />  {/* Unit */}
-                  <col className="w-[120px]" />  {/* BOQ Qty */}
-                  <col className="w-[140px]" />  {/* Scope 2 */}
-                  <col className="w-[160px]" />  {/* Total Certified Qty */}
-                  <col className="w-[120px]" />  {/* Rate */}
-                  <col className="w-[160px]" />  {/* Executed Qty */}
-                  <col className="w-[160px]" />  {/* Total Amount */}
-                  <col className="w-[80px]" />   {/* Action */}
+                  <col className="w-[240px]" />
+                  <col className="w-[480px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[80px]" />
                 </colgroup>
 
                 <TableHeader>
