@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -18,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -36,7 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -81,6 +82,9 @@ const baseTableHeaders = [
 const compositeKey = (scope2: unknown, slNo: unknown) =>
   `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
+const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { project: projectSlug } = useParams() as { project: string };
@@ -88,6 +92,7 @@ export default function ViewBoqPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -212,7 +217,18 @@ export default function ViewBoqPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const boqItemsRef = collection(db, 'projects', projectSlug, 'boqItems');
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+        if (!projectData) {
+            throw new Error("Project not found");
+        }
+        setCurrentProject(projectData);
+        
+        const projectId = projectData.id;
+
+      const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
       const boqSnapshot = await getDocs(query(boqItemsRef));
       const items: BoqItem[] = boqSnapshot.docs.map((d) => {
         const data = d.data() as Record<string, unknown>;
@@ -227,10 +243,10 @@ export default function ViewBoqPage() {
       });
       setBoqItems(items);
 
-      const jmcSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'jmcEntries'));
+      const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
       setJmcEntries(jmcSnapshot.docs.map((d) => d.data() as JmcEntry));
 
-      const billsSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'bills'));
+      const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
       setBills(billsSnapshot.docs.map((d) => d.data() as Bill));
     } catch (error) {
       console.error(error);
@@ -398,10 +414,10 @@ export default function ViewBoqPage() {
   };
 
   const handleSaveChanges = async () => {
-    if (!editingItem) return;
+    if (!editingItem || !currentProject) return;
     setIsSaving(true);
     try {
-      const itemRef = doc(db, 'projects', projectSlug, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
       const { id, ...payload } = editingItem;
       await updateDoc(itemRef, payload);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -455,12 +471,12 @@ export default function ViewBoqPage() {
 
   /** DELETE **/
   const handleDelete = async () => {
-    if (!projectSlug || selectedItemIds.length === 0) return;
+    if (!currentProject || selectedItemIds.length === 0) return;
     setIsDeleting(true);
     try {
       const batch = writeBatch(db);
       selectedItemIds.forEach((id) => {
-        batch.delete(doc(db, 'projects', projectSlug, 'boqItems', id));
+        batch.delete(doc(db, 'projects', currentProject.id, 'boqItems', id));
       });
       await batch.commit();
       toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
