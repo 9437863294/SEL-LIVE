@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, where, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, where, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -33,16 +33,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, Project } from '@/lib/types';
+import type { FabricationBomItem, Project, UserSettings } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 
 /** TYPES **/
 export type BoqItem = {
@@ -117,10 +126,72 @@ export default function ViewBoqPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  const settingsKey = `store_boq_${projectSlug}`;
+  const isInitialMount = useRef(true);
+
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+  
+  const saveColumnSettings = useCallback(async () => {
+    if (!user || !settingsKey) return;
+    try {
+      const settingsRef = doc(db, 'userSettings', user.id);
+      const currentSettingsSnap = await getDoc(settingsRef);
+      const currentSettings = currentSettingsSnap.exists() ? currentSettingsSnap.data() : { columnPreferences: {} };
+
+      const newPreferences = {
+        ...currentSettings.columnPreferences,
+        [settingsKey]: {
+          order: columnOrder,
+          visibility: columnVisibility,
+          names: columnNames,
+          sort: { key: sortKey, direction: sortDirection },
+        },
+      };
+
+      await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+    } catch (e) {
+      console.warn('Failed to save column settings to Firestore', e);
+      toast({ title: 'Error', description: 'Could not save your column preferences.', variant: 'destructive' });
+    }
+  }, [settingsKey, columnOrder, columnVisibility, columnNames, sortKey, sortDirection, toast, user]);
+
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    saveColumnSettings();
+  }, [columnOrder, columnVisibility, columnNames, sortKey, sortDirection, saveColumnSettings]);
+  
+  useEffect(() => {
+    const fetchSettings = async () => {
+      if (!user) return;
+      try {
+        const settingsRef = doc(db, 'userSettings', user.id);
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const settings = settingsSnap.data() as UserSettings;
+          const pageSettings = settings.columnPreferences?.[settingsKey];
+          if (pageSettings) {
+            setColumnOrder(pageSettings.order || [...baseTableHeaders]);
+            setColumnVisibility(pageSettings.visibility || {});
+            setColumnNames(pageSettings.names || {});
+            if (pageSettings.sort) {
+              setSortKey(pageSettings.sort.key);
+              setSortDirection(pageSettings.sort.direction);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load column settings from Firestore', e);
+      }
+    };
+    if (settingsKey) fetchSettings();
+  }, [settingsKey, user]);
 
   const fetchProjectAndBoq = useCallback(async () => {
     if (!projectSlug) return;
@@ -165,7 +236,6 @@ export default function ViewBoqPage() {
   }, [fetchProjectAndBoq]);
 
 
-  /*** NORMALIZE KEYS FROM FIRESTORE ***/
   const normalizeKey = (obj: any, targetKey: string): string | undefined => {
     const foundKey = Object.keys(obj).find(
       (k) => k.toLowerCase().replace(/\s+/g, '') === targetKey.toLowerCase().replace(/\s+/g, '')
@@ -235,7 +305,6 @@ export default function ViewBoqPage() {
     });
   };
 
-  /*** SORTED DATA ***/
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
     if (sortKey) {
@@ -259,7 +328,6 @@ export default function ViewBoqPage() {
     return sorted;
   }, [filteredBoqItems, sortKey, sortDirection]);
 
-  /*** ROW CLICK ***/
   const handleRowClick = (item: BoqItem) => {
     setSelectedBoqItem(item);
     setIsDetailsDialogOpen(true);
@@ -267,7 +335,7 @@ export default function ViewBoqPage() {
   
   const handleOpenEditDialog = (e: React.MouseEvent, item: BoqItem) => {
     e.stopPropagation();
-    setEditingItem({ ...item }); // Clone item to avoid direct state mutation
+    setEditingItem({ ...item });
     setIsEditDialogOpen(true);
   };
   
@@ -281,7 +349,7 @@ export default function ViewBoqPage() {
     if (!editingItem || !currentProject) return;
     setIsSaving(true);
     try {
-      const itemRef = doc(db, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
       const { id, ...dataToSave } = editingItem;
       await updateDoc(itemRef, dataToSave);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -304,12 +372,15 @@ export default function ViewBoqPage() {
     }
   };
 
-  const allSelected = selectedItemIds.length === boqItems.length && boqItems.length > 0;
-  const someSelected = selectedItemIds.length > 0 && selectedItemIds.length < boqItems.length;
+  const allOnPageSelected = selectedItemIds.length === sortedBoqItems.length && sortedBoqItems.length > 0;
+  const someSelected = selectedItemIds.length > 0 && selectedItemIds.length < sortedBoqItems.length;
 
-  const handleSelectAll = (checked: boolean | 'indeterminate') => {
-    if (checked) setSelectedItemIds(boqItems.map((i) => i.id));
-    else setSelectedItemIds([]);
+  const handleSelectAll = (checked: CheckedState) => {
+    if (checked === true) {
+        setSelectedItemIds(sortedBoqItems.map(i => i.id));
+    } else {
+        setSelectedItemIds([]);
+    }
   };
 
   const handleSelectRow = (id: string, checked: boolean) => {
@@ -341,27 +412,95 @@ export default function ViewBoqPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
-      {/* ... Header remains the same ... */}
+      <div className="py-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link href={`/store-stock-management/${projectSlug}/boq`}>
+            <Button variant="ghost" size="icon" aria-label="Back">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <h1 className="text-xl font-bold">View BOQ</h1>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              className="pl-8"
+            />
+          </div>
+
+          {Object.keys(filterOptions).map((key) => {
+            const options = filterOptions[key as keyof typeof filterOptions] as string[];
+            if (!options || options.length === 0) return null;
+            return (
+              <Select
+                key={key}
+                value={filters[key as keyof typeof filters]}
+                onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={`Filter by ${key}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All {key}s</SelectItem>
+                  {options.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            );
+          })}
+          <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
+           <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline">
+                    <Settings className="mr-2 h-4 w-4" /> Columns
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Customize Columns</DialogTitle>
+                </DialogHeader>
+                <div className="py-4 space-y-2">
+                    {columnOrder.map((header) => (
+                        <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                            <Checkbox
+                                id={`vis-${header}`}
+                                checked={columnVisibility[header]}
+                                onCheckedChange={(checked) => setColumnVisibility(prev => ({...prev, [header]: !!checked}))}
+                            />
+                            <Label htmlFor={`vis-${header}`} className="flex-1">{columnNames[header] || header}</Label>
+                        </div>
+                    ))}
+                </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
       <div className="flex-1 min-h-0">
         <div className="h-full border rounded-lg flex flex-col min-w-0">
           <div className="relative flex-1 min-h-0 w-full overflow-auto">
-             {/* ... Table structure remains same, just data source changes ... */}
              <div className="min-w-max">
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow>
-                    {/* Make every header cell sticky */}
                     <TableHead className="sticky top-0 bg-background z-20 w-[50px]">
                       <Checkbox
-                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                        checked={selectAllState}
                         onCheckedChange={handleSelectAll}
                         aria-label="Select all rows"
                       />
                     </TableHead>
                     <TableHead className="sticky top-0 bg-background z-20 w-12"></TableHead>
 
-                    {visibleHeaders
-                      .map((header) => (
+                    {visibleHeaders.map((header) => (
                         <TableHead
                           key={header}
                           className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
@@ -370,18 +509,14 @@ export default function ViewBoqPage() {
                           <div className="flex items-center gap-1">
                             {columnNames[header] || header}
                             {sortKey === header ? (
-                              sortDirection === 'asc' ? (
-                                <ChevronUp className="h-4 w-4" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4" />
-                              )
+                              sortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
                             ) : (
                               <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
                             )}
                           </div>
                         </TableHead>
                       ))}
-                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                      <TableHead className="sticky top-0 bg-background z-20 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -389,21 +524,12 @@ export default function ViewBoqPage() {
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell>
-                          <Skeleton className="h-5 w-5" />
-                        </TableCell>
-                        <TableCell className="px-2">
-                          <Skeleton className="h-5 w-5" />
-                        </TableCell>
-                        {visibleHeaders
-                          .map((header, j) => (
-                            <TableCell key={`${i}-${j}`}>
-                              <Skeleton className="h-5 w-full" />
-                            </TableCell>
-                          ))}
-                        <TableCell>
-                          <Skeleton className="h-8 w-16" />
-                        </TableCell>
+                        <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                        <TableCell className="px-2"><Skeleton className="h-5 w-5" /></TableCell>
+                        {visibleHeaders.map((header, j) => (
+                            <TableCell key={`${i}-${j}`}><Skeleton className="h-5 w-full" /></TableCell>
+                        ))}
+                        <TableCell><Skeleton className="h-8 w-16" /></TableCell>
                       </TableRow>
                     ))
                   ) : sortedBoqItems.length > 0 ? (
@@ -450,16 +576,14 @@ export default function ViewBoqPage() {
                                     if (Number.isFinite(qty) && Number.isFinite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
-                                  if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
+                                  if (header === 'QTY' || header === 'Unit Rate') return fmtNum(raw);
                                   return raw ?? 'N/A';
                                 })();
-
+                                
                                 return (
                                   <TableCell
                                     key={`${item.id}-${header}`}
-                                    className={cn(
-                                      (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
-                                    )}
+                                    className={cn((header === 'Description' || header === 'Category 1') && 'max-w-xs truncate')}
                                     title={typeof value === 'string' ? value : undefined}
                                   >
                                     {value}
@@ -475,10 +599,7 @@ export default function ViewBoqPage() {
 
                           {isExpanded && hasBom && (
                             <TableRow className="bg-muted/50 hover:bg-muted/50">
-                              <TableCell
-                                colSpan={visibleHeaders.length + 3}
-                                className="p-0"
-                              >
+                              <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
                                 <div className="p-4">
                                   <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
                                   <Table>
@@ -510,10 +631,7 @@ export default function ViewBoqPage() {
                     })
                   ) : (
                     <TableRow>
-                      <TableCell
-                        colSpan={visibleHeaders.length + 3}
-                        className="text-center h-24"
-                      >
+                      <TableCell colSpan={visibleHeaders.length + 3} className="text-center h-24">
                         No BOQ items found.
                       </TableCell>
                     </TableRow>
@@ -535,9 +653,7 @@ export default function ViewBoqPage() {
       
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit BOQ Item</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
               {editingItem && dialogFields.map(key => (
                   <div className="space-y-1" key={key}>
@@ -553,9 +669,7 @@ export default function ViewBoqPage() {
               ))}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveChanges} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save Changes
