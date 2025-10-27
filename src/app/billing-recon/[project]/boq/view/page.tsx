@@ -91,7 +91,7 @@ export default function ViewBoqPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [jmcEntries, setJmcEntries = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -911,3 +911,4 @@ export default function ViewBoqPage() {
   );
 }
 
+    
