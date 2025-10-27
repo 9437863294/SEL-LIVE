@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,10 +15,12 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { db, storage } from '@/lib/firebase';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import type { JmcEntry, JmcItem, ActionConfig } from '@/lib/types';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
@@ -32,6 +33,16 @@ interface UpdateCertifiedQtyDialogProps {
 
 type EditableItem = JmcItem & { __certStr?: string; __error?: string | null };
 
+type CertifiedAttachment = {
+  name: string;
+  url: string;
+  size: number;
+  contentType?: string | null;
+  uploadedAt: string;
+};
+
+const CONCURRENCY = 3;
+
 export function UpdateCertifiedQtyDialog({
   isOpen,
   onOpenChange,
@@ -41,19 +52,33 @@ export function UpdateCertifiedQtyDialog({
   onAction,
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
+
+  // qty editor
   const [items, setItems] = useState<EditableItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  // uploads
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploaded, setUploaded] = useState<CertifiedAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   // hydrate editable rows when dialog opens
   useEffect(() => {
     if (isOpen && jmcEntry) {
       const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items || []));
-      // keep the input as a string so users can clear/partially type
       cloned.forEach((it) => {
         it.__certStr = it.certifiedQty ?? it.certifiedQty === 0 ? String(it.certifiedQty) : '';
         it.__error = null;
       });
       setItems(cloned);
+
+      // reset upload UI
+      setSelectedFiles([]);
+      setUploadProgress({});
+      setUploaded([]);
+      setIsDragging(false);
     }
   }, [isOpen, jmcEntry]);
 
@@ -66,12 +91,10 @@ export function UpdateCertifiedQtyDialog({
 
       row.__certStr = raw;
 
-      // Validate
       const parsed = raw.trim() === '' ? NaN : Number(raw);
       const executedQty = Number(row.executedQty) || 0;
 
       if (raw.trim() === '') {
-        // allow empty while typing; treat as undefined
         row.__error = null;
         row.certifiedQty = undefined;
       } else if (Number.isNaN(parsed)) {
@@ -93,9 +116,107 @@ export function UpdateCertifiedQtyDialog({
     });
   };
 
+  // File selection & DnD
+  const onPickFiles: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setSelectedFiles((prev) => {
+      const merged = [...prev, ...files];
+      const seen = new Set<string>();
+      return merged.filter((f) => (!seen.has(f.name) && seen.add(f.name), true));
+    });
+  };
+
+  const removeFile = (name: string) => {
+    setSelectedFiles((prev) => prev.filter((f) => f.name !== name));
+    setUploadProgress((prev) => {
+      const copy = { ...prev };
+      delete copy[name];
+      return copy;
+    });
+  };
+
+  const onDragOver: React.DragEventHandler<HTMLDivElement> = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+  const onDragLeave: React.DragEventHandler<HTMLDivElement> = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+  const onDrop: React.DragEventHandler<HTMLDivElement> = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) return;
+    setSelectedFiles((prev) => {
+      const merged = [...prev, ...files];
+      const seen = new Set<string>();
+      return merged.filter((f) => (!seen.has(f.name) && seen.add(f.name), true));
+    });
+  };
+
+  async function uploadAllSelectedConcurrent(): Promise<CertifiedAttachment[]> {
+    if (!jmcEntry || selectedFiles.length === 0) return [];
+    setIsUploading(true);
+
+    const queue = [...selectedFiles];
+    const results: CertifiedAttachment[] = [];
+
+    const runOne = () =>
+      new Promise<void>((resolve, reject) => {
+        if (queue.length === 0) return resolve();
+        const file = queue.shift()!;
+        const path = `projects/${projectSlug}/jmcEntries/${jmcEntry.id}/attachments/${Date.now()}-${file.name}`;
+        const ref = storageRef(storage, path);
+        const task = uploadBytesResumable(ref, file);
+
+        task.on(
+          'state_changed',
+          (snap) => {
+            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+            setUploadProgress((prev) => ({ ...prev, [file.name]: pct }));
+          },
+          (err) => reject(err),
+          async () => {
+            try {
+              const url = await getDownloadURL(task.snapshot.ref);
+              results.push({
+                name: file.name,
+                url,
+                size: file.size,
+                contentType: file.type || null,
+                uploadedAt: new Date().toISOString(),
+              });
+              resolve();
+            } catch (e) {
+              reject(e);
+            }
+          }
+        );
+      });
+
+    try {
+      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length || CONCURRENCY) }, async () => {
+        while (queue.length > 0) await runOne();
+      });
+      await Promise.all(workers);
+      setUploaded((prev) => [...prev, ...results]);
+      setSelectedFiles([]);
+      setUploadProgress({});
+      return results;
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  // Save
   const handleSave = async () => {
     if (!jmcEntry) return;
-    // quick guard: avoid saving if any invalid
+
     if (hasErrors) {
       toast({
         title: 'Fix validation errors',
@@ -106,89 +227,251 @@ export function UpdateCertifiedQtyDialog({
     }
 
     setIsSaving(true);
+
+    // Auto-upload any files still pending
+    let newAttachments: CertifiedAttachment[] = [];
+    try {
+      if (selectedFiles.length > 0) {
+        newAttachments = await uploadAllSelectedConcurrent();
+      }
+    } catch (e) {
+      console.error('Attachment upload failed:', e);
+      toast({
+        title: 'Upload failed',
+        description: 'One or more files could not be uploaded.',
+        variant: 'destructive',
+      });
+      setIsSaving(false);
+      return;
+    }
+
     const payloadItems: JmcItem[] = items.map(({ __certStr, __error, ...rest }) => ({
-        ...rest,
-        certifiedQty: rest.certifiedQty === undefined || rest.certifiedQty === null ? undefined : Number(rest.certifiedQty),
+      ...rest,
+      certifiedQty:
+        rest.certifiedQty === undefined || rest.certifiedQty === null
+          ? undefined
+          : Number(rest.certifiedQty),
     }));
 
-    if (onAction) {
-        // This is the new workflow-aware save
-        await onAction(jmcEntry.id, 'Verified', 'Verified with edits', payloadItems);
-        setIsSaving(false);
-        onOpenChange(false); // The parent will handle success toast
-    } else {
-        // This is the original direct-update logic (fallback)
-        try {
-            const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
-            await updateDoc(jmcRef, { items: payloadItems });
+    try {
+      const jmcRef = doc(db, 'projects', projectSlug, 'jmcEntries', jmcEntry.id);
 
-            toast({ title: 'Success', description: 'Certified quantities updated.' });
-            onSaveSuccess();
-            onOpenChange(false);
-        } catch (error) {
-            console.error('Error updating certified quantities:', error);
-            toast({ title: 'Error', description: 'Failed to update quantities.', variant: 'destructive' });
-        } finally {
-            setIsSaving(false);
-        }
+      const snap = await getDoc(jmcRef);
+      const existing = (snap.exists() ? (snap.data().certifiedAttachments as CertifiedAttachment[] | undefined) : []) || [];
+      const mergedAttachments = [...existing, ...uploaded, ...newAttachments];
+
+      if (onAction) {
+        await onAction(jmcEntry.id, 'Verified', 'Verified with edits', payloadItems);
+        await updateDoc(jmcRef, { certifiedAttachments: mergedAttachments });
+      } else {
+        await updateDoc(jmcRef, { items: payloadItems, certifiedAttachments: mergedAttachments });
+      }
+
+      toast({ title: 'Success', description: 'Certified quantities and attachments updated.' });
+      onOpenChange(false);
+      onSaveSuccess();
+    } catch (error) {
+      console.error('Error updating certified quantities/attachments:', error);
+      toast({ title: 'Error', description: 'Failed to update the JMC entry.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
+  const canClose = useCallback(() => !isSaving && !isUploading, [isSaving, isUploading]);
+
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={(o) => (canClose() ? onOpenChange(o) : undefined)}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Update Certified Quantities</DialogTitle>
           <DialogDescription>JMC No: {jmcEntry?.jmcNo}</DialogDescription>
         </DialogHeader>
 
+        {/* TABLE (compact widths; no <colgroup>) */}
         <ScrollArea className="max-h-[60vh] border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Executed Qty</TableHead>
-                <TableHead className="w-[180px]">Certified Qty</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item, idx) => (
-                <TableRow key={`${item.boqSlNo}-${idx}`}>
-                  <TableCell className="align-top">{item.description}</TableCell>
-                  <TableCell className="text-right align-top">{item.executedQty}</TableCell>
-                  <TableCell className="align-top">
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      min={0}
-                      max={Number(item.executedQty) || undefined}
-                      value={item.__certStr ?? ''}
-                      onChange={(e) => handleCertifiedQtyChange(idx, e.target.value)}
-                      aria-invalid={!!item.__error}
-                      aria-describedby={item.__error ? `cert-error-${idx}` : undefined}
-                    />
-                    {item.__error && (
-                      <p id={`cert-error-${idx}`} className="text-xs text-destructive mt-1">
-                        {item.__error}
-                      </p>
-                    )}
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table className="w-full table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-24 text-center">BOQ Sl. No.</TableHead>
+                  {/* cap description to ~40 characters on larger screens */}
+                  <TableHead className="max-w-[28ch] sm:max-w-[40ch]">Description</TableHead>
+                  <TableHead className="w-28 text-right whitespace-nowrap">Executed Qty</TableHead>
+                  <TableHead className="w-40 whitespace-nowrap">Certified Qty</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+
+              <TableBody>
+                {items.map((item, idx) => (
+                  <TableRow key={`${item.boqSlNo}-${idx}`}>
+                    <TableCell className="w-24 text-center font-medium" title={String(item.boqSlNo ?? '')}>
+                      {item.boqSlNo ?? '-'}
+                    </TableCell>
+
+                    {/* show short text; ellipsis on one line */}
+                    <TableCell
+                      className="align-top max-w-[28ch] sm:max-w-[40ch] truncate"
+                      title={item.description ?? ''}
+                    >
+                      {item.description}
+                    </TableCell>
+
+                    <TableCell className="w-28 text-right align-top whitespace-nowrap">
+                      {item.executedQty}
+                    </TableCell>
+
+                    <TableCell className="w-40 align-top">
+                      <Input
+                        className="w-full"
+                        type="number"
+                        inputMode="decimal"
+                        step="any"
+                        min={0}
+                        max={Number(item.executedQty) || undefined}
+                        value={item.__certStr ?? ''}
+                        onChange={(e) => handleCertifiedQtyChange(idx, e.target.value)}
+                        aria-invalid={!!item.__error}
+                        aria-describedby={item.__error ? `cert-error-${idx}` : undefined}
+                      />
+                      {item.__error && (
+                        <p id={`cert-error-${idx}`} className="text-xs text-destructive mt-1">
+                          {item.__error}
+                        </p>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </ScrollArea>
+
+
+        {/* Attachments */}
+        <div className="mt-4 space-y-2">
+          <h4 className="text-sm font-medium">Attachments (optional)</h4>
+          <p className="text-xs text-muted-foreground">
+            Upload multiple supporting documents (PDFs, images, spreadsheets). They’ll be saved to this JMC.
+          </p>
+
+          <div
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            className={cn(
+              'border rounded-md p-4 text-sm transition-colors',
+              isDragging ? 'border-primary bg-primary/5' : 'border-dashed'
+            )}
+          >
+            Drag & drop files here, or choose:
+            <div className="mt-2">
+              <Input
+                type="file"
+                multiple
+                onChange={onPickFiles}
+                disabled={isSaving || isUploading}
+                aria-label="Upload attachments"
+              />
+            </div>
+          </div>
+
+          {selectedFiles.length > 0 && (
+            <div className="border rounded-md p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium">Selected files ({selectedFiles.length})</div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await uploadAllSelectedConcurrent();
+                        toast({ title: 'Uploaded', description: 'Files are ready to save.' });
+                      } catch {
+                        toast({
+                          title: 'Upload failed',
+                          description: 'Some files could not be uploaded.',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                    disabled={isUploading || isSaving}
+                  >
+                    {isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Upload files
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedFiles([]);
+                      setUploadProgress({});
+                    }}
+                    disabled={isUploading || isSaving}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              <ul className="mt-2 space-y-2">
+                {selectedFiles.map((f) => (
+                  <li key={f.name} className="text-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate">{f.name}</div>
+                        <div className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFile(f.name)}
+                        disabled={isUploading || isSaving}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    {uploadProgress[f.name] != null && (
+                      <div className="mt-1 h-2 w-full rounded bg-muted overflow-hidden">
+                        <div className="h-2 bg-primary" style={{ width: `${uploadProgress[f.name]}%` }} />
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {uploaded.length > 0 && (
+            <div className="border rounded-md p-3">
+              <div className="text-xs font-medium mb-2">Ready to save ({uploaded.length})</div>
+              <ul className="space-y-1">
+                {uploaded.map((f) => (
+                  <li key={f.url} className="text-xs">
+                    <a className="underline" href={f.url} target="_blank" rel="noreferrer">
+                      {f.name}
+                    </a>{' '}
+                    • {(f.size / 1024).toFixed(1)} KB
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
 
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline" disabled={isSaving}>
+            <Button variant="outline" disabled={isSaving || isUploading}>
               Cancel
             </Button>
           </DialogClose>
-          <Button onClick={handleSave} disabled={isSaving || hasErrors}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {onAction ? "Save & Verify" : "Save Quantities"}
+          <Button onClick={handleSave} disabled={isSaving || hasErrors || isUploading}>
+            {(isSaving || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {onAction ? 'Upload & Verify' : 'Upload & Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

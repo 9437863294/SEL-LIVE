@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@genkit-ai/google-genai": "1.18.0",
     "@genkit-ai/next": "1.18.0",
     "@hello-pangea/dnd": "^16.6.0",
     "@hookform/resolvers": "^3.9.0",
@@ -58,10 +59,10 @@
     "tailwindcss-animate": "^1.0.7",
     "wav": "^1.0.2",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8",
-    "@genkit-ai/google-genai": "1.18.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@tailwindcss/line-clamp": "^0.4.4",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^20.14.12",
     "@types/react": "^18.3.3",

@@ -168,7 +168,7 @@ export default function JmcLogPage() {
         return {
           id: d.id,
           ...(data as any),
-          createdAt: (data as any).createdAt, // keep original timestamp object; View dialog can handle it
+          createdAt: (data as any).createdAt,
           totalAmount: total,
           certifiedValue: certified,
           stageDates,
@@ -266,26 +266,31 @@ export default function JmcLogPage() {
         </div>
 
         <Card>
-          <CardContent className="p-0">
-            <Table>
+          {/* Make the wide table scroll horizontally inside the card */}
+          <CardContent className="p-0 overflow-x-auto">
+            {/* Give the table a sensible min width so columns don’t squish */}
+            <Table className="min-w-[1000px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>JMC No.</TableHead>
-                  <TableHead>JMC Date</TableHead>
+                  <TableHead className="whitespace-nowrap">JMC No.</TableHead>
+                  <TableHead className="whitespace-nowrap">JMC Date</TableHead>
                   {workflowSteps.map((step) => (
-                    <TableHead key={step.id}>{step.name}</TableHead>
+                    <TableHead key={step.id} className="whitespace-nowrap">
+                      {step.name}
+                    </TableHead>
                   ))}
-                  <TableHead>JMC Value</TableHead>
-                  <TableHead>Certified Value</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Stage Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="whitespace-nowrap">JMC Value</TableHead>
+                  <TableHead className="whitespace-nowrap">Certified Value</TableHead>
+                  <TableHead className="whitespace-nowrap">Stage</TableHead>
+                  <TableHead className="whitespace-nowrap">Stage Status</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
+                      {/* one skeleton cell spanning the visible columns */}
                       <TableCell colSpan={skeletonCols}>
                         <Skeleton className="h-5" />
                       </TableCell>

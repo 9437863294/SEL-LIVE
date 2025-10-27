@@ -111,7 +111,6 @@ export const permissionModules = {
     'MVAC': ['View', 'Add Item'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
-  'Email Management': ['View Module'],
   'Bank Balance': {
     'View Module': [],
     'Accounts': ['View', 'Add', 'Edit', 'Delete'],

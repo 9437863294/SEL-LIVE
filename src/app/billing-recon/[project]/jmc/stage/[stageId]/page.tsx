@@ -115,7 +115,7 @@ export default function StagePage() {
 
     setIsLoading(true);
     try {
-      // 1) Fetch workflow and resolve stage first (so we can bail early if stage is wrong)
+      // 1) workflow + stage
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
@@ -133,7 +133,7 @@ export default function StagePage() {
       }
       setStage(currentStage);
 
-      // 2) In parallel: fetch tasks filtered by stage, plus BOQ & bills
+      // 2) tasks + BOQ + bills
       const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
         getDocs(query(collection(db, 'projects', projectSlug, 'jmcEntries'), where('currentStepId', '==', stageId))),
         getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
@@ -171,7 +171,7 @@ export default function StagePage() {
     return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [tasks, userId, stage]);
 
-  // Close dialogs when onOpenChange(false)
+  // Dialog visibility
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
       setIsViewOpen(false);
@@ -207,7 +207,6 @@ export default function StagePage() {
     setIsActionLoading(taskId);
 
     try {
-      // Read pre state outside transaction
       const taskRef = doc(db, 'projects', projectSlug, 'jmcEntries', taskId);
       const preSnap = await getDoc(taskRef);
       if (!preSnap.exists()) throw new Error('Task document not found!');
@@ -271,7 +270,6 @@ export default function StagePage() {
         if (!liveSnap.exists()) throw new Error('Task document not found!');
         const live = liveSnap.data() as JmcEntry;
 
-        // naive optimistic concurrency control on the step pointer
         if ((preData.currentStepId ?? null) !== (live.currentStepId ?? null)) {
           throw new Error('Task changed while you were taking action. Please refresh.');
         }
@@ -309,16 +307,18 @@ export default function StagePage() {
 
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
     <Card>
-      <CardContent className="p-0">
-        <Table>
+      {/* Make the table horizontally scrollable so columns never overflow */}
+      <CardContent className="p-0 overflow-x-auto">
+        {/* Give the table a sensible minimum width so columns don’t collapse */}
+        <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
-              <TableHead>JMC No.</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>WO No.</TableHead>
-              <TableHead>Total Amount</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="whitespace-nowrap">JMC No.</TableHead>
+              <TableHead className="whitespace-nowrap">Date</TableHead>
+              <TableHead className="whitespace-nowrap">WO No.</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
+              <TableHead className="whitespace-nowrap">Status</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -342,11 +342,11 @@ export default function StagePage() {
                     onClick={() => handleViewDetails(entry)}
                     className="cursor-pointer"
                   >
-                    <TableCell>{entry.jmcNo ?? '-'}</TableCell>
-                    <TableCell>{humanDate(entry.jmcDate)}</TableCell>
-                    <TableCell>{entry.woNo ?? '-'}</TableCell>
-                    <TableCell>{formatINR(total)}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{entry.jmcNo ?? '-'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{humanDate(entry.jmcDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{entry.woNo ?? '-'}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">{formatINR(total)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>
                         {entry.status}
                       </Badge>

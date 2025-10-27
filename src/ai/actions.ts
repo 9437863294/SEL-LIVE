@@ -6,8 +6,6 @@ import { validateModuleContent as validateModuleContentFlow, type ValidateModule
 import { syncGreytHR as syncGreytHRFlow, type SyncGreytHRInput, type SyncGreytHROutput } from './flows/sync-greythr-flow';
 import { syncGreytHRCategories as syncGreytHRCategoriesFlow, type SyncCategoriesOutput } from './flows/sync-categories-flow';
 import { getAllEmployeePositions as getAllEmployeePositionsFlow, type GetAllEmployeePositionsInput, type GetAllEmployeePositionsOutput } from './flows/get-all-employee-positions-flow';
-import { getEmails as getEmailsFlow, type GetEmailsInput, type GetEmailsOutput } from './flows/email-flow';
-import { sendEmailAuthorization as sendEmailAuthorizationFlow, type SendEmailAuthorizationInput, type SendEmailAuthorizationOutput } from './flows/send-email-authorization-flow';
 import { createExpenseRequest as createExpenseRequestFlow, type CreateExpenseRequestInput, type CreateExpenseRequestOutput } from './flows/create-expense-request-flow';
 
 export async function suggestModuleTags(input: SuggestModuleTagsInput): Promise<SuggestModuleTagsOutput> {
@@ -28,14 +26,6 @@ export async function syncGreytHRCategories(): Promise<SyncCategoriesOutput> {
 
 export async function getAllEmployeePositions(input: GetAllEmployeePositionsInput): Promise<GetAllEmployeePositionsOutput> {
     return await getAllEmployeePositionsFlow(input);
-}
-
-export async function getEmails(input: GetEmailsInput): Promise<GetEmailsOutput> {
-    return await getEmailsFlow(input);
-}
-
-export async function sendEmailAuthorization(input: SendEmailAuthorizationInput): Promise<SendEmailAuthorizationOutput> {
-    return await sendEmailAuthorizationFlow(input);
 }
 
 export async function createExpenseRequest(input: CreateExpenseRequestInput): Promise<CreateExpenseRequestOutput> {

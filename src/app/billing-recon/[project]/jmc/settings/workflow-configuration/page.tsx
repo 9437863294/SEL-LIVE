@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,8 +31,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
 
-// Helpers to narrow the discriminated union
+// Type guards
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
   return step.assignmentType === 'User-based';
 }
@@ -48,7 +49,7 @@ const initialSteps: WorkflowStep[] = [
     tat: 24,
     assignmentType: 'User-based',
     assignedTo: [],
-    actions: ['Approve', 'Reject', 'Needs Correction'],
+    actions: ['Approve', 'Reject', 'Needs Correction', 'Update Certified Qty'],
     upload: 'Required',
   },
   {
@@ -57,12 +58,12 @@ const initialSteps: WorkflowStep[] = [
     tat: 16,
     assignmentType: 'User-based',
     assignedTo: [],
-    actions: ['Approve', 'Reject'],
+    actions: ['Verified', 'Reject'],
     upload: 'Optional',
   },
 ];
 
-// Suggested action list (you can tailor per org)
+/** Suggested actions */
 const allActions = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verified', 'Update Certified Qty'] as const;
 
 export default function JmcWorkflowConfigurationPage() {
@@ -79,25 +80,20 @@ export default function JmcWorkflowConfigurationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Guarded permission checks (avoid calling can() until auth is ready)
-  const canViewPage = useMemo(() => {
-    if (isAuthLoading) return false;
-    try { return can('View Settings', 'Billing Recon.JMC'); } catch { return false; }
-  }, [isAuthLoading, can]);
-
-  const canEditPage = useMemo(() => {
-    if (isAuthLoading) return false;
-    try { return can('Edit Settings', 'Billing Recon.JMC'); } catch { return false; }
-  }, [isAuthLoading, can]);
+  // ✅ Use the 3-argument can(action, module, scope?)
+  const canViewPage = useMemo(
+    () => !isAuthLoading && safeCan3(can, 'View Settings', 'Billing Recon', 'JMC'),
+    [isAuthLoading, can]
+  );
+  const canEditPage = useMemo(
+    () => !isAuthLoading && safeCan3(can, 'Edit Settings', 'Billing Recon', 'JMC'),
+    [isAuthLoading, can]
+  );
 
   useEffect(() => {
     if (isAuthLoading) return;
-
-    if (canViewPage) {
-      void fetchData();
-    } else {
-      setIsLoading(false);
-    }
+    if (canViewPage) void fetchData();
+    else setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthLoading, canViewPage]);
 
@@ -121,7 +117,7 @@ export default function JmcWorkflowConfigurationPage() {
 
       if (workflowSnap.exists()) {
         const s = (workflowSnap.data().steps || []) as WorkflowStep[];
-        setSteps(Array.isArray(s) && s.length > 0 ? s : initialSteps);
+        setSteps(Array.isArray(s) && s.length > 0 ? normalizeIds(s) : initialSteps);
       } else {
         setSteps(initialSteps);
       }
@@ -148,7 +144,25 @@ export default function JmcWorkflowConfigurationPage() {
   }
 
   function handleDeleteStep(id: string) {
-    setSteps((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, id: String(i + 1) })));
+    setSteps((prev) => {
+      if (prev.length <= 1) return prev; // guard: keep at least one step
+      const next = prev.filter((s) => s.id !== id);
+      return normalizeIds(next);
+    });
+  }
+
+  function moveStep(id: string, dir: 'up' | 'down') {
+    setSteps((prev) => {
+      const idx = prev.findIndex((s) => s.id === id);
+      if (idx < 0) return prev;
+      const target = dir === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      const tmp = copy[idx];
+      copy[idx] = copy[target];
+      copy[target] = tmp;
+      return normalizeIds(copy);
+    });
   }
 
   function handleStepChange<T extends keyof WorkflowStep>(id: string, field: T, value: WorkflowStep[T]) {
@@ -159,7 +173,6 @@ export default function JmcWorkflowConfigurationPage() {
         if (field === 'assignmentType') {
           const at = value as WorkflowStep['assignmentType'];
           if (at === 'User-based') {
-            // reset into array shape
             const next: WorkflowStepUser = {
               ...s,
               assignmentType: 'User-based',
@@ -171,7 +184,6 @@ export default function JmcWorkflowConfigurationPage() {
             (next as any).upload = s.upload as UploadRequirement;
             return next;
           } else {
-            // reset into mapping shape
             const next: WorkflowStepMapped = {
               ...s,
               assignmentType: at as 'Project-based' | 'Department-based',
@@ -185,9 +197,18 @@ export default function JmcWorkflowConfigurationPage() {
           }
         }
 
-        const updated = { ...s } as any;
-        updated[field as string] = value;
-        return updated as WorkflowStep;
+        // Keep actions unique
+        if (field === 'actions') {
+          const uniq = Array.from(new Set((value as string[]) ?? [])).sort();
+          return { ...s, actions: uniq };
+        }
+
+        if (field === 'tat') {
+          const tatNum = Number(value);
+          return { ...s, tat: Number.isFinite(tatNum) && tatNum > 0 ? tatNum : 1 };
+        }
+
+        return { ...s, [field]: value } as WorkflowStep;
       })
     );
   }
@@ -220,14 +241,13 @@ export default function JmcWorkflowConfigurationPage() {
         const set = new Set(s.actions);
         if (checked) set.add(action);
         else set.delete(action);
-        return { ...s, actions: Array.from(set) };
+        return { ...s, actions: Array.from(set).sort() };
       })
     );
   }
 
   function normalizeAndValidateSteps(): { ok: true; steps: WorkflowStep[] } | { ok: false; msg: string } {
-    // Re-index IDs
-    const normalized = steps.map((s, i) => ({ ...s, id: String(i + 1) }));
+    const normalized = normalizeIds(steps);
 
     for (const s of normalized) {
       if (!s.name || !s.name.trim()) {
@@ -244,22 +264,20 @@ export default function JmcWorkflowConfigurationPage() {
         }
       }
       if (isMapped(s)) {
-        // It’s okay if the admin hasn’t mapped every project/department, but at least one mapping should exist.
-        const hasAnyMapping = Object.values(s.assignedTo || {}).some(
-          (m) => m && (m.primary || m.alternative)
-        );
+        const hasAnyMapping = Object.values(s.assignedTo || {}).some((m) => m && (m.primary || m.alternative));
         if (!hasAnyMapping) {
           return {
             ok: false,
-            msg: `Step ${s.id} (“${s.name}”): add at least one ${s.assignmentType === 'Project-based' ? 'project' : 'department'} mapping.`,
+            msg: `Step ${s.id} (“${s.name}”): add at least one ${
+              s.assignmentType === 'Project-based' ? 'project' : 'department'
+            } mapping.`,
           };
         }
       }
-      // actions and upload can be empty if your process allows; keep flexible
     }
 
     return { ok: true, steps: normalized };
-    }
+  }
 
   async function handleSave() {
     if (!user) {
@@ -297,6 +315,11 @@ export default function JmcWorkflowConfigurationPage() {
       setIsSaving(false);
     }
   }
+
+  const pageInvalidMsg = useMemo(() => {
+    const v = normalizeAndValidateSteps();
+    return v.ok ? '' : v.msg;
+  }, [steps]);
 
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
@@ -344,10 +367,13 @@ export default function JmcWorkflowConfigurationPage() {
           </Link>
           <h1 className="text-xl font-bold">JMC Workflow Configuration</h1>
         </div>
-        <Button onClick={handleSave} disabled={isSaving || !canEditPage}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Workflow
-        </Button>
+        <div className="flex items-center gap-3">
+          {pageInvalidMsg && <Badge variant="destructive" className="whitespace-nowrap">{pageInvalidMsg}</Badge>}
+          <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save Workflow
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -362,28 +388,46 @@ export default function JmcWorkflowConfigurationPage() {
               <Skeleton className="h-24 w-full" />
             </div>
           ) : (
-            <Accordion
-              type="multiple"
-              className="w-full"
-              defaultValue={steps.map((s) => s.id)}
-            >
+            <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
               {steps.map((step, index) => (
                 <AccordionItem value={step.id} key={step.id} className="border rounded-md px-4 mb-2 bg-background">
-                  <div className="flex items-center">
+                  <div className="flex items-center gap-2 py-2">
                     <GripVertical className="h-5 w-5 text-muted-foreground" />
                     <AccordionTrigger className="flex-1 text-base hover:no-underline">
                       {index + 1}. {step.name}
                     </AccordionTrigger>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteStep(step.id)}
-                      disabled={!canEditPage}
-                      aria-label={`Delete step ${step.name}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'up')}
+                        disabled={!canEditPage || index === 0}
+                        aria-label="Move up"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'down')}
+                        disabled={!canEditPage || index === steps.length - 1}
+                        aria-label="Move down"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteStep(step.id)}
+                        disabled={!canEditPage || steps.length <= 1}
+                        aria-label={`Delete step ${step.name}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
+
                   <AccordionContent>
                     <div className="space-y-6 p-4 border-t">
                       {/* Step name + TAT */}
@@ -398,12 +442,16 @@ export default function JmcWorkflowConfigurationPage() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor={`tat-${step.id}`}>TAT (in hours)</Label>
+                          <Label htmlFor={`tat-${step.id}`}>TAT (hours)</Label>
                           <Input
                             id={`tat-${step.id}`}
                             type="number"
-                            value={Number.isFinite(step.tat) ? step.tat : 0}
-                            onChange={(e) => handleStepChange(step.id, 'tat', parseInt(e.target.value, 10) || 0)}
+                            inputMode="numeric"
+                            min={1}
+                            value={Number(step.tat) || 1}
+                            onChange={(e) =>
+                              handleStepChange(step.id, 'tat', Math.max(1, parseInt(e.target.value || '1', 10)))
+                            }
                             disabled={!canEditPage}
                           />
                         </div>
@@ -487,70 +535,72 @@ export default function JmcWorkflowConfigurationPage() {
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
                           <Card className="mt-2">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>
-                                    {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
-                                  </TableHead>
-                                  <TableHead>Primary User</TableHead>
-                                  <TableHead>Alternative User</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
-                                  const row = step.assignedTo[item.id] ?? { primary: '', alternative: '' };
-                                  return (
-                                    <TableRow key={item.id}>
-                                      <TableCell>
-                                        {'projectName' in item ? item.projectName : item.name}
-                                      </TableCell>
-                                      <TableCell>
-                                        <Select
-                                          value={row.primary || ''}
-                                          onValueChange={(value) =>
-                                            handleAssignmentDetailChange(step.id, item.id, 'primary', value)
-                                          }
-                                          disabled={!canEditPage}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Select primary user" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {users.map((u) => (
-                                              <SelectItem key={u.id} value={u.id}>
-                                                {u.name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </TableCell>
-                                      <TableCell>
-                                        <Select
-                                          value={row.alternative || 'none'}
-                                          onValueChange={(value) =>
-                                            handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
-                                          }
-                                          disabled={!canEditPage}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Select alternative user" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="none">None</SelectItem>
-                                            {users.map((u) => (
-                                              <SelectItem key={u.id} value={u.id}>
-                                                {u.name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                            <div className="overflow-x-auto">
+                              <Table className="min-w-[720px]">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="whitespace-nowrap">
+                                      {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Primary User</TableHead>
+                                    <TableHead className="whitespace-nowrap">Alternative User</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
+                                    const row = (step.assignedTo as any)[item.id] ?? { primary: '', alternative: '' };
+                                    return (
+                                      <TableRow key={item.id}>
+                                        <TableCell className="whitespace-nowrap">
+                                          {'projectName' in item ? item.projectName : item.name}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.primary || ''}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'primary', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select primary user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.alternative || 'none'}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select alternative user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="none">None</SelectItem>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
                           </Card>
                         </div>
                       )}
@@ -615,4 +665,20 @@ export default function JmcWorkflowConfigurationPage() {
       </Card>
     </div>
   );
+}
+
+/* ---------- utils ---------- */
+
+// 3-arg safe wrapper for your can(action, module, scope?) fn
+type CanFn3 = (action: string, module: string, scope?: string) => boolean;
+function safeCan3(canFn: CanFn3, action: string, module: string, scope?: string): boolean {
+  try {
+    return canFn(action, module, scope);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeIds(arr: WorkflowStep[]): WorkflowStep[] {
+  return arr.map((s, i) => ({ ...s, id: String(i + 1) }));
 }

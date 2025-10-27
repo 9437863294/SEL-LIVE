@@ -34,16 +34,15 @@ const initialItem = {
   totalAmount: 0,
   boqQty: 0,
   totalCertifiedQty: 0,
+  scope2: '', // Scope 2 on each row
 };
 
 type JmcItem = typeof initialItem;
 
-// --- helpers ---
+/* ---------- helpers ---------- */
 const normalizeKey = (obj: Record<string, unknown>, target: string) => {
   const needle = target.toLowerCase().replace(/\s+|\./g, '');
-  return Object.keys(obj).find(
-    (k) => k.toLowerCase().replace(/\s+|\./g, '') === needle
-  );
+  return Object.keys(obj).find((k) => k.toLowerCase().replace(/\s+|\./g, '') === needle);
 };
 
 const getNumber = (v: unknown) => {
@@ -54,6 +53,10 @@ const getNumber = (v: unknown) => {
   }
   return NaN;
 };
+
+// uniqueness across Scope2 + BOQ SL
+const compositeKey = (scope2: unknown, slNo: unknown) =>
+  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
@@ -69,7 +72,30 @@ export default function JmcEntryPage() {
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
-  // fetch BOQ + JMC
+  /* ---------- Prefill WO No from project and lock it ---------- */
+  useEffect(() => {
+    const loadWoNo = async () => {
+      if (!projectSlug) return;
+      try {
+        const pRef = doc(db, 'projects', projectSlug);
+        const snap = await getDoc(pRef);
+
+        let woNo = '';
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          woNo = data?.woNo ?? data?.workOrderNo ?? data?.billing?.woNo ?? '';
+        }
+
+        setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
+      } catch (e) {
+        console.warn('Failed to fetch project woNo', e);
+        setDetails((prev) => ({ ...prev, woNo: '' }));
+      }
+    };
+    loadWoNo();
+  }, [projectSlug]);
+
+  /* ---------- fetch BOQ + JMC ---------- */
   useEffect(() => {
     const fetchBoqAndJmcData = async () => {
       if (!projectSlug) return;
@@ -78,15 +104,12 @@ export default function JmcEntryPage() {
         const boqSnapshot = await getDocs(query(collection(db, 'projects', projectSlug, 'boqItems')));
         const mapped = boqSnapshot.docs.map((d) => {
           const data = d.data() as Record<string, unknown>;
-
-          // normalize keys we care about (SL no / BOQ SL / Description / Unit / QTY / Unit Rate)
           const slKey =
             normalizeKey(data, 'BOQ SL No') ??
             normalizeKey(data, 'BOQ SL NO') ??
             normalizeKey(data, 'SL. No.') ??
             normalizeKey(data, 'SL No') ??
             normalizeKey(data, 'SL');
-
           const descKey = normalizeKey(data, 'Description') ?? 'Description';
           const unitKey = normalizeKey(data, 'Unit') ?? normalizeKey(data, 'UNIT') ?? 'Unit';
           const qtyKey = normalizeKey(data, 'QTY') ?? 'QTY';
@@ -95,10 +118,9 @@ export default function JmcEntryPage() {
             normalizeKey(data, 'UNIT PRICE') ??
             normalizeKey(data, 'Rate');
 
-        return {
+          return {
             ...data,
             id: d.id,
-            // ensure we have standard fields available no matter what the source header was
             ['BOQ SL No']: slKey ? String((data as any)[slKey] ?? '') : '',
             ['Description']: (data as any)[descKey] ?? '',
             ['Unit']: (data as any)[unitKey] ?? '',
@@ -107,11 +129,11 @@ export default function JmcEntryPage() {
           } as BoqItem;
         });
 
-        // sort numerically by BOQ SL if possible
         mapped.sort((a, b) => {
           const aNum = getNumber((a as any)['BOQ SL No']);
           const bNum = getNumber((b as any)['BOQ SL No']);
-          if (!Number.isFinite(aNum) || !Number.isFinite(bNum)) return String((a as any)['BOQ SL No']).localeCompare(String((b as any)['BOQ SL No']));
+          if (!Number.isFinite(aNum) || !Number.isFinite(bNum))
+            return String((a as any)['BOQ SL No']).localeCompare(String((b as any)['BOQ SL No']));
           return (aNum as number) - (bNum as number);
         });
 
@@ -129,14 +151,14 @@ export default function JmcEntryPage() {
     fetchBoqAndJmcData();
   }, [projectSlug, toast]);
 
-  // pre-compute certified qty per BOQ SL
+  /* ---------- pre-compute certified qty per (Scope2 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
     allJmcEntries.forEach((entry) => {
-      entry.items.forEach((it) => {
-        if (it.boqSlNo) {
-          map[String(it.boqSlNo)] = (map[String(it.boqSlNo)] || 0) + (Number(it.certifiedQty) || 0);
-        }
+      entry.items.forEach((it: any) => {
+        const key = compositeKey(it.scope2, it.boqSlNo);
+        if (!String(it.boqSlNo || '').trim()) return;
+        map[key] = (map[key] || 0) + (Number(it.certifiedQty) || 0);
       });
     });
     return map;
@@ -153,10 +175,7 @@ export default function JmcEntryPage() {
       const key = normalizeKey(boqItem as any, k);
       if (key) return key;
     }
-    // last resort: any "rate" that is not "total"
-    return Object.keys(boqItem).find(
-      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total')
-    );
+    return Object.keys(boqItem).find((k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
   };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,6 +199,11 @@ export default function JmcEntryPage() {
     return slKey ? String((boqItem as any)[slKey] ?? '') : '';
   };
 
+  const extractScope2 = (boqItem: BoqItem): string => {
+    const key = normalizeKey(boqItem as any, 'Scope 2');
+    return key ? String((boqItem as any)[key] ?? '') : '';
+  };
+
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
     const itemToUpdate = { ...newItems[index] };
@@ -188,19 +212,21 @@ export default function JmcEntryPage() {
       const rateKey = findBasicPriceKey(boqItem);
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const boqSlNo = extractSlNo(boqItem);
+      const scope2 = extractScope2(boqItem);
 
       itemToUpdate.boqSlNo = boqSlNo;
+      itemToUpdate.scope2 = scope2;
       itemToUpdate.description = String((boqItem as any)['Description'] ?? '');
       itemToUpdate.unit = (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '';
       itemToUpdate.rate = Number.isFinite(rateNum) ? (rateNum as number) : 0;
       itemToUpdate.boqQty = Number((boqItem as any)['QTY'] || 0);
-      itemToUpdate.totalCertifiedQty = totalCertifiedQtyMap[boqSlNo] || 0;
+
+      const key = compositeKey(scope2, boqSlNo);
+      itemToUpdate.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
 
       const qty = getNumber(itemToUpdate.executedQty);
       itemToUpdate.totalAmount =
-        Number.isFinite(qty) && Number.isFinite(itemToUpdate.rate)
-          ? (qty as number) * itemToUpdate.rate
-          : 0;
+        Number.isFinite(qty) && Number.isFinite(itemToUpdate.rate) ? (qty as number) * itemToUpdate.rate : 0;
     } else {
       Object.assign(itemToUpdate, initialItem);
     }
@@ -214,26 +240,26 @@ export default function JmcEntryPage() {
       const rateKey = findBasicPriceKey(boqItem);
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const slNo = extractSlNo(boqItem);
+      const scope2 = extractScope2(boqItem);
+      const key = compositeKey(scope2, slNo);
 
       return {
         ...initialItem,
         boqSlNo: slNo,
+        scope2,
         description: (boqItem as any)['Description'] ?? '',
         unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
         rate: Number.isFinite(rateNum) ? (rateNum as number) : 0,
         boqQty: Number((boqItem as any)['QTY'] || 0),
-        totalCertifiedQty: totalCertifiedQtyMap[slNo] || 0,
+        totalCertifiedQty: totalCertifiedQtyMap[key] || 0,
       };
     });
 
-    const existing =
-      items.length === 1 && items[0].boqSlNo === '' ? [] : items;
-
+    const existing = items.length === 1 && items[0].boqSlNo === '' ? [] : items;
     setItems([...existing, ...newJmcItems]);
   };
 
   const addItem = () => setItems((prev) => [...prev, { ...initialItem }]);
-
   const removeItem = (index: number) => {
     if (items.length > 1) setItems(items.filter((_, i) => i !== index));
     else setItems([{ ...initialItem }]);
@@ -249,7 +275,10 @@ export default function JmcEntryPage() {
     if (!details.jmcNo || !details.woNo || items.some((it) => !it.boqSlNo)) {
       toast({
         title: 'Missing Required Fields',
-        description: 'Please fill in JMC No, WO No, and ensure all items have a BOQ Sl. No.',
+        description:
+          !details.woNo
+            ? 'Work Order No (WO No) is not set for this project. Please set WO No under Billing Settings first.'
+            : 'Please fill in JMC No and ensure all items have a BOQ Sl. No.',
         variant: 'destructive',
       });
       setIsSaving(false);
@@ -304,12 +333,7 @@ export default function JmcEntryPage() {
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
         action: 'Create JMC Entry',
-        details: {
-          project: projectSlug,
-          jmcNo: details.jmcNo,
-          workOrderNo: details.woNo,
-          itemCount: items.length,
-        },
+        details: { project: projectSlug, jmcNo: details.jmcNo, workOrderNo: details.woNo, itemCount: items.length },
       });
 
       toast({
@@ -365,10 +389,19 @@ export default function JmcEntryPage() {
                 <Label htmlFor="jmcNo">JMC No</Label>
                 <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
               </div>
+
+              {/* WO No is prefilled from project and locked */}
               <div className="space-y-2">
                 <Label htmlFor="woNo">WO No</Label>
-                <Input id="woNo" name="woNo" value={details.woNo} onChange={handleDetailChange} />
+                <Input
+                  id="woNo"
+                  name="woNo"
+                  value={details.woNo || '— not set —'}
+                  readOnly
+                  className="bg-muted/50 cursor-not-allowed"
+                />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="jmcDate">JMC Date</Label>
                 <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
@@ -391,20 +424,36 @@ export default function JmcEntryPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <Table>
+              {/* Fixed layout + explicit column widths to keep layout stable */}
+              <Table className="table-fixed w-full min-w-[72rem]">
+                <colgroup>
+                  <col className="w-[240px]" />  {/* BOQ selector */}
+                  <col className="w-[480px]" />  {/* Description */}
+                  <col className="w-[120px]" />  {/* Unit */}
+                  <col className="w-[120px]" />  {/* BOQ Qty */}
+                  <col className="w-[140px]" />  {/* Scope 2 */}
+                  <col className="w-[160px]" />  {/* Total Certified Qty */}
+                  <col className="w-[120px]" />  {/* Rate */}
+                  <col className="w-[160px]" />  {/* Executed Qty */}
+                  <col className="w-[160px]" />  {/* Total Amount */}
+                  <col className="w-[80px]" />   {/* Action */}
+                </colgroup>
+
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[250px]">BOQ Sl. No.</TableHead>
+                    <TableHead>BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>BOQ Qty</TableHead>
+                    <TableHead>Scope 2</TableHead>
                     <TableHead>Total Certified Qty</TableHead>
-                    <TableHead className="w-[120px]">Rate</TableHead>
-                    <TableHead className="w-[140px]">Executed Qty</TableHead>
-                    <TableHead className="w-[150px]">Total Amount</TableHead>
-                    <TableHead className="w-[50px]">Action</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Executed Qty</TableHead>
+                    <TableHead>Total Amount</TableHead>
+                    <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {items.map((item, index) => (
                     <TableRow key={index}>
@@ -416,9 +465,15 @@ export default function JmcEntryPage() {
                           isLoading={isBoqLoading}
                         />
                       </TableCell>
-                      <TableCell>{item.description}</TableCell>
+
+                      {/* one-line, ellipsized description with tooltip */}
+                      <TableCell className="truncate" title={item.description}>
+                        {item.description}
+                      </TableCell>
+
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
+                      <TableCell>{item.scope2 || '-'}</TableCell>
                       <TableCell>{item.totalCertifiedQty}</TableCell>
                       <TableCell>{item.rate}</TableCell>
                       <TableCell>
@@ -433,7 +488,12 @@ export default function JmcEntryPage() {
                       </TableCell>
                       <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          aria-label="Remove row"
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>
@@ -442,6 +502,7 @@ export default function JmcEntryPage() {
                 </TableBody>
               </Table>
             </div>
+
             <Button variant="outline" onClick={addItem} className="mt-4">
               <Plus className="mr-2 h-4 w-4" /> Add Item
             </Button>

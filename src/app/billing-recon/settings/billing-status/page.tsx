@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,12 +12,28 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import type { Project } from '@/lib/types';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 
 export default function BillingStatusPage() {
   const { toast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Dialog state for enabling billing + entering WO No
+  const [woDialogOpen, setWoDialogOpen] = useState(false);
+  const [woInput, setWoInput] = useState('');
+  const [pendingProject, setPendingProject] = useState<Project | null>(null);
+  const [isWoSaving, setIsWoSaving] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -28,29 +43,68 @@ export default function BillingStatusPage() {
     setIsLoading(true);
     try {
       const querySnapshot = await getDocs(collection(db, 'projects'));
-      const projectsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+      const projectsData = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
       setProjects(projectsData);
     } catch (error) {
-      console.error("Error fetching projects: ", error);
+      console.error('Error fetching projects: ', error);
       toast({ title: 'Error', description: 'Failed to fetch projects.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
-  const handleBillingStatusChange = async (project: Project, billingRequired: boolean) => {
-    setSavingId(project.id);
-    try {
+  // Toggle handler
+  const handleBillingToggle = async (project: Project, nextChecked: boolean) => {
+    // Turning OFF: update immediately
+    if (!nextChecked) {
+      setSavingId(project.id);
+      try {
         const projectRef = doc(db, 'projects', project.id);
-        await updateDoc(projectRef, { billingRequired });
-        setProjects(prev => 
-            prev.map(p => p.id === project.id ? { ...p, billingRequired } : p)
-        );
-        toast({ title: 'Success', description: `${project.projectName} billing status updated.` });
-    } catch (error) {
-        console.error("Error updating project billing status:", error);
+        await updateDoc(projectRef, { billingRequired: false });
+        setProjects(prev => prev.map(p => (p.id === project.id ? { ...p, billingRequired: false } : p)));
+        toast({ title: 'Updated', description: `${project.projectName} billing disabled.` });
+      } catch (error) {
+        console.error('Error updating project billing status:', error);
         toast({ title: 'Error', description: 'Failed to update billing status.', variant: 'destructive' });
-    } finally {
+      } finally {
         setSavingId(null);
+      }
+      return;
+    }
+
+    // Turning ON: open dialog to collect WO No (don’t flip the switch yet)
+    setPendingProject(project);
+    setWoInput((project as any).woNo ?? ''); // prefill if it exists
+    setWoDialogOpen(true);
+  };
+
+  const saveWoForProject = async () => {
+    if (!pendingProject) return;
+    const woNo = woInput.trim();
+    if (!woNo) {
+      toast({ title: 'WO No required', description: 'Please enter a valid Work Order No.', variant: 'destructive' });
+      return;
+    }
+
+    setIsWoSaving(true);
+    try {
+      const projectRef = doc(db, 'projects', pendingProject.id);
+      // Save both flags at once
+      await updateDoc(projectRef, { billingRequired: true, woNo });
+
+      setProjects(prev =>
+        prev.map(p => (p.id === pendingProject.id ? { ...p, billingRequired: true, woNo } : p))
+      );
+
+      toast({ title: 'Success', description: `${pendingProject.projectName} billing enabled and WO No saved.` });
+      setWoDialogOpen(false);
+      setPendingProject(null);
+      setWoInput('');
+    } catch (error) {
+      console.error('Error saving WO No:', error);
+      toast({ title: 'Error', description: 'Failed to save Work Order No.', variant: 'destructive' });
+    } finally {
+      setIsWoSaving(false);
     }
   };
 
@@ -65,7 +119,7 @@ export default function BillingStatusPage() {
         <h1 className="text-xl font-bold">Billing Status</h1>
       </div>
 
-       <Card>
+      <Card>
         <CardHeader>
           <CardTitle>Project Billing Status</CardTitle>
           <CardDescription>Enable or disable billing requirements for each project.</CardDescription>
@@ -76,6 +130,7 @@ export default function BillingStatusPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Project Name</TableHead>
+                  <TableHead>WO No</TableHead>
                   <TableHead className="text-right">Billing Required</TableHead>
                 </TableRow>
               </TableHeader>
@@ -84,21 +139,23 @@ export default function BillingStatusPage() {
                   Array.from({ length: 3 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-48" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-6 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-6 w-12 ml-auto" /></TableCell>
                     </TableRow>
                   ))
                 ) : (
                   projects.map(project => (
                     <TableRow key={project.id}>
                       <TableCell className="font-medium">{project.projectName}</TableCell>
+                      <TableCell>{(project as any).woNo ?? '—'}</TableCell>
                       <TableCell className="text-right">
                         {savingId === project.id ? (
-                            <Loader2 className="h-5 w-5 animate-spin ml-auto" />
+                          <Loader2 className="h-5 w-5 animate-spin ml-auto" />
                         ) : (
-                            <Switch
-                                checked={project.billingRequired}
-                                onCheckedChange={(checked) => handleBillingStatusChange(project, checked)}
-                            />
+                          <Switch
+                            checked={!!project.billingRequired}
+                            onCheckedChange={(checked) => handleBillingToggle(project, checked)}
+                          />
                         )}
                       </TableCell>
                     </TableRow>
@@ -109,6 +166,36 @@ export default function BillingStatusPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Enable Billing -> WO No dialog */}
+      <Dialog open={woDialogOpen} onOpenChange={(open) => { if (!open) { setWoDialogOpen(false); setPendingProject(null); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enter Work Order No</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="woNo">WO No</Label>
+            <Input
+              id="woNo"
+              value={woInput}
+              onChange={(e) => setWoInput(e.target.value)}
+              placeholder="e.g., WO-2024-001"
+              autoFocus
+            />
+          </div>
+
+          <DialogFooter className="mt-4">
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={saveWoForProject} disabled={isWoSaving}>
+              {isWoSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save & Enable
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
