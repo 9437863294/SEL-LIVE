@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -79,9 +79,9 @@ const baseTableHeaders = [
   'JMC Amount',
 ] as const;
 
-// composite key helper: (scope2 + boq sl no)
-const compositeKey = (scope2: unknown, slNo: unknown) =>
-  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+// composite key helper: (scope1 + boq sl no)
+const compositeKey = (scope1: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
@@ -245,10 +245,10 @@ export default function ViewBoqPage() {
       setBoqItems(items);
 
       const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-      setJmcEntries(jmcSnapshot.docs.map((d) => d.data() as JmcEntry));
+      setJmcEntries(jmcSnapshot.docs.map((d) => ({id: d.id, ...d.data()} as JmcEntry)));
 
       const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
-      setBills(billsSnapshot.docs.map((d) => d.data() as Bill));
+      setBills(billsSnapshot.docs.map((d) => ({id: d.id, ...d.data()} as Bill)));
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -266,7 +266,7 @@ export default function ViewBoqPage() {
     const quantities: Record<string, { executed: number; certified: number }> = {};
     jmcEntries.forEach((entry) => {
       entry.items.forEach((it: any) => {
-        const key = compositeKey(it.scope2, it.boqSlNo);
+        const key = compositeKey(it['Scope 1'], it.boqSlNo);
         if (!key) return;
         if (!quantities[key]) quantities[key] = { executed: 0, certified: 0 };
         quantities[key].executed += Number(it.executedQty || 0);
@@ -350,7 +350,7 @@ export default function ViewBoqPage() {
     const sorted = [...filteredBoqItems];
 
     const getComparableValue = (item: BoqItem, key: string): unknown => {
-      const compKey = compositeKey(item['Scope 2'], item['BOQ SL No']);
+      const compKey = compositeKey(item['Scope 1'], item['BOQ SL No']);
       if (key === 'JMC Executed Qty') {
         return Number(jmcQuantities[compKey]?.executed || 0);
       }
@@ -607,7 +607,7 @@ export default function ViewBoqPage() {
             <DialogContent className="max-w-md">
                 <DialogHeader>
                     <DialogTitle>Customize Columns</DialogTitle>
-                    <p className="text-sm text-muted-foreground">Reorder and toggle visibility of columns.</p>
+                    <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
                 </DialogHeader>
                 <div className="py-4 space-y-2">
                     {columnOrder.map((header) => (
@@ -747,9 +747,7 @@ export default function ViewBoqPage() {
                                 header === 'JMC Certified Qty' ||
                                 header === 'JMC Amount'
                               ) {
-                                const key = `${String(item['Scope 2'] ?? '').trim().toLowerCase()}__${String(
-                                  item['BOQ SL No'] ?? ''
-                                ).trim()}`;
+                                const key = compositeKey(item['Scope 1'], item['BOQ SL No']);
                                 if (header === 'JMC Executed Qty') {
                                   raw = jmcQuantities[key]?.executed ?? 0;
                                 } else if (header === 'JMC Certified Qty') {
@@ -771,9 +769,7 @@ export default function ViewBoqPage() {
                                     Number.isFinite(qty) && Number.isFinite(rate) ? fmtNum(qty * rate) : 'N/A';
                                 }
                               } else if (header === 'JMC Amount') {
-                                const key = `${String(item['Scope 2'] ?? '').trim().toLowerCase()}__${String(
-                                  item['BOQ SL No'] ?? ''
-                                ).trim()}`;
+                                const key = compositeKey(item['Scope 1'], item['BOQ SL No']);
                                 const jmcQty = parsedNumber(jmcQuantities[key]?.certified ?? 0);
                                 const rate = parsedNumber(item['Unit Rate']);
                                 display =
@@ -875,7 +871,7 @@ export default function ViewBoqPage() {
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}
-        onOpenChange={setIsDetailsDialogOpen}
+        onOpenChange={(open: boolean) => setIsDetailsDialogOpen(open)}
         item={selectedBoqItem}
         jmcEntries={jmcEntries}
         bills={bills}
@@ -914,3 +910,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
