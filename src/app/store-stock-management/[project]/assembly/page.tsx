@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BoqItem } from '@/lib/types';
+import type { BoqItem, Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { BomDialog } from '@/components/BomDialog';
@@ -31,12 +31,24 @@ export default function AssemblyPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const fetchBoqItems = async () => {
+    if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-      const boqSnapshot = await getDocs(q);
-      const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
-      setBoqItems(items);
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+        if (!projectData) {
+            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
+
+        const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
+        const boqSnapshot = await getDocs(boqQuery);
+        const items = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
+        setBoqItems(items);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
     } finally {
@@ -45,9 +57,7 @@ export default function AssemblyPage() {
   };
 
   useEffect(() => {
-    if (projectSlug) {
-      fetchBoqItems();
-    }
+    fetchBoqItems();
   }, [projectSlug]);
 
   const handleOpenDialog = (item: BoqItem) => {
@@ -88,7 +98,7 @@ export default function AssemblyPage() {
   };
   
   const getSlNo = (item: BoqItem): string => {
-    return String(item['Sl No'] || item['SL. No.'] || '');
+    return String(item['BOQ SL No'] || item['SL. No.'] || '');
   }
   
   const formatCurrency = (value: any) => {
@@ -98,7 +108,7 @@ export default function AssemblyPage() {
   }
 
   const getBoqQty = (item: BoqItem): string => {
-    return String(item['BOQ QTY'] || item['Total Qty'] || '0');
+    return String(item['QTY'] || item['Total Qty'] || '0');
   }
 
   const getUnit = (item: BoqItem): string => {
