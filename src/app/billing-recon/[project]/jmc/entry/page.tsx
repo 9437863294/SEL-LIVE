@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -8,10 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, doc, getDoc, Timestamp, where } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog } from '@/lib/types';
+import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog, Project } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
@@ -71,29 +72,34 @@ export default function JmcEntryPage() {
   const [allJmcEntries, setAllJmcEntries] = useState<JmcEntryType[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   /* ---------- Prefill WO No from project and lock it ---------- */
   useEffect(() => {
     const loadWoNo = async () => {
       if (!projectSlug) return;
       try {
-        const pRef = doc(db, 'projects', projectSlug);
-        const snap = await getDoc(pRef);
-
-        let woNo = '';
-        if (snap.exists()) {
-          const data = snap.data() as any;
-          woNo = data?.woNo ?? data?.workOrderNo ?? data?.billing?.woNo ?? '';
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        
+        if (projectData) {
+            setCurrentProject(projectData);
+            const woNo = projectData.woNo || (projectData as any).workOrderNo || '';
+            setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
+        } else {
+            toast({ title: 'Project Not Found', description: `Could not find a project with slug "${projectSlug}".`, variant: 'destructive'});
         }
 
-        setDetails((prev) => ({ ...prev, woNo: woNo || '' }));
       } catch (e) {
         console.warn('Failed to fetch project woNo', e);
         setDetails((prev) => ({ ...prev, woNo: '' }));
       }
     };
     loadWoNo();
-  }, [projectSlug]);
+  }, [projectSlug, toast]);
 
   /* ---------- fetch BOQ + JMC ---------- */
   useEffect(() => {
@@ -101,7 +107,7 @@ export default function JmcEntryPage() {
       if (!projectSlug) return;
       setIsBoqLoading(true);
       try {
-        const boqSnapshot = await getDocs(query(collection(db, 'projects', projectSlug, 'boqItems')));
+        const boqSnapshot = await getDocs(query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug)));
         const mapped = boqSnapshot.docs.map((d) => {
           const data = d.data() as Record<string, unknown>;
           const slKey =
@@ -148,8 +154,10 @@ export default function JmcEntryPage() {
         setIsBoqLoading(false);
       }
     };
-    fetchBoqAndJmcData();
-  }, [projectSlug, toast]);
+    if (currentProject) {
+        fetchBoqAndJmcData();
+    }
+  }, [projectSlug, toast, currentProject]);
 
   /* ---------- pre-compute certified qty per (Scope2 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
@@ -297,7 +305,7 @@ export default function JmcEntryPage() {
       const tempJmcData = {
         ...details,
         items,
-        projectId: projectSlug,
+        projectId: currentProject?.id || projectSlug,
       };
 
       const assignees = await getAssigneeForStep(firstStep, tempJmcData);
@@ -319,6 +327,8 @@ export default function JmcEntryPage() {
       const jmcData = {
         ...details,
         items,
+        projectSlug,
+        projectId: currentProject?.id,
         createdAt: Timestamp.now(),
         status: 'Pending' as const,
         stage: firstStep.name,
@@ -328,7 +338,7 @@ export default function JmcEntryPage() {
         history: [initialLog],
       };
 
-      await addDoc(collection(db, 'projects', projectSlug, 'jmcEntries'), jmcData);
+      await addDoc(collection(db, 'projects', currentProject!.id, 'jmcEntries'), jmcData);
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
