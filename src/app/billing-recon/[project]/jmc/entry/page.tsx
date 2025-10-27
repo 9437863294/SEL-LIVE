@@ -444,7 +444,7 @@ export default function JmcEntryPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <Table className="table-fixed w-full min-w-[72rem]">
-                 <colgroup>
+                <colgroup>
                   <col className="w-[240px]" />
                   <col className="w-[480px]" />
                   <col className="w-[120px]" />
@@ -538,3 +538,5 @@ export default function JmcEntryPage() {
     </>
   );
 }
+
+    
