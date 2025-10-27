@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -20,6 +21,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 const initialJmcDetails = {
   jmcNo: '',
@@ -70,7 +73,7 @@ export default function JmcEntryPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
-  const [allJmcEntries, setAllJmcEntries] = useState<JmcEntryType[]>([]);
+  const [allJmcEntries, setAllJmcEntries] = useState<(JmcEntryType & { projectId: string })[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
   
@@ -450,8 +453,17 @@ export default function JmcEntryPage() {
                           isLoading={isBoqLoading}
                         />
                       </TableCell>
-                      <TableCell className="truncate" title={item.description}>
-                        {item.description}
+                      <TableCell>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger>
+                                    <p className="truncate max-w-xs">{item.description}</p>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p className="max-w-md">{item.description}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                       </TableCell>
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
