@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,11 +30,14 @@ const initialConfigState: SerialNumberConfig = {
     startingIndex: 1,
 };
 
+// Helper to create a URL-friendly slug
+const slugify = (str: string) => String(str).toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
 export default function SerialNoConfigPage() {
     const { toast } = useToast();
     const { user } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
-    const [scopes, setScopes] = useState<Record<string, string[]>>({});
+    const [scopes, setScopes] = useState<Record<string, Record<string, string[]>>>({});
     const [configs, setConfigs] = useState<Record<string, SerialNumberConfig>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
@@ -47,25 +50,45 @@ export default function SerialNoConfigPage() {
             setProjects(projectsData);
 
             const allConfigs: Record<string, SerialNumberConfig> = {};
-            const allScopes: Record<string, string[]> = {};
+            const allScopes: Record<string, Record<string, string[]>> = {};
 
             for (const project of projectsData) {
-                // Corrected query to look inside the subcollection
                 const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
                 const boqSnapshot = await getDocs(boqQuery);
-                const projectScopes = [...new Set(boqSnapshot.docs.map(doc => doc.data()['Scope 1']).filter(Boolean))];
-                allScopes[project.id] = projectScopes as string[];
                 
-                for (const scope of projectScopes) {
-                    const slug = `${project.id}_${String(scope).replace(/\s+/g, '-')}`;
-                    const configDocRef = doc(db, 'billingReconSerialConfigs', slug);
-                    const configDocSnap = await getDoc(configDocRef);
-                    if (configDocSnap.exists()) {
-                        allConfigs[slug] = configDocSnap.data() as SerialNumberConfig;
-                    } else {
-                        const projectNameAbbr = project.projectName.substring(0, 3).toUpperCase();
-                        const scopeAbbr = String(scope).substring(0, 3).toUpperCase();
-                        allConfigs[slug] = { ...initialConfigState, prefix: `${projectNameAbbr}/${scopeAbbr}/` };
+                const projectScopes: Record<string, Set<string>> = {};
+
+                boqSnapshot.docs.forEach(doc => {
+                    const data = doc.data() as BoqItem;
+                    const scope1 = data['Scope 1'];
+                    const scope2 = data['Scope 2'];
+
+                    if (scope1 && scope2) {
+                        if (!projectScopes[scope2]) {
+                            projectScopes[scope2] = new Set();
+                        }
+                        projectScopes[scope2].add(scope1);
+                    }
+                });
+
+                allScopes[project.id] = {};
+                for (const scope2 in projectScopes) {
+                    allScopes[project.id][scope2] = Array.from(projectScopes[scope2]).sort();
+                }
+
+                for (const scope2 of Object.keys(allScopes[project.id])) {
+                    for (const scope1 of allScopes[project.id][scope2]) {
+                        const slug = `${project.id}_${slugify(scope2)}_${slugify(scope1)}`;
+                        const configDocRef = doc(db, 'billingReconSerialConfigs', slug);
+                        const configDocSnap = await getDoc(configDocRef);
+                        if (configDocSnap.exists()) {
+                            allConfigs[slug] = configDocSnap.data() as SerialNumberConfig;
+                        } else {
+                            const projectNameAbbr = project.projectName.substring(0, 3).toUpperCase();
+                            const scope2Abbr = scope2.substring(0, 3).toUpperCase();
+                            const scope1Abbr = scope1.substring(0, 3).toUpperCase();
+                            allConfigs[slug] = { ...initialConfigState, prefix: `${projectNameAbbr}/${scope2Abbr}/${scope1Abbr}/` };
+                        }
                     }
                 }
             }
@@ -93,7 +116,7 @@ export default function SerialNoConfigPage() {
         }));
     };
 
-    const handleSaveConfig = async (slug: string, projectName: string, scope: string) => {
+    const handleSaveConfig = async (slug: string, projectName: string, scope1: string, scope2: string) => {
         if (!user) return;
         setSavingStates(prev => ({ ...prev, [slug]: true }));
         try {
@@ -101,9 +124,9 @@ export default function SerialNoConfigPage() {
             await logUserActivity({
                 userId: user.id,
                 action: 'Update JMC Serial No. Config',
-                details: { project: projectName, scope: scope, config: configs[slug] }
+                details: { project: projectName, scope1, scope2, config: configs[slug] }
             });
-            toast({ title: 'Success', description: `Configuration for ${projectName} - ${scope} saved.` });
+            toast({ title: 'Success', description: `Configuration for ${projectName} - ${scope2} - ${scope1} saved.` });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to save configuration.', variant: 'destructive' });
         } finally {
@@ -130,46 +153,57 @@ export default function SerialNoConfigPage() {
                                 <CardTitle>{project.projectName}</CardTitle>
                             </AccordionTrigger>
                             <AccordionContent className="px-4 pb-4">
-                                <div className="space-y-4">
-                                {(scopes[project.id] || []).length > 0 ? (scopes[project.id] || []).map(scope => {
-                                    const slug = `${project.id}_${String(scope).replace(/\s+/g, '-')}`;
-                                    const config = configs[slug] || initialConfigState;
-                                    
-                                    return (
-                                        <Card key={slug} className="bg-muted/30">
-                                            <CardHeader className="flex flex-row items-center justify-between">
-                                                <div>
-                                                    <CardTitle className="text-base">{scope}</CardTitle>
+                                <Accordion type="multiple" className="w-full space-y-3">
+                                {(scopes[project.id] && Object.keys(scopes[project.id]).length > 0) ? Object.entries(scopes[project.id]).map(([scope2, scope1s]) => (
+                                    <AccordionItem value={scope2} key={scope2} className="border-none">
+                                        <Card className="bg-muted/20">
+                                            <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                                                <h4 className="font-semibold text-md">{scope2}</h4>
+                                            </AccordionTrigger>
+                                            <AccordionContent className="px-4 pb-4">
+                                                <div className="space-y-4">
+                                                    {scope1s.map(scope1 => {
+                                                        const slug = `${project.id}_${slugify(scope2)}_${slugify(scope1)}`;
+                                                        const config = configs[slug] || initialConfigState;
+                                                        
+                                                        return (
+                                                            <Card key={slug} className="bg-background">
+                                                                <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
+                                                                    <div><CardTitle className="text-base">{scope1}</CardTitle></div>
+                                                                    <Button size="sm" onClick={() => handleSaveConfig(slug, project.projectName, scope1, scope2)} disabled={savingStates[slug]}>
+                                                                        {savingStates[slug] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                                                                        Save
+                                                                    </Button>
+                                                                </CardHeader>
+                                                                <CardContent className="p-4 pt-0">
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-xs">Prefix</Label>
+                                                                            <Input value={config.prefix} onChange={(e) => handleConfigChange(slug, 'prefix', e.target.value)} />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-xs">Format</Label>
+                                                                            <Input value={config.format} onChange={(e) => handleConfigChange(slug, 'format', e.target.value)} />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-xs">Suffix</Label>
+                                                                            <Input value={config.suffix} onChange={(e) => handleConfigChange(slug, 'suffix', e.target.value)} />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-xs">Index</Label>
+                                                                            <Input type="number" value={config.startingIndex} onChange={(e) => handleConfigChange(slug, 'startingIndex', parseInt(e.target.value, 10) || 1)} />
+                                                                        </div>
+                                                                    </div>
+                                                                </CardContent>
+                                                            </Card>
+                                                        )
+                                                    })}
                                                 </div>
-                                                <Button size="sm" onClick={() => handleSaveConfig(slug, project.projectName, scope)} disabled={savingStates[slug]}>
-                                                    {savingStates[slug] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                                                    Save
-                                                </Button>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                                                    <div className="space-y-1">
-                                                        <Label className="text-xs">Prefix</Label>
-                                                        <Input value={config.prefix} onChange={(e) => handleConfigChange(slug, 'prefix', e.target.value)} />
-                                                    </div>
-                                                     <div className="space-y-1">
-                                                        <Label className="text-xs">Format</Label>
-                                                        <Input value={config.format} onChange={(e) => handleConfigChange(slug, 'format', e.target.value)} />
-                                                    </div>
-                                                     <div className="space-y-1">
-                                                        <Label className="text-xs">Suffix</Label>
-                                                        <Input value={config.suffix} onChange={(e) => handleConfigChange(slug, 'suffix', e.target.value)} />
-                                                    </div>
-                                                     <div className="space-y-1">
-                                                        <Label className="text-xs">Index</Label>
-                                                        <Input type="number" value={config.startingIndex} onChange={(e) => handleConfigChange(slug, 'startingIndex', parseInt(e.target.value, 10) || 1)} />
-                                                    </div>
-                                                </div>
-                                            </CardContent>
+                                            </AccordionContent>
                                         </Card>
-                                    )
-                                }) : <p className="text-center text-muted-foreground p-4">No 'Scope 1' values found in BOQ for this project.</p>}
-                                </div>
+                                    </AccordionItem>
+                                )) : <p className="text-center text-muted-foreground p-4">No 'Scope 1' or 'Scope 2' values found in BOQ for this project.</p>}
+                                </Accordion>
                             </AccordionContent>
                         </Card>
                     </AccordionItem>
