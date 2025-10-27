@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PlusCircle, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Search, ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -17,6 +17,7 @@ import { BomDialog } from '@/components/BomDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 export default function AssemblyPage() {
   const params = useParams();
@@ -29,6 +30,10 @@ export default function AssemblyPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterColumn, setFilterColumn] = useState('all');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const [sortKey, setSortKey] = useState<string>('erpSlNo');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
 
   const fetchBoqItems = async () => {
     if (!projectSlug) return;
@@ -100,6 +105,10 @@ export default function AssemblyPage() {
   const getSlNo = (item: BoqItem): string => {
     return String(item['BOQ SL No'] || item['SL. No.'] || '');
   }
+
+  const getErpSlNo = (item: BoqItem): string => {
+    return String(item['ERP SL NO'] || '');
+  }
   
   const formatCurrency = (value: any) => {
     const num = parseFloat(value);
@@ -115,27 +124,56 @@ export default function AssemblyPage() {
     return String(item['Unit'] || item['UNIT'] || 'N/A');
   }
 
-  const filteredBoqItems = useMemo(() => {
-    if (!searchTerm) {
-      return boqItems;
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+        setSortKey(key);
+        setSortDirection('asc');
     }
-    const lowercasedFilter = searchTerm.toLowerCase();
-    return boqItems.filter(item => {
-      const description = getItemDescription(item).toLowerCase();
-      const slNo = getSlNo(item).toLowerCase();
+  };
 
-      if (filterColumn === 'all') {
-        return description.includes(lowercasedFilter) || slNo.includes(lowercasedFilter);
-      }
-      if (filterColumn === 'boqSlNo') {
-        return slNo.includes(lowercasedFilter);
-      }
-      if (filterColumn === 'description') {
-        return description.includes(lowercasedFilter);
-      }
-      return true;
-    });
-  }, [boqItems, searchTerm, filterColumn]);
+  const sortedAndFilteredBoqItems = useMemo(() => {
+    let itemsToProcess = [...boqItems];
+
+    if (searchTerm) {
+        const lowercasedFilter = searchTerm.toLowerCase();
+        itemsToProcess = itemsToProcess.filter(item => {
+            const description = getItemDescription(item).toLowerCase();
+            const slNo = getSlNo(item).toLowerCase();
+            const erpSlNo = getErpSlNo(item).toLowerCase();
+
+            if (filterColumn === 'all') {
+                return description.includes(lowercasedFilter) || slNo.includes(lowercasedFilter) || erpSlNo.includes(lowercasedFilter);
+            }
+            if (filterColumn === 'boqSlNo') return slNo.includes(lowercasedFilter);
+            if (filterColumn === 'erpSlNo') return erpSlNo.includes(lowercasedFilter);
+            if (filterColumn === 'description') return description.includes(lowercasedFilter);
+            return true;
+        });
+    }
+
+    if (sortKey) {
+        itemsToProcess.sort((a, b) => {
+            const valA = a[sortKey] ?? getSlNo(a); // Fallback for complex keys
+            const valB = b[sortKey] ?? getSlNo(b);
+            
+            const numA = parseFloat(String(valA));
+            const numB = parseFloat(String(valB));
+
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return sortDirection === 'asc' ? numA - numB : numB - numA;
+            }
+
+            const strA = String(valA).toLowerCase();
+            const strB = String(valB).toLowerCase();
+
+            return sortDirection === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+        });
+    }
+    
+    return itemsToProcess;
+  }, [boqItems, searchTerm, filterColumn, sortKey, sortDirection]);
 
   return (
     <>
@@ -152,6 +190,7 @@ export default function AssemblyPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Columns</SelectItem>
+                    <SelectItem value="erpSlNo">ERP SL No.</SelectItem>
                     <SelectItem value="boqSlNo">BOQ Sl. No.</SelectItem>
                     <SelectItem value="description">Description</SelectItem>
                   </SelectContent>
@@ -174,7 +213,18 @@ export default function AssemblyPage() {
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
-                    <TableHead>BOQ Sl. No.</TableHead>
+                    <TableHead>
+                      <Button variant="ghost" onClick={() => handleSort('ERP SL NO')} className="px-0">
+                        ERP SL No.
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                       <Button variant="ghost" onClick={() => handleSort('BOQ SL No')} className="px-0">
+                         BOQ Sl. No.
+                         <ArrowUpDown className="ml-2 h-4 w-4" />
+                       </Button>
+                    </TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>BOQ Qty</TableHead>
                     <TableHead>Unit</TableHead>
@@ -186,11 +236,11 @@ export default function AssemblyPage() {
                   {isLoading ? (
                     Array.from({ length: 10 }).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell colSpan={7}><Skeleton className="h-6 w-full" /></TableCell>
+                        <TableCell colSpan={8}><Skeleton className="h-6 w-full" /></TableCell>
                       </TableRow>
                     ))
-                  ) : filteredBoqItems.length > 0 ? (
-                    filteredBoqItems.map(item => {
+                  ) : sortedAndFilteredBoqItems.length > 0 ? (
+                    sortedAndFilteredBoqItems.map(item => {
                         const rateKey = findBasicPriceKey(item);
                         const rate = rateKey ? item[rateKey] : '0';
                         const hasBom = item.bom && item.bom.length > 0;
@@ -205,6 +255,7 @@ export default function AssemblyPage() {
                                   </Button>
                                 )}
                               </TableCell>
+                              <TableCell>{getErpSlNo(item)}</TableCell>
                               <TableCell>{getSlNo(item)}</TableCell>
                               <TableCell>{getItemDescription(item)}</TableCell>
                               <TableCell>{getBoqQty(item)}</TableCell>
@@ -219,7 +270,7 @@ export default function AssemblyPage() {
                             </TableRow>
                             {isExpanded && hasBom && (
                                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                    <TableCell colSpan={7} className="p-0">
+                                    <TableCell colSpan={8} className="p-0">
                                       <div className="p-4">
                                         <h4 className="font-semibold mb-2 ml-2">Bill of Materials</h4>
                                         <Table>
@@ -230,7 +281,6 @@ export default function AssemblyPage() {
                                               <TableHead>Grade</TableHead>
                                               <TableHead>Length</TableHead>
                                               <TableHead>Wt/Pc (KG)</TableHead>
-                                              <TableHead>Total Wt/Set</TableHead>
                                               <TableHead>Qty/Set</TableHead>
                                               <TableHead>Total Wt (KG)</TableHead>
                                             </TableRow>
@@ -243,7 +293,6 @@ export default function AssemblyPage() {
                                                 <TableCell>{bomItem.grade}</TableCell>
                                                 <TableCell>{bomItem.length}</TableCell>
                                                 <TableCell>{bomItem.wtPerPc?.toFixed(3)}</TableCell>
-                                                <TableCell>{bomItem.totalWtPerSet?.toFixed(3)}</TableCell>
                                                 <TableCell>{bomItem.qtyPerSet}</TableCell>
                                                 <TableCell>{bomItem.totalWtKg?.toFixed(3)}</TableCell>
                                               </TableRow>
@@ -259,7 +308,7 @@ export default function AssemblyPage() {
                     })
                   ) : (
                      <TableRow>
-                        <TableCell colSpan={7} className="text-center h-24">No BOQ Items found for this project.</TableCell>
+                        <TableCell colSpan={8} className="text-center h-24">No BOQ Items found for this project.</TableCell>
                      </TableRow>
                   )}
                 </TableBody>
