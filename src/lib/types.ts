@@ -400,6 +400,7 @@ export interface JmcItem {
 export interface JmcEntry {
   id: string;
   projectSlug: string;
+  projectId?: string;
   jmcNo: string;
   woNo: string;
   jmcDate: string;

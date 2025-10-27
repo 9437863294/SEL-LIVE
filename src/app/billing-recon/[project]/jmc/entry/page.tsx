@@ -110,12 +110,12 @@ export default function JmcEntryPage() {
         const jmcSnaps = await Promise.all(jmcPromises);
         
         const allBoq = boqSnaps.flatMap((snap, index) => 
-            snap.docs.map(d => ({...d.data(), id: d.id, projectId: projectsData[index].id} as BoqItem))
+            snap.docs.map(d => ({...(d.data() as object), id: d.id, projectId: projectsData[index].id} as BoqItem))
         );
         setAllBoqItems(allBoq);
 
         const allJmc = jmcSnaps.flatMap((snap, index) => 
-            snap.docs.map(d => ({...d.data(), id: d.id, projectId: projectsData[index].id} as JmcEntryType))
+          snap.docs.map(d => ({ ...(d.data() as Omit<JmcEntryType, 'id'>), id: d.id, projectId: projectsData[index].id }))
         );
         setAllJmcEntries(allJmc);
 
@@ -422,18 +422,7 @@ export default function JmcEntryPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
-                <colgroup>
-                  <col className="w-[240px]" />
-                  <col className="w-[480px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[140px]" />
-                  <col className="w-[160px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[160px]" />
-                  <col className="w-[160px]" />
-                  <col className="w-[80px]" />
-                </colgroup>
+                <colgroup><col className="w-[240px]" /><col className="w-[480px]" /><col className="w-[120px]" /><col className="w-[120px]" /><col className="w-[140px]" /><col className="w-[160px]" /><col className="w-[120px]" /><col className="w-[160px]" /><col className="w-[160px]" /><col className="w-[80px]" /></colgroup>
 
                 <TableHeader>
                   <TableRow>
@@ -514,4 +503,3 @@ export default function JmcEntryPage() {
     </>
   );
 }
-
