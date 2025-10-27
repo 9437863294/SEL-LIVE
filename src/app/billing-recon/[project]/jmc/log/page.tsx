@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -16,11 +17,12 @@ import {
   doc,
   getDoc,
   Timestamp,
+  where,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -141,12 +143,24 @@ export default function JmcLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
+      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
+        .find((p) => slugify(p.projectName) === projectSlug);
+
+      if (!projectData) {
+        throw new Error("Project not found");
+      }
+      const projectId = projectData.id;
+      
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const [workflowSnap, boqSnap, billsSnap, jmcSnap] = await Promise.all([
         getDoc(workflowRef),
-        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'boqItems'))),
-        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'bills'))),
-        getDocs(fsQuery(collection(db, 'projects', projectSlug, 'jmcEntries'), orderBy('createdAt', 'desc'))),
+        getDocs(fsQuery(collection(db, 'projects', projectId, 'boqItems'))),
+        getDocs(fsQuery(collection(db, 'projects', projectId, 'bills'))),
+        getDocs(fsQuery(collection(db, 'projects', projectId, 'jmcEntries'), orderBy('createdAt', 'desc'))),
       ]);
 
       const steps = (workflowSnap.exists() ? (workflowSnap.data().steps as WorkflowStep[]) : []) ?? [];
@@ -231,8 +245,20 @@ export default function JmcLogPage() {
   };
 
   const handleDelete = async (entry: EnrichedJmcEntry) => {
+    if (!projectSlug) return;
     try {
-      await deleteDoc(doc(db, 'projects', projectSlug, 'jmcEntries', entry.id!));
+      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
+        .find((p) => slugify(p.projectName) === projectSlug);
+
+      if (!projectData) {
+        throw new Error("Project not found");
+      }
+
+      await deleteDoc(doc(db, 'projects', projectData.id, 'jmcEntries', entry.id!));
       await logUserActivity({
         userId,
         action: 'Delete JMC Entry',
