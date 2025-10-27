@@ -68,21 +68,15 @@ export function UpdateCertifiedQtyDialog({
   useEffect(() => {
     const fetchProject = async () => {
         if (!projectSlug) return;
-        const projectsQuery = query(collection(db, 'projects'), where('slug', '==', projectSlug));
+        const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        if (!projectsSnapshot.empty) {
-            const projectDoc = projectsSnapshot.docs[0];
-            setCurrentProject({ id: projectDoc.id, ...projectDoc.data() } as Project);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        
+        if (projectData) {
+            setCurrentProject(projectData);
         } else {
-             // Fallback for older data that might not have slug
-            const allProjectsSnap = await getDocs(collection(db, 'projects'));
-            const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-            const foundProject = allProjectsSnap.docs.map(d => ({id: d.id, ...d.data()} as Project)).find(p => slugify(p.projectName) === projectSlug);
-            if (foundProject) {
-              setCurrentProject(foundProject);
-            } else {
-              toast({ title: "Error", description: "Project context not found.", variant: "destructive" });
-            }
+            toast({ title: "Error", description: "Project context not found.", variant: "destructive" });
         }
     };
     fetchProject();
@@ -119,7 +113,7 @@ export function UpdateCertifiedQtyDialog({
 
       if (raw.trim() === '') {
         row.__error = null;
-        row.certifiedQty = undefined;
+        row.certifiedQty = 0; // Default to 0 for empty string
       } else if (Number.isNaN(parsed)) {
         row.__error = 'Enter a valid number';
       } else if (parsed < 0) {
@@ -268,7 +262,7 @@ export function UpdateCertifiedQtyDialog({
       ...rest,
       certifiedQty:
         rest.certifiedQty === undefined || rest.certifiedQty === null
-          ? undefined
+          ? 0 // Default to 0 instead of undefined
           : Number(rest.certifiedQty),
     }));
 
