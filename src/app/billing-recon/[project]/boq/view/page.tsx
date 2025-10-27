@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -805,7 +805,7 @@ export default function ViewBoqPage() {
                                         <p className="truncate">{display}</p>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        <p>{display}</p>
+                                        <p className="max-w-md">{display}</p>
                                     </TooltipContent>
                                   </Tooltip>
                                 </TableCell>
