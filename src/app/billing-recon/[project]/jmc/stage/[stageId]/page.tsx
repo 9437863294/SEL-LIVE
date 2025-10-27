@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -232,77 +233,70 @@ export default function StagePage() {
         const projectId = projectData.id;
 
       const taskRef = doc(db, 'projects', projectId, 'jmcEntries', taskId);
-      const preSnap = await getDoc(taskRef);
-      if (!preSnap.exists()) throw new Error('Task document not found!');
-      const preData = preSnap.data() as JmcEntry;
+      
+      await runTransaction(db, async (tx) => {
+        const preSnap = await tx.get(taskRef);
+        if (!preSnap.exists()) throw new Error('Task document not found!');
+        const preData = preSnap.data() as JmcEntry;
 
-      let nextStep: WorkflowStep | undefined;
-      let newStatus: JmcEntry['status'] = preData.status;
-      let newStage = preData.stage;
-      let newCurrentStepId: string | null = preData.currentStepId || null;
-      let newAssignees: string[] = preData.assignees || [];
-      let newDeadline: Timestamp | null = preData.deadline ?? null;
+        let nextStep: WorkflowStep | undefined;
+        let newStatus: JmcEntry['status'] = preData.status;
+        let newStage = preData.stage;
+        let newCurrentStepId: string | null = preData.currentStepId || null;
+        let newAssignees: string[] = preData.assignees || [];
+        let newDeadline: Timestamp | null = preData.deadline ?? null;
 
-      const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Verify'].includes(actionName);
+        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Verify'].includes(actionName);
 
-      if (isCompletionAction) {
-        const idx = workflow.findIndex((s) => s.id === stage.id);
-        nextStep = workflow[idx + 1];
+        if (isCompletionAction) {
+          const idx = workflow.findIndex((s) => s.id === stage.id);
+          nextStep = workflow[idx + 1];
 
-        if (nextStep) {
-            const serializableData = {
-                ...preData,
-                createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
-                deadline: toDateSafe(preData.deadline)?.toISOString() ?? null,
-                jmcDate: toDateSafe((preData as any).jmcDate)?.toISOString() ?? new Date().toISOString(),
-                history: (preData.history || []).map(h => ({
-                    ...h,
-                    timestamp: toDateSafe(h.timestamp)?.toISOString() ?? new Date().toISOString(),
-                }))
-            };
-            const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
-            if (!computedAssignees || computedAssignees.length === 0) {
-                throw new Error(`Could not find assignee for step: ${nextStep.name}`);
-            }
-            const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
-            newAssignees = computedAssignees;
-            newDeadline = Timestamp.fromDate(deadlineDate);
-            newStage = nextStep.name;
-            newStatus = 'In Progress';
-            newCurrentStepId = nextStep.id;
-        } else {
-          // End of workflow
-          newStage = 'Completed';
-          newStatus = 'Completed';
+          if (nextStep) {
+              const serializableData = {
+                  ...preData,
+                  createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
+                  deadline: toDateSafe(preData.deadline)?.toISOString() ?? null,
+                  jmcDate: toDateSafe((preData as any).jmcDate)?.toISOString() ?? new Date().toISOString(),
+                  history: (preData.history || []).map(h => ({
+                      ...h,
+                      timestamp: toDateSafe(h.timestamp)?.toISOString() ?? new Date().toISOString(),
+                  }))
+              };
+              const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
+              if (!computedAssignees || computedAssignees.length === 0) {
+                  throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+              }
+              const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
+              newAssignees = computedAssignees;
+              newDeadline = Timestamp.fromDate(deadlineDate);
+              newStage = nextStep.name;
+              newStatus = 'In Progress';
+              newCurrentStepId = nextStep.id;
+          } else {
+            // End of workflow
+            newStage = 'Completed';
+            newStatus = 'Completed';
+            newCurrentStepId = null;
+            newAssignees = [];
+            newDeadline = null;
+          }
+        } else if (actionName === 'Reject') {
+          newStage = 'Rejected';
+          newStatus = 'Rejected';
           newCurrentStepId = null;
           newAssignees = [];
           newDeadline = null;
         }
-      } else if (actionName === 'Reject') {
-        newStage = 'Rejected';
-        newStatus = 'Rejected';
-        newCurrentStepId = null;
-        newAssignees = [];
-        newDeadline = null;
-      }
 
-      const newActionLog: ActionLog = {
-        action: actionName,
-        comment,
-        userId,
-        userName,
-        timestamp: Timestamp.now(),
-        stepName: stage.name,
-      };
-
-      await runTransaction(db, async (tx) => {
-        const liveSnap = await tx.get(taskRef);
-        if (!liveSnap.exists()) throw new Error('Task document not found!');
-        const live = liveSnap.data() as JmcEntry;
-
-        if ((preData.currentStepId ?? null) !== (live.currentStepId ?? null)) {
-          throw new Error('Task changed while you were taking action. Please refresh.');
-        }
+        const newActionLog: ActionLog = {
+          action: actionName,
+          comment,
+          userId,
+          userName,
+          timestamp: Timestamp.now(),
+          stepName: stage.name,
+        };
 
         const updateData: any = {
           status: newStatus,
@@ -311,11 +305,11 @@ export default function StagePage() {
           assignees: newAssignees,
           deadline: newDeadline,
           history: arrayUnion(newActionLog),
-          version: (live as any).version ? (live as any).version + 1 : 1,
+          version: (preData as any).version ? (preData as any).version + 1 : 1,
         };
 
         if (updatedItems) {
-          updateData.items = updatedItems;
+            updateData.items = updatedItems;
         }
 
         tx.update(taskRef, updateData);
@@ -496,3 +490,4 @@ export default function StagePage() {
     </>
   );
 }
+
