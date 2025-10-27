@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -19,7 +20,7 @@ import {
   runTransaction,
   arrayUnion,
 } from 'firebase/firestore';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, ActionConfig, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -111,11 +112,11 @@ export default function StagePage() {
   const [bills, setBills] = useState<Bill[]>([]);
 
   const fetchTasks = useCallback(async () => {
-    if (!userId || !stageId) return;
+    if (!userId || !stageId || !projectSlug) return;
 
     setIsLoading(true);
     try {
-      // 1) workflow + stage
+      // 1. workflow + stage
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
@@ -133,11 +134,24 @@ export default function StagePage() {
       }
       setStage(currentStage);
 
-      // 2) tasks + BOQ + bills
+      // 2. Find project by slug
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs
+        .map(d => ({ id: d.id, ...d.data() } as Project))
+        .find(p => slugify(p.projectName) === projectSlug);
+
+      if (!projectData) {
+        throw new Error("Project not found");
+      }
+      const projectId = projectData.id;
+
+      // 3) tasks + BOQ + bills for the correct project ID
       const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'projects', projectSlug, 'jmcEntries'), where('currentStepId', '==', stageId))),
-        getDocs(query(collection(db, 'projects', projectSlug, 'boqItems'))),
-        getDocs(query(collection(db, 'projects', projectSlug, 'bills'))),
+        getDocs(query(collection(db, 'projects', projectId, 'jmcEntries'), where('currentStepId', '==', stageId))),
+        getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
+        getDocs(query(collection(db, 'projects', projectId, 'bills'))),
       ]);
 
       setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
@@ -202,12 +216,22 @@ export default function StagePage() {
     comment: string = '',
     updatedItems?: any[]
   ) => {
-    if (!workflow || !userId || !userName || !stage) return;
+    if (!workflow || !userId || !userName || !stage || !projectSlug) return;
     const actionName = typeof action === 'string' ? action : action.name;
     setIsActionLoading(taskId);
 
     try {
-      const taskRef = doc(db, 'projects', projectSlug, 'jmcEntries', taskId);
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs
+            .map(d => ({ id: d.id, ...d.data() } as Project))
+            .find(p => slugify(p.projectName) === projectSlug);
+
+        if (!projectData) throw new Error("Project not found");
+        const projectId = projectData.id;
+
+      const taskRef = doc(db, 'projects', projectId, 'jmcEntries', taskId);
       const preSnap = await getDoc(taskRef);
       if (!preSnap.exists()) throw new Error('Task document not found!');
       const preData = preSnap.data() as JmcEntry;
@@ -309,7 +333,7 @@ export default function StagePage() {
     <Card>
       {/* Make the table horizontally scrollable so columns never overflow */}
       <CardContent className="p-0 overflow-x-auto">
-        {/* Give the table a sensible minimum width so columns don’t collapse */}
+        {/* Give the table a sensible minimum width so columns don’t squish */}
         <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
