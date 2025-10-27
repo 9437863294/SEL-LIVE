@@ -331,15 +331,12 @@ export default function StagePage() {
 
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
     <Card>
-      {/* Make the table horizontally scrollable so columns never overflow */}
       <CardContent className="p-0 overflow-x-auto">
-        {/* Give the table a sensible minimum width so columns don’t squish */}
         <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
               <TableHead className="whitespace-nowrap">JMC No.</TableHead>
               <TableHead className="whitespace-nowrap">Date</TableHead>
-              <TableHead className="whitespace-nowrap">WO No.</TableHead>
               <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
               <TableHead className="whitespace-nowrap">Status</TableHead>
               <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
@@ -349,7 +346,7 @@ export default function StagePage() {
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={5}>
                     <Skeleton className="h-8" />
                   </TableCell>
                 </TableRow>
@@ -368,7 +365,6 @@ export default function StagePage() {
                   >
                     <TableCell className="whitespace-nowrap">{entry.jmcNo ?? '-'}</TableCell>
                     <TableCell className="whitespace-nowrap">{humanDate((entry as any).jmcDate)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{entry.woNo ?? '-'}</TableCell>
                     <TableCell className="text-right whitespace-nowrap">{formatINR(total)}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       <Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>
@@ -425,7 +421,7 @@ export default function StagePage() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24">
+                <TableCell colSpan={5} className="text-center h-24">
                   No {type} tasks found.
                 </TableCell>
               </TableRow>
@@ -490,4 +486,3 @@ export default function StagePage() {
     </>
   );
 }
-
