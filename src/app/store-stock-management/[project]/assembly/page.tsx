@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BoqItem, Project } from '@/lib/types';
+import type { BoqItem, Project, FabricationBomItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { BomDialog } from '@/components/BomDialog';
@@ -79,9 +79,9 @@ export default function AssemblyPage() {
 
   const findBasicPriceKey = (item: BoqItem): string | undefined => {
     const keys = Object.keys(item);
-    const specificKey = 'UNIT PRICE';
-    if(keys.includes(specificKey)) return specificKey;
-    return keys.find(key => key.toLowerCase().includes('price') && !key.toLowerCase().includes('total'));
+    if ('Unit Rate' in item) return 'Unit Rate';
+    if ('UNIT PRICE' in item) return 'UNIT PRICE';
+    return keys.find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
   };
 
   const getItemDescription = (item: BoqItem) => {
@@ -112,7 +112,7 @@ export default function AssemblyPage() {
   }
 
   const getUnit = (item: BoqItem): string => {
-    return String(item['UNIT'] || item['UNITS'] || 'N/A');
+    return String(item['Unit'] || item['UNIT'] || 'N/A');
   }
 
   const filteredBoqItems = useMemo(() => {
