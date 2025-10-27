@@ -276,6 +276,7 @@ export default function AddBoqItemPage() {
         'QTY': qty,
         'Unit Rate': unitRate,
         'Total Amount': total,
+        projectSlug: projectSlug, // Ensure projectSlug is saved
         createdAt: serverTimestamp(),
         createdBy: user.id,
       };
