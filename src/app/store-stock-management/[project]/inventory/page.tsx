@@ -112,22 +112,16 @@ export default function InventoryPage() {
     const inventoryData = useMemo((): InventoryItem[] => {
         if (isLoading) return [];
 
-        const filteredLogs = dateRange?.from && dateRange?.to
-            ? inventoryLogs.filter(log => {
-                const logDate = log.date.toDate();
-                return logDate >= dateRange.from! && logDate <= dateRange.to!;
-            })
-            : inventoryLogs;
-
-        const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number }>();
+        const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number; balance: number }>();
         
         const allItemIds = new Set([...boqItems.map(i => i.id), ...inventoryLogs.map(l => l.itemId)]);
 
         allItemIds.forEach(id => {
-            stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0 });
+            stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 });
         });
         
-        filteredLogs.forEach(log => {
+        // Always calculate totals from all logs
+        inventoryLogs.forEach(log => {
             const current = stockMovements.get(log.itemId);
             if (!current) return;
         
@@ -141,10 +135,13 @@ export default function InventoryPage() {
             }
             stockMovements.set(log.itemId, current);
         });
+
+        stockMovements.forEach((value, key) => {
+            value.balance = value.stockIn - value.stockOut;
+        });
         
         let calculatedData = boqItems.map(item => {
-            const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0 };
-            const balance = movements.stockIn - movements.stockOut;
+            const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 };
             return {
                 id: item.id,
                 slNo: String(item['Sl No'] || item['SL. No.'] || ''),
@@ -153,8 +150,8 @@ export default function InventoryPage() {
                 unit: String(item['UNIT'] || item['UNITS'] || 'N/A'),
                 stockIn: movements.stockIn,
                 stockOut: movements.stockOut,
-                balance: balance,
-                stockValue: balance * movements.latestCost,
+                balance: movements.balance,
+                stockValue: movements.balance * movements.latestCost,
             };
         });
 
@@ -172,7 +169,7 @@ export default function InventoryPage() {
 
         return finalFilteredData.sort((a,b) => parseFloat(a.slNo) - parseFloat(b.slNo));
 
-    }, [boqItems, inventoryLogs, isLoading, searchTerm, dateRange, showOnlyWithTransactions]);
+    }, [boqItems, inventoryLogs, isLoading, searchTerm, showOnlyWithTransactions]);
     
     const clearFilters = () => {
         setSearchTerm('');
@@ -181,8 +178,17 @@ export default function InventoryPage() {
     }
     
     const itemTransactionDetails = useCallback((itemId: string) => {
-        return inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
-    }, [inventoryLogs]);
+        const allItemLogs = inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
+        
+        if (dateRange?.from && dateRange?.to) {
+            return allItemLogs.filter(log => {
+                const logDate = log.date.toDate();
+                return logDate >= dateRange.from! && logDate <= dateRange.to!;
+            });
+        }
+        
+        return allItemLogs;
+    }, [inventoryLogs, dateRange]);
 
     const handleViewTransaction = (log: InventoryLog) => {
         const transactionId = log.details?.grnNo || `ISSUE-${format(log.date.toDate(), 'yyyy-MM-dd-HH-mm')}-${log.details?.issuedTo}`;
@@ -191,7 +197,6 @@ export default function InventoryPage() {
           if (log.transactionType === 'Goods Receipt') {
             return l.details?.grnNo === log.details?.grnNo;
           }
-          // This grouping for issues is a simplified assumption
           const issueGroupId = `ISSUE-${format(l.date.toDate(), 'yyyy-MM-dd-HH-mm')}-${l.details?.issuedTo}`;
           return issueGroupId === transactionId;
         });
@@ -201,7 +206,7 @@ export default function InventoryPage() {
           date: log.date.toDate(),
           transactionType: log.transactionType,
           totalAmount: allLogsForTransaction.reduce((sum, item) => sum + ((item.quantity || 0) * (item.cost || 0)), 0),
-          remainingValue: 0, // Recalculate if needed, complex for issues
+          remainingValue: 0,
           items: allLogsForTransaction.map(item => ({...item, originalQuantity: 0, issuedQuantity: 0, balanceQuantity: 0})),
           details: log.details,
         };
@@ -388,6 +393,5 @@ export default function InventoryPage() {
             />
         </>
     );
-}
 
     
