@@ -491,17 +491,15 @@ export default function JmcEntryPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
-                <colgroup><col className="w-[240px]" /><col className="w-[480px]" /><col className="w-[120px]" /><col className="w-[120px]" /><col className="w-[140px]" /><col className="w-[160px]" /><col className="w-[120px]" /><col className="w-[160px]" /><col className="w-[160px]" /><col className="w-[80px]" /></colgroup>
-
                 <TableHeader>
                   <TableRow>
                     <TableHead>BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>BOQ Qty</TableHead>
+                    <TableHead>Rate</TableHead>
                     <TableHead>Scope 1</TableHead>
                     <TableHead>Total Certified Qty</TableHead>
-                    <TableHead>Rate</TableHead>
                     <TableHead>Executed Qty</TableHead>
                     <TableHead>Total Amount</TableHead>
                     <TableHead>Action</TableHead>
@@ -533,9 +531,9 @@ export default function JmcEntryPage() {
                       </TableCell>
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
+                      <TableCell>{item.rate}</TableCell>
                       <TableCell>{item.scope1 || '-'}</TableCell>
                       <TableCell>{item.totalCertifiedQty}</TableCell>
-                      <TableCell>{item.rate}</TableCell>
                       <TableCell>
                         <Input
                           name="executedQty"
