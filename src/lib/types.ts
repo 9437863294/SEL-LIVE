@@ -1,3 +1,4 @@
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -72,6 +73,7 @@ export interface Project {
   status: 'Active' | 'Inactive';
   billingRequired?: boolean;
   stockManagementRequired?: boolean;
+  woNo?: string;
 }
 
 export interface Site {
