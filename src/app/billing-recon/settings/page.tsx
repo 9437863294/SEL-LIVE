@@ -4,13 +4,13 @@
 import Link from 'next/link';
 import {
   Settings,
+  Hash,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-
 
 interface BillingStatusCardProps {
   item: {
@@ -20,6 +20,21 @@ interface BillingStatusCardProps {
     description: string;
   };
 }
+
+const settingsItems = [
+  {
+    icon: Settings,
+    text: 'Billing Status',
+    href: '/billing-recon/settings/billing-status',
+    description: 'Enable or disable billing requirements for each project.',
+  },
+  {
+    icon: Hash,
+    text: 'Serial No. Configuration',
+    description: 'Configure serial numbers for JMC, based on Project and Scope.',
+    href: '/billing-recon/settings/serial-no',
+  },
+];
 
 function BillingStatusCard({ item }: BillingStatusCardProps) {
     const cardContent = (
@@ -51,13 +66,6 @@ function BillingStatusCard({ item }: BillingStatusCardProps) {
 
 export default function ProjectBillingSettingsPage() {
   
-  const billingStatusItem = {
-    icon: Settings,
-    text: 'Billing Status',
-    href: '/billing-recon/settings/billing-status',
-    description: 'Enable or disable billing requirements for each project.',
-  };
-
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
@@ -69,7 +77,9 @@ export default function ProjectBillingSettingsPage() {
         <h1 className="text-xl font-bold">Project Billing Settings</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        <BillingStatusCard item={billingStatusItem} />
+        {settingsItems.map((item) => (
+          <BillingStatusCard key={item.text} item={item} />
+        ))}
       </div>
     </div>
   );
