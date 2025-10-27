@@ -43,6 +43,7 @@ import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type BoqItem = {
   id: string;
@@ -94,7 +95,7 @@ export default function ViewBoqPage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(isDeleting);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -607,6 +608,7 @@ export default function ViewBoqPage() {
       <div className="flex-1 min-h-0">
         <div className="h-full border rounded-lg flex flex-col min-w-0">
           <div className="relative flex-1 min-h-0 w-full overflow-auto">
+            <TooltipProvider>
             <div className="min-w-max">
               <Table className="text-sm">
                 <TableHeader>
@@ -766,17 +768,21 @@ export default function ViewBoqPage() {
                                 display = 'N/A';
                               }
 
-                              const title = typeof display === 'string' ? display : undefined;
-
                               return (
                                 <TableCell
                                   key={`${item.id}-${header}`}
                                   className={cn(
-                                    (header === 'Description' || header === 'Category 1') && 'max-w-xs truncate'
+                                    (header === 'Description') && 'max-w-xs'
                                   )}
-                                  title={title}
                                 >
-                                  {display}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <p className="truncate">{display}</p>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>{display}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                 </TableCell>
                               );
                             })}
@@ -826,7 +832,10 @@ export default function ViewBoqPage() {
                     })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={visibleHeaders.length + 3} className="text-center h-24">
+                      <TableCell
+                        colSpan={visibleHeaders.length + 3}
+                        className="text-center h-24"
+                      >
                         No BOQ items found.
                       </TableCell>
                     </TableRow>
@@ -834,6 +843,7 @@ export default function ViewBoqPage() {
                 </TableBody>
               </Table>
             </div>
+            </TooltipProvider>
           </div>
         </div>
       </div>
@@ -1016,3 +1026,5 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
+    
