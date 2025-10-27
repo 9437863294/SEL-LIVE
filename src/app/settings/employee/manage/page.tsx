@@ -21,6 +21,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+// A simple debounce hook
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 const initialNewEmployeeState = {
   employeeId: '',
   name: '',
@@ -53,6 +67,9 @@ export default function ManageEmployeePage() {
       department: 'all',
       status: 'all',
   });
+  
+  const debouncedEmployeeId = useDebounce(filters.employeeId, 300);
+  const debouncedName = useDebounce(filters.name, 300);
 
   const canView = can('View', 'Settings.Employee Management');
   const canAdd = can('Add', 'Settings.Employee Management');
@@ -103,13 +120,13 @@ export default function ManageEmployeePage() {
     return employees.filter(emp => {
       const departmentFilter = filters.department === 'unassigned' ? !emp.department : emp.department === filters.department;
       return (
-        (filters.employeeId === '' || emp.employeeId.toLowerCase().includes(filters.employeeId.toLowerCase())) &&
-        (filters.name === '' || emp.name.toLowerCase().includes(filters.name.toLowerCase())) &&
+        (debouncedEmployeeId === '' || emp.employeeId.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
+        (debouncedName === '' || emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
         (filters.department === 'all' || departmentFilter) &&
         (filters.status === 'all' || emp.status === filters.status)
       );
     });
-  }, [employees, filters]);
+  }, [employees, debouncedEmployeeId, debouncedName, filters.department, filters.status]);
   
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -532,5 +549,3 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
-
-    
