@@ -104,10 +104,10 @@ export default function JmcEntryPage() {
   /* ---------- fetch BOQ + JMC ---------- */
   useEffect(() => {
     const fetchBoqAndJmcData = async () => {
-      if (!projectSlug) return;
+      if (!projectSlug || !currentProject) return;
       setIsBoqLoading(true);
       try {
-        const boqSnapshot = await getDocs(query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug)));
+        const boqSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'boqItems'));
         const mapped = boqSnapshot.docs.map((d) => {
           const data = d.data() as Record<string, unknown>;
           const slKey =
@@ -145,7 +145,7 @@ export default function JmcEntryPage() {
 
         setBoqItems(mapped);
 
-        const jmcSnapshot = await getDocs(collection(db, 'projects', projectSlug, 'jmcEntries'));
+        const jmcSnapshot = await getDocs(collection(db, 'projects', currentProject.id, 'jmcEntries'));
         setAllJmcEntries(jmcSnapshot.docs.map((doc) => doc.data() as JmcEntryType));
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -328,7 +328,7 @@ export default function JmcEntryPage() {
         ...details,
         items,
         projectSlug,
-        projectId: currentProject?.id,
+        projectId: currentProject!.id,
         createdAt: Timestamp.now(),
         status: 'Pending' as const,
         stage: firstStep.name,
