@@ -244,7 +244,7 @@ export default function ImportBoqPage() {
       }));
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(db, 'projects', currentProject.id, 'boqItems');
+      const boqCollectionRef = collection(db, 'boqItems');
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);

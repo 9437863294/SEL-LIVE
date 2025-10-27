@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';

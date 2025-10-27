@@ -139,8 +139,8 @@ export default function ViewBoqPage() {
         }
         setCurrentProject(projectData);
 
-        const boqItemsRef = collection(db, 'projects', projectData.id, 'boqItems');
-        const boqSnapshot = await getDocs(boqItemsRef);
+        const boqItemsRef = collection(db, 'boqItems');
+        const boqSnapshot = await getDocs(query(boqItemsRef, where('projectSlug', '==', projectSlug)));
         const items = boqSnapshot.docs.map((d) => {
             const data = d.data() as any;
             const erpKey = normalizeKey(data, 'ERP SL NO');
@@ -282,7 +282,7 @@ export default function ViewBoqPage() {
     if (!editingItem || !currentProject) return;
     setIsSaving(true);
     try {
-      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'boqItems', editingItem.id);
       const { id, ...dataToSave } = editingItem;
       await updateDoc(itemRef, dataToSave);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -327,7 +327,7 @@ export default function ViewBoqPage() {
 
   const fmtNum = (v: unknown) => {
     const n = Number(v);
-    return Number.is.finite(n)
+    return Number.is.Finite(n)
       ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
       : String(v ?? 'N/A');
   };
@@ -447,8 +447,8 @@ export default function ViewBoqPage() {
                                     const qty = Number(item['QTY']);
                                     const rate = Number(item['Unit Rate']);
                                     const explicit = Number(raw);
-                                    if (Number.is.finite(explicit)) return fmtNum(explicit);
-                                    if (Number.is.finite(qty) && Number.is.finite(rate)) return fmtNum(qty * rate);
+                                    if (Number.is.Finite(explicit)) return fmtNum(explicit);
+                                    if (Number.is.Finite(qty) && Number.is.Finite(rate)) return fmtNum(qty * rate);
                                     return 'N/A';
                                   }
                                   if (header === 'QTY' || header === 'Unit Rate' || header === 'Total Qty') return fmtNum(raw);
@@ -567,5 +567,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-    
