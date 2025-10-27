@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { BoqItem, InventoryLog, EnrichedLogItem, Project } from '@/lib/types';
+import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -111,65 +111,66 @@ export default function InventoryPage() {
 
     const inventoryData = useMemo((): InventoryItem[] => {
         if (isLoading) return [];
-
-        const stockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number; balance: number }>();
-        
+    
+        // This calculation should always use all inventory logs to get the correct current balance
+        const allTimeStockMovements = new Map<string, { stockIn: number; stockOut: number; latestCost: number; balance: number }>();
+    
         const allItemIds = new Set([...boqItems.map(i => i.id), ...inventoryLogs.map(l => l.itemId)]);
-
+    
         allItemIds.forEach(id => {
-            stockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 });
+          allTimeStockMovements.set(id, { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 });
         });
-        
-        // Always calculate totals from all logs
+    
         inventoryLogs.forEach(log => {
-            const current = stockMovements.get(log.itemId);
-            if (!current) return;
-        
-            if (log.transactionType === 'Goods Receipt') {
-                current.stockIn += log.quantity;
-                if(log.cost && log.cost > 0) { 
-                    current.latestCost = log.cost;
-                }
-            } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
-                current.stockOut += log.quantity;
+          const current = allTimeStockMovements.get(log.itemId);
+          if (!current) return;
+    
+          if (log.transactionType === 'Goods Receipt') {
+            current.stockIn += log.quantity;
+            if (log.cost && log.cost > 0) {
+              current.latestCost = log.cost;
             }
-            stockMovements.set(log.itemId, current);
+          } else if (log.transactionType === 'Goods Issue' || log.transactionType === 'Conversion') {
+            current.stockOut += log.quantity;
+          }
+          allTimeStockMovements.set(log.itemId, current);
         });
-
-        stockMovements.forEach((value, key) => {
-            value.balance = value.stockIn - value.stockOut;
+    
+        allTimeStockMovements.forEach((value, key) => {
+          value.balance = value.stockIn - value.stockOut;
         });
-        
+    
         let calculatedData = boqItems.map(item => {
-            const movements = stockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 };
-            return {
-                id: item.id,
-                slNo: String(item['Sl No'] || item['SL. No.'] || ''),
-                description: String(item['Description'] || item['DESCRIPTION OF ITEMS'] || ''),
-                boqQty: Number(item['BOQ QTY'] || item['Total Qty'] || 0),
-                unit: String(item['UNIT'] || item['UNITS'] || 'N/A'),
-                stockIn: movements.stockIn,
-                stockOut: movements.stockOut,
-                balance: movements.balance,
-                stockValue: movements.balance * movements.latestCost,
-            };
+          const movements = allTimeStockMovements.get(item.id) || { stockIn: 0, stockOut: 0, latestCost: 0, balance: 0 };
+          return {
+            id: item.id,
+            slNo: String(item['Sl No'] || item['SL. No.'] || ''),
+            description: String(item['Description'] || item['DESCRIPTION OF ITEMS'] || ''),
+            boqQty: Number(item['BOQ QTY'] || item['Total Qty'] || 0),
+            unit: String(item['UNIT'] || item['UNITS'] || 'N/A'),
+            stockIn: movements.stockIn,
+            stockOut: movements.stockOut,
+            balance: movements.balance,
+            stockValue: movements.balance * movements.latestCost,
+          };
         });
-
+    
+        // Apply filters to the calculated data
         if (showOnlyWithTransactions) {
           calculatedData = calculatedData.filter(item => item.stockIn > 0 || item.stockOut > 0);
         }
-        
+    
         const lowercasedFilter = searchTerm.toLowerCase();
         const finalFilteredData = !searchTerm
-            ? calculatedData
-            : calculatedData.filter(item => 
-                item.slNo.toLowerCase().includes(lowercasedFilter) ||
-                item.description.toLowerCase().includes(lowercasedFilter)
-            );
-
-        return finalFilteredData.sort((a,b) => parseFloat(a.slNo) - parseFloat(b.slNo));
-
-    }, [boqItems, inventoryLogs, isLoading, searchTerm, showOnlyWithTransactions]);
+          ? calculatedData
+          : calculatedData.filter(item =>
+            item.slNo.toLowerCase().includes(lowercasedFilter) ||
+            item.description.toLowerCase().includes(lowercasedFilter)
+          );
+    
+        return finalFilteredData.sort((a, b) => parseFloat(a.slNo) - parseFloat(b.slNo));
+    
+      }, [boqItems, inventoryLogs, isLoading, searchTerm, showOnlyWithTransactions]);
     
     const clearFilters = () => {
         setSearchTerm('');
@@ -178,6 +179,7 @@ export default function InventoryPage() {
     }
     
     const itemTransactionDetails = useCallback((itemId: string) => {
+        // Date range filter ONLY applies to the drill-down history
         const allItemLogs = inventoryLogs.filter(log => log.itemId === itemId).sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());
         
         if (dateRange?.from && dateRange?.to) {
@@ -393,5 +395,4 @@ export default function InventoryPage() {
             />
         </>
     );
-
-    
+}
