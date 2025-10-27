@@ -250,20 +250,24 @@ export default function StagePage() {
         nextStep = workflow[idx + 1];
 
         if (nextStep) {
-          const serializableData = {
-            ...preData,
-            createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
-          };
-          const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
-          if (!computedAssignees || computedAssignees.length === 0) {
-            throw new Error(`Could not find assignee for step: ${nextStep.name}`);
-          }
-          const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
-          newAssignees = computedAssignees;
-          newDeadline = Timestamp.fromDate(deadlineDate);
-          newStage = nextStep.name;
-          newStatus = 'In Progress';
-          newCurrentStepId = nextStep.id;
+            const serializableData = {
+                ...preData,
+                createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
+                history: (preData.history || []).map(h => ({
+                    ...h,
+                    timestamp: toDateSafe(h.timestamp)?.toISOString() ?? new Date().toISOString(),
+                }))
+            };
+            const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
+            if (!computedAssignees || computedAssignees.length === 0) {
+                throw new Error(`Could not find assignee for step: ${nextStep.name}`);
+            }
+            const deadlineDate = await calculateDeadline(new Date(), nextStep.tat);
+            newAssignees = computedAssignees;
+            newDeadline = Timestamp.fromDate(deadlineDate);
+            newStage = nextStep.name;
+            newStatus = 'In Progress';
+            newCurrentStepId = nextStep.id;
         } else {
           // End of workflow
           newStage = 'Completed';
@@ -490,3 +494,5 @@ export default function StagePage() {
     </>
   );
 }
+
+    
