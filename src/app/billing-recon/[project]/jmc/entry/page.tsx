@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -10,10 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, getDoc, Timestamp, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, getDoc, Timestamp, query, where, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog, Project } from '@/lib/types';
+import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog, Project, SerialNumberConfig } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
@@ -39,7 +38,8 @@ const initialItem = {
   totalAmount: 0,
   boqQty: 0,
   totalCertifiedQty: 0,
-  scope1: '', // Scope 1 on each row
+  scope1: '',
+  scope2: '',
 };
 
 type JmcItem = typeof initialItem;
@@ -59,7 +59,16 @@ const getNumber = (v: unknown) => {
   return NaN;
 };
 
-// uniqueness across Scope2 + BOQ SL
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
 const compositeKey = (scope1: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
@@ -97,7 +106,6 @@ export default function JmcEntryPage() {
         const projectsData = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
         setAllProjects(projectsData);
         
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
         const initialProject = projectsData.find(p => slugify(p.projectName) === projectSlug);
         
         if (initialProject) {
@@ -105,7 +113,6 @@ export default function JmcEntryPage() {
             setDetails(prev => ({...prev, woNo: (initialProject as any).woNo || ''}));
         }
 
-        // Fetch all BOQ items and JMC entries for all projects initially
         const boqPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'boqItems')));
         const jmcPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'jmcEntries')));
 
@@ -131,6 +138,35 @@ export default function JmcEntryPage() {
     };
     loadInitialData();
   }, [projectSlug, toast]);
+
+  useEffect(() => {
+    const generateJmcNo = async () => {
+      const firstItem = items[0];
+      if (!currentProject || !firstItem?.scope1 || !firstItem?.scope2) {
+        setDetails(prev => ({...prev, jmcNo: ''}));
+        return;
+      }
+      
+      const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
+      
+      try {
+        const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
+        const configDoc = await getDoc(configRef);
+        if (configDoc.exists()) {
+            const configData = configDoc.data() as SerialNumberConfig;
+            const newIndex = configData.startingIndex;
+            const formattedIndex = String(newIndex).padStart(4, '0');
+            const newJmcNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+            setDetails(prev => ({ ...prev, jmcNo: newJmcNo }));
+        } else {
+            setDetails(prev => ({ ...prev, jmcNo: 'Config not found' }));
+        }
+      } catch (error) {
+        setDetails(prev => ({ ...prev, jmcNo: 'Error generating ID' }));
+      }
+    };
+    generateJmcNo();
+  }, [items[0]?.scope1, items[0]?.scope2, currentProject]);
   
   const handleProjectChange = (projectId: string) => {
       const project = allProjects.find(p => p.id === projectId);
@@ -141,7 +177,6 @@ export default function JmcEntryPage() {
       }
   };
 
-  /* ---------- pre-compute certified qty per (Scope1 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
     const relevantJmcEntries = allJmcEntries.filter(e => e.projectId === selectedProjectId);
@@ -194,6 +229,12 @@ export default function JmcEntryPage() {
     const key = normalizeKey(boqItem as any, 'Scope 1');
     return key ? String((boqItem as any)[key] ?? '') : '';
   };
+  
+  const extractScope2 = (boqItem: BoqItem): string => {
+    const key = normalizeKey(boqItem as any, 'Scope 2');
+    return key ? String((boqItem as any)[key] ?? '') : '';
+  };
+
 
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
@@ -204,9 +245,11 @@ export default function JmcEntryPage() {
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const boqSlNo = extractSlNo(boqItem);
       const scope1 = extractScope1(boqItem);
+      const scope2 = extractScope2(boqItem);
 
       itemToUpdate.boqSlNo = boqSlNo;
       itemToUpdate.scope1 = scope1;
+      itemToUpdate.scope2 = scope2;
       itemToUpdate.description = String((boqItem as any)['Description'] ?? '');
       itemToUpdate.unit = (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '';
       itemToUpdate.rate = Number.isFinite(rateNum) ? (rateNum as number) : 0;
@@ -232,12 +275,14 @@ export default function JmcEntryPage() {
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const slNo = extractSlNo(boqItem);
       const scope1 = extractScope1(boqItem);
+      const scope2 = extractScope2(boqItem);
       const key = compositeKey(scope1, slNo);
 
       return {
         ...initialItem,
         boqSlNo: slNo,
         scope1,
+        scope2,
         description: (boqItem as any)['Description'] ?? '',
         unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
         rate: Number.isFinite(rateNum) ? (rateNum as number) : 0,
@@ -263,10 +308,10 @@ export default function JmcEntryPage() {
     }
     setIsSaving(true);
 
-    if (!currentProject || !details.jmcNo || !details.woNo || items.some((it) => !it.boqSlNo)) {
+    if (!currentProject || !details.jmcNo || details.jmcNo.includes('not found') || details.jmcNo.includes('Error') || !details.woNo || items.some((it) => !it.boqSlNo)) {
       toast({
         title: 'Missing Required Fields',
-        description: 'Please select a project, fill in JMC No, WO No, and add at least one item.',
+        description: 'Please select a project, fill in WO No, and add at least one valid item with a generated JMC No.',
         variant: 'destructive',
       });
       setIsSaving(false);
@@ -274,51 +319,72 @@ export default function JmcEntryPage() {
     }
 
     try {
-      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-      const workflowSnap = await getDoc(workflowRef);
-      if (!workflowSnap.exists()) throw new Error('Workflow not configured for JMC.');
+      const firstItem = items[0];
+      const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
+      const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
 
-      const steps = (workflowSnap.data()?.steps as WorkflowStep[]) ?? [];
-      if (steps.length === 0) throw new Error('Workflow has no steps.');
-      const firstStep = steps[0];
+      await runTransaction(db, async (transaction) => {
+        const configDoc = await transaction.get(configRef);
+        if (!configDoc.exists()) throw new Error("Serial number configuration could not be found for this scope.");
+        const configData = configDoc.data() as SerialNumberConfig;
+        
+        // Final check on JMC number before saving
+        const currentIndex = configData.startingIndex;
+        const formattedIndex = String(currentIndex).padStart(4, '0');
+        const expectedJmcNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
+        
+        if (details.jmcNo !== expectedJmcNo) {
+            throw new Error(`JMC number mismatch. Expected ${expectedJmcNo}, but found ${details.jmcNo}. Please refresh.`);
+        }
 
-      const tempJmcData = {
-        ...details,
-        items,
-        projectId: currentProject.id,
-      };
+        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error('Workflow not configured for JMC.');
 
-      const assignees = await getAssigneeForStep(firstStep, tempJmcData as any);
-      if (!assignees || assignees.length === 0) {
-        throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
-      }
+        const steps = (workflowSnap.data()?.steps as WorkflowStep[]) ?? [];
+        if (steps.length === 0) throw new Error('Workflow has no steps.');
+        const firstStep = steps[0];
 
-      const deadline = await calculateDeadline(new Date(), firstStep.tat);
+        const tempJmcData = {
+          ...details,
+          items,
+          projectId: currentProject.id,
+        };
 
-      const initialLog: ActionLog = {
-        action: 'Created',
-        comment: 'JMC created.',
-        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
-        userName: (user as any).name ?? (user as any).displayName ?? 'User',
-        timestamp: Timestamp.now(),
-        stepName: 'Creation',
-      };
+        const assignees = await getAssigneeForStep(firstStep, tempJmcData as any);
+        if (!assignees || assignees.length === 0) {
+          throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
+        }
 
-      const jmcData = {
-        ...details,
-        items,
-        projectSlug,
-        projectId: currentProject.id,
-        createdAt: Timestamp.now(),
-        status: 'Pending' as const,
-        stage: firstStep.name,
-        currentStepId: firstStep.id,
-        assignees,
-        deadline: Timestamp.fromDate(deadline),
-        history: [initialLog],
-      };
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
 
-      await addDoc(collection(db, 'projects', currentProject.id, 'jmcEntries'), jmcData);
+        const initialLog: ActionLog = {
+          action: 'Created',
+          comment: 'JMC created.',
+          userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+          userName: (user as any).name ?? (user as any).displayName ?? 'User',
+          timestamp: Timestamp.now(),
+          stepName: 'Creation',
+        };
+
+        const jmcData = {
+          ...details,
+          items,
+          projectSlug,
+          projectId: currentProject.id,
+          createdAt: Timestamp.now(),
+          status: 'Pending' as const,
+          stage: firstStep.name,
+          currentStepId: firstStep.id,
+          assignees,
+          deadline: Timestamp.fromDate(deadline),
+          history: [initialLog],
+        };
+
+        const newJmcRef = doc(collection(db, 'projects', currentProject.id, 'jmcEntries'));
+        transaction.set(newJmcRef, jmcData);
+        transaction.update(configRef, { startingIndex: currentIndex + 1 });
+      });
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
@@ -390,7 +456,7 @@ export default function JmcEntryPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="jmcNo">JMC No</Label>
-                <Input id="jmcNo" name="jmcNo" value={details.jmcNo} onChange={handleDetailChange} />
+                <Input id="jmcNo" name="jmcNo" value={details.jmcNo} readOnly className="font-semibold bg-muted/50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="woNo">WO No</Label>
