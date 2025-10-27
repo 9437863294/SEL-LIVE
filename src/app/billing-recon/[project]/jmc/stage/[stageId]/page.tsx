@@ -253,6 +253,8 @@ export default function StagePage() {
             const serializableData = {
                 ...preData,
                 createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
+                deadline: toDateSafe(preData.deadline)?.toISOString() ?? null,
+                jmcDate: toDateSafe((preData as any).jmcDate)?.toISOString() ?? new Date().toISOString(),
                 history: (preData.history || []).map(h => ({
                     ...h,
                     timestamp: toDateSafe(h.timestamp)?.toISOString() ?? new Date().toISOString(),
@@ -371,7 +373,7 @@ export default function StagePage() {
                     className="cursor-pointer"
                   >
                     <TableCell className="whitespace-nowrap">{entry.jmcNo ?? '-'}</TableCell>
-                    <TableCell className="whitespace-nowrap">{humanDate(entry.jmcDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{humanDate((entry as any).jmcDate)}</TableCell>
                     <TableCell className="whitespace-nowrap">{entry.woNo ?? '-'}</TableCell>
                     <TableCell className="text-right whitespace-nowrap">{formatINR(total)}</TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -494,5 +496,3 @@ export default function StagePage() {
     </>
   );
 }
-
-    

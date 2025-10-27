@@ -39,7 +39,7 @@ const initialItem = {
   totalAmount: 0,
   boqQty: 0,
   totalCertifiedQty: 0,
-  scope2: '', // Scope 2 on each row
+  scope1: '', // Scope 1 on each row
 };
 
 type JmcItem = typeof initialItem;
@@ -60,8 +60,8 @@ const getNumber = (v: unknown) => {
 };
 
 // uniqueness across Scope2 + BOQ SL
-const compositeKey = (scope2: unknown, slNo: unknown) =>
-  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+const compositeKey = (scope1: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 export default function JmcEntryPage() {
   const { toast } = useToast();
@@ -141,13 +141,13 @@ export default function JmcEntryPage() {
       }
   };
 
-  /* ---------- pre-compute certified qty per (Scope2 + BOQ SL) ---------- */
+  /* ---------- pre-compute certified qty per (Scope1 + BOQ SL) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
     const relevantJmcEntries = allJmcEntries.filter(e => e.projectId === selectedProjectId);
     relevantJmcEntries.forEach((entry) => {
       entry.items.forEach((it: any) => {
-        const key = compositeKey(it.scope2, it.boqSlNo);
+        const key = compositeKey(it.scope1, it.boqSlNo);
         if (!String(it.boqSlNo || '').trim()) return;
         map[key] = (map[key] || 0) + (Number(it.certifiedQty) || 0);
       });
@@ -190,8 +190,8 @@ export default function JmcEntryPage() {
     return slKey ? String((boqItem as any)[slKey] ?? '') : '';
   };
 
-  const extractScope2 = (boqItem: BoqItem): string => {
-    const key = normalizeKey(boqItem as any, 'Scope 2');
+  const extractScope1 = (boqItem: BoqItem): string => {
+    const key = normalizeKey(boqItem as any, 'Scope 1');
     return key ? String((boqItem as any)[key] ?? '') : '';
   };
 
@@ -203,16 +203,16 @@ export default function JmcEntryPage() {
       const rateKey = findBasicPriceKey(boqItem);
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const boqSlNo = extractSlNo(boqItem);
-      const scope2 = extractScope2(boqItem);
+      const scope1 = extractScope1(boqItem);
 
       itemToUpdate.boqSlNo = boqSlNo;
-      itemToUpdate.scope2 = scope2;
+      itemToUpdate.scope1 = scope1;
       itemToUpdate.description = String((boqItem as any)['Description'] ?? '');
       itemToUpdate.unit = (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '';
       itemToUpdate.rate = Number.isFinite(rateNum) ? (rateNum as number) : 0;
       itemToUpdate.boqQty = Number((boqItem as any)['QTY'] || 0);
 
-      const key = compositeKey(scope2, boqSlNo);
+      const key = compositeKey(scope1, boqSlNo);
       itemToUpdate.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
 
       const qty = getNumber(itemToUpdate.executedQty);
@@ -231,13 +231,13 @@ export default function JmcEntryPage() {
       const rateKey = findBasicPriceKey(boqItem);
       const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
       const slNo = extractSlNo(boqItem);
-      const scope2 = extractScope2(boqItem);
-      const key = compositeKey(scope2, slNo);
+      const scope1 = extractScope1(boqItem);
+      const key = compositeKey(scope1, slNo);
 
       return {
         ...initialItem,
         boqSlNo: slNo,
-        scope2,
+        scope1,
         description: (boqItem as any)['Description'] ?? '',
         unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
         rate: Number.isFinite(rateNum) ? (rateNum as number) : 0,
@@ -433,7 +433,7 @@ export default function JmcEntryPage() {
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>BOQ Qty</TableHead>
-                    <TableHead>Scope 2</TableHead>
+                    <TableHead>Scope 1</TableHead>
                     <TableHead>Total Certified Qty</TableHead>
                     <TableHead>Rate</TableHead>
                     <TableHead>Executed Qty</TableHead>
@@ -467,7 +467,7 @@ export default function JmcEntryPage() {
                       </TableCell>
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
-                      <TableCell>{item.scope2 || '-'}</TableCell>
+                      <TableCell>{item.scope1 || '-'}</TableCell>
                       <TableCell>{item.totalCertifiedQty}</TableCell>
                       <TableCell>{item.rate}</TableCell>
                       <TableCell>
