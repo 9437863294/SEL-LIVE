@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem, Project } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,8 +34,9 @@ interface BoqMultiSelectDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
+  boqItems: BoqItem[]; // Re-added this prop
   alreadyAddedItems?: BillItem[];
-  projectId: string; // New prop
+  projectId?: string; 
 }
 
 /* Utility to avoid TS2783 (`id` duplicated when spreading Firestore data) */
@@ -159,14 +160,14 @@ export function BoqMultiSelectDialog({
   };
 
   const addedItemIds = useMemo(
-    () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)),
+    () => new Set(alreadyAddedItems.map((it: BillItem) => it.jmcItemId)),
     [alreadyAddedItems]
   );
 
   const filteredItems = useMemo(() => {
     const q = searchTerm.toLowerCase();
 
-    let items = boqItems.filter((item) => {
+    let items = boqItems.filter((item: BoqItem) => {
       if (addedItemIds.has(item.id)) return false;
 
       const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
@@ -187,7 +188,7 @@ export function BoqMultiSelectDialog({
     if (sortKey) {
       const dir = sortDirection === 'asc' ? 1 : -1;
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-      items.sort((a,b) => {
+      items.sort((a: BoqItem, b: BoqItem) => {
         let valA, valB;
         if(sortKey === 'boqSlNo') { valA = getSlNo(a); valB = getSlNo(b); }
         else if (sortKey === 'erpSlNo') { valA = getErpSlNo(a); valB = getErpSlNo(b); }
@@ -203,13 +204,13 @@ export function BoqMultiSelectDialog({
 
   // Select-all logic
   const allOnPageSelected =
-    filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id));
-  const noneSelected = filteredItems.every((it) => !selectedIds.has(it.id));
+    filteredItems.length > 0 && filteredItems.every((it: BoqItem) => selectedIds.has(it.id));
+  const noneSelected = filteredItems.every((it: BoqItem) => !selectedIds.has(it.id));
   const selectAllState: CheckedState =
     allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
 
   const handleSelectAll = (checked: CheckedState) => {
-    setSelectedIds(new Set(checked ? filteredItems.map(i => i.id) : []));
+    setSelectedIds(new Set(checked ? filteredItems.map((i: BoqItem) => i.id) : []));
   };
 
   const handleSelectRow = useCallback((id: string, checked: boolean) => {
@@ -231,7 +232,7 @@ export function BoqMultiSelectDialog({
   };
 
   const handleConfirm = () => {
-    const selectedBoqItems = boqItems.filter((item) => selectedIds.has(item.id));
+    const selectedBoqItems = boqItems.filter((item: BoqItem) => selectedIds.has(item.id));
     onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
@@ -261,6 +262,30 @@ export function BoqMultiSelectDialog({
                 className="pl-8"
               />
             </div>
+
+            {(['Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
+              const options = filterOptions[key];
+              if (!options || options.length === 0) return null;
+              return (
+                <Select
+                  key={key}
+                  value={filters[key]}
+                  onValueChange={(v) => handleFilterChange(key, v)}
+                >
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder={`Filter by ${key}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All {key}s</SelectItem>
+                    {options.map((opt: string) => (
+                      <SelectItem key={`${key}-${opt}`} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              );
+            })}
           </div>
 
           <ScrollArea className="h-96 border rounded-md">
@@ -286,7 +311,7 @@ export function BoqMultiSelectDialog({
                   <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                 </div>
               ) : filteredItems.length > 0 ? (
-                filteredItems.map((item) => {
+                filteredItems.map((item: BoqItem) => {
                   const rowChecked = selectedIds.has(item.id);
                   const rateKey = findRateKey(item);
                   const rate = rateKey ? (item as any)[rateKey] : 0;
@@ -298,11 +323,23 @@ export function BoqMultiSelectDialog({
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow(item.id, !rowChecked)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSelectRow(item.id, !rowChecked);
+                        }
+                      }}
                     >
                       <div className="w-[50px] flex justify-center">
                         <Checkbox
+                          aria-label={`Select ${getItemDescription(item)}`}
                           checked={rowChecked}
-                          onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                          onCheckedChange={(checked) => {
+                            // Avoid double-toggle from parent onClick
+                            handleSelectRow(item.id, Boolean(checked));
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>
