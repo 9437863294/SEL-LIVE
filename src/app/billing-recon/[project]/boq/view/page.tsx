@@ -495,7 +495,7 @@ export default function ViewBoqPage() {
   const fmtNum = (v: unknown) => {
     const n = parsedNumber(v);
     return Number.isFinite(n)
-      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n as number)
       : typeof v === 'string'
       ? v
       : 'N/A';
@@ -598,9 +598,34 @@ export default function ViewBoqPage() {
             </AlertDialog>
           )}
 
-          <Button variant="outline" onClick={() => setIsColumnEditorOpen(true)}>
-            <Settings className="mr-2 h-4 w-4" /> Columns
-          </Button>
+          <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline">
+                    <Settings className="mr-2 h-4 w-4" /> Columns
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Customize Columns</DialogTitle>
+                    <p className="text-sm text-muted-foreground">Reorder and toggle visibility of columns.</p>
+                </DialogHeader>
+                <div className="py-4 space-y-2">
+                    {columnOrder.map((header) => (
+                        <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                            <Checkbox
+                                id={`vis-${header}`}
+                                checked={columnVisibility[header]}
+                                onCheckedChange={(checked) => setColumnVisibility(prev => ({...prev, [header]: !!checked}))}
+                            />
+                            <Label htmlFor={`vis-${header}`} className="flex-1">{columnNames[header] || header}</Label>
+                        </div>
+                    ))}
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild><Button>Done</Button></DialogClose>
+                </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -767,13 +792,13 @@ export default function ViewBoqPage() {
                                 // anything else (objects like Timestamp, null/undefined, etc.)
                                 display = 'N/A';
                               }
+                              
+                              const shouldTruncate = ['Description', 'Category 1', 'Category 2', 'Category 3'].includes(header);
 
                               return (
                                 <TableCell
                                   key={`${item.id}-${header}`}
-                                  className={cn(
-                                    (header === 'Description') && 'max-w-xs'
-                                  )}
+                                  className={cn(shouldTruncate && 'max-w-xs')}
                                 >
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -856,33 +881,6 @@ export default function ViewBoqPage() {
         bills={bills}
       />
       
-      {/* Column Settings Dialog */}
-      <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-        <DialogContent className="max-w-md">
-            <DialogHeader>
-                <DialogTitle>Customize Columns</DialogTitle>
-                <p className="text-sm text-muted-foreground">Reorder and toggle visibility of columns.</p>
-            </DialogHeader>
-            <div className="py-4 space-y-2">
-                {columnOrder.map((header) => (
-                    <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
-                        <Checkbox
-                            id={`vis-${header}`}
-                            checked={columnVisibility[header]}
-                            onCheckedChange={(checked) => setColumnVisibility(prev => ({...prev, [header]: !!checked}))}
-                        />
-                        <Label htmlFor={`vis-${header}`} className="flex-1">{columnNames[header] || header}</Label>
-                    </div>
-                ))}
-            </div>
-            <DialogFooter>
-                <DialogClose asChild><Button>Done</Button></DialogClose>
-            </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-
-      {/* Edit BOQ Item */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
