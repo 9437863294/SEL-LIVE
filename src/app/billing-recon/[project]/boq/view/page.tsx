@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -19,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc, where } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -84,7 +83,6 @@ const compositeKey = (scope1: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
@@ -157,7 +155,7 @@ export default function ViewBoqPage() {
         const settingsSnap = await getDoc(settingsRef);
         if (settingsSnap.exists()) {
           const settings = settingsSnap.data() as UserSettings;
-          const pageSettings = settings.columnPreferences?.[settingsKey];
+          const pageSettings = (settings as any).columnPreferences?.[settingsKey];
           if (pageSettings) {
             setColumnOrder(pageSettings.order || [...baseTableHeaders]);
             setColumnVisibility(pageSettings.visibility || {});
@@ -183,7 +181,7 @@ export default function ViewBoqPage() {
       const currentSettings = currentSettingsSnap.exists() ? currentSettingsSnap.data() : { columnPreferences: {} };
 
       const newPreferences = {
-        ...currentSettings.columnPreferences,
+        ...(currentSettings as any).columnPreferences,
         [settingsKey]: {
           order: columnOrder,
           visibility: columnVisibility,
@@ -218,37 +216,46 @@ export default function ViewBoqPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const projectData = projectsSnapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
-        if (!projectData) {
-            throw new Error("Project not found");
-        }
-        setCurrentProject(projectData);
-        
-        const projectId = projectData.id;
+      if (!projectData) {
+        throw new Error('Project not found');
+      }
+      setCurrentProject(projectData);
+
+      const projectId = (projectData as any).id;
 
       const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
       const boqSnapshot = await getDocs(query(boqItemsRef));
-      const items: BoqItem[] = boqSnapshot.docs.map((d) => {
-        const data = d.data() as Record<string, unknown>;
-        const erpKey = normalizeKey(data, 'ERP SL NO');
-        const boqKey = normalizeKey(data, 'BOQ SL No');
-        return {
-          id: d.id,
-          ...data,
-          'ERP SL NO': erpKey ? (data as any)[erpKey] : '',
-          'BOQ SL No': boqKey ? (data as any)[boqKey] : '',
-        };
-      });
+      const items: BoqItem[] = boqSnapshot.docs
+        .map((d) => {
+          const data = d.data() as Record<string, unknown> | undefined;
+          if (!data) return null;
+
+          const erpKey = normalizeKey(data, 'ERP SL NO');
+          const boqKey = normalizeKey(data, 'BOQ SL No');
+          const bom = Array.isArray((data as any).bom) ? (data as any).bom : undefined;
+
+          return {
+            id: d.id,
+            ...data,
+            ...(erpKey ? { 'ERP SL NO': (data as any)[erpKey] } : {}),
+            ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
+            ...(bom ? { bom } : {}),
+          } as BoqItem;
+        })
+        .filter(Boolean) as BoqItem[];
       setBoqItems(items);
 
       const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-      setJmcEntries(jmcSnapshot.docs.map((d) => ({id: d.id, ...d.data()} as JmcEntry)));
+      setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
 
       const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
-      setBills(billsSnapshot.docs.map((d) => ({id: d.id, ...d.data()} as Bill)));
+      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -261,19 +268,41 @@ export default function ViewBoqPage() {
     fetchBoqItems();
   }, [fetchBoqItems]);
 
-  /** JMC QUANTITIES MAP (composite keyed) **/
+  /** JMC QUANTITIES MAP (composite keyed) — robust **/
   const jmcQuantities = useMemo(() => {
-    const quantities: Record<string, { executed: number; certified: number }> = {};
-    jmcEntries.forEach((entry) => {
-      entry.items.forEach((it: any) => {
-        const key = compositeKey(it['Scope 1'], it.boqSlNo);
-        if (!key) return;
-        if (!quantities[key]) quantities[key] = { executed: 0, certified: 0 };
-        quantities[key].executed += Number(it.executedQty || 0);
-        quantities[key].certified += Number(it.certifiedQty || 0);
-      });
-    });
-    return quantities;
+    const q: Record<string, { executed: number; certified: number }> = {};
+
+    for (const entry of jmcEntries ?? []) {
+      const items = (entry as any)?.items;
+      if (!Array.isArray(items)) continue;
+
+      for (const it of items) {
+        // handle possible shapes: 'Scope 1' | scope1 | scope, and 'BOQ SL No' | boqSlNo | boqSlno
+        const scope =
+          it?.['Scope 1'] ??
+          it?.scope1 ??
+          it?.scope ??
+          '';
+
+        const sl =
+          it?.['BOQ SL No'] ??
+          it?.boqSlNo ??
+          it?.boqSlno ??
+          '';
+
+        const key = compositeKey(scope, sl);
+        if (!key) continue;
+
+        const executed = Number(it?.executedQty ?? 0) || 0;
+        const certified = Number(it?.certifiedQty ?? 0) || 0;
+
+        if (!q[key]) q[key] = { executed: 0, certified: 0 };
+        q[key].executed += executed;
+        q[key].certified += certified;
+      }
+    }
+
+    return q;
   }, [jmcEntries]);
 
   /** FILTERS **/
@@ -349,11 +378,23 @@ export default function ViewBoqPage() {
     return NaN;
   };
 
+  const safeCompositeKeyForItem = (item: BoqItem) => {
+    const scope =
+      item['Scope 1'] ??
+      (item as any)?.scope1 ??
+      '';
+    const sl =
+      item['BOQ SL No'] ??
+      (item as any)?.boqSlNo ??
+      '';
+    return compositeKey(scope, sl);
+  };
+
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
 
     const getComparableValue = (item: BoqItem, key: string): unknown => {
-      const compKey = compositeKey(item['Scope 1'], item['BOQ SL No']);
+      const compKey = safeCompositeKeyForItem(item);
       if (key === 'JMC Executed Qty') {
         return Number(jmcQuantities[compKey]?.executed || 0);
       }
@@ -363,9 +404,12 @@ export default function ViewBoqPage() {
       if (key === 'JMC Amount') {
         const qty = Number(jmcQuantities[compKey]?.certified || 0);
         const rate = parsedNumber(item['Unit Rate']);
-        return Number.isFinite(qty) && Number.isFinite(rate) ? qty * (rate as number) : NaN;
+        const val = Number.isFinite(qty) && Number.isFinite(rate) ? qty * (rate as number) : NaN;
+        return Number.isFinite(val) ? val : 0;
       }
-      return (item as any)[key];
+      const raw = (item as any)[key];
+      const num = parsedNumber(raw);
+      return Number.isFinite(num) ? num : (raw ?? '');
     };
 
     if (sortKey) {
@@ -382,8 +426,8 @@ export default function ViewBoqPage() {
           return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
         }
 
-        const aBad = aVal === undefined || aVal === null;
-        const bBad = bVal === undefined || bVal === null;
+        const aBad = aVal === undefined || aVal === null || (typeof aVal === 'number' && !Number.isFinite(aVal));
+        const bBad = bVal === undefined || bVal === null || (typeof bVal === 'number' && !Number.isFinite(bVal));
         if (aBad && !bBad) return 1;
         if (!aBad && bBad) return -1;
         if (aBad && bBad) return 0;
@@ -421,7 +465,7 @@ export default function ViewBoqPage() {
     if (!editingItem || !currentProject) return;
     setIsSaving(true);
     try {
-      const itemRef = doc(db, 'projects', currentProject.id, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'projects', (currentProject as any).id, 'boqItems', editingItem.id);
       const { id, ...payload } = editingItem;
       await updateDoc(itemRef, payload);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -480,7 +524,7 @@ export default function ViewBoqPage() {
     try {
       const batch = writeBatch(db);
       selectedItemIds.forEach((id) => {
-        batch.delete(doc(db, 'projects', currentProject.id, 'boqItems', id));
+        batch.delete(doc(db, 'projects', (currentProject as any).id, 'boqItems', id));
       });
       await batch.commit();
       toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
@@ -603,30 +647,34 @@ export default function ViewBoqPage() {
 
           <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline">
-                    <Settings className="mr-2 h-4 w-4" /> Columns
-                </Button>
+              <Button variant="outline">
+                <Settings className="mr-2 h-4 w-4" /> Columns
+              </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
-                <DialogHeader>
-                    <DialogTitle>Customize Columns</DialogTitle>
-                    <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-2">
-                    {columnOrder.map((header) => (
-                        <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
-                            <Checkbox
-                                id={`vis-${header}`}
-                                checked={columnVisibility[header]}
-                                onCheckedChange={(checked) => setColumnVisibility(prev => ({...prev, [header]: !!checked}))}
-                            />
-                            <Label htmlFor={`vis-${header}`} className="flex-1">{columnNames[header] || header}</Label>
-                        </div>
-                    ))}
-                </div>
-                <DialogFooter>
-                    <DialogClose asChild><Button>Done</Button></DialogClose>
-                </DialogFooter>
+              <DialogHeader>
+                <DialogTitle>Customize Columns</DialogTitle>
+                <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
+              </DialogHeader>
+              <div className="py-4 space-y-2">
+                {columnOrder.map((header) => (
+                  <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                    <Checkbox
+                      id={`vis-${header}`}
+                      checked={!!columnVisibility[header]}
+                      onCheckedChange={(checked) => setColumnVisibility((prev) => ({ ...prev, [header]: !!checked }))}
+                    />
+                    <Label htmlFor={`vis-${header}`} className="flex-1">
+                      {columnNames[header] || header}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button>Done</Button>
+                </DialogClose>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -637,236 +685,236 @@ export default function ViewBoqPage() {
         <div className="h-full border rounded-lg flex flex-col min-w-0">
           <div className="relative flex-1 min-h-0 w-full overflow-auto">
             <TooltipProvider>
-            <div className="min-w-max">
-              <Table className="text-sm">
-                <TableHeader>
-                  <TableRow>
-                    {/* Sticky selection cell */}
-                    <TableHead className="sticky left-0 top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)]">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                        onCheckedChange={(state) => handleSelectAll(state)}
-                        aria-label="Select all rows"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </TableHead>
-                    {/* Sticky expand cell */}
-                    <TableHead className="sticky left-[50px] top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)]">
-                      <span className="sr-only">Expand</span>
-                    </TableHead>
-
-                    {visibleHeaders.map((header) => (
-                      <TableHead
-                        key={header}
-                        className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
-                        onClick={() => handleSort(header)}
-                        title="Sort"
-                      >
-                        <div className="flex items-center gap-1">
-                          {columnNames[header] || header}
-                          {sortKey === header ? (
-                            sortDirection === 'asc' ? (
-                              <ChevronUp className="h-4 w-4" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
-                          )}
-                        </div>
+              <div className="min-w-max">
+                <Table className="text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      {/* Sticky selection cell */}
+                      <TableHead className="sticky left-0 top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)]">
+                        <Checkbox
+                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                          onCheckedChange={(state) => handleSelectAll(state)}
+                          aria-label="Select all rows"
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </TableHead>
-                    ))}
-                    <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
+                      {/* Sticky expand cell */}
+                      <TableHead className="sticky left-[50px] top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)]">
+                        <span className="sr-only">Expand</span>
+                      </TableHead>
 
-                <TableBody>
-                  {isLoading ? (
-                    Array.from({ length: 6 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
-                          <Skeleton className="h-5 w-5" />
-                        </TableCell>
-                        <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
-                          <Skeleton className="h-5 w-5" />
-                        </TableCell>
-                        {visibleHeaders.map((_, j) => (
-                          <TableCell key={`${i}-${j}`}>
-                            <Skeleton className="h-5 w-full" />
+                      {visibleHeaders.map((header) => (
+                        <TableHead
+                          key={header}
+                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
+                          onClick={() => handleSort(header)}
+                          title="Sort"
+                        >
+                          <div className="flex items-center gap-1">
+                            {columnNames[header] || header}
+                            {sortKey === header ? (
+                              sortDirection === 'asc' ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="ml-1 h-4 w-4 opacity-50" />
+                            )}
+                          </div>
+                        </TableHead>
+                      ))}
+                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+
+                  <TableBody>
+                    {isLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
+                            <Skeleton className="h-5 w-5" />
                           </TableCell>
-                        ))}
-                        <TableCell>
-                          <Skeleton className="h-8 w-16" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : sortedBoqItems.length > 0 ? (
-                    sortedBoqItems.map((item) => {
-                      const isExpanded = expandedRows.has(item.id);
-                      const hasBom = !!(item.bom && item.bom.length > 0);
+                          <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                            <Skeleton className="h-5 w-5" />
+                          </TableCell>
+                          {visibleHeaders.map((_, j) => (
+                            <TableCell key={`${i}-${j}`}>
+                              <Skeleton className="h-5 w-full" />
+                            </TableCell>
+                          ))}
+                          <TableCell>
+                            <Skeleton className="h-8 w-16" />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : sortedBoqItems.length > 0 ? (
+                      sortedBoqItems.map((item) => {
+                        const isExpanded = expandedRows.has(item.id);
+                        const hasBom = !!(item.bom && item.bom.length > 0);
 
-                      return (
-                        <Fragment key={item.id}>
-                          <TableRow
-                            data-state={selectedItemIds.includes(item.id) && 'selected'}
-                            onClick={() => handleRowClick(item)}
-                            className="cursor-pointer"
-                          >
-                            {/* Sticky selection cell */}
-                            <TableCell
-                              className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]"
-                              onClick={(e) => e.stopPropagation()}
+                        return (
+                          <Fragment key={item.id}>
+                            <TableRow
+                              data-state={selectedItemIds.includes(item.id) && 'selected'}
+                              onClick={() => handleRowClick(item)}
+                              className="cursor-pointer"
                             >
-                              <Checkbox
-                                checked={selectedItemIds.includes(item.id)}
-                                onCheckedChange={(state) => handleSelectRow(item.id, state === true)}
-                                aria-label={`Select row ${item.id}`}
+                              {/* Sticky selection cell */}
+                              <TableCell
+                                className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]"
                                 onClick={(e) => e.stopPropagation()}
-                              />
-                            </TableCell>
+                              >
+                                <Checkbox
+                                  checked={selectedItemIds.includes(item.id)}
+                                  onCheckedChange={(state) => handleSelectRow(item.id, state === true)}
+                                  aria-label={`Select row ${item.id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </TableCell>
 
-                            {/* Sticky expand cell */}
-                            <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
-                              {hasBom ? (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleRowExpansion(item.id);
-                                  }}
-                                  aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-                                >
-                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                </Button>
-                              ) : null}
-                            </TableCell>
+                              {/* Sticky expand cell */}
+                              <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                                {hasBom ? (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleRowExpansion(item.id);
+                                    }}
+                                    aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+                                  >
+                                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                ) : null}
+                              </TableCell>
 
-                            {visibleHeaders.map((header) => {
-                              let raw: unknown = item[header];
+                              {visibleHeaders.map((header) => {
+                                let raw: unknown = item[header];
 
-                              if (
-                                header === 'JMC Executed Qty' ||
-                                header === 'JMC Certified Qty' ||
-                                header === 'JMC Amount'
-                              ) {
-                                const key = compositeKey(item['Scope 1'], item['BOQ SL No']);
-                                if (header === 'JMC Executed Qty') {
-                                  raw = jmcQuantities[key]?.executed ?? 0;
-                                } else if (header === 'JMC Certified Qty') {
-                                  raw = jmcQuantities[key]?.certified ?? 0;
+                                if (
+                                  header === 'JMC Executed Qty' ||
+                                  header === 'JMC Certified Qty' ||
+                                  header === 'JMC Amount'
+                                ) {
+                                  const key = safeCompositeKeyForItem(item);
+                                  if (header === 'JMC Executed Qty') {
+                                    raw = jmcQuantities[key]?.executed ?? 0;
+                                  } else if (header === 'JMC Certified Qty') {
+                                    raw = jmcQuantities[key]?.certified ?? 0;
+                                  }
                                 }
-                              }
 
-                              // produce a string | number ONLY for rendering
-                              let display: string | number;
+                                // produce a string | number ONLY for rendering
+                                let display: string | number;
 
-                              if (header === 'Total Amount') {
-                                const explicit = parsedNumber(raw);
-                                if (Number.isFinite(explicit)) {
-                                  display = fmtNum(explicit);
-                                } else {
-                                  const qty = parsedNumber(item['QTY']);
+                                if (header === 'Total Amount') {
+                                  const explicit = parsedNumber(raw);
+                                  if (Number.isFinite(explicit)) {
+                                    display = fmtNum(explicit);
+                                  } else {
+                                    const qty = parsedNumber(item['QTY']);
+                                    const rate = parsedNumber(item['Unit Rate']);
+                                    display =
+                                      Number.isFinite(qty) && Number.isFinite(rate) ? fmtNum(qty * rate) : 'N/A';
+                                  }
+                                } else if (header === 'JMC Amount') {
+                                  const key = safeCompositeKeyForItem(item);
+                                  const jmcQty = parsedNumber(jmcQuantities[key]?.certified ?? 0);
                                   const rate = parsedNumber(item['Unit Rate']);
                                   display =
-                                    Number.isFinite(qty) && Number.isFinite(rate) ? fmtNum(qty * rate) : 'N/A';
+                                    Number.isFinite(jmcQty) && Number.isFinite(rate) ? fmtNum(jmcQty * rate) : 'N/A';
+                                } else if (
+                                  header === 'QTY' ||
+                                  header === 'Unit Rate' ||
+                                  header === 'JMC Executed Qty' ||
+                                  header === 'JMC Certified Qty'
+                                ) {
+                                  // numeric-ish fields get formatted number (string)
+                                  display = fmtNum(raw);
+                                } else if (typeof raw === 'string' || typeof raw === 'number') {
+                                  display = raw;
+                                } else {
+                                  // anything else (objects like Timestamp, null/undefined, etc.)
+                                  display = 'N/A';
                                 }
-                              } else if (header === 'JMC Amount') {
-                                const key = compositeKey(item['Scope 1'], item['BOQ SL No']);
-                                const jmcQty = parsedNumber(jmcQuantities[key]?.certified ?? 0);
-                                const rate = parsedNumber(item['Unit Rate']);
-                                display =
-                                  Number.isFinite(jmcQty) && Number.isFinite(rate) ? fmtNum(jmcQty * rate) : 'N/A';
-                              } else if (
-                                header === 'QTY' ||
-                                header === 'Unit Rate' ||
-                                header === 'JMC Executed Qty' ||
-                                header === 'JMC Certified Qty'
-                              ) {
-                                // numeric-ish fields get formatted number (string)
-                                display = fmtNum(raw);
-                              } else if (typeof raw === 'string' || typeof raw === 'number') {
-                                display = raw;
-                              } else {
-                                // anything else (objects like Timestamp, null/undefined, etc.)
-                                display = 'N/A';
-                              }
-                              
-                              const shouldTruncate = ['Description', 'Category 1', 'Category 2', 'Category 3'].includes(header);
 
-                              return (
-                                <TableCell
-                                  key={`${item.id}-${header}`}
-                                  className={cn(shouldTruncate && 'max-w-xs')}
-                                >
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                const shouldTruncate = ['Description', 'Category 1', 'Category 2', 'Category 3'].includes(header);
+
+                                return (
+                                  <TableCell
+                                    key={`${item.id}-${header}`}
+                                    className={cn(shouldTruncate && 'max-w-xs')}
+                                  >
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
                                         <p className="truncate">{display}</p>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
                                         <p className="max-w-md">{display}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TableCell>
-                              );
-                            })}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TableCell>
+                                );
+                              })}
 
-                            <TableCell className="text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => handleOpenEditDialog(e, item)}
-                              >
-                                <Edit className="mr-2 h-4 w-4" /> Edit
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-
-                          {isExpanded && hasBom && (
-                            <TableRow className="bg-muted/50 hover:bg-muted/50">
-                              <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
-                                <div className="p-4">
-                                  <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>Mark No.</TableHead>
-                                        <TableHead>Section</TableHead>
-                                        <TableHead>Qty/Set</TableHead>
-                                        <TableHead>Total Wt (KG)</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
-                                        <TableRow key={index}>
-                                          <TableCell>{bomItem.markNo ?? '—'}</TableCell>
-                                          <TableCell>{bomItem.section ?? '—'}</TableCell>
-                                          <TableCell>{fmtNum(bomItem.qtyPerSet)}</TableCell>
-                                          <TableCell>{fmtNum(bomItem.totalWtKg)}</TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => handleOpenEditDialog(e, item)}
+                                >
+                                  <Edit className="mr-2 h-4 w-4" /> Edit
+                                </Button>
                               </TableCell>
                             </TableRow>
-                          )}
-                        </Fragment>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={visibleHeaders.length + 3}
-                        className="text-center h-24"
-                      >
-                        No BOQ items found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+
+                            {isExpanded && hasBom && (
+                              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
+                                  <div className="p-4">
+                                    <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Mark No.</TableHead>
+                                          <TableHead>Section</TableHead>
+                                          <TableHead>Qty/Set</TableHead>
+                                          <TableHead>Total Wt (KG)</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {item.bom!.map((bomItem: FabricationBomItem, index: number) => (
+                                          <TableRow key={index}>
+                                            <TableCell>{bomItem.markNo ?? '—'}</TableCell>
+                                            <TableCell>{bomItem.section ?? '—'}</TableCell>
+                                            <TableCell>{fmtNum(bomItem.qtyPerSet)}</TableCell>
+                                            <TableCell>{fmtNum(bomItem.totalWtKg)}</TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })
+                    ) : (
+                      <TableRow>
+                        <TableCell
+                          colSpan={visibleHeaders.length + 3}
+                          className="text-center h-24"
+                        >
+                          No BOQ items found.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </TooltipProvider>
           </div>
         </div>
@@ -879,25 +927,25 @@ export default function ViewBoqPage() {
         jmcEntries={jmcEntries}
         bills={bills}
       />
-      
+
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit BOQ Item</DialogTitle>
           </DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-              {editingItem && dialogFields.map(key => (
-                  <div className="space-y-1" key={key}>
-                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                      <Input
-                          id={`edit-${String(key)}`}
-                          name={String(key)}
-                          value={editingItem[key] || ''}
-                          onChange={handleEditFormChange}
-                          readOnly={key === 'Project Name'}
-                      />
-                  </div>
-              ))}
+            {editingItem && dialogFields.map((key) => (
+              <div className="space-y-1" key={key}>
+                <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                <Input
+                  id={`edit-${String(key)}`}
+                  name={String(key)}
+                  value={(editingItem as any)[key] ?? ''}
+                  onChange={handleEditFormChange}
+                  readOnly={key === 'Project Name'}
+                />
+              </div>
+            ))}
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -913,4 +961,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-

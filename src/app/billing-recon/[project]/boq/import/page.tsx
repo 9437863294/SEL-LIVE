@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, UploadCloud, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
 
@@ -31,6 +30,7 @@ import type { Project } from '@/lib/types';
 type BoqItem = Record<string, any>;
 const MAX_BATCH_WRITES = 500;
 
+/* ---------- helpers ---------- */
 function isEmptyRow(row: BoqItem): boolean {
   return Object.values(row).every((v) => v === null || v === undefined || String(v).trim() === '');
 }
@@ -41,16 +41,50 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-const toNum = (v: any) => {
-  if (typeof v === 'number') return v;
+const toNum = (v: any): number => {
+  if (v == null) return 0;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
   if (typeof v === 'string') {
-    const n = parseFloat(v.replace(/,/g, ''));
-    return isNaN(n) ? 0 : n;
+    const s = v.replace(/,/g, '').trim();
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
   }
+  // Excel may give Date or boolean etc.
   return 0;
 };
 
+const normalize = (s: string) => s.toLowerCase().replace(/\s|_/g, '');
 
+const possibleNames = (base: string) => {
+  // basic variations we’ll accept for column names
+  const b = base.toLowerCase();
+  const variants: string[] = [b, `${b}(nos)`, `${b}(qty)`, `${b}(quantity)`];
+  if (b === 'qty') variants.push('quantity', 'qnty', 'qnt', 'q');
+  if (b === 'unitrate') variants.push('rate', 'unitprice', 'unit_cost', 'unit', 'u/r', 'u-rate', 'ur');
+  if (b === 'totalamount') variants.push('amount', 'total', 'value', 'amt');
+  return variants;
+};
+
+function resolveColumnName(headers: string[], wanted: 'qty' | 'unitrate' | 'totalamount') {
+  const targets = possibleNames(wanted);
+  const map = new Map(headers.map((h) => [normalize(h), h] as const));
+
+  for (const t of targets) {
+    // try exact normalized match
+    if (map.has(t)) return map.get(t)!;
+    // try contains (e.g., "Total Amount (₹)")
+    for (const [norm, original] of map) {
+      if (norm.includes(t)) return original;
+    }
+  }
+  // not found; return first reasonable guess for each category
+  if (wanted === 'qty') return headers.find((h) => /qty|quant|qnty/i.test(h)) ?? null;
+  if (wanted === 'unitrate') return headers.find((h) => /rate|unit/i.test(h)) ?? null;
+  if (wanted === 'totalamount') return headers.find((h) => /amount|total|value|amt/i.test(h)) ?? null;
+  return null;
+}
+
+/* ---------- component ---------- */
 export default function ImportBoqPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -62,6 +96,8 @@ export default function ImportBoqPage() {
   const [file, setFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
+  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
+
   const [isParsing, setIsParsing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -71,6 +107,7 @@ export default function ImportBoqPage() {
 
   const totalRows = jsonData.length;
 
+  /* ---------- fetch project by slug ---------- */
   useEffect(() => {
     const fetchProject = async () => {
       if (!projectSlug) return;
@@ -83,8 +120,8 @@ export default function ImportBoqPage() {
           text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
         const projectData = projectsSnapshot.docs
-          .map((d) => ({ id: d.id, ...d.data() } as Project))
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+          .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
         if (projectData) {
           setCurrentProject(projectData);
@@ -108,6 +145,41 @@ export default function ImportBoqPage() {
     fetchProject();
   }, [projectSlug, toast]);
 
+  /* ---------- excel parsing ---------- */
+  const parseSheet = useCallback(
+    (wb: XLSX.WorkBook, sheetName: string) => {
+      const ws = wb.Sheets[sheetName];
+      if (!ws) {
+        toast({
+          title: 'Sheet not found',
+          description: `Sheet "${sheetName}" does not exist in the workbook.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const rawJson = XLSX.utils.sheet_to_json<BoqItem>(ws, {
+        defval: '',
+        blankrows: false,
+      });
+
+      if (rawJson.length === 0) {
+        setJsonData([]);
+        setHeaders([]);
+        toast({
+          title: 'No data detected',
+          description: `The sheet "${sheetName}" appears to be empty.`,
+        });
+        return;
+      }
+
+      const filtered = rawJson.filter((row) => !isEmptyRow(row));
+      setJsonData(filtered);
+      setHeaders(Object.keys(filtered[0] || {}));
+    },
+    [toast]
+  );
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -128,27 +200,25 @@ export default function ImportBoqPage() {
     }
 
     setFile(selectedFile);
-    await parseExcel(selectedFile);
-  };
-
-  const parseExcel = async (fileToParse: File) => {
     setIsParsing(true);
     setJsonData([]);
     setHeaders([]);
     setSheetNames([]);
     setActiveSheet(null);
+    setWorkbook(null);
 
     try {
-      const buffer = await fileToParse.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, raw: false });
+      const buffer = await selectedFile.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array', cellDates: true, raw: false });
+      setWorkbook(wb);
 
-      const names = workbook.SheetNames || [];
+      const names = wb.SheetNames || [];
       setSheetNames(names);
 
-      const sheetName = names[0];
-      setActiveSheet(sheetName || null);
+      const first = names[0] ?? null;
+      setActiveSheet(first);
 
-      if (!sheetName) {
+      if (!first) {
         toast({
           title: 'No sheets found',
           description: 'The workbook has no sheets.',
@@ -157,28 +227,11 @@ export default function ImportBoqPage() {
         return;
       }
 
-      const ws = workbook.Sheets[sheetName];
-      const rawJson = XLSX.utils.sheet_to_json<BoqItem>(ws, {
-        defval: '',
-        blankrows: false,
-      });
-
-      if (rawJson.length === 0) {
-        toast({
-          title: 'No data detected',
-          description: 'The first sheet appears to be empty.',
-        });
-        return;
-      }
-
-      const filteredData = rawJson.filter((row) => !isEmptyRow(row));
-
-      setJsonData(filteredData);
-      setHeaders(Object.keys(filteredData[0] || {}));
+      parseSheet(wb, first);
 
       toast({
         title: 'File parsed',
-        description: `Loaded "${sheetName}" with ${filteredData.length} rows.`,
+        description: `Loaded "${first}".`,
       });
     } catch (error) {
       console.error('parseExcel error:', error);
@@ -192,6 +245,13 @@ export default function ImportBoqPage() {
     }
   };
 
+  const handleSheetChange = (sheet: string) => {
+    if (!workbook) return;
+    setActiveSheet(sheet);
+    parseSheet(workbook, sheet);
+  };
+
+  /* ---------- import ---------- */
   const handleImport = async () => {
     if (jsonData.length === 0) {
       toast({
@@ -222,6 +282,11 @@ export default function ImportBoqPage() {
     setProgress(0);
 
     try {
+      // Resolve columns robustly
+      const qtyCol = resolveColumnName(headers, 'qty');
+      const unitRateCol = resolveColumnName(headers, 'unitrate');
+      const totalAmountCol = resolveColumnName(headers, 'totalamount');
+
       const nowMeta = {
         createdAt: serverTimestamp(),
         createdBy: user.id,
@@ -230,29 +295,33 @@ export default function ImportBoqPage() {
       };
 
       const items = jsonData.map((row) => {
-        const qty = toNum(row['QTY']);
-        const unitRate = toNum(row['Unit Rate']);
-        let totalAmount = toNum(row['Total Amount']);
-        if (totalAmount === 0 && qty > 0 && unitRate > 0) {
-            totalAmount = qty * unitRate;
+        const qty = qtyCol ? toNum(row[qtyCol]) : 0;
+        const unitRate = unitRateCol ? toNum(row[unitRateCol]) : 0;
+
+        // Prefer explicit "total amount" if present
+        let totalAmount = totalAmountCol ? toNum(row[totalAmountCol]) : 0;
+
+        // Compute if missing/zero but qty*unitRate is valid
+        if ((totalAmount === 0 || !Number.isFinite(totalAmount)) && qty > 0 && unitRate > 0) {
+          totalAmount = qty * unitRate;
         }
 
         return {
           ...row,
           ...nowMeta,
-          'QTY': qty,
-          'Unit Rate': unitRate,
-          'Total Amount': totalAmount,
+          ...(qtyCol ? { [qtyCol]: qty } : { QTY: qty }),
+          ...(unitRateCol ? { [unitRateCol]: unitRate } : { 'Unit Rate': unitRate }),
+          ...(totalAmountCol ? { [totalAmountCol]: totalAmount } : { 'Total Amount': totalAmount }),
         };
       });
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(db, 'projects', currentProject.id, 'boqItems');
+      const boqCollectionRef = collection(db, 'projects', (currentProject as any).id, 'boqItems');
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);
         chunks[i].forEach((item) => {
-          const docRef = doc(boqCollectionRef);
+          const docRef = doc(boqCollectionRef); // auto-id
           batch.set(docRef, item);
         });
         await batch.commit();
@@ -295,6 +364,7 @@ export default function ImportBoqPage() {
     setHeaders([]);
     setSheetNames([]);
     setActiveSheet(null);
+    setWorkbook(null);
     setIsParsing(false);
     setIsImporting(false);
     setProgress(0);
@@ -368,12 +438,22 @@ export default function ImportBoqPage() {
             )}
 
             {sheetNames.length > 1 && (
-              <div className="text-sm text-muted-foreground">
-                Sheets detected:&nbsp;
-                <span className="font-medium">{sheetNames.join(', ')}</span>
-                <span className="ml-1">
-                  (loaded: <span className="font-medium">{activeSheet}</span>)
-                </span>
+              <div className="text-sm">
+                <div className="text-muted-foreground mb-1">Sheets detected:</div>
+                <div className="flex flex-wrap gap-2">
+                  {sheetNames.map((name) => (
+                    <Button
+                      key={name}
+                      variant={activeSheet === name ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => handleSheetChange(name)}
+                      disabled={isParsing || isImporting}
+                      className="h-7"
+                    >
+                      {name}
+                    </Button>
+                  ))}
+                </div>
               </div>
             )}
 

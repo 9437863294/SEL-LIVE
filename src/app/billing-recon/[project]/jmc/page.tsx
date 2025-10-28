@@ -11,6 +11,7 @@ import {
   Settings,
   GitMerge,
   BarChart3,
+  Users,
 } from 'lucide-react';
 import {
   Card,
@@ -30,6 +31,7 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
+/* ---------------- types ---------------- */
 type JmcItem = {
   icon: LucideIcon;
   text: string;
@@ -42,6 +44,11 @@ interface JmcCardProps {
   item: JmcItem;
 }
 
+/* ---------------- utils ---------------- */
+const slugify = (s: string) =>
+  s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+/* ---------------- components ---------------- */
 function JmcCard({ item }: JmcCardProps) {
   const isDisabled = item.href === '#' || item.disabled;
 
@@ -84,10 +91,11 @@ function JmcCard({ item }: JmcCardProps) {
   );
 }
 
+/* ---------------- page ---------------- */
 export default function JmcPage() {
   const { toast } = useToast();
   const params = useParams<{ project: string }>();
-  const projectSlug = params.project;
+  const projectSlug = params?.project ?? '';
 
   const { can, isLoading: authIsLoading } = useAuthorization();
 
@@ -95,7 +103,7 @@ export default function JmcPage() {
   const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
-  // Compute permissions only when auth is ready
+  /* ---------- permission checks ---------- */
   const canViewModule = useMemo(() => {
     if (authIsLoading) return false;
     try {
@@ -123,6 +131,16 @@ export default function JmcPage() {
     }
   }, [authIsLoading, can]);
   
+  const canManageSubcontractors = useMemo(() => {
+    if (authIsLoading) return false;
+    try {
+      // Assuming a permission exists for this new feature
+      return can('Manage Subcontractors', 'Billing Recon.JMC');
+    } catch {
+      return false;
+    }
+  }, [authIsLoading, can]);
+
   const canViewReports = useMemo(() => {
     if (authIsLoading) return false;
     try {
@@ -144,13 +162,14 @@ export default function JmcPage() {
   const canViewStages = useMemo(() => {
     if (authIsLoading) return false;
     try {
-      // Use a broad permission for stage cards; customize per-stage if needed.
+      // Broad view permission for stages
       return can('View', 'Billing Recon.JMC');
     } catch {
       return false;
     }
   }, [authIsLoading, can]);
 
+  /* ---------- fetch workflow ---------- */
   useEffect(() => {
     const fetchWorkflow = async () => {
       if (authIsLoading) return;
@@ -159,10 +178,20 @@ export default function JmcPage() {
 
       try {
         const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-        const workflowSnap = await getDoc(workflowRef);
+        const snap = await getDoc(workflowRef);
 
-        const steps = (workflowSnap.exists() ? (workflowSnap.data()?.steps as WorkflowStep[] | undefined) : []) ?? [];
-        setWorkflowSteps(Array.isArray(steps) ? steps : []);
+        const rawSteps = (snap.exists() ? (snap.data()?.steps as WorkflowStep[] | undefined) : []) ?? [];
+
+        // Defensive: ensure valid array of steps with id + name
+        const steps: WorkflowStep[] = (Array.isArray(rawSteps) ? rawSteps : [])
+          .filter((s) => s && (s as any).name)
+          .map((s) => ({
+            ...s,
+            id: (s as any).id || slugify((s as any).name),
+            name: (s as any).name,
+          }));
+
+        setWorkflowSteps(steps);
       } catch (error) {
         console.error('Failed to fetch workflow steps:', error);
         setWorkflowError('Failed to load workflow configuration.');
@@ -179,6 +208,7 @@ export default function JmcPage() {
     fetchWorkflow();
   }, [authIsLoading, toast]);
 
+  /* ---------- cards ---------- */
   const jmcItems: JmcItem[] = useMemo(() => {
     if (authIsLoading || isWorkflowLoading) return [];
 
@@ -186,47 +216,65 @@ export default function JmcPage() {
       {
         icon: FilePlus,
         text: 'Create JMC',
-        href: `/billing-recon/${projectSlug}/jmc/entry`,
+        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/entry` : '#',
         description: 'Create a Joint Measurement Certificate.',
-        disabled: !canCreate,
+        disabled: !canCreate || !projectSlug,
+      },
+      {
+        icon: Users,
+        text: 'Subcontractors Management',
+        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/subcontractors` : '#',
+        description: 'Manage subcontractors for the project.',
+        disabled: !canManageSubcontractors || !projectSlug,
       },
       {
         icon: History,
         text: 'JMC Log',
-        href: `/billing-recon/${projectSlug}/jmc/log`,
+        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/log` : '#',
         description: 'View and manage all existing JMC entries.',
-        disabled: !canViewLog,
+        disabled: !canViewLog || !projectSlug,
       },
       {
         icon: BarChart3,
         text: 'Reports',
-        href: `/billing-recon/${projectSlug}/jmc/reports`,
+        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/reports` : '#',
         description: 'View JMC-related reports.',
-        disabled: !canViewReports,
+        disabled: !canViewReports || !projectSlug,
       },
       {
         icon: Settings,
         text: 'Settings',
-        href: `/billing-recon/${projectSlug}/jmc/settings`,
+        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/settings` : '#',
         description: 'Configure JMC module settings.',
-        disabled: !canViewSettings,
+        disabled: !canViewSettings || !projectSlug,
       },
     ];
 
     const workflowItems: JmcItem[] = (workflowSteps || []).map((step) => ({
       icon: GitMerge,
       text: step.name,
-      href: `/billing-recon/${projectSlug}/jmc/stage/${step.id}`,
+      href: projectSlug ? `/billing-recon/${projectSlug}/jmc/stage/${step.id}` : '#',
       description: `Tasks for the ${step.name} stage.`,
-      disabled: !canViewStages,
+      disabled: !canViewStages || !projectSlug,
     }));
 
-    // Place “Create JMC” first, then stages, then Log & Settings.
-    return [staticItems[0], ...workflowItems, ...staticItems.slice(1)];
-  }, [projectSlug, authIsLoading, isWorkflowLoading, workflowSteps, canCreate, canViewLog, canViewSettings, canViewStages, canViewReports]);
+    return [staticItems[0], staticItems[1], ...workflowItems, ...staticItems.slice(2)];
+  }, [
+    projectSlug,
+    authIsLoading,
+    isWorkflowLoading,
+    workflowSteps,
+    canCreate,
+    canManageSubcontractors,
+    canViewLog,
+    canViewSettings,
+    canViewStages,
+    canViewReports,
+  ]);
 
   const isLoading = authIsLoading || isWorkflowLoading;
 
+  /* ---------- rendering ---------- */
   if (isLoading) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -244,7 +292,7 @@ export default function JmcPage() {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
-          <Link href={`/billing-recon/${projectSlug}`}>
+          <Link href={projectSlug ? `/billing-recon/${projectSlug}` : '#'}>
             <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -269,7 +317,7 @@ export default function JmcPage() {
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
-        <Link href={`/billing-recon/${projectSlug}`}>
+        <Link href={projectSlug ? `/billing-recon/${projectSlug}` : '#'}>
           <Button variant="ghost" size="icon" aria-label="Back">
             <ArrowLeft className="h-6 w-6" />
           </Button>

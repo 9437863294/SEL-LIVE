@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -9,10 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, getDoc, Timestamp, query, where, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BoqItem, JmcEntry as JmcEntryType, WorkflowStep, ActionLog, Project, SerialNumberConfig } from '@/lib/types';
+import type {
+  BoqItem as BoqItemBase,
+  JmcEntry as JmcEntryType,
+  WorkflowStep,
+  ActionLog,
+  Project,
+  SerialNumberConfig,
+} from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
@@ -22,6 +28,8 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
+/* ---------- local types ---------- */
+type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
 
 const initialJmcDetails = {
   jmcNo: '',
@@ -50,28 +58,29 @@ const normalizeKey = (obj: Record<string, unknown>, target: string) => {
   return Object.keys(obj).find((k) => k.toLowerCase().replace(/\s+|\./g, '') === needle);
 };
 
-const getNumber = (v: unknown) => {
-  if (typeof v === 'number') return v;
+const num0 = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
   if (typeof v === 'string') {
     const n = Number(v.replace(/,/g, '').trim());
-    return Number.isFinite(n) ? n : NaN;
+    return Number.isFinite(n) ? n : 0;
   }
-  return NaN;
+  return 0;
 };
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
+const slugify = (text: string) =>
+  (text || '')
+    .toString()
+    .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
-}
 
 const compositeKey = (scope1: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
+/* ---------- component ---------- */
 export default function JmcEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -85,17 +94,18 @@ export default function JmcEntryPage() {
   const [allJmcEntries, setAllJmcEntries] = useState<(JmcEntryType & { projectId: string })[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
-  
+
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
-  const currentProject = useMemo(() => {
-    return allProjects.find(p => p.id === selectedProjectId) || null;
-  }, [allProjects, selectedProjectId]);
+  const currentProject = useMemo(
+    () => allProjects.find((p) => p.id === selectedProjectId) || null,
+    [allProjects, selectedProjectId]
+  );
 
   const boqItems = useMemo(() => {
     if (!currentProject) return [];
-    return allBoqItems.filter(item => (item as any).projectId === currentProject.id);
+    return allBoqItems.filter((item) => item.projectId === currentProject.id);
   }, [allBoqItems, currentProject]);
 
   useEffect(() => {
@@ -103,32 +113,42 @@ export default function JmcEntryPage() {
       setIsBoqLoading(true);
       try {
         const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const projectsData = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+        const projectsData = projectsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
         setAllProjects(projectsData);
-        
-        const initialProject = projectsData.find(p => slugify(p.projectName) === projectSlug);
-        
+
+        const initialProject = projectsData.find((p) => slugify(p.projectName) === projectSlug);
         if (initialProject) {
-            setSelectedProjectId(initialProject.id);
-            setDetails(prev => ({...prev, woNo: (initialProject as any).woNo || ''}));
+          setSelectedProjectId(initialProject.id);
+          setDetails((prev) => ({ ...prev, woNo: (initialProject as any).woNo || '' }));
         }
 
-        const boqPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'boqItems')));
-        const jmcPromises = projectsData.map(p => getDocs(collection(db, 'projects', p.id, 'jmcEntries')));
+        const boqSnaps = await Promise.all(
+          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'boqItems')))
+        );
+        const jmcSnaps = await Promise.all(
+          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'jmcEntries')))
+        );
 
-        const boqSnaps = await Promise.all(boqPromises);
-        const jmcSnaps = await Promise.all(jmcPromises);
-        
-        const allBoq = boqSnaps.flatMap((snap, index) => 
-            snap.docs.map(d => ({...(d.data() as object), id: d.id, projectId: projectsData[index].id} as BoqItem))
+        const allBoq = boqSnaps.flatMap((snap, index) =>
+          snap.docs.map(
+            (d) =>
+              ({
+                ...(d.data() as object),
+                id: d.id,
+                projectId: projectsData[index].id,
+              } as BoqItem)
+          )
         );
         setAllBoqItems(allBoq);
 
-        const allJmc = jmcSnaps.flatMap((snap, index) => 
-          snap.docs.map(d => ({ ...(d.data() as Omit<JmcEntryType, 'id'>), id: d.id, projectId: projectsData[index].id }))
+        const allJmc = jmcSnaps.flatMap((snap, index) =>
+          snap.docs.map((d) => ({
+            ...(d.data() as Omit<JmcEntryType, 'id'>),
+            id: d.id,
+            projectId: projectsData[index].id,
+          }))
         );
         setAllJmcEntries(allJmc);
-
       } catch (e) {
         console.error('Failed to load initial data:', e);
         toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
@@ -139,52 +159,57 @@ export default function JmcEntryPage() {
     loadInitialData();
   }, [projectSlug, toast]);
 
+  /* ---------- auto-generate JMC No when scope1/scope2 ready ---------- */
   useEffect(() => {
     const generateJmcNo = async () => {
       const firstItem = items[0];
       if (!currentProject || !firstItem?.scope1 || !firstItem?.scope2) {
-        setDetails(prev => ({...prev, jmcNo: ''}));
+        setDetails((prev) => ({ ...prev, jmcNo: '' }));
         return;
       }
-      
+
       const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
-      
       try {
         const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
         const configDoc = await getDoc(configRef);
         if (configDoc.exists()) {
-            const configData = configDoc.data() as SerialNumberConfig;
-            const newIndex = configData.startingIndex;
-            const formattedIndex = String(newIndex).padStart(4, '0');
-            const newJmcNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-            setDetails(prev => ({ ...prev, jmcNo: newJmcNo }));
+          const configData = configDoc.data() as SerialNumberConfig;
+          const index = configData.startingIndex;
+          const formatted = String(index).padStart(4, '0');
+          const newJmcNo = `${configData.prefix || ''}${configData.format || ''}${formatted}${configData.suffix || ''}`;
+          setDetails((prev) => ({ ...prev, jmcNo: newJmcNo }));
         } else {
-            setDetails(prev => ({ ...prev, jmcNo: 'Config not found' }));
+          setDetails((prev) => ({ ...prev, jmcNo: 'Config not found' }));
         }
-      } catch (error) {
-        setDetails(prev => ({ ...prev, jmcNo: 'Error generating ID' }));
+      } catch {
+        setDetails((prev) => ({ ...prev, jmcNo: 'Error generating ID' }));
       }
     };
     generateJmcNo();
-  }, [items[0]?.scope1, items[0]?.scope2, currentProject]);
-  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id]);
+
   const handleProjectChange = (projectId: string) => {
-      const project = allProjects.find(p => p.id === projectId);
-      if (project) {
-          setSelectedProjectId(projectId);
-          setDetails(prev => ({...prev, woNo: (project as any).woNo || ''}));
-          setItems([initialItem]); // Reset items when project changes
-      }
+    const project = allProjects.find((p) => p.id === projectId);
+    if (project) {
+      setSelectedProjectId(projectId);
+      setDetails((prev) => ({ ...prev, woNo: (project as any).woNo || '' }));
+      setItems([initialItem]); // reset on project change
+    }
   };
 
+  /* ---------- certified qty map (robust to key casing) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
-    const relevantJmcEntries = allJmcEntries.filter(e => e.projectId === selectedProjectId);
-    relevantJmcEntries.forEach((entry) => {
-      entry.items.forEach((it: any) => {
-        const key = compositeKey(it.scope1, it.boqSlNo);
-        if (!String(it.boqSlNo || '').trim()) return;
-        map[key] = (map[key] || 0) + (Number(it.certifiedQty) || 0);
+    const relevant = allJmcEntries.filter((e) => e.projectId === selectedProjectId);
+    relevant.forEach((entry) => {
+      const arr: any[] = Array.isArray((entry as any).items) ? (entry as any).items : [];
+      arr.forEach((it) => {
+        const s1 = it?.scope1 ?? it?.['Scope 1'] ?? '';
+        const sl = it?.boqSlNo ?? it?.['BOQ SL No'] ?? it?.['BOQ SL NO'] ?? it?.['SL No'] ?? it?.['SL'] ?? '';
+        if (!String(sl || '').trim()) return;
+        const key = compositeKey(s1, sl);
+        map[key] = (map[key] || 0) + num0(it?.certifiedQty ?? it?.['Certified Qty']);
       });
     });
     return map;
@@ -196,23 +221,12 @@ export default function JmcEntryPage() {
   };
 
   const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate'];
+    const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Basic Rate', 'UNIT RATE'];
     for (const k of candidates) {
       const key = normalizeKey(boqItem as any, k);
       if (key) return key;
     }
     return Object.keys(boqItem).find((k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
-  };
-
-  const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    const newItems = [...items];
-    const it = { ...newItems[index], [name]: value };
-    const qty = getNumber(it.executedQty);
-    const rate = getNumber(it.rate);
-    it.totalAmount = Number.isFinite(qty) && Number.isFinite(rate) ? (qty as number) * (rate as number) : 0;
-    newItems[index] = it;
-    setItems(newItems);
   };
 
   const extractSlNo = (boqItem: BoqItem): string => {
@@ -229,70 +243,93 @@ export default function JmcEntryPage() {
     const key = normalizeKey(boqItem as any, 'Scope 1');
     return key ? String((boqItem as any)[key] ?? '') : '';
   };
-  
   const extractScope2 = (boqItem: BoqItem): string => {
     const key = normalizeKey(boqItem as any, 'Scope 2');
     return key ? String((boqItem as any)[key] ?? '') : '';
   };
 
+  const valueOf = (obj: any, keys: string[]): any =>
+    keys.reduce<any>((acc, k) => (acc !== undefined ? acc : (obj ?? {})[k]), undefined);
 
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
-    const itemToUpdate = { ...newItems[index] };
+    const it = { ...newItems[index] };
 
     if (boqItem) {
       const rateKey = findBasicPriceKey(boqItem);
-      const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
-      const boqSlNo = extractSlNo(boqItem);
-      const scope1 = extractScope1(boqItem);
-      const scope2 = extractScope2(boqItem);
+      const rate = num0(rateKey ? (boqItem as any)[rateKey] : 0);
+      const sl = extractSlNo(boqItem);
+      const s1 = extractScope1(boqItem);
+      const s2 = extractScope2(boqItem);
 
-      itemToUpdate.boqSlNo = boqSlNo;
-      itemToUpdate.scope1 = scope1;
-      itemToUpdate.scope2 = scope2;
-      itemToUpdate.description = String((boqItem as any)['Description'] ?? '');
-      itemToUpdate.unit = (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '';
-      itemToUpdate.rate = Number.isFinite(rateNum) ? (rateNum as number) : 0;
-      itemToUpdate.boqQty = Number((boqItem as any)['QTY'] || 0);
+      it.boqSlNo = sl;
+      it.scope1 = s1;
+      it.scope2 = s2;
+      it.description = String(
+        valueOf(boqItem, ['Description', 'description', 'Item Description']) ?? ''
+      );
+      it.unit = valueOf(boqItem, ['Unit', 'UNIT', 'UOM']) ?? '';
+      it.rate = rate;
+      it.boqQty = num0(valueOf(boqItem, ['QTY', 'Qty', 'Quantity']));
 
-      const key = compositeKey(scope1, boqSlNo);
-      itemToUpdate.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
+      const key = compositeKey(s1, sl);
+      it.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
 
-      const qty = getNumber(itemToUpdate.executedQty);
-      itemToUpdate.totalAmount =
-        Number.isFinite(qty) && Number.isFinite(itemToUpdate.rate) ? (qty as number) * itemToUpdate.rate : 0;
+      const qty = num0(it.executedQty);
+      it.totalAmount = qty * it.rate;
     } else {
-      Object.assign(itemToUpdate, initialItem);
+      Object.assign(it, initialItem);
     }
 
-    newItems[index] = itemToUpdate;
+    newItems[index] = it;
     setItems(newItems);
   };
 
-  const handleMultiBoqSelect = (selectedBoqItems: BoqItem[]) => {
-    const newJmcItems = selectedBoqItems.map((boqItem) => {
-      const rateKey = findBasicPriceKey(boqItem);
-      const rateNum = rateKey ? getNumber((boqItem as any)[rateKey]) : 0;
-      const slNo = extractSlNo(boqItem);
-      const scope1 = extractScope1(boqItem);
-      const scope2 = extractScope2(boqItem);
-      const key = compositeKey(scope1, slNo);
+  const handleMultiBoqSelect = (selected: BoqItem[]) => {
+    const newJmcItems: JmcItem[] = selected
+      .map((boqItem) => {
+        const rateKey = findBasicPriceKey(boqItem);
+        const rate = num0(rateKey ? (boqItem as any)[rateKey] : 0);
+        const sl = extractSlNo(boqItem);
+        const s1 = extractScope1(boqItem);
+        const s2 = extractScope2(boqItem);
+        if (!String(sl).trim()) return null; // skip bad rows
+        const key = compositeKey(s1, sl);
 
-      return {
-        ...initialItem,
-        boqSlNo: slNo,
-        scope1,
-        scope2,
-        description: (boqItem as any)['Description'] ?? '',
-        unit: (boqItem as any)['Unit'] ?? (boqItem as any)['UNIT'] ?? '',
-        rate: Number.isFinite(rateNum) ? (rateNum as number) : 0,
-        boqQty: Number((boqItem as any)['QTY'] || 0),
-        totalCertifiedQty: totalCertifiedQtyMap[key] || 0,
-      };
-    });
+        return {
+          ...initialItem,
+          boqSlNo: sl,
+          scope1: s1,
+          scope2: s2,
+          description: String(valueOf(boqItem, ['Description', 'description', 'Item Description']) ?? ''),
+          unit: valueOf(boqItem, ['Unit', 'UNIT', 'UOM']) ?? '',
+          rate,
+          boqQty: num0(valueOf(boqItem, ['QTY', 'Qty', 'Quantity'])),
+          totalCertifiedQty: totalCertifiedQtyMap[key] || 0,
+        };
+      })
+      .filter(Boolean) as JmcItem[];
 
     const existing = items.length === 1 && items[0].boqSlNo === '' ? [] : items;
     setItems([...existing, ...newJmcItems]);
+  };
+
+  const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const newItems = [...items];
+    const it = { ...newItems[index], [name]: value };
+
+    if (name === 'executedQty') {
+      const q = Math.max(0, num0(value));
+      it.executedQty = q;
+    }
+
+    const qty = num0(it.executedQty);
+    const rate = num0(it.rate);
+    it.totalAmount = qty * rate;
+
+    newItems[index] = it;
+    setItems(newItems);
   };
 
   const addItem = () => setItems((prev) => [...prev, { ...initialItem }]);
@@ -308,10 +345,18 @@ export default function JmcEntryPage() {
     }
     setIsSaving(true);
 
-    if (!currentProject || !details.jmcNo || details.jmcNo.includes('not found') || details.jmcNo.includes('Error') || !details.woNo || items.some((it) => !it.boqSlNo)) {
+    const hasBad =
+      !currentProject ||
+      !details.jmcNo ||
+      /not found|error/i.test(details.jmcNo) ||
+      !details.woNo ||
+      items.some((it) => !it.boqSlNo);
+
+    if (hasBad) {
       toast({
         title: 'Missing Required Fields',
-        description: 'Please select a project, fill in WO No, and add at least one valid item with a generated JMC No.',
+        description:
+          'Please select a project, ensure WO No is set, and add at least one valid item with a generated JMC No.',
         variant: 'destructive',
       });
       setIsSaving(false);
@@ -320,21 +365,22 @@ export default function JmcEntryPage() {
 
     try {
       const firstItem = items[0];
-      const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
+      const configSlug = `${currentProject!.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
       const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
 
       await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);
-        if (!configDoc.exists()) throw new Error("Serial number configuration could not be found for this scope.");
+        if (!configDoc.exists()) throw new Error('Serial number configuration could not be found for this scope.');
         const configData = configDoc.data() as SerialNumberConfig;
-        
-        // Final check on JMC number before saving
+
         const currentIndex = configData.startingIndex;
         const formattedIndex = String(currentIndex).padStart(4, '0');
-        const expectedJmcNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-        
+        const expectedJmcNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${
+          configData.suffix || ''
+        }`;
+
         if (details.jmcNo !== expectedJmcNo) {
-            throw new Error(`JMC number mismatch. Expected ${expectedJmcNo}, but found ${details.jmcNo}. Please refresh.`);
+          throw new Error(`JMC number mismatch. Expected ${expectedJmcNo}, but found ${details.jmcNo}. Please refresh.`);
         }
 
         const workflowRef = doc(db, 'workflows', 'jmc-workflow');
@@ -345,12 +391,7 @@ export default function JmcEntryPage() {
         if (steps.length === 0) throw new Error('Workflow has no steps.');
         const firstStep = steps[0];
 
-        const tempJmcData = {
-          ...details,
-          items,
-          projectId: currentProject.id,
-        };
-
+        const tempJmcData = { ...details, items, projectId: currentProject!.id };
         const assignees = await getAssigneeForStep(firstStep, tempJmcData as any);
         if (!assignees || assignees.length === 0) {
           throw new Error(`Could not determine assignee for step: ${firstStep.name}`);
@@ -371,7 +412,7 @@ export default function JmcEntryPage() {
           ...details,
           items,
           projectSlug,
-          projectId: currentProject.id,
+          projectId: currentProject!.id,
           createdAt: Timestamp.now(),
           status: 'Pending' as const,
           stage: firstStep.name,
@@ -381,7 +422,7 @@ export default function JmcEntryPage() {
           history: [initialLog],
         };
 
-        const newJmcRef = doc(collection(db, 'projects', currentProject.id, 'jmcEntries'));
+        const newJmcRef = doc(collection(db, 'projects', currentProject!.id, 'jmcEntries'));
         transaction.set(newJmcRef, jmcData);
         transaction.update(configRef, { startingIndex: currentIndex + 1 });
       });
@@ -444,14 +485,16 @@ export default function JmcEntryPage() {
               <div className="space-y-2">
                 <Label htmlFor="project">Project</Label>
                 <Select value={selectedProjectId} onValueChange={handleProjectChange}>
-                    <SelectTrigger id="project">
-                        <SelectValue placeholder="Select a project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {allProjects.map(p => (
-                            <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
-                        ))}
-                    </SelectContent>
+                  <SelectTrigger id="project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allProjects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.projectName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -519,14 +562,14 @@ export default function JmcEntryPage() {
                       </TableCell>
                       <TableCell>
                         <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger>
-                                    <p className="truncate max-w-xs">{item.description}</p>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p className="max-w-md">{item.description}</p>
-                                </TooltipContent>
-                            </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <p className="truncate max-w-xs">{item.description}</p>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="max-w-md">{item.description}</p>
+                            </TooltipContent>
+                          </Tooltip>
                         </TooltipProvider>
                       </TableCell>
                       <TableCell>{item.unit}</TableCell>
@@ -546,12 +589,7 @@ export default function JmcEntryPage() {
                       </TableCell>
                       <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          aria-label="Remove row"
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>

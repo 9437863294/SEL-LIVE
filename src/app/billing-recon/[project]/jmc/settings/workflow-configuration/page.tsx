@@ -1,9 +1,18 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Trash2,
+  Plus,
+  GripVertical,
+  ShieldAlert,
+  Loader2,
+  ArrowUp,
+  ArrowDown,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,7 +44,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 
-// Type guards
+/* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
   return step.assignmentType === 'User-based';
 }
@@ -43,7 +52,7 @@ function isMapped(step: WorkflowStep): step is WorkflowStepMapped {
   return step.assignmentType === 'Project-based' || step.assignmentType === 'Department-based';
 }
 
-// Initial steps
+/* ---------------- initial data ---------------- */
 const initialSteps: WorkflowStep[] = [
   {
     id: '1',
@@ -65,9 +74,16 @@ const initialSteps: WorkflowStep[] = [
   },
 ];
 
-/** Suggested actions */
-const allActions: (string | ActionConfig)[] = ['Approve', 'Reject', 'Needs Correction', 'Complete', 'Verified', 'Update Certified Qty'];
+const allActions: (string | ActionConfig)[] = [
+  'Approve',
+  'Reject',
+  'Needs Correction',
+  'Complete',
+  'Verified',
+  'Update Certified Qty',
+];
 
+/* ---------------- page ---------------- */
 export default function JmcWorkflowConfigurationPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -83,14 +99,14 @@ export default function JmcWorkflowConfigurationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ✅ Use the 3-argument can(action, module, scope?)
+  /* -------- permissions via safe 3-arg can() wrapper -------- */
   const canViewPage = useMemo(
     () => !isAuthLoading && safeCan3(can, 'View Settings', 'Billing Recon', 'JMC'),
-    [isAuthLoading, can]
+    [isAuthLoading, can],
   );
   const canEditPage = useMemo(
     () => !isAuthLoading && safeCan3(can, 'Edit Settings', 'Billing Recon', 'JMC'),
-    [isAuthLoading, can]
+    [isAuthLoading, can],
   );
 
   useEffect(() => {
@@ -132,6 +148,7 @@ export default function JmcWorkflowConfigurationPage() {
     }
   }, [toast]);
 
+  /* ---------------- actions: add / delete / move ---------------- */
   function handleAddStep() {
     const newIndex = steps.length + 1;
     const newStep: WorkflowStep = {
@@ -148,7 +165,7 @@ export default function JmcWorkflowConfigurationPage() {
 
   function handleDeleteStep(id: string) {
     setSteps((prev) => {
-      if (prev.length <= 1) return prev; // guard: keep at least one step
+      if (prev.length <= 1) return prev; // keep at least one step
       const next = prev.filter((s) => s.id !== id);
       return normalizeIds(next);
     });
@@ -161,18 +178,18 @@ export default function JmcWorkflowConfigurationPage() {
       const target = dir === 'up' ? idx - 1 : idx + 1;
       if (target < 0 || target >= prev.length) return prev;
       const copy = [...prev];
-      const tmp = copy[idx];
-      copy[idx] = copy[target];
-      copy[target] = tmp;
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
       return normalizeIds(copy);
     });
   }
 
+  /* ---------------- step edits ---------------- */
   function handleStepChange<T extends keyof WorkflowStep>(id: string, field: T, value: WorkflowStep[T]) {
     setSteps((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
 
+        // changing assignment type re-shapes assignedTo with correct structure
         if (field === 'assignmentType') {
           const at = value as WorkflowStep['assignmentType'];
           if (at === 'User-based') {
@@ -186,54 +203,57 @@ export default function JmcWorkflowConfigurationPage() {
             (next as any).actions = s.actions;
             (next as any).upload = s.upload as UploadRequirement;
             return next;
-          } else {
-            const next: WorkflowStepMapped = {
-              ...s,
-              assignmentType: at as 'Project-based' | 'Department-based',
-              assignedTo: {},
-            } as WorkflowStepMapped;
-            (next as any).name = s.name;
-            (next as any).tat = s.tat;
-            (next as any).actions = s.actions;
-            (next as any).upload = s.upload as UploadRequirement;
-            return next;
           }
+          const next: WorkflowStepMapped = {
+            ...s,
+            assignmentType: at as 'Project-based' | 'Department-based',
+            assignedTo: {} as Record<string, AssignedTo>,
+          } as WorkflowStepMapped;
+          (next as any).name = s.name;
+          (next as any).tat = s.tat;
+          (next as any).actions = s.actions;
+          (next as any).upload = s.upload as UploadRequirement;
+          return next;
         }
 
-        // Keep actions unique
+        // actions kept unique by name
         if (field === 'actions') {
-          const uniq = Array.from(new Set((value as (string | ActionConfig)[]) ?? [])).sort();
-          return { ...s, actions: uniq };
+          const list = (value as (string | ActionConfig)[]) ?? [];
+          const dedupByName = dedupeActionsByName(list);
+          return { ...s, actions: dedupByName };
         }
 
+        // TAT normalized to positive int
         if (field === 'tat') {
           const tatNum = Number(value);
-          return { ...s, tat: Number.isFinite(tatNum) && tatNum > 0 ? tatNum : 1 };
+          return { ...s, tat: Number.isFinite(tatNum) && tatNum > 0 ? Math.floor(tatNum) : 1 };
         }
 
         return { ...s, [field]: value } as WorkflowStep;
-      })
+      }),
     );
   }
 
+  // For mapped steps: set per-project/department primary/alternative
   const handleAssignmentDetailChange = (
     stepId: string,
     detailKey: string,
     userType: 'primary' | 'alternative',
-    userId: string
+    userId: string,
   ) => {
     setSteps((prev) =>
       prev.map((s) => {
         if (s.id !== stepId || !isMapped(s)) return s;
 
-        const current = s.assignedTo[detailKey] ?? { primary: '', alternative: '' };
+        const currentMap: Record<string, AssignedTo> = (s.assignedTo as Record<string, AssignedTo>) || {};
+        const current = currentMap[detailKey] ?? { primary: '', alternative: '' };
         const next: AssignedTo = { ...current, [userType]: userId === 'none' ? '' : userId };
 
         return {
           ...s,
-          assignedTo: { ...s.assignedTo, [detailKey]: next },
+          assignedTo: { ...currentMap, [detailKey]: next },
         };
-      })
+      }),
     );
   };
 
@@ -243,19 +263,21 @@ export default function JmcWorkflowConfigurationPage() {
       prev.map((s) => {
         if (s.id !== stepId) return s;
         let newActions = [...s.actions];
-        if (checked) {
-          if (!newActions.some(a => (typeof a === 'string' ? a : a.name) === actionName)) {
-            newActions.push(action);
-          }
-        } else {
-          newActions = newActions.filter(a => (typeof a === 'string' ? a : a.name) !== actionName);
+
+        const hasAction = newActions.some((a) => (typeof a === 'string' ? a : a.name) === actionName);
+        if (checked && !hasAction) newActions.push(action);
+        if (!checked && hasAction) {
+          newActions = newActions.filter((a) => (typeof a === 'string' ? a : a.name) !== actionName);
         }
-        return { ...s, actions: newActions };
-      })
+        return { ...s, actions: dedupeActionsByName(newActions) };
+      }),
     );
   }
 
-  function normalizeAndValidateSteps(): { ok: true; steps: WorkflowStep[] } | { ok: false; msg: string } {
+  /* ---------------- validation & save ---------------- */
+  function normalizeAndValidateSteps():
+    | { ok: true; steps: WorkflowStep[] }
+    | { ok: false; msg: string } {
     const normalized = normalizeIds(steps);
 
     for (const s of normalized) {
@@ -273,7 +295,10 @@ export default function JmcWorkflowConfigurationPage() {
         }
       }
       if (isMapped(s)) {
-        const hasAnyMapping = Object.values(s.assignedTo || {}).some((m) => m && (m.primary || m.alternative));
+        const map = (s.assignedTo ?? {}) as Record<string, AssignedTo>;
+        const hasAnyMapping = Object.values(map).some(
+          (m) => !!m && (!!m.primary || !!m.alternative),
+        );
         if (!hasAnyMapping) {
           return {
             ok: false,
@@ -330,6 +355,7 @@ export default function JmcWorkflowConfigurationPage() {
     return v.ok ? '' : v.msg;
   }, [steps]);
 
+  /* ---------------- render ---------------- */
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
       <div className="w-full max-w-4xl mx-auto pr-14">
@@ -377,7 +403,11 @@ export default function JmcWorkflowConfigurationPage() {
           <h1 className="text-xl font-bold">JMC Workflow Configuration</h1>
         </div>
         <div className="flex items-center gap-3">
-          {pageInvalidMsg && <Badge variant="destructive" className="whitespace-nowrap">{pageInvalidMsg}</Badge>}
+          {pageInvalidMsg && (
+            <Badge variant="destructive" className="whitespace-nowrap">
+              {pageInvalidMsg}
+            </Badge>
+          )}
           <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Workflow
@@ -388,7 +418,9 @@ export default function JmcWorkflowConfigurationPage() {
       <Card>
         <CardHeader>
           <CardTitle>Workflow Steps</CardTitle>
-          <CardDescription>Define the approval process, assignees, and turnaround time for each step.</CardDescription>
+          <CardDescription>
+            Define the approval process, assignees, and turnaround time for each step.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoading ? (
@@ -459,7 +491,11 @@ export default function JmcWorkflowConfigurationPage() {
                             min={1}
                             value={Number(step.tat) || 1}
                             onChange={(e) =>
-                              handleStepChange(step.id, 'tat', Math.max(1, parseInt(e.target.value || '1', 10)))
+                              handleStepChange(
+                                step.id,
+                                'tat',
+                                Math.max(1, parseInt(e.target.value || '1', 10)) as unknown as WorkflowStep['tat'],
+                              )
                             }
                             disabled={!canEditPage}
                           />
@@ -557,7 +593,8 @@ export default function JmcWorkflowConfigurationPage() {
                                 </TableHeader>
                                 <TableBody>
                                   {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
-                                    const row = (step.assignedTo as any)[item.id] ?? { primary: '', alternative: '' };
+                                    const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+                                    const row = map[item.id] ?? { primary: '', alternative: '' };
                                     return (
                                       <TableRow key={item.id}>
                                         <TableCell className="whitespace-nowrap">
@@ -619,9 +656,11 @@ export default function JmcWorkflowConfigurationPage() {
                         <Label>Actions</Label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           {[...allActions].map((action) => {
-                             const actionName = typeof action === 'string' ? action : action.name;
-                             const isChecked = step.actions.some(a => (typeof a === 'string' ? a : a.name) === actionName);
-                             const id = `${step.id}-action-${actionName}`;
+                            const actionName = typeof action === 'string' ? action : action.name;
+                            const isChecked = step.actions.some(
+                              (a) => (typeof a === 'string' ? a : a.name) === actionName,
+                            );
+                            const id = `${step.id}-action-${actionName}`;
                             return (
                               <div key={id} className="space-y-2">
                                 <div className="flex items-center space-x-2">
@@ -677,9 +716,8 @@ export default function JmcWorkflowConfigurationPage() {
   );
 }
 
-/* ---------- utils ---------- */
+/* ---------------- utils ---------------- */
 
-// 3-arg safe wrapper for your can(action, module, scope?) fn
 type CanFn3 = (action: string, module: string, scope?: string) => boolean;
 function safeCan3(canFn: CanFn3, action: string, module: string, scope?: string): boolean {
   try {
@@ -693,4 +731,15 @@ function normalizeIds(arr: WorkflowStep[]): WorkflowStep[] {
   return arr.map((s, i) => ({ ...s, id: String(i + 1) }));
 }
 
-    
+function dedupeActionsByName(list: (string | ActionConfig)[]) {
+  const seen = new Set<string>();
+  const out: (string | ActionConfig)[] = [];
+  for (const a of list) {
+    const name = typeof a === 'string' ? a : a.name;
+    if (!seen.has(name)) {
+      seen.add(name);
+      out.push(a);
+    }
+  }
+  return out;
+}
