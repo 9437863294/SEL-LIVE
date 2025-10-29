@@ -1,5 +1,7 @@
-'use client';
 
+'use client';
+import * as React from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -7,11 +9,12 @@ import {
   DialogTitle,
   DialogFooter,
   DialogClose,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
+import type { JmcEntry, BoqItem, Bill, JmcItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 // FIX: Using alias for consistent path resolution
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -80,6 +83,7 @@ interface ViewJmcEntryDialogProps {
   jmcEntry: JmcEntry | null;
   boqItems: BoqItem[];
   bills: Bill[]; // kept for API compatibility; not used in this “same as entry page” calc
+  project: Project | null;
   isEditMode?: boolean;
   onVerify?: (
     taskId: string,
@@ -98,6 +102,7 @@ export default function ViewJmcEntryDialog({
   jmcEntry,
   boqItems,
   bills, // eslint-disable-line @typescript-eslint/no-unused-vars
+  project,
   isEditMode = false,
   onVerify,
   isLoading = false,
@@ -400,6 +405,7 @@ export default function ViewJmcEntryDialog({
         isOpen={isPrintDialogOpen}
         onOpenChange={setIsPrintDialogOpen}
         jmcEntry={jmcEntry}
+        project={project}
         enrichedItems={enrichedItems}
       />
     </>

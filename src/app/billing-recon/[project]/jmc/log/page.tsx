@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Eye, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, View, Download, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -89,6 +89,7 @@ export default function JmcLogPage() {
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
@@ -154,6 +155,7 @@ export default function JmcLogPage() {
         throw new Error("Project not found");
       }
       const projectId = projectData.id;
+      setCurrentProject(projectData);
       
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const [workflowSnap, boqSnap, billsSnap, jmcSnap] = await Promise.all([
@@ -409,9 +411,10 @@ export default function JmcLogPage() {
       <ViewJmcEntryDialog
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        jmcEntry={selectedEntry as any}
+        jmcEntry={selectedEntry}
         boqItems={boqItems}
         bills={bills}
+        project={currentProject}
         isEditMode={false}
         isLoading={false}
       />

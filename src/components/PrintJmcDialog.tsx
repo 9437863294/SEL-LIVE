@@ -1,5 +1,7 @@
+
 'use client';
 
+import * as React from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,9 +12,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'; 
-import type { JmcEntry, JmcItem } from '@/lib/types';
+import type { JmcEntry, JmcItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
+import { useReactToPrint } from 'react-to-print';
+import { useRef } from 'react';
 
 /* ---------- Necessary Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -51,6 +55,7 @@ interface PrintJmcDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
+  project: Project | null;
   enrichedItems: EnrichedJmcItem[];
 }
 
@@ -143,26 +148,30 @@ export default function PrintJmcDialog({
   isOpen,
   onOpenChange,
   jmcEntry,
+  project,
   enrichedItems,
 }: PrintJmcDialogProps) {
-  if (!jmcEntry) return null;
+  const componentRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = useReactToPrint({
+      content: () => componentRef.current,
+      documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
+  });
+
+  if (!jmcEntry) return null;
 
   const calculateUpToDateQty = (item: EnrichedJmcItem) => {
     const prev = Number(item.previousCertifiedQty) || 0;
     const current = Number(item.certifiedQty) || 0;
     return prev + current;
   };
-
+  
   const workDetails = {
-    refNo: '5000017384',
-    date: formatDateSafe('2023-05-17'),
-    ssName: 'Chandili',
-    mainWork: 'Engineering, Supply, Erection & Commissioning of 33/11KV Primary Substations with associated 33KV & 11KV Lines under Phase-IV of ODSSP on Turnkey Contract Basis at TPSODL',
-    subWork: 'Line Stringing',
+    refNo: project?.refRoNo || 'N/A',
+    date: project?.woNo ? formatDateSafe(project.woNo.split(' Dt: ')[1]) : 'N/A',
+    ssName: project?.nameOfSs || 'N/A',
+    mainWork: project?.nameOfWork || 'N/A',
+    subWork: project?.subWork || 'N/A',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
   };
@@ -178,7 +187,7 @@ export default function PrintJmcDialog({
         </DialogHeader>
 
         {/* PRINTABLE CONTENT AREA */}
-        <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto">
+        <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
           
           {/* Top Header Section */}
           <div className="flex justify-between border-b-2 border-black pb-1 mb-4">
