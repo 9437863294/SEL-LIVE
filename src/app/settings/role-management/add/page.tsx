@@ -158,7 +158,7 @@ export default function AddRolePage() {
                     <ScrollArea className="mt-2 h-[calc(100vh-19rem)]">
                         <Accordion type="single" collapsible className="w-full pr-4">
                             {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
-                                const hasViewModulePermission = (newRole.permissions?.[moduleName] || []).includes('View Module');
+                                const hasViewModulePermission = (newRole.permissions?.[moduleName] || []).includes('View Module') || (moduleValue as any)['View Module'] === true;
 
                                 return (
                                 <AccordionItem value={moduleName} key={moduleName}>
@@ -181,7 +181,7 @@ export default function AddRolePage() {
                                                 </div>
                                             ) : (
                                             <>
-                                                {moduleValue['View Module'] !== undefined && (
+                                                {moduleValue['View Module'] !== undefined && typeof moduleValue['View Module'] !== 'boolean' && (
                                                     <div className="p-3 border rounded-md">
                                                         <div className="flex justify-between items-center">
                                                             <h4 className="font-semibold text-sm">View Module</h4>

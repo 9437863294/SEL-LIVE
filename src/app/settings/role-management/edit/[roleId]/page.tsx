@@ -195,7 +195,7 @@ export default function EditRolePage() {
                     <ScrollArea className="mt-2 h-[calc(100vh-19rem)]">
                         <Accordion type="single" collapsible className="w-full pr-4">
                             {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
-                                const hasViewModulePermission = (editingRole.permissions?.[moduleName] || []).includes('View Module');
+                                const hasViewModulePermission = (editingRole.permissions?.[moduleName] || []).includes('View Module') || (moduleValue as any)['View Module'] === true;
 
                                 return (
                                 <AccordionItem value={moduleName} key={moduleName}>
@@ -218,7 +218,7 @@ export default function EditRolePage() {
                                                 </div>
                                             ) : (
                                                 <>
-                                                    {moduleValue['View Module'] !== undefined && (
+                                                    {moduleValue['View Module'] !== undefined && typeof moduleValue['View Module'] !== 'boolean' && (
                                                         <div className="p-3 border rounded-md">
                                                             <div className="flex justify-between items-center">
                                                                 <h4 className="font-semibold text-sm">View Module</h4>
@@ -235,7 +235,7 @@ export default function EditRolePage() {
                                                     )}
                                                     <div className={!hasViewModulePermission ? 'opacity-50 pointer-events-none' : ''}>
                                                         {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
-                                                            if (subModuleKey === 'View Module' || !Array.isArray(permissions)) return null;
+                                                            if (subModuleKey === 'View Module') return null;
 
                                                             const fullKey = `${moduleName}.${subModuleKey}`;
                                                             
@@ -326,7 +326,7 @@ export default function EditRolePage() {
                                                               }
 
                                                             const grantedInGroup = editingRole.permissions?.[fullKey] || [];
-                                                            const isAllInGroupSelected = permissions.length > 0 && grantedInGroup.length === permissions.length;
+                                                            const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
 
                                                             return (
                                                                 <div key={fullKey} className="p-3 border rounded-md mt-2">
@@ -336,14 +336,14 @@ export default function EditRolePage() {
                                                                         <Checkbox
                                                                             id={`select-all-group-edit-${fullKey}`}
                                                                             checked={isAllInGroupSelected}
-                                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions, e.currentTarget.dataset.state === 'unchecked')}}
-                                                                            disabled={!hasViewModulePermission}
+                                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
+                                                                            disabled={!hasViewModulePermission || !Array.isArray(permissions)}
                                                                         />
                                                                         <Label htmlFor={`select-all-group-edit-${fullKey}`} className="text-xs font-medium">All</Label>
                                                                     </div>
                                                                     </div>
                                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                                        {permissions.map(permission => (
+                                                                        {Array.isArray(permissions) && permissions.map(permission => (
                                                                             <div key={permission} className="flex items-center space-x-2">
                                                                                 <Checkbox
                                                                                     id={`edit-${fullKey}-${permission}`}
