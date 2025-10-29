@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useModules } from '@/context/ModuleContext';
@@ -56,6 +55,13 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       .replace(/^-+/, '')             // Trim - from start of text
       .replace(/-+$/, '');            // Trim - from end of text
   }
+  
+  const getHref = (moduleTitle: string) => {
+    if (moduleTitle === 'Subcontractors Management') {
+      return '/subcontractors-management';
+    }
+    return `/${slugify(moduleTitle)}`;
+  };
 
   const CardContentWrapper = ({ children }: { children: React.ReactNode }) => (
     <Card
@@ -121,7 +127,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
 
   return (
     <>
-      <Link href={`/${slugify(module.title)}`} className="no-underline h-full">
+      <Link href={getHref(module.title)} className="no-underline h-full">
         <CardContentWrapper>
           {cardInnerContent}
         </CardContentWrapper>
