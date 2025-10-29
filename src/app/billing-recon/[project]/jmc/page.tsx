@@ -134,8 +134,7 @@ export default function JmcPage() {
   const canManageSubcontractors = useMemo(() => {
     if (authIsLoading) return false;
     try {
-      // Assuming a permission exists for this new feature
-      return can('Manage Subcontractors', 'Billing Recon.JMC');
+      return can('Manage Subcontractors', 'Subcontractors Management');
     } catch {
       return false;
     }
@@ -221,13 +220,6 @@ export default function JmcPage() {
         disabled: !canCreate || !projectSlug,
       },
       {
-        icon: Users,
-        text: 'Subcontractors Management',
-        href: projectSlug ? `/billing-recon/${projectSlug}/jmc/subcontractors` : '#',
-        description: 'Manage subcontractors for the project.',
-        disabled: !canManageSubcontractors || !projectSlug,
-      },
-      {
         icon: History,
         text: 'JMC Log',
         href: projectSlug ? `/billing-recon/${projectSlug}/jmc/log` : '#',
@@ -258,7 +250,7 @@ export default function JmcPage() {
       disabled: !canViewStages || !projectSlug,
     }));
 
-    return [staticItems[0], staticItems[1], ...workflowItems, ...staticItems.slice(2)];
+    return [...staticItems.slice(0, 1), ...workflowItems, ...staticItems.slice(1)];
   }, [
     projectSlug,
     authIsLoading,
@@ -351,3 +343,5 @@ export default function JmcPage() {
     </div>
   );
 }
+
+    

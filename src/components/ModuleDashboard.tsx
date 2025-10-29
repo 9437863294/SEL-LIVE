@@ -22,6 +22,7 @@ const moduleIcons: Record<string, string> = {
   'LC Module': 'BookOpenCheck',
   'Insurance': 'Shield',
   'Store & Stock Management': 'Package',
+  'Subcontractors Management': 'Users',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -36,6 +37,7 @@ const moduleDescriptions: Record<string, string> = {
     'LC Module': 'Manage Letters of Credit for trade finance.',
     'Insurance': 'Manage insurance policies and claims.',
     'Store & Stock Management': 'Manage inventory and stock levels.',
+    'Subcontractors Management': 'Manage subcontractors, work orders, and billing.',
 }
 
 export default function ModuleDashboard() {
@@ -129,3 +131,5 @@ export default function ModuleDashboard() {
     </div>
   );
 }
+
+    

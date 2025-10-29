@@ -113,6 +113,12 @@ export const permissionModules = {
     'MVAC': ['View', 'Add Item'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
+  'Subcontractors Management': {
+    'View Module': true,
+    'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
+    'Work Order': ['View', 'Create', 'Edit', 'Delete'],
+    'Billing': ['View', 'Create', 'Edit', 'Delete'],
+  },
   'Bank Balance': {
     'View Module': [],
     'Accounts': ['View', 'Add', 'Edit', 'Delete'],
@@ -355,13 +361,6 @@ export interface DailyRequisitionEntry {
 }
 
 /** ---------- User settings ---------- **/
-
-export interface ColumnPref {
-  order: string[];
-  visibility: Record<string, boolean>;
-  names?: Record<string, string>;
-  sort?: { key: string; direction: 'asc' | 'desc' };
-}
 
 export interface UserSettings {
   columnPreferences?: {
@@ -886,3 +885,5 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
+
+    
