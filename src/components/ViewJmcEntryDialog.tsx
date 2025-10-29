@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -14,14 +13,21 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
 import { format } from 'date-fns';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+// FIX: Using alias for consistent path resolution
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMemo, useState, useEffect } from 'react';
-import { Input } from './ui/input';
-import { Loader2, Save } from 'lucide-react';
+// FIX: Using alias for consistent path resolution
+import { Input } from '@/components/ui/input';
+import { Loader2, Save, Printer } from 'lucide-react'; 
 
 /* Firestore to fetch other JMC entries in the SAME project */
+// FIX: Retaining the alias for lib imports, which is the standard pattern
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+
+/* --- NEW: Import the print dialog --- */
+// FIX: Using alias for consistent path resolution
+import PrintJmcDialog from '@/components/PrintJmcDialog'; 
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -99,6 +105,9 @@ export default function ViewJmcEntryDialog({
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
+  
+  /* --- NEW: State for print dialog --- */
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
 
   /* Clone items for edit mode */
   useEffect(() => {
@@ -242,133 +251,157 @@ export default function ViewJmcEntryDialog({
   const tableMinWidth = 82; // rem
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className={dialogWidthClass}>
-        <DialogHeader>
-          <DialogTitle>
-            {isEditMode ? 'Verify & Edit' : 'JMC Details'}: {jmcEntry.jmcNo}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+        <DialogContent className={dialogWidthClass}>
+          <DialogHeader>
+            <DialogTitle>
+              {isEditMode ? 'Verify & Edit' : 'JMC Details'}: {jmcEntry.jmcNo}
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Vertical scrolling only; table itself handles horizontal */}
-        <div className="max-h-[70vh] overflow-y-auto">
-          <div className="space-y-4 p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label>JMC No.</Label>
-                <p className="font-medium">{jmcEntry.jmcNo ?? '-'}</p>
+          {/* Vertical scrolling only; table itself handles horizontal */}
+          <div className="max-h-[70vh] overflow-y-auto">
+            <div className="space-y-4 p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>JMC No.</Label>
+                  <p className="font-medium">{jmcEntry.jmcNo ?? '-'}</p>
+                </div>
+                <div>
+                  <Label>Work Order No.</Label>
+                  <p className="font-medium">{jmcEntry.woNo ?? '-'}</p>
+                </div>
+                <div>
+                  <Label>JMC Date</Label>
+                  <p className="font-medium">{formatDateSafe((jmcEntry as any).jmcDate)}</p>
+                </div>
               </div>
+
+              <Separator />
+
               <div>
-                <Label>Work Order No.</Label>
-                <p className="font-medium">{jmcEntry.woNo ?? '-'}</p>
-              </div>
-              <div>
-                <Label>JMC Date</Label>
-                <p className="font-medium">{formatDateSafe((jmcEntry as any).jmcDate)}</p>
-              </div>
-            </div>
+                <h3 className="text-lg font-semibold mb-2">Items</h3>
 
-            <Separator />
+                <div className="border rounded-md">
+                  <div className="w-full overflow-x-auto">
+                    <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidth}rem` }}>
+                      <colgroup>
+                        <col style={{ width: COLS.sl }} />
+                        <col style={{ width: COLS.desc }} />
+                        <col style={{ width: COLS.unit }} />
+                        <col style={{ width: COLS.boq }} />
+                        <col style={{ width: COLS.rate }} />
+                        <col style={{ width: COLS.prev }} />
+                        <col style={{ width: COLS.exec }} />
+                        <col style={{ width: COLS.cert }} />
+                        <col style={{ width: COLS.total }} />
+                      </colgroup>
 
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Items</h3>
-
-              <div className="border rounded-md">
-                <div className="w-full overflow-x-auto">
-                  <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidth}rem` }}>
-                    <colgroup>
-                      <col style={{ width: COLS.sl }} />
-                      <col style={{ width: COLS.desc }} />
-                      <col style={{ width: COLS.unit }} />
-                      <col style={{ width: COLS.boq }} />
-                      <col style={{ width: COLS.rate }} />
-                      <col style={{ width: COLS.prev }} />
-                      <col style={{ width: COLS.exec }} />
-                      <col style={{ width: COLS.cert }} />
-                      <col style={{ width: COLS.total }} />
-                    </colgroup>
-
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-center whitespace-nowrap">BOQ Sl. No.</TableHead>
-                        <TableHead className="whitespace-nowrap">Description</TableHead>
-                        <TableHead className="whitespace-nowrap">Unit</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">BOQ Qty</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Rate</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Prev. Certified</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Executed Qty</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Certified Qty</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-
-                    <TableBody>
-                      {enrichedItems.map((item, index) => (
-                        <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-                          <TableCell className="text-center font-medium truncate" title={String(item.boqSlNo ?? '')}>
-                            {item.boqSlNo ?? '-'}
-                          </TableCell>
-
-                          <TableCell className="align-top">
-                            <div className="line-clamp-2 break-words" title={item.description ?? ''}>
-                              {item.description ?? '-'}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
-
-                          <TableCell className="text-right whitespace-nowrap align-top">{Number(item.boqQty) || 0}</TableCell>
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            {formatCurrency((item as any).rate)}
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            {Number((item as any).previousCertifiedQty) || 0}
-                          </TableCell>
-
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            {isEditMode ? (
-                              <Input
-                                type="number"
-                                inputMode="decimal"
-                                step="any"
-                                value={(item as any).executedQty ?? ''}
-                                onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
-                                className="h-8"
-                              />
-                            ) : (
-                              (item as any).executedQty ?? '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            {(item as any).certifiedQty ?? '-'}
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            {formatCurrency((item as any).totalAmount ?? 0)}
-                          </TableCell>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-center whitespace-nowrap">BOQ Sl. No.</TableHead>
+                          <TableHead className="whitespace-nowrap">Description</TableHead>
+                          <TableHead className="whitespace-nowrap">Unit</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">BOQ Qty</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Rate</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Prev. Certified</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Executed Qty</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Certified Qty</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+
+                      <TableBody>
+                        {enrichedItems.map((item, index) => (
+                          <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
+                            <TableCell className="text-center font-medium truncate" title={String(item.boqSlNo ?? '')}>
+                              {item.boqSlNo ?? '-'}
+                            </TableCell>
+
+                            <TableCell className="align-top">
+                              <div className="line-clamp-2 break-words" title={item.description ?? ''}>
+                                {item.description ?? '-'}
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
+
+                            <TableCell className="text-right whitespace-nowrap align-top">{Number(item.boqQty) || 0}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap align-top">
+                              {formatCurrency((item as any).rate)}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap align-top">
+                              {Number((item as any).previousCertifiedQty) || 0}
+                            </TableCell>
+
+                            <TableCell className="text-right whitespace-nowrap align-top">
+                              {isEditMode ? (
+                                <Input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="any"
+                                  value={(item as any).executedQty ?? ''}
+                                  onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
+                                  className="h-8"
+                                />
+                              ) : (
+                                (item as any).executedQty ?? '-'
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right whitespace-nowrap align-top">
+                              {(item as any).certifiedQty ?? '-'}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap align-top">
+                              {formatCurrency((item as any).totalAmount ?? 0)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <DialogFooter className="mt-4 pr-4">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
+          <DialogFooter className="mt-4 pr-4 sm:justify-between">
+            {/* --- NEW: Print button on the left --- */}
+            <div>
+              <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+              </Button>
+            </div>
 
-          {isEditMode && (
-            <Button onClick={handleSaveChanges} disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save &amp; Verify
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {/* --- Original buttons on the right --- */}
+            <div className="flex gap-2">
+              <DialogClose asChild>
+                <Button variant="outline">Close</Button>
+              </DialogClose>
+
+              {isEditMode && (
+                <Button onClick={handleSaveChanges} disabled={isLoading}>
+                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Save &amp; Verify
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* --- NEW: Render the Print Dialog ---
+        It's "closed" by default, but its state is controlled by `isPrintDialogOpen`.
+        We pass it the same jmcEntry and the `enrichedItems` we already calculated.
+      */}
+      <PrintJmcDialog
+        isOpen={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        jmcEntry={jmcEntry}
+        enrichedItems={enrichedItems}
+      />
+    </>
   );
 }

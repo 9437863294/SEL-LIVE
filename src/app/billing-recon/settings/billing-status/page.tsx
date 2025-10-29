@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -34,6 +35,12 @@ export default function BillingStatusPage() {
   const [woInput, setWoInput] = useState('');
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
   const [isWoSaving, setIsWoSaving] = useState(false);
+  
+  // New fields for the dialog
+  const [nameOfWork, setNameOfWork] = useState('');
+  const [refRoNo, setRefRoNo] = useState('');
+  const [nameOfSs, setNameOfSs] = useState('');
+  const [subWork, setSubWork] = useState('');
 
   useEffect(() => {
     fetchProjects();
@@ -75,6 +82,10 @@ export default function BillingStatusPage() {
     // Turning ON: open dialog to collect WO No (don’t flip the switch yet)
     setPendingProject(project);
     setWoInput((project as any).woNo ?? ''); // prefill if it exists
+    setNameOfWork(project.projectName || '');
+    setRefRoNo((project as any).refRoNo || '');
+    setNameOfSs((project as any).nameOfSs || '');
+    setSubWork((project as any).subWork || '');
     setWoDialogOpen(true);
   };
 
@@ -89,11 +100,19 @@ export default function BillingStatusPage() {
     setIsWoSaving(true);
     try {
       const projectRef = doc(db, 'projects', pendingProject.id);
-      // Save both flags at once
-      await updateDoc(projectRef, { billingRequired: true, woNo });
+      // Save all fields at once
+      const updateData = {
+        billingRequired: true,
+        woNo,
+        nameOfWork,
+        refRoNo,
+        nameOfSs,
+        subWork
+      };
+      await updateDoc(projectRef, updateData);
 
       setProjects(prev =>
-        prev.map(p => (p.id === pendingProject.id ? { ...p, billingRequired: true, woNo } : p))
+        prev.map(p => (p.id === pendingProject.id ? { ...p, ...updateData } : p))
       );
 
       toast({ title: 'Success', description: `${pendingProject.projectName} billing enabled and WO No saved.` });
@@ -169,20 +188,38 @@ export default function BillingStatusPage() {
 
       {/* Enable Billing -> WO No dialog */}
       <Dialog open={woDialogOpen} onOpenChange={(open) => { if (!open) { setWoDialogOpen(false); setPendingProject(null); } }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Enter Work Order No</DialogTitle>
+            <DialogTitle>Enter Work Order Details</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-2">
-            <Label htmlFor="woNo">WO No</Label>
-            <Input
-              id="woNo"
-              value={woInput}
-              onChange={(e) => setWoInput(e.target.value)}
-              placeholder="e.g., WO-2024-001"
-              autoFocus
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
+            <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="nameOfWork">Name of Work</Label>
+                <Input id="nameOfWork" value={nameOfWork} onChange={(e) => setNameOfWork(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="refRoNo">Ref. RO No</Label>
+                <Input id="refRoNo" value={refRoNo} onChange={(e) => setRefRoNo(e.target.value)} />
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="woNo">WO No</Label>
+                <Input
+                id="woNo"
+                value={woInput}
+                onChange={(e) => setWoInput(e.target.value)}
+                placeholder="e.g., WO-2024-001"
+                autoFocus
+                />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="nameOfSs">Name of S/S</Label>
+                <Input id="nameOfSs" value={nameOfSs} onChange={(e) => setNameOfSs(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="subWork">Name of Work 2</Label>
+                <Input id="subWork" value={subWork} onChange={(e) => setSubWork(e.target.value)} />
+            </div>
           </div>
 
           <DialogFooter className="mt-4">
