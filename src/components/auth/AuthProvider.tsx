@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -13,7 +14,6 @@ import { PinSetupDialog } from './PinSetupDialog';
 import { SessionExpiryDialog } from './SessionExpiryDialog';
 
 // Session configuration
-const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
 const SESSION_CHECK_INTERVAL = 60000; // Check every minute
 
 interface AuthContextType {
@@ -72,23 +72,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
-  // Refs to avoid stale closures
-  const userRef = useRef<User | null>(null);
-  const sessionCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs for managing timeouts and avoiding stale closures
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Update ref when user changes
-  useEffect(() => {
-    userRef.current = user;
+  const resetTimeouts = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+
+    const sessionDurationMinutes = user?.theme?.sessionDuration || 60;
+    const SESSION_TIMEOUT = sessionDurationMinutes * 60 * 1000;
+    const WARNING_TIME = 1 * 60 * 1000; 
+    
+    // Set a timeout to show the warning dialog
+    warningTimeoutRef.current = setTimeout(() => {
+        setIsSessionExpired(true);
+    }, SESSION_TIMEOUT - WARNING_TIME);
+    
+    // Set a timeout to log the user out
+    timeoutRef.current = setTimeout(() => {
+        handleSignOut(true);
+    }, SESSION_TIMEOUT);
   }, [user]);
+
+  const extendSession = useCallback(() => {
+    sessionStorage.setItem('lastActivity', Date.now().toString());
+    setIsSessionExpired(false);
+    resetTimeouts();
+  }, [resetTimeouts]);
 
   const handleSignOut = useCallback(async (isExpired = false) => {
     try {
-      // Clear session check interval
-      if (sessionCheckIntervalRef.current) {
-        clearInterval(sessionCheckIntervalRef.current);
-        sessionCheckIntervalRef.current = null;
-      }
-
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+      
       await signOut(auth);
       
       if (!isExpired) {
@@ -114,32 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [router, toast]);
   
-  const extendSession = useCallback(() => {
-    const timestamp = Date.now().toString();
-    sessionStorage.setItem('loginTimestamp', timestamp);
-    setIsSessionExpired(false);
-  }, []);
-
-  const checkSessionExpiry = useCallback(() => {
-    // Don't check if user is not logged in
-    if (!userRef.current) return;
-
-    const loginTimestamp = sessionStorage.getItem('loginTimestamp');
-    
-    if (!loginTimestamp) {
-      // No timestamp found, session is invalid
-      setIsSessionExpired(true);
-      handleSignOut(true);
-      return;
-    }
-
-    const elapsed = Date.now() - parseInt(loginTimestamp, 10);
-    
-    if (elapsed > SESSION_DURATION) {
-      setIsSessionExpired(true);
-      handleSignOut(true);
-    }
-  }, [handleSignOut]);
 
   const loadSavedUsers = useCallback(() => {
     try {
@@ -162,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Failed to clear saved users', error);
     }
   }, []);
-
+  
   const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
     if (!firebaseUser) {
       setUser(null);
@@ -224,7 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData);
       
       // Initialize session timestamp if not exists
-      if (!sessionStorage.getItem('loginTimestamp')) {
+      if (!sessionStorage.getItem('lastActivity')) {
         extendSession();
       }
       
@@ -284,41 +275,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [handleSignOut, shouldRemember, extendSession, toast]);
+
   
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
     await fetchUserData(firebaseUser);
   }, [fetchUserData]);
 
-  // Session expiry monitoring
-  useEffect(() => {
-    if (!user) {
-      // Clear interval if user logs out
-      if (sessionCheckIntervalRef.current) {
-        clearInterval(sessionCheckIntervalRef.current);
-        sessionCheckIntervalRef.current = null;
-      }
-      return;
-    }
-
-    // Check immediately
-    checkSessionExpiry();
-
-    // Set up interval to check periodically
-    sessionCheckIntervalRef.current = setInterval(
-      checkSessionExpiry, 
-      SESSION_CHECK_INTERVAL
-    );
-
-    return () => {
-      if (sessionCheckIntervalRef.current) {
-        clearInterval(sessionCheckIntervalRef.current);
-        sessionCheckIntervalRef.current = null;
-      }
-    };
-  }, [user, checkSessionExpiry]);
-
-  // Auth state change listener
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -342,25 +305,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Activity listener to extend session
   useEffect(() => {
     if (!user) return;
+    
+    // Immediately reset timers when the user object (and their settings) becomes available
+    resetTimeouts();
 
-    const handleActivity = () => {
-      if (userRef.current && !isSessionExpired) {
-        extendSession();
-      }
-    };
-
-    // Listen for user activity
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
-    events.forEach(event => {
-      window.addEventListener(event, handleActivity);
-    });
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
+    activityEvents.forEach(event => window.addEventListener(event, extendSession));
 
     return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, handleActivity);
-      });
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+        activityEvents.forEach(event => window.removeEventListener(event, extendSession));
     };
-  }, [user, extendSession, isSessionExpired]);
+  }, [user, extendSession, resetTimeouts]);
+
 
   const contextValue: AuthContextType = {
     user,
