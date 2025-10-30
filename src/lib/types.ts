@@ -362,6 +362,16 @@ export interface DailyRequisitionEntry {
 
 /** ---------- User settings ---------- **/
 
+export interface ColumnPref {
+  order: string[];
+  visibility: Record<string, boolean>;
+  names: Record<string, string>;
+  sort: {
+    key: string;
+    direction: 'asc' | 'desc';
+  };
+}
+
 export interface UserSettings {
   columnPreferences?: {
     [pageKey: string]: ColumnPref | undefined;
@@ -885,5 +895,3 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
-
-    

@@ -48,7 +48,7 @@ function ReportCard({ item }: ReportCardProps) {
                 <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
+                <CardTitle className="text-base font-semibold">{item.text}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>
