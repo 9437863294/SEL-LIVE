@@ -55,15 +55,15 @@ interface StepWiseReportData {
 export default function JmcSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { project: projectSlug } = useParams() as { project: string };
-  const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [allRequisitions, setAllRequisitions] = useState<Requisition[]>([]);
-  const [filteredRequisitions, setFilteredRequisitions] = useState<Requisition[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
+  const [summaryStats, setSummaryStats = useState<SummaryStats | null>(null);
+  const [isLoading, setIsLoading = useState(true);
+  const [allRequisitions, setAllRequisitions = useState<Requisition[]>([]);
+  const [filteredRequisitions, setFilteredRequisitions = useState<Requisition[]>([]);
+  const [projects, setProjects = useState<Project[]>([]);
+  const [users, setUsers = useState<User[]>([]);
+  const [workflow, setWorkflow = useState<{steps: WorkflowStep[]} | null>(null);
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters = useState({
       year: 'all',
       month: 'all',
       // project filter is redundant on this page
@@ -155,7 +155,6 @@ export default function JmcSummaryPage() {
         setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
   }, [filteredRequisitions, isLoading, allRequisitions]);
   
-  // --- MODIFIED BLOCK ---
   const stepWiseReport = useMemo((): StepWiseReportData => {
     if (!workflow || !users.length || !filteredRequisitions.length) {
         return {};
@@ -181,49 +180,40 @@ export default function JmcSummaryPage() {
     filteredRequisitions.forEach(req => {
         const history: ActionLog[] = req.history || [];
         const processedStepsForTotal = new Set<string>();
-        // FIX: Add a new Set to track final actions
         const processedStepsForActions = new Set<string>();
 
-        // --- PASS 1: Get TOTALS ---
-        // This pass finds if a step was *ever* touched by a user
         history.forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
 
             const userName = userMap.get(log.userId) || 'Unknown User';
             initializeUserInStep(log.stepName, userName);
 
-            // Only count the *first* time a user interacts with a step for 'total'
             if (!processedStepsForTotal.has(log.stepName)) {
                 report[log.stepName][userName].total++;
                 processedStepsForTotal.add(log.stepName);
             }
         });
         
-        // --- PASS 2: Get ACTIONS (in REVERSE) ---
-        // This pass finds the *last definitive action* (Approve/Reject)
         history.slice().reverse().forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
             
-            // If we've already logged a final action for this step, skip
             if (processedStepsForActions.has(log.stepName)) return;
 
             const userName = userMap.get(log.userId) || 'Unknown User';
-            // Ensure user is initialized (safer, though Pass 1 should get it)
             initializeUserInStep(log.stepName, userName);
 
             if (isCompletionAction(log.action)) {
                 report[log.stepName][userName].completed++;
-                processedStepsForActions.add(log.stepName); // Mark step as processed
+                processedStepsForActions.add(log.stepName);
             } else if (log.action.toLowerCase() === 'reject') {
                 report[log.stepName][userName].rejected++;
-                processedStepsForActions.add(log.stepName); // Mark step as processed
+                processedStepsForActions.add(log.stepName);
             }
         });
     });
 
     return report;
 }, [filteredRequisitions, workflow, users]);
-// --- END MODIFIED BLOCK ---
 
 
   const getFilterOptions = (key: 'year' | 'month' | 'applicant') => {
