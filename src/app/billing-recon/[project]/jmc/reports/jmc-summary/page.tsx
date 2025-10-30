@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Home, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -72,22 +72,15 @@ export default function JmcSummaryPage() {
   
   const canViewPage = can('View Reports', 'Billing Recon.JMC');
 
-  useEffect(() => {
-    if (!isAuthLoading) {
-      if(canViewPage) {
-          fetchSummaryData();
-      } else {
-          setIsLoading(false);
-      }
-    }
-  }, [isAuthLoading, canViewPage, projectSlug]);
-
-  const fetchSummaryData = async () => {
+  const fetchSummaryData = useCallback(async () => {
       setIsLoading(true);
       try {
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        
+        const allProjects = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+        
         const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
         const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
         if (!currentProject) {
@@ -96,10 +89,12 @@ export default function JmcSummaryPage() {
           return;
         }
 
+        const currentProjectId = currentProject.id;
+        
         const [reqsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-          getDocs(query(collection(db, 'jmcEntries'), where('projectId', '==', currentProject.id))),
+          getDocs(query(collection(db, 'jmcEntries'), where('projectId', '==', currentProjectId))),
           getDocs(collection(db, 'users')),
-          getDoc(doc(db, 'workflows', 'jmc-workflow'))
+          getDoc(doc(db, 'workflows', 'jmc-workflow')),
         ]);
         
         const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
@@ -117,16 +112,32 @@ export default function JmcSummaryPage() {
           console.error("Error fetching summary data: ", error);
       }
       setIsLoading(false);
-  };
+  }, [projectSlug]);
   
+  useEffect(() => {
+    if (!isAuthLoading) {
+      if(canViewPage) {
+          fetchSummaryData();
+      } else {
+          setIsLoading(false);
+      }
+    }
+  }, [isAuthLoading, canViewPage, fetchSummaryData]);
+
     useEffect(() => {
         let items = allRequisitions;
 
         if (filters.year !== 'all') {
-            items = items.filter(req => new Date(req.date).getFullYear().toString() === filters.year);
+            items = items.filter(req => {
+              const date = req.date || (req as any).jmcDate;
+              return date && new Date(date).getFullYear().toString() === filters.year;
+            });
         }
         if (filters.month !== 'all') {
-            items = items.filter(req => (new Date(req.date).getMonth() + 1).toString() === filters.month);
+            items = items.filter(req => {
+              const date = req.date || (req as any).jmcDate;
+              return date && (new Date(date).getMonth() + 1).toString() === filters.month;
+            });
         }
         if (filters.applicant !== 'all') {
             items = items.filter(req => req.raisedById === filters.applicant);
@@ -178,6 +189,7 @@ export default function JmcSummaryPage() {
     filteredRequisitions.forEach(req => {
         const history: ActionLog[] = req.history || [];
         const processedStepsForTotal = new Set<string>();
+        const processedStepsForActions = new Set<string>();
 
         history.forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
@@ -194,7 +206,6 @@ export default function JmcSummaryPage() {
         history.slice().reverse().forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
             
-            const processedStepsForActions = new Set<string>();
             if (processedStepsForActions.has(log.stepName)) return;
 
             const userName = userMap.get(log.userId) || 'Unknown User';
@@ -216,13 +227,13 @@ export default function JmcSummaryPage() {
 
   const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
+      const allDates = allRequisitions.map(r => r.date || (r as any).jmcDate).filter(Boolean);
+
       switch (key) {
           case 'year':
-              return unique(allRequisitions.map(r => new Date(r.date).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
+              return unique(allDates.map(d => new Date(d).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
           case 'month':
               return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
-          case 'project':
-              return projects.filter(p => allRequisitions.some(r => r.projectId === p.id));
           case 'applicant':
               const applicantIds = new Set(allRequisitions.map(r => r.raisedById));
               return users.filter(u => applicantIds.has(u.id));
@@ -236,13 +247,14 @@ export default function JmcSummaryPage() {
   };
 
   const formatCurrency = (amount: number) => {
+    if (isNaN(amount)) amount = 0;
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
-  }
+}
 
   const statsToDisplay = [
-      { title: 'Total JMCs', value: summaryStats?.totalRequisitions.toLocaleString() },
+      { title: 'Total JMCs', value: summaryStats?.totalRequisitions.toLocaleString() || '0' },
       { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalAmount || 0) },
-      { title: 'Rejected', value: summaryStats?.cancelled.toLocaleString() },
+      { title: 'Rejected', value: summaryStats?.cancelled.toLocaleString() || '0' },
   ];
   
   if (isAuthLoading || (isLoading && canViewPage)) {
@@ -285,7 +297,6 @@ export default function JmcSummaryPage() {
     )
   }
 
-
   return (
     <div className="w-full pr-14">
       <div className="mb-6 flex items-center justify-between">
@@ -315,7 +326,7 @@ export default function JmcSummaryPage() {
               <SelectTrigger><SelectValue placeholder="Select Month" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
-                {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
+  {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
                   <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -337,7 +348,7 @@ export default function JmcSummaryPage() {
         {isLoading ? (
             Array.from({ length: 3 }).map((_, index) => (
                 <Card key={index}>
-                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+  <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                 </Card>
             ))
@@ -357,7 +368,7 @@ export default function JmcSummaryPage() {
         )}
       </div>
 
-      <div className="mb-6">
+         <div className="mb-6">
         <h2 className="text-xl font-bold">Step-wise Report</h2>
       </div>
 
@@ -365,7 +376,7 @@ export default function JmcSummaryPage() {
         {isLoading ? (
           Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
         ) : (
-          workflow?.steps.map((step) => {
+          (workflow?.steps || []).map((step) => {
               const stepData = stepWiseReport[step.name];
               if (!stepData || Object.values(stepData).every(data => data.total === 0 && data.completed === 0 && data.rejected === 0)) {
                 return null; 
@@ -409,5 +420,3 @@ export default function JmcSummaryPage() {
     </div>
   );
 }
-
-    
