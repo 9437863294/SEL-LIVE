@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -30,17 +30,18 @@ export default function BillingStatusPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Dialog state for enabling billing + entering WO No
-  const [woDialogOpen, setWoDialogOpen] = useState(false);
-  const [woInput, setWoInput] = useState('');
+  // Unified dialog state
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'enable' | 'edit'>('enable');
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
-  const [isWoSaving, setIsWoSaving] = useState(false);
   
-  // New fields for the dialog
+  // Form state for the dialog
+  const [woInput, setWoInput] = useState('');
   const [nameOfWork, setNameOfWork] = useState('');
   const [refRoNo, setRefRoNo] = useState('');
   const [nameOfSs, setNameOfSs] = useState('');
   const [subWork, setSubWork] = useState('');
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -62,8 +63,7 @@ export default function BillingStatusPage() {
 
   // Toggle handler
   const handleBillingToggle = async (project: Project, nextChecked: boolean) => {
-    // Turning OFF: update immediately
-    if (!nextChecked) {
+    if (!nextChecked) { // Turning OFF
       setSavingId(project.id);
       try {
         const projectRef = doc(db, 'projects', project.id);
@@ -71,7 +71,6 @@ export default function BillingStatusPage() {
         setProjects(prev => prev.map(p => (p.id === project.id ? { ...p, billingRequired: false } : p)));
         toast({ title: 'Updated', description: `${project.projectName} billing disabled.` });
       } catch (error) {
-        console.error('Error updating project billing status:', error);
         toast({ title: 'Error', description: 'Failed to update billing status.', variant: 'destructive' });
       } finally {
         setSavingId(null);
@@ -79,17 +78,29 @@ export default function BillingStatusPage() {
       return;
     }
 
-    // Turning ON: open dialog to collect WO No (don’t flip the switch yet)
+    // Turning ON
+    setDialogMode('enable');
     setPendingProject(project);
-    setWoInput((project as any).woNo ?? ''); // prefill if it exists
+    setWoInput((project as any).woNo ?? '');
     setNameOfWork(project.projectName || '');
     setRefRoNo((project as any).refRoNo || '');
     setNameOfSs((project as any).nameOfSs || '');
     setSubWork((project as any).subWork || '');
-    setWoDialogOpen(true);
+    setIsDetailDialogOpen(true);
+  };
+  
+  const openEditDialog = (project: Project) => {
+    setDialogMode('edit');
+    setPendingProject(project);
+    setWoInput((project as any).woNo ?? '');
+    setNameOfWork(project.projectName || '');
+    setRefRoNo((project as any).refRoNo || '');
+    setNameOfSs((project as any).nameOfSs || '');
+    setSubWork((project as any).subWork || '');
+    setIsDetailDialogOpen(true);
   };
 
-  const saveWoForProject = async () => {
+  const saveProjectDetails = async () => {
     if (!pendingProject) return;
     const woNo = woInput.trim();
     if (!woNo) {
@@ -97,33 +108,37 @@ export default function BillingStatusPage() {
       return;
     }
 
-    setIsWoSaving(true);
+    setIsSavingDetails(true);
     try {
       const projectRef = doc(db, 'projects', pendingProject.id);
-      // Save all fields at once
-      const updateData = {
-        billingRequired: true,
+      const updateData: Partial<Project> = {
         woNo,
-        nameOfWork,
+        projectName: nameOfWork,
         refRoNo,
         nameOfSs,
         subWork
       };
+      
+      // Only set billingRequired to true if we are enabling it for the first time
+      if (dialogMode === 'enable') {
+        updateData.billingRequired = true;
+      }
+
       await updateDoc(projectRef, updateData);
 
       setProjects(prev =>
         prev.map(p => (p.id === pendingProject.id ? { ...p, ...updateData } : p))
       );
 
-      toast({ title: 'Success', description: `${pendingProject.projectName} billing enabled and WO No saved.` });
-      setWoDialogOpen(false);
+      toast({ title: 'Success', description: `Project details for ${nameOfWork} have been saved.` });
+      setIsDetailDialogOpen(false);
       setPendingProject(null);
       setWoInput('');
     } catch (error) {
-      console.error('Error saving WO No:', error);
-      toast({ title: 'Error', description: 'Failed to save Work Order No.', variant: 'destructive' });
+      console.error('Error saving project details:', error);
+      toast({ title: 'Error', description: 'Failed to save project details.', variant: 'destructive' });
     } finally {
-      setIsWoSaving(false);
+      setIsSavingDetails(false);
     }
   };
 
@@ -150,7 +165,8 @@ export default function BillingStatusPage() {
                 <TableRow>
                   <TableHead>Project Name</TableHead>
                   <TableHead>WO No</TableHead>
-                  <TableHead className="text-right">Billing Required</TableHead>
+                  <TableHead>Billing Required</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -159,7 +175,8 @@ export default function BillingStatusPage() {
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-6 w-12 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-12" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-8 w-20" /></TableCell>
                     </TableRow>
                   ))
                 ) : (
@@ -167,15 +184,20 @@ export default function BillingStatusPage() {
                     <TableRow key={project.id}>
                       <TableCell className="font-medium">{project.projectName}</TableCell>
                       <TableCell>{(project as any).woNo ?? '—'}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
                         {savingId === project.id ? (
-                          <Loader2 className="h-5 w-5 animate-spin ml-auto" />
+                          <Loader2 className="h-5 w-5 animate-spin" />
                         ) : (
                           <Switch
                             checked={!!project.billingRequired}
                             onCheckedChange={(checked) => handleBillingToggle(project, checked)}
                           />
                         )}
+                      </TableCell>
+                       <TableCell className="text-right">
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(project)}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -186,8 +208,7 @@ export default function BillingStatusPage() {
         </CardContent>
       </Card>
 
-      {/* Enable Billing -> WO No dialog */}
-      <Dialog open={woDialogOpen} onOpenChange={(open) => { if (!open) { setWoDialogOpen(false); setPendingProject(null); } }}>
+      <Dialog open={isDetailDialogOpen} onOpenChange={(open) => { if (!open) { setIsDetailDialogOpen(false); setPendingProject(null); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Enter Work Order Details</DialogTitle>
@@ -226,9 +247,9 @@ export default function BillingStatusPage() {
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={saveWoForProject} disabled={isWoSaving}>
-              {isWoSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save & Enable
+            <Button onClick={saveProjectDetails} disabled={isSavingDetails}>
+              {isSavingDetails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {dialogMode === 'enable' ? 'Save & Enable' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
