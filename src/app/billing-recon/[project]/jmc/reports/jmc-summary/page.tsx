@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
@@ -84,30 +85,28 @@ export default function JmcSummaryPage() {
   const fetchSummaryData = async () => {
       setIsLoading(true);
       try {
-          // Find project ID from slug
-          const projectsQuery = query(collection(db, 'projects'), where('projectName', '==', projectSlug.replace(/-/g, ' ')));
-          const currentProjectSnap = await getDocs(projectsQuery);
-          const currentProjectId = currentProjectSnap.docs[0]?.id;
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
-          if (!currentProjectId) {
-            console.error("Project not found for slug:", projectSlug);
-            setIsLoading(false);
-            return;
-          }
+        if (!currentProject) {
+          console.error("Project not found for slug:", projectSlug);
+          setIsLoading(false);
+          return;
+        }
 
-          const [reqsSnapshot, projectsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-              // Query JMCs for the *specific* project
-              getDocs(query(collection(db, 'jmcEntries'), where('projectId', '==', currentProjectId))),
-              getDocs(collection(db, 'projects')), // Still useful for applicant filter, etc.
-              getDocs(collection(db, 'users')),
-              getDoc(doc(db, 'workflows', 'jmc-workflow'))
-          ]);
+        const [reqsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
+          getDocs(query(collection(db, 'jmcEntries'), where('projectId', '==', currentProject.id))),
+          getDocs(collection(db, 'users')),
+          getDoc(doc(db, 'workflows', 'jmc-workflow'))
+        ]);
           
           const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
           setAllRequisitions(requisitionsData);
           setFilteredRequisitions(requisitionsData);
 
-          setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+          setProjects(allProjects);
           setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
           
           if(workflowDoc.exists()) {
@@ -194,10 +193,10 @@ export default function JmcSummaryPage() {
             initializeUserInStep(log.stepName, userName);
 
             // Only count the *first* time a user interacts with a step for 'total'
-            if (!processedStepsForTotal.has(log.stepName)) {
+      _       if (!processedStepsForTotal.has(log.stepName)) {
                 report[log.stepName][userName].total++;
                 processedStepsForTotal.add(log.stepName);
-            }
+        _     }
         });
         
         // --- PASS 2: Get ACTIONS (in REVERSE) ---
@@ -264,11 +263,11 @@ export default function JmcSummaryPage() {
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
                 {Array.from({length: 4}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
-            </div>
+        _   </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
+  _               <Skeleton className="h-48 w-full" />
                 <Skeleton className="h-48 w-full" />
             </div>
         </div>
@@ -293,7 +292,7 @@ export default function JmcSummaryPage() {
                     <ShieldAlert className="h-16 w-16 text-destructive" />
                 </CardContent>
             </Card>
-        </div>
+  _     </div>
     )
   }
 
@@ -328,7 +327,7 @@ export default function JmcSummaryPage() {
               <SelectTrigger><SelectValue placeholder="Select Month" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
-                {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
+        _       {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
                   <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -350,7 +349,7 @@ export default function JmcSummaryPage() {
         {isLoading ? (
             Array.from({ length: 3 }).map((_, index) => (
                 <Card key={index}>
-                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+          _         <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                 </Card>
             ))
@@ -363,7 +362,7 @@ export default function JmcSummaryPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <p className="text-2xl font-bold">{stat.value}</p>
+p                   <p className="text-2xl font-bold">{stat.value}</p>
                 </CardContent>
               </Card>
             ))
@@ -402,8 +401,8 @@ export default function JmcSummaryPage() {
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
-                          // Hide user if they have no actions in this step
-                         if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
+            _             // Hide user if they have no actions in this step
+    _                      if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
                          return (
                              <TableRow key={userName}>
                                  <TableCell>{userName}</TableCell>
