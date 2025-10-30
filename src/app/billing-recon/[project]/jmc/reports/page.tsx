@@ -25,18 +25,7 @@ interface ReportCardProps {
   };
 }
 
-const reportItemsBase = [
-  { 
-    icon: BarChart4, 
-    text: 'JMC Summary', 
-    description: 'A summary of JMC status and progress.',
-    href: 'jmc-summary', // Updated href
-    permission: 'View Reports',
-    disabled: false,
-  },
-];
-
-function ReportCard({ item }: ReportCardProps) {
+const ReportCard = ({ item }: ReportCardProps) => {
     const cardContent = (
          <Card
             className={cn(
@@ -48,7 +37,7 @@ function ReportCard({ item }: ReportCardProps) {
                 <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.text}</CardTitle>
+                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>
@@ -72,6 +61,17 @@ export default function JmcReportsPage() {
     const params = useParams();
     const projectSlug = params.project as string;
     const canViewPage = can('View Reports', 'Billing Recon.JMC'); 
+
+    const reportItemsBase = [
+      { 
+        icon: BarChart4, 
+        text: 'JMC Summary', 
+        description: 'A summary of JMC status and progress.',
+        href: `/billing-recon/${projectSlug}/jmc/reports/jmc-summary`,
+        permission: 'View Reports',
+        disabled: false,
+      },
+    ];
 
     const reportItems = reportItemsBase.map(item => ({
         ...item,
