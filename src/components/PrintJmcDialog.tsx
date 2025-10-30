@@ -1,24 +1,18 @@
-
 'use client';
 
 import * as React from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'; 
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { JmcEntry, JmcItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { useRef } from 'react';
 
-/* ---------- Necessary Helpers ---------- */
+/* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
   if (typeof value?.toDate === 'function') return value.toDate();
@@ -36,109 +30,68 @@ const formatDateSafe = (dateInput: any) => {
   const d = toDateSafe(dateInput);
   if (!d) return 'N/A';
   try {
-    return format(d, 'dd.MM.yyyy'); // Match date format from image
+    return format(d, 'dd.MM.yyyy');
   } catch {
     return 'Invalid Date';
   }
 };
 
-/**
- * This is the type for the enriched items calculated in the
- * ViewJmcEntryDialog component. We pass this data directly.
- */
+/** Must match the enriched shape you pass from ViewJmcEntryDialog */
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
   previousCertifiedQty: number;
+};
+
+/** Optional extra fields present in Firestore but not on the core Project type */
+type ProjectExtras = {
+  refRoNo?: string;
+  nameOfSs?: string;
+  nameOfWork?: string;
+  subWork?: string;
+  woNo?: string;
+  projectName?: string; // sometimes used instead of nameOfWork
 };
 
 interface PrintJmcDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
-  project: Project | null;
+  project?: (Project & ProjectExtras) | null; // <-- allow extra optional fields
   enrichedItems: EnrichedJmcItem[];
 }
 
-/**
- * A component that only renders the print-specific CSS rules.
- * CRITICAL: The styles target #printable-jmc-content
- */
 function PrintableJmcStyles() {
   return (
-    <style>
-      {`
-        @media print {
-          /* Hide everything in the body by default */
-          body * {
-            visibility: hidden;
-          }
-          
-          /* Show only the printable content and its children */
-          #printable-jmc-content, #printable-jmc-content * {
-            visibility: visible;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          
-          /* Make the printable content fill the page (A4-like) */
-          #printable-jmc-content {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: auto;
-            min-height: 297mm; /* A4 height */
-            padding: 15mm;
-            font-size: 8pt; 
-            color: #000;
-          }
-          
-          /* Print-specific table styling (force borders) */
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid #000;
-            -webkit-print-color-adjust: exact; 
-            color-adjust: exact;
-          }
-          
-          th, td {
-            border: 1px solid #000;
-            padding: 3px 6px; /* Reduced padding for more content space */
-            word-wrap: break-word;
-            vertical-align: top;
-            height: 100%;
-          }
-          
-          th {
-            background-color: #f4f4f4;
-            font-weight: bold;
-            text-transform: uppercase;
-            text-align: center;
-          }
-          
-          .print-header-cell {
-              padding: 1px 4px !important;
-          }
-
-          /* Prevent table rows from breaking across pages */
-          tr {
-            page-break-inside: avoid;
-          }
-          
-          /* Hide the dialog header/footer when printing */
-          [role="dialog"] header, [role="dialog"] footer {
-            display: none;
-          }
+    <style>{`
+      @media print {
+        body * { visibility: hidden; }
+        #printable-jmc-content, #printable-jmc-content * {
+          visibility: visible;
+          font-family: Arial, sans-serif;
+          margin: 0; padding: 0; box-sizing: border-box;
         }
-      `}
-    </style>
+        #printable-jmc-content {
+          position: absolute; left: 0; top: 0;
+          width: 100%; height: auto; min-height: 297mm;
+          padding: 15mm; font-size: 8pt; color: #000;
+        }
+        table {
+          width: 100%; border-collapse: collapse; border: 1px solid #000;
+          -webkit-print-color-adjust: exact; color-adjust: exact;
+        }
+        th, td {
+          border: 1px solid #000; padding: 3px 6px; word-wrap: break-word;
+          vertical-align: top; height: 100%;
+        }
+        th { background-color: #f4f4f4; font-weight: bold; text-transform: uppercase; text-align: center; }
+        .print-header-cell { padding: 1px 4px !important; }
+        tr { page-break-inside: avoid; }
+        [role="dialog"] header, [role="dialog"] footer { display: none; }
+      }
+    `}</style>
   );
 }
 
-// Mock/Default Header Information (Ideally provided via props, but using mock/jmcEntry for structure)
 const COMPANY_NAME_1 = 'M/s Siddharth Engineering Limited';
 const COMPANY_NAME_2 = 'TP Southern Odisha Distribution Limited';
 const COMPANY_SLOGAN_1 = 'T P S O D L / O D S S P / P H A S E - I V / P k g - 2 B';
@@ -154,8 +107,8 @@ export default function PrintJmcDialog({
   const componentRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = useReactToPrint({
-      content: () => componentRef.current,
-      documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
+    content: () => componentRef.current,
+    documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
   });
 
   if (!jmcEntry) return null;
@@ -165,13 +118,17 @@ export default function PrintJmcDialog({
     const current = Number(item.certifiedQty) || 0;
     return prev + current;
   };
-  
+
+  // Safely read optional fields; fall back where useful
   const workDetails = {
-    refNo: project?.refRoNo || 'N/A',
-    date: project?.woNo ? formatDateSafe(project.woNo.split(' Dt: ')[1]) : 'N/A',
-    ssName: project?.nameOfSs || 'N/A',
-    mainWork: project?.nameOfWork || 'N/A',
-    subWork: project?.subWork || 'N/A',
+    refNo: project?.refRoNo ?? 'N/A',
+    date:
+      project?.woNo && project.woNo.includes(' Dt: ')
+        ? formatDateSafe(project.woNo.split(' Dt: ')[1])
+        : 'N/A',
+    ssName: project?.nameOfSs ?? 'N/A',
+    mainWork: project?.nameOfWork ?? project?.projectName ?? 'N/A',
+    subWork: project?.subWork ?? 'N/A',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
   };
@@ -179,20 +136,15 @@ export default function PrintJmcDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <PrintableJmcStyles />
-
-      {/* Set a wide layout for better visual preview of the print content */}
-      <DialogContent className="sm:max-w-[90rem] mx-auto"> 
+      <DialogContent className="sm:max-w-[90rem] mx-auto">
         <DialogHeader>
           <DialogTitle>Print JMC: {jmcEntry.jmcNo}</DialogTitle>
         </DialogHeader>
 
-        {/* PRINTABLE CONTENT AREA */}
         <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
-          
-          {/* Top Header Section */}
+          {/* Header */}
           <div className="flex justify-between border-b-2 border-black pb-1 mb-4">
             <div className="w-1/3 text-left">
-              {/* Using text blocks for logos/company names as images are not allowed in LaTeX/Canvas */}
               <div className="text-2xl font-black text-red-700">SEL</div>
             </div>
             <div className="w-1/3 text-center">
@@ -206,38 +158,33 @@ export default function PrintJmcDialog({
               <p className="text-[7pt] text-gray-700">{COMPANY_SLOGAN_2}</p>
             </div>
           </div>
-          
-          {/* Work Details Header */}
+
+          {/* Work details */}
           <div className="space-y-1 mb-4 text-[9pt]">
             <p><strong>Name of Work:</strong> {workDetails.mainWork}</p>
             <p><strong>Ref. RO No:</strong> {workDetails.refNo}, <strong>Dt:</strong>{workDetails.date}</p>
             <div className="flex justify-between">
-                <p><strong>Name of S/S:</strong> {workDetails.ssName}</p>
-                <p className="font-bold">JMC No: <span className="font-normal border-b border-black">{workDetails.jmcNo}</span></p>
+              <p><strong>Name of S/S:</strong> {workDetails.ssName}</p>
+              <p className="font-bold">JMC No: <span className="font-normal border-b border-black">{workDetails.jmcNo}</span></p>
             </div>
             <div className="flex justify-between">
-                <p><strong>Name of Work:</strong> {workDetails.subWork}</p>
-                <p className="font-bold">DATE: <span className="font-normal border-b border-black">{workDetails.jmcDate}</span></p>
+              <p><strong>Name of Work:</strong> {workDetails.subWork}</p>
+              <p className="font-bold">DATE: <span className="font-normal border-b border-black">{workDetails.jmcDate}</span></p>
             </div>
           </div>
 
-          {/* Main Content Table */}
+          {/* Table */}
           <div className="overflow-x-auto border border-black">
             <Table className="w-full table-auto">
-              {/* Complex Table Header (3 Rows) */}
               <TableHeader>
-                {/* Row 1: QUANTITY and JMC QUANTITY spanning columns */}
                 <TableRow>
                   <TableHead rowSpan={2} className="w-[4%] print-header-cell border-black text-center">Sl. No.</TableHead>
                   <TableHead rowSpan={2} className="w-[5%] print-header-cell border-black text-center">RO No.</TableHead>
                   <TableHead rowSpan={2} className="w-[42%] print-header-cell border-black text-center">L.O.A DESCRIPTION</TableHead>
                   <TableHead rowSpan={2} className="w-[6%] print-header-cell border-black text-center">U.O.M</TableHead>
-                  
                   <TableHead colSpan={2} className="w-[18%] print-header-cell border-black text-center font-bold text-base">QUANTITY</TableHead>
                   <TableHead colSpan={3} className="w-[25%] print-header-cell border-black text-center font-bold text-base">JMC QUANTITY</TableHead>
                 </TableRow>
-                
-                {/* Row 2: Sub-headers */}
                 <TableRow>
                   <TableHead className="w-[9%] print-header-cell border-black text-center">AS PER BOQ</TableHead>
                   <TableHead className="w-[9%] print-header-cell border-black text-center">AS PER DRG</TableHead>
@@ -247,46 +194,18 @@ export default function PrintJmcDialog({
                 </TableRow>
               </TableHeader>
 
-              {/* Table Body (Data) */}
               <TableBody>
                 {enrichedItems.map((item, index) => (
                   <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-                    <TableCell className="text-center font-medium border-black print-header-cell">
-                      {index + 1}
-                    </TableCell>
-                    <TableCell className="text-center border-black print-header-cell">
-                      {item.boqSlNo ?? '-'}
-                    </TableCell>
-                    <TableCell className="border-black print-header-cell">
-                      {item.description ?? '-'}
-                      {/* Assuming detailed description is handled here; 
-                        You might need to add logic for category headers if applicable in your data. */}
-                    </TableCell>
-                    <TableCell className="text-center border-black print-header-cell">
-                      {item.unit ?? '-'}
-                    </TableCell>
-
-                    {/* QUANTITY */}
-                    <TableCell className="text-right border-black print-header-cell">
-                      {/* BOQ Qty */}
-                      {Number(item.boqQty) || 0}
-                    </TableCell>
-                    <TableCell className="text-right border-black print-header-cell">
-                      {/* AS PER DRG - Assuming this is empty or 0 if not specified */}
-                      -
-                    </TableCell>
-
-                    {/* JMC QUANTITY */}
-                    <TableCell className="text-right border-black print-header-cell">
-                      {/* PREVIOUS */}
-                      {Number(item.previousCertifiedQty) || 0}
-                    </TableCell>
-                    <TableCell className="text-right border-black print-header-cell">
-                      {/* SINCE PREVIOUS (Certified Qty for this JMC) */}
-                      {Number(item.certifiedQty) || 0}
-                    </TableCell>
+                    <TableCell className="text-center font-medium border-black print-header-cell">{index + 1}</TableCell>
+                    <TableCell className="text-center border-black print-header-cell">{item.boqSlNo ?? '-'}</TableCell>
+                    <TableCell className="border-black print-header-cell">{item.description ?? '-'}</TableCell>
+                    <TableCell className="text-center border-black print-header-cell">{item.unit ?? '-'}</TableCell>
+                    <TableCell className="text-right border-black print-header-cell">{Number(item.boqQty) || 0}</TableCell>
+                    <TableCell className="text-right border-black print-header-cell">-</TableCell>
+                    <TableCell className="text-right border-black print-header-cell">{Number(item.previousCertifiedQty) || 0}</TableCell>
+                    <TableCell className="text-right border-black print-header-cell">{Number(item.certifiedQty) || 0}</TableCell>
                     <TableCell className="text-right border-black print-header-cell font-bold">
-                      {/* UP TO DATE (Previous + Since Previous) */}
                       {calculateUpToDateQty(item)}
                     </TableCell>
                   </TableRow>
@@ -294,23 +213,21 @@ export default function PrintJmcDialog({
               </TableBody>
             </Table>
           </div>
-          
-          {/* Signature Footer Section */}
+
+          {/* Signatures */}
           <div className="flex justify-between mt-12 text-[9pt]">
             <div className="w-[30%] text-center">
-                <p className="border-t border-black pt-1">Signature of EPC</p>
+              <p className="border-t border-black pt-1">Signature of EPC</p>
             </div>
             <div className="w-[30%] text-center">
-                <p className="border-t border-black pt-1">Signature of Field Engg, TPSODL</p>
+              <p className="border-t border-black pt-1">Signature of Field Engg, TPSODL</p>
             </div>
             <div className="w-[30%] text-center">
-                <p className="border-t border-black pt-1">Signature of Field Engg, WAPCOS</p>
+              <p className="border-t border-black pt-1">Signature of Field Engg, WAPCOS</p>
             </div>
           </div>
-          
         </div>
 
-        {/* Dialog Footer (for screen only) */}
         <DialogFooter className="mt-4 pr-4">
           <DialogClose asChild>
             <Button variant="outline">Close</Button>

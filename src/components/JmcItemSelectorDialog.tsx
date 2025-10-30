@@ -35,6 +35,7 @@ interface JmcItemSelectorDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BillItem[]) => void;
   alreadyAddedItems?: BillItem[];
+  projectId?: string; 
 }
 
 // Keep JmcItem field types intact
@@ -71,7 +72,7 @@ export function JmcItemSelectorDialog({
   const [jmcItems, setJmcItems] = useState<JmcItemWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sortKey, setSortKey] =
-    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | null>(null);
+    useState<'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'totalAmount' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [filters, setFilters] = useState<{
@@ -267,6 +268,8 @@ export function JmcItemSelectorDialog({
             cmp = ((A.availableQty ?? 0) - (B.availableQty ?? 0)) * dir;
           } else if (sortKey === 'rate') {
             cmp = (getRateNumber((A as any).rate) - getRateNumber((B as any).rate)) * dir;
+          } else if (sortKey === 'totalAmount') {
+             cmp = (getRateNumber((A as any).totalAmount) - getRateNumber((B as any).totalAmount)) * dir;
           } else {
             cmp =
               collator.compare(String((A as any)[sortKey] ?? ''), String((B as any)[sortKey] ?? '')) *
@@ -307,7 +310,7 @@ export function JmcItemSelectorDialog({
     });
   }, []);
 
-  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate') => {
+  const toggleSort = (key: 'jmcNo' | 'boqSlNo' | 'availableQty' | 'rate' | 'totalAmount') => {
     if (sortKey === key) {
       setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -387,7 +390,7 @@ export function JmcItemSelectorDialog({
 
           <ScrollArea className="h-96 border rounded-md">
             <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
+              <div className="grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
                 <div className="w-[50px] flex justify-center">
                   <Checkbox
                     aria-label="Select all"
@@ -396,47 +399,12 @@ export function JmcItemSelectorDialog({
                   />
                 </div>
 
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('jmcNo')}
-                  aria-label="Sort by JMC No"
-                >
-                  JMC No.
-                  {sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
-                <button
-                  type="button"
-                  className="cursor-pointer flex items-center text-left"
-                  onClick={() => toggleSort('boqSlNo')}
-                  aria-label="Sort by BOQ Sl No"
-                >
-                  BOQ Sl.No.
-                  {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
+                <button type="button" className="cursor-pointer flex items-center text-left" onClick={() => toggleSort('jmcNo')}>JMC No.{sortKey === 'jmcNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
+                <button type="button" className="cursor-pointer flex items-center text-left" onClick={() => toggleSort('boqSlNo')}>BOQ Sl.No.{sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
                 <div>Description</div>
-
-                <button
-                  type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('availableQty')}
-                  aria-label="Sort by Available Qty"
-                >
-                  Available Qty
-                  {sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
-
-                <button
-                  type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
-                  onClick={() => toggleSort('rate')}
-                  aria-label="Sort by Unit Rate"
-                >
-                  Unit Rate
-                  {sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                </button>
+                <button type="button" className="text-right cursor-pointer flex items-center justify-end" onClick={() => toggleSort('availableQty')}>Available Qty{sortKey === 'availableQty' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
+                <button type="button" className="text-right cursor-pointer flex items-center justify-end" onClick={() => toggleSort('rate')}>Unit Rate{sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
+                <button type="button" className="text-right cursor-pointer flex items-center justify-end" onClick={() => toggleSort('totalAmount')}>Executed Amount{sortKey === 'totalAmount' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
               </div>
 
               {isLoading ? (
@@ -449,7 +417,7 @@ export function JmcItemSelectorDialog({
                   return (
                     <div
                       key={item.id}
-                      className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                      className={`grid grid-cols-[auto_1fr_1fr_2fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow(item.id, !rowChecked)}
@@ -481,6 +449,9 @@ export function JmcItemSelectorDialog({
                       <div className="text-right pr-2">{item.availableQty}</div>
                       <div className="text-right pr-2">
                         {formatCurrency(getRateNumber((item as any).rate))}
+                      </div>
+                      <div className="text-right pr-2">
+                        {formatCurrency(getRateNumber((item as any).totalAmount))}
                       </div>
                     </div>
                   );

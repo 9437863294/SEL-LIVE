@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Save, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,17 +23,30 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
+/** Extra fields present in Firestore but not declared on core Project type */
+type ProjectExtras = {
+  woNo?: string;
+  refRoNo?: string;
+  nameOfSs?: string;
+  subWork?: string;
+  billingRequired?: boolean;
+  projectName?: string; // already on your Project in many setups, but keep as optional fallback
+};
+
+type ProjectWithExtras = Project & ProjectExtras;
+
 export default function BillingStatusPage() {
   const { toast } = useToast();
-  const [projects, setProjects] = useState<Project[]>([]);
+
+  const [projects, setProjects] = useState<ProjectWithExtras[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   // Unified dialog state
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'enable' | 'edit'>('enable');
-  const [pendingProject, setPendingProject] = useState<Project | null>(null);
-  
+  const [pendingProject, setPendingProject] = useState<ProjectWithExtras | null>(null);
+
   // Form state for the dialog
   const [woInput, setWoInput] = useState('');
   const [nameOfWork, setNameOfWork] = useState('');
@@ -43,15 +55,25 @@ export default function BillingStatusPage() {
   const [subWork, setSubWork] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
+  const resetForm = () => {
+    setPendingProject(null);
+    setWoInput('');
+    setNameOfWork('');
+    setRefRoNo('');
+    setNameOfSs('');
+    setSubWork('');
+  };
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     try {
       const querySnapshot = await getDocs(collection(db, 'projects'));
-      const projectsData = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+      const projectsData = querySnapshot.docs.map((d) => {
+        // Remove any 'id' coming from Firestore data to avoid duplicate key
+        const raw = d.data() as (ProjectWithExtras & { id?: string }) | undefined;
+        const { id: _ignored, ...rest } = raw ?? {};
+        return { id: d.id, ...rest } as ProjectWithExtras;
+      });
       setProjects(projectsData);
     } catch (error) {
       console.error('Error fetching projects: ', error);
@@ -59,17 +81,27 @@ export default function BillingStatusPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+  
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   // Toggle handler
-  const handleBillingToggle = async (project: Project, nextChecked: boolean) => {
-    if (!nextChecked) { // Turning OFF
+  const handleBillingToggle = async (project: ProjectWithExtras, nextChecked: boolean) => {
+    if (!project.id) return;
+
+    if (!nextChecked) {
+      // Turning OFF immediately (no extra details required)
       setSavingId(project.id);
       try {
         const projectRef = doc(db, 'projects', project.id);
         await updateDoc(projectRef, { billingRequired: false });
-        setProjects(prev => prev.map(p => (p.id === project.id ? { ...p, billingRequired: false } : p)));
-        toast({ title: 'Updated', description: `${project.projectName} billing disabled.` });
+        setProjects((prev) =>
+          prev.map((p) => (p.id === project.id ? { ...p, billingRequired: false } : p))
+        );
+        toast({ title: 'Updated', description: `${project.projectName ?? 'Project'} billing disabled.` });
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to update billing status.', variant: 'destructive' });
       } finally {
@@ -78,30 +110,31 @@ export default function BillingStatusPage() {
       return;
     }
 
-    // Turning ON
+    // Turning ON → show dialog to collect details first
     setDialogMode('enable');
     setPendingProject(project);
-    setWoInput((project as any).woNo ?? '');
-    setNameOfWork(project.projectName || '');
-    setRefRoNo((project as any).refRoNo || '');
-    setNameOfSs((project as any).nameOfSs || '');
-    setSubWork((project as any).subWork || '');
+    setWoInput(project.woNo ?? '');
+    setNameOfWork(project.projectName ?? '');
+    setRefRoNo(project.refRoNo ?? '');
+    setNameOfSs(project.nameOfSs ?? '');
+    setSubWork(project.subWork ?? '');
     setIsDetailDialogOpen(true);
   };
-  
-  const openEditDialog = (project: Project) => {
+
+  const openEditDialog = (project: ProjectWithExtras) => {
     setDialogMode('edit');
     setPendingProject(project);
-    setWoInput((project as any).woNo ?? '');
-    setNameOfWork(project.projectName || '');
-    setRefRoNo((project as any).refRoNo || '');
-    setNameOfSs((project as any).nameOfSs || '');
-    setSubWork((project as any).subWork || '');
+    setWoInput(project.woNo ?? '');
+    setNameOfWork(project.projectName ?? '');
+    setRefRoNo(project.refRoNo ?? '');
+    setNameOfSs(project.nameOfSs ?? '');
+    setSubWork(project.subWork ?? '');
     setIsDetailDialogOpen(true);
   };
 
   const saveProjectDetails = async () => {
-    if (!pendingProject) return;
+    if (!pendingProject?.id) return;
+
     const woNo = woInput.trim();
     if (!woNo) {
       toast({ title: 'WO No required', description: 'Please enter a valid Work Order No.', variant: 'destructive' });
@@ -111,29 +144,33 @@ export default function BillingStatusPage() {
     setIsSavingDetails(true);
     try {
       const projectRef = doc(db, 'projects', pendingProject.id);
-      const updateData: Partial<Project> = {
+
+      // Build an update payload that TS understands, including extra Firestore fields
+      const updateData: Partial<Project> & ProjectExtras = {
         woNo,
         projectName: nameOfWork,
         refRoNo,
         nameOfSs,
-        subWork
+        subWork,
       };
-      
-      // Only set billingRequired to true if we are enabling it for the first time
+
       if (dialogMode === 'enable') {
         updateData.billingRequired = true;
       }
 
       await updateDoc(projectRef, updateData);
 
-      setProjects(prev =>
-        prev.map(p => (p.id === pendingProject.id ? { ...p, ...updateData } : p))
+      // Optimistic local update
+      setProjects((prev) =>
+        prev.map((p) => (p.id === pendingProject.id ? { ...p, ...updateData } : p))
       );
 
-      toast({ title: 'Success', description: `Project details for ${nameOfWork} have been saved.` });
+      toast({
+        title: 'Success',
+        description: `Project details for ${nameOfWork || pendingProject.projectName || 'project'} have been saved.`,
+      });
       setIsDetailDialogOpen(false);
-      setPendingProject(null);
-      setWoInput('');
+      resetForm();
     } catch (error) {
       console.error('Error saving project details:', error);
       toast({ title: 'Error', description: 'Failed to save project details.', variant: 'destructive' });
@@ -173,17 +210,31 @@ export default function BillingStatusPage() {
                 {isLoading ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-48" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-12" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-8 w-20" /></TableCell>
+                      <TableCell>
+                        <Skeleton className="h-5 w-48" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-5 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-12" />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Skeleton className="h-8 w-20" />
+                      </TableCell>
                     </TableRow>
                   ))
+                ) : projects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                      No projects found.
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  projects.map(project => (
+                  projects.map((project) => (
                     <TableRow key={project.id}>
                       <TableCell className="font-medium">{project.projectName}</TableCell>
-                      <TableCell>{(project as any).woNo ?? '—'}</TableCell>
+                      <TableCell>{project.woNo ?? '—'}</TableCell>
                       <TableCell>
                         {savingId === project.id ? (
                           <Loader2 className="h-5 w-5 animate-spin" />
@@ -191,12 +242,18 @@ export default function BillingStatusPage() {
                           <Switch
                             checked={!!project.billingRequired}
                             onCheckedChange={(checked) => handleBillingToggle(project, checked)}
+                            disabled={Boolean(isDetailDialogOpen && pendingProject?.id === project.id)}
                           />
                         )}
                       </TableCell>
-                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(project)}>
-                            <Edit className="mr-2 h-4 w-4" /> Edit
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(project)}
+                          disabled={savingId === project.id}
+                        >
+                          <Edit className="mr-2 h-4 w-4" /> Edit
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -208,47 +265,87 @@ export default function BillingStatusPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={isDetailDialogOpen} onOpenChange={(open) => { if (!open) { setIsDetailDialogOpen(false); setPendingProject(null); } }}>
+      <Dialog
+        open={isDetailDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsDetailDialogOpen(false);
+            resetForm();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Enter Work Order Details</DialogTitle>
+            <DialogTitle>
+              {dialogMode === 'enable' ? 'Enter Work Order Details' : 'Edit Work Order Details'}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
             <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="nameOfWork">Name of Work</Label>
-                <Input id="nameOfWork" value={nameOfWork} onChange={(e) => setNameOfWork(e.target.value)} />
+              <Label htmlFor="nameOfWork">Name of Work</Label>
+              <Input
+                id="nameOfWork"
+                value={nameOfWork}
+                onChange={(e) => setNameOfWork(e.target.value)}
+                placeholder="e.g., 33kV Bay Extension at XYZ"
+              />
             </div>
+
             <div className="space-y-2">
-                <Label htmlFor="refRoNo">Ref. RO No</Label>
-                <Input id="refRoNo" value={refRoNo} onChange={(e) => setRefRoNo(e.target.value)} />
+              <Label htmlFor="refRoNo">Ref. RO No</Label>
+              <Input
+                id="refRoNo"
+                value={refRoNo}
+                onChange={(e) => setRefRoNo(e.target.value)}
+                placeholder="e.g., RO/2025/123"
+              />
             </div>
-             <div className="space-y-2">
-                <Label htmlFor="woNo">WO No</Label>
-                <Input
+
+            <div className="space-y-2">
+              <Label htmlFor="woNo">WO No</Label>
+              <Input
                 id="woNo"
                 value={woInput}
                 onChange={(e) => setWoInput(e.target.value)}
-                placeholder="e.g., WO-2024-001"
+                placeholder="e.g., WO-2025-001"
                 autoFocus
-                />
+              />
             </div>
+
             <div className="space-y-2">
-                <Label htmlFor="nameOfSs">Name of S/S</Label>
-                <Input id="nameOfSs" value={nameOfSs} onChange={(e) => setNameOfSs(e.target.value)} />
+              <Label htmlFor="nameOfSs">Name of S/S</Label>
+              <Input
+                id="nameOfSs"
+                value={nameOfSs}
+                onChange={(e) => setNameOfSs(e.target.value)}
+                placeholder="e.g., Berhampur 132/33kV"
+              />
             </div>
+
             <div className="space-y-2">
-                <Label htmlFor="subWork">Name of Work 2</Label>
-                <Input id="subWork" value={subWork} onChange={(e) => setSubWork(e.target.value)} />
+              <Label htmlFor="subWork">Name of Work 2</Label>
+              <Input
+                id="subWork"
+                value={subWork}
+                onChange={(e) => setSubWork(e.target.value)}
+                placeholder="e.g., Stringing + Bay Works"
+              />
             </div>
           </div>
 
           <DialogFooter className="mt-4">
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" disabled={isSavingDetails}>
+                Cancel
+              </Button>
             </DialogClose>
             <Button onClick={saveProjectDetails} disabled={isSavingDetails}>
-              {isSavingDetails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {isSavingDetails ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
               {dialogMode === 'enable' ? 'Save & Enable' : 'Save Changes'}
             </Button>
           </DialogFooter>
