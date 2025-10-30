@@ -37,7 +37,7 @@ const ReportCard = ({ item }: ReportCardProps) => {
                 <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
+                <CardTitle className="text-base font-semibold">{item.text}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>
@@ -110,7 +110,7 @@ export default function JmcReportsPage() {
     }
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full max-w-4xl pr-4">
       <div className="mb-6 flex items-center gap-4">
         <Link href={`/billing-recon/${projectSlug}/jmc`}>
           <Button variant="ghost" size="icon">
