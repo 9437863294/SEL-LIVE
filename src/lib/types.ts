@@ -51,8 +51,8 @@ export interface SavedUser {
   name: string;
   email: string;
   photoURL: string;
-  pin?: string;
-  password?: string;
+  pin?: string;        // 4-digit PIN for quick device sign-in
+  password?: string;   // Base64-encoded password (not secure - consider alternatives)
 }
 
 export interface Department {
@@ -108,7 +108,7 @@ export const permissionModules = {
   'Billing Recon': {
     'View Module': [],
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos'],
+    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'Billing': ['View', 'Create Bill', 'View Log'],
     'MVAC': ['View', 'Add Item'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -15,12 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem, Project } from '@/lib/types';
-import { Search, Loader2, ArrowUpDown, X } from 'lucide-react';
+import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useParams } from 'next/navigation';
 import {
   Select,
   SelectContent,
@@ -34,9 +30,9 @@ interface BoqMultiSelectDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
-  boqItems: BoqItem[]; // Re-added this prop
+  boqItems: BoqItem[];
   alreadyAddedItems?: BillItem[];
-  projectId?: string; 
+  projectId?: string;
 }
 
 /* Utility to avoid TS2783 (`id` duplicated when spreading Firestore data) */
@@ -54,14 +50,23 @@ export function BoqMultiSelectDialog({
   projectId,
 }: BoqMultiSelectDialogProps) {
   const { toast } = useToast();
-  
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // debounced
   const [isLoading, setIsLoading] = useState(false);
+
+  // ✅ Default sort is always ERP SL NO when dialog opens
   const [sortKey, setSortKey] =
-    useState<'erpSlNo' | 'boqSlNo' | 'description' | 'qty' | 'rate' | null>(null);
+    useState<'erpSlNo' | 'boqSlNo' | 'description' | 'qty' | 'rate' | null>('erpSlNo');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  useEffect(() => {
+    if (isOpen) {
+      setSortKey('erpSlNo');
+      setSortDirection('asc');
+    }
+  }, [isOpen]);
 
   const [filters, setFilters] = useState<{
     'Scope 1': 'all' | string;
@@ -79,13 +84,12 @@ export function BoqMultiSelectDialog({
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  
   const getRateNumber = (rate: unknown) => {
     if (typeof rate === 'number') return rate;
     const n = Number(rate);
     return Number.isFinite(n) ? n : 0;
   };
-  
+
   const getSlNo = (item: BoqItem): string => {
     return String(item['BOQ SL No'] ?? item['SL. No.'] ?? '');
   };
@@ -93,7 +97,7 @@ export function BoqMultiSelectDialog({
   const getErpSlNo = (item: BoqItem): string => {
     return String(item['ERP SL NO'] ?? '');
   };
-  
+
   const getItemDescription = (item: BoqItem): string => {
     return String(item['Description'] ?? '');
   };
@@ -101,17 +105,19 @@ export function BoqMultiSelectDialog({
   const getBoqQty = (item: BoqItem): string => {
     return String(item['QTY'] ?? item['Total Qty'] ?? '0');
   };
-  
+
   const getUnit = (item: BoqItem): string => {
     return String(item['UNIT'] ?? item['Unit'] ?? '');
   };
 
   const findRateKey = (item: BoqItem): string | undefined => {
     const specificKeys = ['Unit Rate', 'UNIT PRICE'];
-    for(const key of specificKeys){
-      if(key in item) return key;
+    for (const key of specificKeys) {
+      if (key in item) return key;
     }
-    return Object.keys(item).find(k => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
+    return Object.keys(item).find(
+      (k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'),
+    );
   };
 
   const formatCurrency = (amount: number) =>
@@ -161,7 +167,7 @@ export function BoqMultiSelectDialog({
 
   const addedItemIds = useMemo(
     () => new Set(alreadyAddedItems.map((it: BillItem) => it.jmcItemId)),
-    [alreadyAddedItems]
+    [alreadyAddedItems],
   );
 
   const filteredItems = useMemo(() => {
@@ -170,8 +176,10 @@ export function BoqMultiSelectDialog({
     let items = boqItems.filter((item: BoqItem) => {
       if (addedItemIds.has(item.id)) return false;
 
-      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
+      const scope1Match =
+        filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
+      const scope2Match =
+        filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
       const category1Match =
         filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
 
@@ -184,20 +192,45 @@ export function BoqMultiSelectDialog({
         getItemDescription(item).toLowerCase().includes(q)
       );
     });
-    
-    if (sortKey) {
-      const dir = sortDirection === 'asc' ? 1 : -1;
-      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-      items.sort((a: BoqItem, b: BoqItem) => {
-        let valA, valB;
-        if(sortKey === 'boqSlNo') { valA = getSlNo(a); valB = getSlNo(b); }
-        else if (sortKey === 'erpSlNo') { valA = getErpSlNo(a); valB = getErpSlNo(b); }
-        else if (sortKey === 'description') { valA = getItemDescription(a); valB = getItemDescription(b); }
-        else if (sortKey === 'qty') { valA = getBoqQty(a); valB = getBoqQty(b); }
-        else { valA = 'a'; valB = 'b'}
-        return collator.compare(valA, valB) * dir;
-      })
-    }
+
+    // Sorting (default ERP SL NO asc; with ERP as stable tiebreaker)
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+    items.sort((a: BoqItem, b: BoqItem) => {
+      const erpA = getErpSlNo(a);
+      const erpB = getErpSlNo(b);
+
+      const compareByKey = () => {
+        switch (sortKey) {
+          case 'erpSlNo':
+            return collator.compare(erpA, erpB);
+          case 'boqSlNo':
+            return collator.compare(getSlNo(a), getSlNo(b));
+          case 'description':
+            return collator.compare(getItemDescription(a), getItemDescription(b));
+          case 'qty':
+            return collator.compare(getBoqQty(a), getBoqQty(b));
+          case 'rate': {
+            const rateKeyA = findRateKey(a);
+            const rateKeyB = findRateKey(b);
+            const ra = getRateNumber(rateKeyA ? (a as any)[rateKeyA] : 0);
+            const rb = getRateNumber(rateKeyB ? (b as any)[rateKeyB] : 0);
+            return ra === rb ? 0 : ra < rb ? -1 : 1;
+          }
+          default:
+            // no sortKey? default to ERP SL NO
+            return collator.compare(erpA, erpB);
+        }
+      };
+
+      let cmp = compareByKey();
+      if (cmp === 0) {
+        // stable tiebreaker by ERP SL NO
+        cmp = collator.compare(erpA, erpB);
+      }
+      return cmp * dir;
+    });
 
     return items;
   }, [boqItems, searchTerm, filters, sortKey, sortDirection, addedItemIds]);
@@ -298,12 +331,47 @@ export function BoqMultiSelectDialog({
                     onCheckedChange={handleSelectAll}
                   />
                 </div>
-                <button type="button" className="cursor-pointer flex items-center text-left" onClick={() => toggleSort('erpSlNo')}>ERP Sl. No.{sortKey === 'erpSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
-                <button type="button" className="cursor-pointer flex items-center text-left" onClick={() => toggleSort('boqSlNo')}>BOQ Sl.No.{sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
-                <button type="button" className="cursor-pointer flex items-center text-left" onClick={() => toggleSort('description')}>Description{sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
-                <button type="button" className="text-right cursor-pointer flex items-center justify-end" onClick={() => toggleSort('qty')}>BOQ Qty{sortKey === 'qty' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
+                <button
+                  type="button"
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('erpSlNo')}
+                >
+                  ERP Sl. No.
+                  {sortKey === 'erpSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('boqSlNo')}
+                >
+                  BOQ Sl.No.
+                  {sortKey === 'boqSlNo' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  className="cursor-pointer flex items-center text-left"
+                  onClick={() => toggleSort('description')}
+                >
+                  Description
+                  {sortKey === 'description' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  className="text-right cursor-pointer flex items-center justify-end"
+                  onClick={() => toggleSort('qty')}
+                >
+                  BOQ Qty
+                  {sortKey === 'qty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
                 <div className="text-left">Unit</div>
-                <button type="button" className="text-right cursor-pointer flex items-center justify-end" onClick={() => toggleSort('rate')}>Unit Rate{sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}</button>
+                <button
+                  type="button"
+                  className="text-right cursor-pointer flex items-center justify-end"
+                  onClick={() => toggleSort('rate')}
+                >
+                  Unit Rate
+                  {sortKey === 'rate' && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                </button>
               </div>
 
               {isLoading ? (
@@ -348,16 +416,12 @@ export function BoqMultiSelectDialog({
                       <div className="truncate pr-2">{getItemDescription(item)}</div>
                       <div className="text-right pr-2">{getBoqQty(item)}</div>
                       <div className="truncate pr-2">{getUnit(item)}</div>
-                      <div className="text-right pr-2">
-                        {formatCurrency(getRateNumber(rate))}
-                      </div>
+                      <div className="text-right pr-2">{formatCurrency(getRateNumber(rate))}</div>
                     </div>
                   );
                 })
               ) : (
-                <div className="text-center p-8 text-muted-foreground">
-                  No available items found.
-                </div>
+                <div className="text-center p-8 text-muted-foreground">No available items found.</div>
               )}
             </div>
           </ScrollArea>
@@ -369,11 +433,7 @@ export function BoqMultiSelectDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button
-            type="button"
-            onClick={handleConfirm}
-            disabled={selectedIds.size === 0}
-          >
+          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
             Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </DialogFooter>

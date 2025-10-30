@@ -30,9 +30,9 @@ const reportItemsBase = [
     icon: BarChart4, 
     text: 'JMC Summary', 
     description: 'A summary of JMC status and progress.',
-    href: '#', // To be implemented
+    href: 'jmc-summary', // Updated href
     permission: 'View Reports',
-    disabled: true,
+    disabled: false,
   },
 ];
 
@@ -121,7 +121,7 @@ export default function JmcReportsPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {reportItems.map((item) => (
-          <ReportCard key={item.title} item={item} />
+          <ReportCard key={item.text} item={item} />
         ))}
       </div>
     </div>

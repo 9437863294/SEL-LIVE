@@ -13,21 +13,15 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
 import { format } from 'date-fns';
-// FIX: Using alias for consistent path resolution
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMemo, useState, useEffect } from 'react';
-// FIX: Using alias for consistent path resolution
 import { Input } from '@/components/ui/input';
-import { Loader2, Save, Printer } from 'lucide-react'; 
+import { Loader2, Save, Printer } from 'lucide-react';
 
-/* Firestore to fetch other JMC entries in the SAME project */
-// FIX: Retaining the alias for lib imports, which is the standard pattern
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
-/* --- NEW: Import the print dialog --- */
-// FIX: Using alias for consistent path resolution
-import PrintJmcDialog from '@/components/PrintJmcDialog'; 
+import PrintJmcDialog from '@/components/PrintJmcDialog';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -57,7 +51,6 @@ function formatCurrency(amount: number | string) {
   }
 }
 
-/** Read "Scope 2" from an arbitrary object (row, BOQ, entry, etc.) */
 function getScope2(x: any): string | undefined {
   if (!x) return undefined;
   const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
@@ -65,7 +58,6 @@ function getScope2(x: any): string | undefined {
   return typeof v === 'string' ? v.trim() : undefined;
 }
 
-/** Composite key for (scope2 + slNo) */
 const compositeKey = (scope2: unknown, slNo: unknown) =>
   `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
@@ -79,7 +71,7 @@ interface ViewJmcEntryDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
   boqItems: BoqItem[];
-  bills: Bill[]; // kept for API compatibility; not used in this “same as entry page” calc
+  bills: Bill[];
   isEditMode?: boolean;
   onVerify?: (
     taskId: string,
@@ -88,7 +80,6 @@ interface ViewJmcEntryDialogProps {
     updatedItems: JmcItem[]
   ) => Promise<void>;
   isLoading?: boolean;
-  /** Control dialog width */
   dialogSize?: 'default' | 'xl' | '2xl' | 'full';
 }
 
@@ -105,42 +96,30 @@ export default function ViewJmcEntryDialog({
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
-  
-  /* --- NEW: State for print dialog --- */
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
 
-  /* Clone items for edit mode */
   useEffect(() => {
     setEditableItems(jmcEntry?.items ? (JSON.parse(JSON.stringify(jmcEntry.items)) as JmcItem[]) : []);
   }, [jmcEntry, isOpen]);
 
-  /* Fetch ALL JMC entries in the SAME project to mirror the Entry page’s calculation */
   useEffect(() => {
     const fetchProjectJmcs = async () => {
-      const projectId =
-        (jmcEntry as any)?.projectId ||
-        // some of your JMCs might store project under a different key; fallback to undefined
-        undefined;
-
+      const projectId = (jmcEntry as any)?.projectId || undefined;
       if (!projectId) {
         setProjectJmcEntries([]);
         return;
       }
-
       try {
         const snap = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
         const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
         setProjectJmcEntries(all);
       } catch (e) {
-        // On failure, just fallback to zero; don’t break the dialog
         console.error('Failed to load project JMCs for totalCertifiedQty map:', e);
         setProjectJmcEntries([]);
       }
     };
     fetchProjectJmcs();
   }, [jmcEntry]);
-
-  /* Build the same totalCertifiedQty map as in the JMC Entry page */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
     projectJmcEntries.forEach((entry) => {
@@ -153,14 +132,12 @@ export default function ViewJmcEntryDialog({
     return map;
   }, [projectJmcEntries]);
 
-  /* Enrich items for display/edit */
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
     if (!jmcEntry || !Array.isArray(boqItems)) return [];
 
     const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
 
     return itemsToDisplay.map((item) => {
-      // Match BOQ by SL No
       const sl = String(item.boqSlNo ?? '').trim();
       const boqItem = boqItems.find((b: any) => {
         const bSl = String(b['BOQ SL No'] ?? b['SL. No.'] ?? b['SL No'] ?? b['SL'] ?? '').trim();
@@ -169,11 +146,9 @@ export default function ViewJmcEntryDialog({
 
       const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
 
-      // Scope2 can come from the row, else try BOQ
       const scope2 = getScope2(item) ?? getScope2(boqItem);
       const key = compositeKey(scope2, sl);
 
-      // Prefer explicit per-row totalCertifiedQty; else use project-wide map (same as Entry page)
       let previousCertifiedQty = Number((item as any).totalCertifiedQty);
       if (!Number.isFinite(previousCertifiedQty)) {
         previousCertifiedQty = totalCertifiedQtyMap[key] || 0;
@@ -200,6 +175,7 @@ export default function ViewJmcEntryDialog({
       if (value === '') item[field] = '';
       else if (Number.isFinite(numValue)) item[field] = Number(numValue);
 
+      // Keep totalAmount synced for backward compatibility, though we compute on the fly now.
       const rate = Number(item.rate) || 0;
       const executedQty = Number(item.executedQty) || 0;
       item.totalAmount = executedQty * rate;
@@ -226,7 +202,6 @@ export default function ViewJmcEntryDialog({
     }
   };
 
-  // Dialog width presets (works with your DialogContent)
   const dialogWidthClass =
     dialogSize === 'full'
       ? 'sm:max-w-[95vw]'
@@ -236,19 +211,21 @@ export default function ViewJmcEntryDialog({
       ? 'sm:max-w-[64rem]'
       : 'sm:max-w-4xl';
 
-  // Fixed column widths (sum = 112rem) to keep columns visible.
+  // UPDATED: columns — replaced "total" with "execAmt" and added "certAmt"
   const COLS = {
     sl: '6rem',
     desc: '20rem',
     unit: '4rem',
-    boq: '8rem',
-    rate: '8rem',
-    prev: '8rem',
-    exec: '8rem',
-    cert: '8rem',
-    total: '12rem',
+    boq: '6rem',
+    rate: '6rem',
+    prev: '6rem',
+    exec: '6rem',
+    cert: '6rem',
+    upToDate: '6rem',
+    execAmt: '8rem',
+    certAmt: '8rem',
   } as const;
-  const tableMinWidth = 82; // rem
+  const tableMinWidth = 82; // rem (adjusted for extra column)
 
   return (
     <>
@@ -260,7 +237,6 @@ export default function ViewJmcEntryDialog({
             </DialogTitle>
           </DialogHeader>
 
-          {/* Vertical scrolling only; table itself handles horizontal */}
           <div className="max-h-[70vh] overflow-y-auto">
             <div className="space-y-4 p-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -295,69 +271,113 @@ export default function ViewJmcEntryDialog({
                         <col style={{ width: COLS.prev }} />
                         <col style={{ width: COLS.exec }} />
                         <col style={{ width: COLS.cert }} />
-                        <col style={{ width: COLS.total }} />
+                        <col style={{ width: COLS.upToDate }} />
+                        <col style={{ width: COLS.execAmt }} />
+                        <col style={{ width: COLS.certAmt }} />
                       </colgroup>
-
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-center whitespace-nowrap">BOQ Sl. No.</TableHead>
-                          <TableHead className="whitespace-nowrap">Description</TableHead>
-                          <TableHead className="whitespace-nowrap">Unit</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">BOQ Qty</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Rate</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Prev. Certified</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Executed Qty</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Certified Qty</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            BOQ Sl. No.
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Description
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Unit
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            BOQ Qty
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Rate
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Prev. <br /> Certified
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Executed <br /> in this JMC
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Certified <br /> in this JMC
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Up to Date <br /> Certified Qty
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Amount Executed <br /> in this JMC
+                          </TableHead>
+                          <TableHead className="text-center whitespace-normal break-words text-[11px] leading-tight px-2">
+                            Amount Certified <br /> in this JMC
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
-
                       <TableBody>
-                        {enrichedItems.map((item, index) => (
-                          <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-                            <TableCell className="text-center font-medium truncate" title={String(item.boqSlNo ?? '')}>
-                              {item.boqSlNo ?? '-'}
-                            </TableCell>
+                        {enrichedItems.map((item, index) => {
+                          const rate = Number((item as any).rate) || 0;
+                          const execQty = Number((item as any).executedQty) || 0;
+                          const certQty = Number((item as any).certifiedQty) || 0;
+                          const prevCert = Number((item as any).previousCertifiedQty) || 0;
+                          const upToDateCertifiedQty = prevCert + certQty;
+                          const executedAmount = rate * execQty;
+                          const certifiedAmount = rate * certQty;
+                          return (
+                            <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
+                              <TableCell className="text-center font-medium truncate" title={String(item.boqSlNo ?? '')}>
+                                {item.boqSlNo ?? '-'}
+                              </TableCell>
 
-                            <TableCell className="align-top">
-                              <div className="line-clamp-2 break-words" title={item.description ?? ''}>
-                                {item.description ?? '-'}
-                              </div>
-                            </TableCell>
+                              <TableCell className="align-top">
+                                <div className="line-clamp-2 break-words" title={item.description ?? ''}>
+                                  {item.description ?? '-'}
+                                </div>
+                              </TableCell>
 
-                            <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
+                              <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
 
-                            <TableCell className="text-right whitespace-nowrap align-top">{Number(item.boqQty) || 0}</TableCell>
-                            <TableCell className="text-right whitespace-nowrap align-top">
-                              {formatCurrency((item as any).rate)}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap align-top">
-                              {Number((item as any).previousCertifiedQty) || 0}
-                            </TableCell>
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {Number(item.boqQty) || 0}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {formatCurrency(rate)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {prevCert}
+                              </TableCell>
 
-                            <TableCell className="text-right whitespace-nowrap align-top">
-                              {isEditMode ? (
-                                <Input
-                                  type="number"
-                                  inputMode="decimal"
-                                  step="any"
-                                  value={(item as any).executedQty ?? ''}
-                                  onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
-                                  className="h-8"
-                                />
-                              ) : (
-                                (item as any).executedQty ?? '-'
-                              )}
-                            </TableCell>
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {isEditMode ? (
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="any"
+                                    value={(item as any).executedQty ?? ''}
+                                    onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
+                                    className="h-8"
+                                  />
+                                ) : (
+                                  execQty || '-'
+                                )}
+                              </TableCell>
 
-                            <TableCell className="text-right whitespace-nowrap align-top">
-                              {(item as any).certifiedQty ?? '-'}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap align-top">
-                              {formatCurrency((item as any).totalAmount ?? 0)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {certQty || '-'}
+                              </TableCell>
+
+                              {/* ✅ NEW COLUMN VALUE */}
+                              <TableCell className="text-right whitespace-nowrap align-top font-semibold">
+                                {upToDateCertifiedQty || 0}
+                              </TableCell>
+
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {formatCurrency(executedAmount)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap align-top">
+                                {formatCurrency(certifiedAmount)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -367,7 +387,6 @@ export default function ViewJmcEntryDialog({
           </div>
 
           <DialogFooter className="mt-4 pr-4 sm:justify-between">
-            {/* --- NEW: Print button on the left --- */}
             <div>
               <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)}>
                 <Printer className="mr-2 h-4 w-4" />
@@ -375,7 +394,6 @@ export default function ViewJmcEntryDialog({
               </Button>
             </div>
 
-            {/* --- Original buttons on the right --- */}
             <div className="flex gap-2">
               <DialogClose asChild>
                 <Button variant="outline">Close</Button>
@@ -391,11 +409,7 @@ export default function ViewJmcEntryDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
-      {/* --- NEW: Render the Print Dialog ---
-        It's "closed" by default, but its state is controlled by `isPrintDialogOpen`.
-        We pass it the same jmcEntry and the `enrichedItems` we already calculated.
-      */}
+
       <PrintJmcDialog
         isOpen={isPrintDialogOpen}
         onOpenChange={setIsPrintDialogOpen}

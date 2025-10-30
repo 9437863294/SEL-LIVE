@@ -1,8 +1,7 @@
-
 'use client';
 
 import * as React from 'react';
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter } from 'next/navigation';
@@ -13,6 +12,9 @@ import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
 import { SessionExpiryDialog } from './SessionExpiryDialog';
 
+// Session configuration
+const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
+const SESSION_CHECK_INTERVAL = 60000; // Check every minute
 
 interface AuthContextType {
   user: User | null;
@@ -26,7 +28,6 @@ interface AuthContextType {
   setIsSessionExpired: (isExpired: boolean) => void;
   extendSession: () => void;
   handleSignOut: (isSessionExpired?: boolean) => Promise<void>;
-  // PIN login related state
   savedUsers: SavedUser[];
   setShouldRemember: (shouldRemember: boolean) => void;
   clearSavedUsers: () => void;
@@ -71,172 +72,325 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
+  // Refs to avoid stale closures
+  const userRef = useRef<User | null>(null);
+  const sessionCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Update ref when user changes
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const handleSignOut = useCallback(async (isExpired = false) => {
     try {
-        await signOut(auth);
-        if (!isExpired) {
-            sessionStorage.clear();
-        }
-        if (isExpired) {
-            toast({
-                title: 'Session Expired',
-                description: 'You have been logged out.',
-                variant: 'destructive',
-            });
-        }
-        router.push('/login');
+      // Clear session check interval
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+
+      await signOut(auth);
+      
+      if (!isExpired) {
+        sessionStorage.clear();
+      }
+      
+      if (isExpired) {
+        toast({
+          title: 'Session Expired',
+          description: 'Your session has expired. Please log in again.',
+          variant: 'destructive',
+        });
+      }
+      
+      router.push('/login');
     } catch (error) {
-        console.error('Error signing out:', error);
+      console.error('Error signing out:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to sign out. Please try again.',
+        variant: 'destructive',
+      });
     }
   }, [router, toast]);
   
   const extendSession = useCallback(() => {
-    sessionStorage.setItem('loginTimestamp', Date.now().toString());
+    const timestamp = Date.now().toString();
+    sessionStorage.setItem('loginTimestamp', timestamp);
     setIsSessionExpired(false);
   }, []);
+
+  const checkSessionExpiry = useCallback(() => {
+    // Don't check if user is not logged in
+    if (!userRef.current) return;
+
+    const loginTimestamp = sessionStorage.getItem('loginTimestamp');
+    
+    if (!loginTimestamp) {
+      // No timestamp found, session is invalid
+      setIsSessionExpired(true);
+      handleSignOut(true);
+      return;
+    }
+
+    const elapsed = Date.now() - parseInt(loginTimestamp, 10);
+    
+    if (elapsed > SESSION_DURATION) {
+      setIsSessionExpired(true);
+      handleSignOut(true);
+    }
+  }, [handleSignOut]);
 
   const loadSavedUsers = useCallback(() => {
     try {
       const storedUsers = localStorage.getItem('savedUsers');
       if (storedUsers) {
-        setSavedUsers(JSON.parse(storedUsers));
+        const parsed = JSON.parse(storedUsers);
+        setSavedUsers(Array.isArray(parsed) ? parsed : []);
       }
     } catch (error) {
-      console.error("Failed to load saved users from localStorage", error);
+      console.error('Failed to load saved users from localStorage', error);
+      setSavedUsers([]);
     }
   }, []);
 
   const clearSavedUsers = useCallback(() => {
-    localStorage.removeItem('savedUsers');
-    setSavedUsers([]);
+    try {
+      localStorage.removeItem('savedUsers');
+      setSavedUsers([]);
+    } catch (error) {
+      console.error('Failed to clear saved users', error);
+    }
   }, []);
 
   const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
     if (!firebaseUser) {
-        setUser(null);
-        setPermissions({});
-        setOriginalUser(null);
-        setIsImpersonating(false);
-        setLoading(false);
-        return null;
+      setUser(null);
+      setPermissions({});
+      setOriginalUser(null);
+      setIsImpersonating(false);
+      setLoading(false);
+      return null;
     }
 
     try {
-        const allUsersSnap = await getDocs(collection(db, 'users'));
-        const allUsersData = allUsersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-        setUsers(allUsersData);
+      // Fetch all users for impersonation dropdown
+      const allUsersSnap = await getDocs(collection(db, 'users'));
+      const allUsersData = allUsersSnap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      } as User));
+      setUsers(allUsersData);
       
-        const impersonationUserId = sessionStorage.getItem('impersonationUserId');
-        const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
+      // Check for impersonation session
+      const impersonationUserId = sessionStorage.getItem('impersonationUserId');
+      const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
 
-        let userToLoadId = firebaseUser.uid;
-        let isImpersonationSession = false;
+      let userToLoadId = firebaseUser.uid;
+      let isImpersonationSession = false;
 
-        if (impersonationUserId && storedOriginalUser) {
-            const originalAdminData = JSON.parse(storedOriginalUser) as User;
-            if (firebaseUser.uid === originalAdminData.id) {
-                userToLoadId = impersonationUserId;
-                setOriginalUser(originalAdminData);
-                isImpersonationSession = true;
-            } else {
-                sessionStorage.removeItem('impersonationUserId');
-                sessionStorage.removeItem('originalAdminUser');
-            }
+      if (impersonationUserId && storedOriginalUser) {
+        try {
+          const originalAdminData = JSON.parse(storedOriginalUser) as User;
+          if (firebaseUser.uid === originalAdminData.id) {
+            userToLoadId = impersonationUserId;
+            setOriginalUser(originalAdminData);
+            isImpersonationSession = true;
+          } else {
+            // Clear invalid impersonation data
+            sessionStorage.removeItem('impersonationUserId');
+            sessionStorage.removeItem('originalAdminUser');
+          }
+        } catch (parseError) {
+          console.error('Error parsing stored original user', parseError);
+          sessionStorage.removeItem('impersonationUserId');
+          sessionStorage.removeItem('originalAdminUser');
+        }
+      }
+      
+      setIsImpersonating(isImpersonationSession);
+
+      // Fetch user document
+      const userDocRef = doc(db, 'users', userToLoadId);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        console.error('User document not found for UID:', userToLoadId);
+        await handleSignOut();
+        return null;
+      }
+
+      const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
+      setUser(userData);
+      
+      // Initialize session timestamp if not exists
+      if (!sessionStorage.getItem('loginTimestamp')) {
+        extendSession();
+      }
+      
+      // Handle PIN setup for remembered users
+      if (shouldRemember && !isImpersonationSession) {
+        try {
+          const currentSavedUsers: SavedUser[] = JSON.parse(
+            localStorage.getItem('savedUsers') || '[]'
+          );
+          const userIsSaved = currentSavedUsers.some(u => u.id === userData.id);
+          
+          if (!userIsSaved) {
+            setUserForPinSetup(userData);
+            setIsPinSetupOpen(true);
+          }
+        } catch (error) {
+          console.error('Error checking saved users', error);
         }
         
-        setIsImpersonating(isImpersonationSession);
+        setShouldRemember(false);
+      }
 
-        const userDocRef = doc(db, 'users', userToLoadId);
-        const userDocSnap = await getDoc(userDocRef);
-
-        if (userDocSnap.exists()) {
-            const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
-            setUser(userData);
-            
-            // Set the initial session timestamp right after fetching user data
-            if (!sessionStorage.getItem('loginTimestamp')) {
-              extendSession();
-            }
-            
-            if (shouldRemember && !isImpersonationSession) {
-              const currentSavedUsers: SavedUser[] = JSON.parse(localStorage.getItem('savedUsers') || '[]');
-              const userIsSaved = currentSavedUsers.some(u => u.id === userData.id);
-              if (!userIsSaved) {
-                setUserForPinSetup(userData);
-                setIsPinSetupOpen(true);
-              }
-              setShouldRemember(false); // Reset after handling
-            }
-
-
-            if (userData.role) {
-                const rolesQuery = query(collection(db, 'roles'), where('name', '==', userData.role));
-                const roleSnap = await getDocs(rolesQuery);
-                if (!roleSnap.empty) {
-                    const roleData = roleSnap.docs[0].data() as Role;
-                    setPermissions(roleData.permissions || {});
-                } else {
-                    console.warn(`Role '${userData.role}' not found.`);
-                    setPermissions({});
-                }
-            } else {
-                 console.warn(`User has no role assigned.`);
-                 setPermissions({});
-            }
-            return userData;
+      // Fetch user role and permissions
+      if (userData.role) {
+        const rolesQuery = query(
+          collection(db, 'roles'), 
+          where('name', '==', userData.role)
+        );
+        const roleSnap = await getDocs(rolesQuery);
+        
+        if (!roleSnap.empty) {
+          const roleData = roleSnap.docs[0].data() as Role;
+          setPermissions(roleData.permissions || {});
         } else {
-            console.error("User document not found for UID:", userToLoadId);
-            await handleSignOut();
-            return null;
+          console.warn(`Role '${userData.role}' not found.`);
+          setPermissions({});
         }
-
-    } catch (error) {
-        console.error("Error fetching user data:", error);
-        setUser(null);
+      } else {
+        console.warn('User has no role assigned.');
         setPermissions({});
-        return null;
+      }
+      
+      return userData;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      setUser(null);
+      setPermissions({});
+      
+      toast({
+        title: 'Error',
+        description: 'Failed to load user data. Please try logging in again.',
+        variant: 'destructive',
+      });
+      
+      return null;
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-  }, [handleSignOut, shouldRemember, extendSession]);
+  }, [handleSignOut, shouldRemember, extendSession, toast]);
   
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
     await fetchUserData(firebaseUser);
   }, [fetchUserData]);
 
+  // Session expiry monitoring
+  useEffect(() => {
+    if (!user) {
+      // Clear interval if user logs out
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Check immediately
+    checkSessionExpiry();
+
+    // Set up interval to check periodically
+    sessionCheckIntervalRef.current = setInterval(
+      checkSessionExpiry, 
+      SESSION_CHECK_INTERVAL
+    );
+
+    return () => {
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+    };
+  }, [user, checkSessionExpiry]);
+
+  // Auth state change listener
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-        if (firebaseUser) {
-            await fetchUserData(firebaseUser);
-        } else {
-            setUser(null);
-            setPermissions({});
-            setOriginalUser(null);
-            setIsImpersonating(false);
-            setLoading(false);
-            if (!publicRoutes.includes(pathname)) {
-                router.push('/login');
-            }
+      if (firebaseUser) {
+        await fetchUserData(firebaseUser);
+      } else {
+        setUser(null);
+        setPermissions({});
+        setOriginalUser(null);
+        setIsImpersonating(false);
+        setLoading(false);
+        
+        if (!publicRoutes.includes(pathname)) {
+          router.push('/login');
         }
+      }
     });
 
     return () => unsubscribeAuth();
   }, [fetchUserData, pathname, router]);
 
+  // Activity listener to extend session
+  useEffect(() => {
+    if (!user) return;
+
+    const handleActivity = () => {
+      if (userRef.current && !isSessionExpired) {
+        extendSession();
+      }
+    };
+
+    // Listen for user activity
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(event => {
+      window.addEventListener(event, handleActivity);
+    });
+
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [user, extendSession, isSessionExpired]);
+
+  const contextValue: AuthContextType = {
+    user,
+    users,
+    permissions,
+    loading,
+    isImpersonating,
+    originalUser,
+    refreshUserData,
+    isSessionExpired,
+    setIsSessionExpired,
+    extendSession,
+    handleSignOut,
+    savedUsers,
+    setShouldRemember,
+    clearSavedUsers,
+    loadSavedUsers,
+  };
 
   return (
-    <AuthContext.Provider value={{ user, users, permissions, loading, refreshUserData, isImpersonating, originalUser, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, savedUsers, setShouldRemember, clearSavedUsers, loadSavedUsers }}>
-        {children}
-        {userForPinSetup && (
-            <PinSetupDialog
-                user={userForPinSetup}
-                isOpen={isPinSetupOpen}
-                onOpenChange={setIsPinSetupOpen}
-                onPinSet={loadSavedUsers} // Refresh saved users after setting a PIN
-            />
-        )}
+    <AuthContext.Provider value={contextValue}>
+      {children}
+      {userForPinSetup && (
+        <PinSetupDialog
+          user={userForPinSetup}
+          isOpen={isPinSetupOpen}
+          onOpenChange={setIsPinSetupOpen}
+          onPinSet={loadSavedUsers}
+        />
+      )}
     </AuthContext.Provider>
   );
 }
