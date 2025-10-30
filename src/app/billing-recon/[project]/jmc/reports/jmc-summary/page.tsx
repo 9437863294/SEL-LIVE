@@ -1,5 +1,6 @@
 
 'use client';
+
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Home, ShieldAlert } from 'lucide-react';
@@ -66,7 +67,6 @@ export default function JmcSummaryPage() {
   const [filters, setFilters] = useState({
       year: 'all',
       month: 'all',
-      // project filter is redundant on this page
       applicant: 'all',
   });
   
@@ -80,7 +80,7 @@ export default function JmcSummaryPage() {
           setIsLoading(false);
       }
     }
-  }, [isAuthLoading, canViewPage, projectSlug]); // Added projectSlug dependency
+  }, [isAuthLoading, canViewPage, projectSlug]);
 
   const fetchSummaryData = async () => {
       setIsLoading(true);
@@ -128,7 +128,6 @@ export default function JmcSummaryPage() {
         if (filters.month !== 'all') {
             items = items.filter(req => (new Date(req.date).getMonth() + 1).toString() === filters.month);
         }
-        // project filter removed - allRequisitions is already pre-filtered
         if (filters.applicant !== 'all') {
             items = items.filter(req => req.raisedById === filters.applicant);
         }
@@ -143,7 +142,6 @@ export default function JmcSummaryPage() {
            return;
         };
         
-        // Calculate stats based on *filtered* requisitions
         const totalRequisitions = filteredRequisitions.length;
         const totalAmount = filteredRequisitions.reduce((sum, req) => sum + (req.amount || 0), 0);
         const cancelled = filteredRequisitions.filter(req => req.status === 'Rejected').length;
@@ -180,7 +178,6 @@ export default function JmcSummaryPage() {
     filteredRequisitions.forEach(req => {
         const history: ActionLog[] = req.history || [];
         const processedStepsForTotal = new Set<string>();
-        const processedStepsForActions = new Set<string>();
 
         history.forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
@@ -197,6 +194,7 @@ export default function JmcSummaryPage() {
         history.slice().reverse().forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
             
+            const processedStepsForActions = new Set<string>();
             if (processedStepsForActions.has(log.stepName)) return;
 
             const userName = userMap.get(log.userId) || 'Unknown User';
@@ -216,15 +214,16 @@ export default function JmcSummaryPage() {
 }, [filteredRequisitions, workflow, users]);
 
 
-  const getFilterOptions = (key: 'year' | 'month' | 'applicant') => {
+  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
       switch (key) {
           case 'year':
               return unique(allRequisitions.map(r => new Date(r.date).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
           case 'month':
               return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
+          case 'project':
+              return projects.filter(p => allRequisitions.some(r => r.projectId === p.id));
           case 'applicant':
-              // Filter users to only those who have raised a JMC in the list
               const applicantIds = new Set(allRequisitions.map(r => r.raisedById));
               return users.filter(u => applicantIds.has(u.id));
           default:
@@ -303,7 +302,6 @@ export default function JmcSummaryPage() {
       <Card className="mb-6">
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
-            {/* Render filters here */}
             <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
               <SelectTrigger><SelectValue placeholder="Select Year" /></SelectTrigger>
               <SelectContent>
@@ -369,7 +367,6 @@ export default function JmcSummaryPage() {
         ) : (
           workflow?.steps.map((step) => {
               const stepData = stepWiseReport[step.name];
-              // Hide step if no user has any data for it
               if (!stepData || Object.values(stepData).every(data => data.total === 0 && data.completed === 0 && data.rejected === 0)) {
                 return null; 
               }
@@ -391,7 +388,6 @@ export default function JmcSummaryPage() {
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
-                         // Hide user if they have no actions in this step
                          if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
                          return (
                              <TableRow key={userName}>
@@ -413,3 +409,5 @@ export default function JmcSummaryPage() {
     </div>
   );
 }
+
+    
