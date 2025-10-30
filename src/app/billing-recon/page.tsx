@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -86,13 +87,13 @@ export default function BillingReconRedirectPage() {
               <Home className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+          <h1 className="text-2xl font-bold">Billing & Reconciliation</h1>
         </div>
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>
-              You do not have permission to access the Billing &amp; Reconciliation module.
+              You do not have permission to access the Billing & Reconciliation module.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center p-8">
@@ -113,7 +114,7 @@ export default function BillingReconRedirectPage() {
               <Home className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Billing &amp; Reconciliation</h1>
+          <h1 className="text-2xl font-bold">Billing & Reconciliation</h1>
         </div>
       </div>
         <Card>
