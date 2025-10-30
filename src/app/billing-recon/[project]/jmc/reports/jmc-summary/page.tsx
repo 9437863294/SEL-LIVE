@@ -55,15 +55,15 @@ interface StepWiseReportData {
 export default function JmcSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { project: projectSlug } = useParams() as { project: string };
-  const [summaryStats, setSummaryStats = useState<SummaryStats | null>(null);
-  const [isLoading, setIsLoading = useState(true);
-  const [allRequisitions, setAllRequisitions = useState<Requisition[]>([]);
-  const [filteredRequisitions, setFilteredRequisitions = useState<Requisition[]>([]);
-  const [projects, setProjects = useState<Project[]>([]);
-  const [users, setUsers = useState<User[]>([]);
-  const [workflow, setWorkflow = useState<{steps: WorkflowStep[]} | null>(null);
+  const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [allRequisitions, setAllRequisitions] = useState<Requisition[]>([]);
+  const [filteredRequisitions, setFilteredRequisitions] = useState<Requisition[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
 
-  const [filters, setFilters = useState({
+  const [filters, setFilters] = useState({
       year: 'all',
       month: 'all',
       // project filter is redundant on this page
@@ -413,5 +413,3 @@ export default function JmcSummaryPage() {
     </div>
   );
 }
-
-    
