@@ -86,67 +86,65 @@ export default function Header() {
 
     const unsubscribes: (() => void)[] = [];
 
-    // Listener for Site Fund Requisitions
-    const reqQuery = query(
-      collection(db, 'requisitions'),
-      where('assignees', 'array-contains', user.id),
-      where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
-    );
-    const unsubscribeReqs = onSnapshot(reqQuery, (querySnapshot) => {
-       const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
-       setPendingTasks(prev => {
-           const otherTasks = prev.filter(t => t.taskType !== 'requisition');
-           return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-       });
-    }, (error) => {
-      console.error("Error fetching pending requisitions:", error);
-    });
-    unsubscribes.push(unsubscribeReqs);
-
-    // Listener for JMC Entries (simplified query)
-    try {
-      const jmcQuery = query(
-        collectionGroup(db, 'jmcEntries'),
-        where('assignees', 'array-contains', user.id)
-      );
-      const unsubscribeJmcs = onSnapshot(jmcQuery, (querySnapshot) => {
-          const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask))
-            .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status)); // Filter client-side
-
-          setPendingTasks(prev => {
-              const otherTasks = prev.filter(t => t.taskType !== 'jmc');
-              return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-          });
-      }, (error) => {
-          console.error("Error fetching pending JMC tasks:", error);
-      });
-      unsubscribes.push(unsubscribeJmcs);
-    } catch(e) {
-        console.error("Could not set up JMC listener, likely a missing index.", e);
-        toast({
-          title: 'Index Required',
-          description: 'A database index is needed for JMC notifications. Please create it in your Firebase console.',
-          variant: 'destructive',
-          duration: 10000,
-        });
-    }
-    
-    // Fetch supporting data
-    const fetchSupportingData = async () => {
+    const fetchSupportingDataAndTasks = async () => {
         try {
+            // Fetch supporting data first
             const projectsSnap = await getDocs(collection(db, 'projects'));
-            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+            const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+            setProjects(projectsData);
             
             const deptsSnap = await getDocs(collection(db, 'departments'));
             setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+
+            // Set up listeners using the fetched projects data
+            const reqQuery = query(
+              collection(db, 'requisitions'),
+              where('assignees', 'array-contains', user.id),
+              where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+            );
+
+            const unsubscribeReqs = onSnapshot(reqQuery, (querySnapshot) => {
+               const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
+               setPendingTasks(prev => {
+                   const otherTasks = prev.filter(t => t.taskType !== 'requisition');
+                   return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+               });
+            }, (error) => {
+              console.error("Error fetching pending requisitions:", error);
+            });
+            unsubscribes.push(unsubscribeReqs);
+
+            // Fetch JMC entries for each project
+            projectsData.forEach(project => {
+                const jmcQuery = query(
+                    collection(db, 'projects', project.id, 'jmcEntries'),
+                    where('assignees', 'array-contains', user.id)
+                );
+                const unsubscribeJmc = onSnapshot(jmcQuery, (snapshot) => {
+                    const jmcTasks = snapshot.docs
+                        .map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask))
+                        .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status));
+                    
+                    setPendingTasks(prev => {
+                        // Remove old tasks for this project to avoid duplicates, then add new ones
+                        const otherTasks = prev.filter(t => t.taskType !== 'jmc' || (t as JmcEntry).projectId !== project.id);
+                        return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+                    });
+                }, (error) => {
+                    console.error(`Error fetching JMC tasks for project ${project.projectName}:`, error);
+                });
+                unsubscribes.push(unsubscribeJmc);
+            });
+
         } catch (error) {
-            console.error("Failed to fetch projects/departments for dialog:", error);
+            console.error("Failed to fetch initial data for Header:", error);
         }
     };
-    fetchSupportingData();
+    
+    fetchSupportingDataAndTasks();
 
     return () => unsubscribes.forEach(unsub => unsub());
-  }, [user, isImpersonating, toast]);
+  }, [user, isImpersonating]);
   
   const handleViewTask = (task: PendingTask) => {
     if(task.taskType === 'requisition'){
