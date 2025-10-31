@@ -104,28 +104,28 @@ export default function Header() {
     unsubscribes.push(unsubscribeReqs);
 
     // Listener for JMC Entries
-    const jmcQuery = query(
-      collectionGroup(db, 'jmcEntries'),
-      where('assignees', 'array-contains', user.id),
-      where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
-    );
-    const unsubscribeJmcs = onSnapshot(jmcQuery, (querySnapshot) => {
-        const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask));
-        setPendingTasks(prev => {
-            const otherTasks = prev.filter(t => t.taskType !== 'jmc');
-            return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-        });
-    }, (error) => {
-        console.error("Error fetching pending JMC tasks:", error);
-        if (error.code === 'failed-precondition') {
-            toast({
-                title: "Index Required",
-                description: "A database index is needed for JMC notifications. Please create it in your Firebase console.",
-                variant: "destructive"
-            });
-        }
-    });
-    unsubscribes.push(unsubscribeJmcs);
+    try {
+      const jmcQuery = query(
+        collectionGroup(db, 'jmcEntries'),
+        where('assignees', 'array-contains', user.id),
+        where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+      );
+      const unsubscribeJmcs = onSnapshot(jmcQuery, (querySnapshot) => {
+          const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask));
+          setPendingTasks(prev => {
+              const otherTasks = prev.filter(t => t.taskType !== 'jmc');
+              return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+          });
+      }, (error) => {
+          console.error("Error fetching pending JMC tasks:", error);
+          if (error.code === 'failed-precondition') {
+              console.warn("JMC notification query requires a Firestore index. Please create it in the Firebase console to enable real-time JMC task notifications.");
+          }
+      });
+      unsubscribes.push(unsubscribeJmcs);
+    } catch(e) {
+        console.error("Could not set up JMC listener, likely a missing index.", e);
+    }
     
     // Fetch supporting data
     const fetchSupportingData = async () => {
@@ -150,9 +150,9 @@ export default function Header() {
         setIsViewDialogOpen(true);
     } else if (task.taskType === 'jmc') {
         const jmcTask = task as JmcEntry;
-        const projectSlug = projects.find(p => p.id === jmcTask.projectId)?.projectName;
-        if(projectSlug) {
-             const slug = projectSlug.toLowerCase().replace(/\s+/g, '-');
+        const project = projects.find(p => p.id === jmcTask.projectId);
+        if(project) {
+             const slug = project.projectName.toLowerCase().replace(/\s+/g, '-');
              // For now, let's just log it, as opening JMC dialog from here is complex
              console.log(`Navigate to JMC Task: /billing-recon/${slug}/jmc/stage/${jmcTask.currentStepId}`);
              toast({title: "JMC Task", description: `Task ${jmcTask.jmcNo} is pending at stage: ${jmcTask.stage}`})
