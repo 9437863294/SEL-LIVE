@@ -103,28 +103,32 @@ export default function Header() {
     });
     unsubscribes.push(unsubscribeReqs);
 
-    // Listener for JMC Entries
+    // Listener for JMC Entries (simplified query)
     try {
       const jmcQuery = query(
         collectionGroup(db, 'jmcEntries'),
-        where('assignees', 'array-contains', user.id),
-        where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+        where('assignees', 'array-contains', user.id)
       );
       const unsubscribeJmcs = onSnapshot(jmcQuery, (querySnapshot) => {
-          const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask));
+          const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask))
+            .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status)); // Filter client-side
+
           setPendingTasks(prev => {
               const otherTasks = prev.filter(t => t.taskType !== 'jmc');
               return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
           });
       }, (error) => {
           console.error("Error fetching pending JMC tasks:", error);
-          if (error.code === 'failed-precondition') {
-              console.warn("JMC notification query requires a Firestore index. Please create it in the Firebase console to enable real-time JMC task notifications.");
-          }
       });
       unsubscribes.push(unsubscribeJmcs);
     } catch(e) {
         console.error("Could not set up JMC listener, likely a missing index.", e);
+        toast({
+          title: 'Index Required',
+          description: 'A database index is needed for JMC notifications. Please create it in your Firebase console.',
+          variant: 'destructive',
+          duration: 10000,
+        });
     }
     
     // Fetch supporting data
