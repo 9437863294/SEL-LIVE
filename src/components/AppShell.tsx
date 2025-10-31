@@ -4,15 +4,13 @@
 import Header from '@/components/Header';
 import { SessionExpiryDialog } from './auth/SessionExpiryDialog';
 import { useAuth } from './auth/AuthProvider';
-import { useEffect, useRef, useCallback } from 'react';
-import { useToast } from '@/hooks/use-toast';
 
 export default function AppShell({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const { isSessionExpired, setIsSessionExpired, extendSession, handleSignOut, user } = useAuth();
+    const { isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     
     return (
         <div className="flex flex-col min-h-screen">
@@ -23,7 +21,7 @@ export default function AppShell({
             <SessionExpiryDialog
                 isOpen={isSessionExpired}
                 onOpenChange={setIsSessionExpired}
-                onSessionExtend={extendSession} // Let AuthProvider handle the reset
+                onSessionExtend={extendSession}
                 onLogout={() => handleSignOut(true)}
             />
         </div>

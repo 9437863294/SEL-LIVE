@@ -75,32 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Refs for managing timeouts and avoiding stale closures
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const resetTimeouts = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
-
-    const sessionDurationMinutes = user?.theme?.sessionDuration || 60;
-    const SESSION_TIMEOUT = sessionDurationMinutes * 60 * 1000;
-    const WARNING_TIME = 1 * 60 * 1000; 
-    
-    // Set a timeout to show the warning dialog
-    warningTimeoutRef.current = setTimeout(() => {
-        setIsSessionExpired(true);
-    }, SESSION_TIMEOUT - WARNING_TIME);
-    
-    // Set a timeout to log the user out
-    timeoutRef.current = setTimeout(() => {
-        handleSignOut(true);
-    }, SESSION_TIMEOUT);
-  }, [user]);
-
-  const extendSession = useCallback(() => {
-    sessionStorage.setItem('lastActivity', Date.now().toString());
-    setIsSessionExpired(false);
-    resetTimeouts();
-  }, [resetTimeouts]);
-
+  
   const handleSignOut = useCallback(async (isExpired = false) => {
     try {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -130,8 +105,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
   }, [router, toast]);
-  
 
+
+  const resetTimeouts = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+
+    const sessionDurationMinutes = user?.theme?.sessionDuration || 60;
+    const SESSION_TIMEOUT = sessionDurationMinutes * 60 * 1000;
+    const WARNING_TIME = 1 * 60 * 1000; 
+    
+    // Set a timeout to show the warning dialog
+    warningTimeoutRef.current = setTimeout(() => {
+        setIsSessionExpired(true);
+    }, SESSION_TIMEOUT - WARNING_TIME);
+    
+    // Set a timeout to log the user out
+    timeoutRef.current = setTimeout(() => {
+        handleSignOut(true);
+    }, SESSION_TIMEOUT);
+  }, [user, handleSignOut]);
+
+  const extendSession = useCallback(() => {
+    sessionStorage.setItem('lastActivity', Date.now().toString());
+    setIsSessionExpired(false);
+    resetTimeouts();
+  }, [resetTimeouts]);
+  
   const loadSavedUsers = useCallback(() => {
     try {
       const storedUsers = localStorage.getItem('savedUsers');
