@@ -23,8 +23,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { cn } from '@/lib/utils';
-import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
-import type { Requisition, Project, Department } from '@/lib/types';
+import { collection, query, where, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
+import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { SwitchUserDialog } from './auth/SwitchUserDialog';
@@ -57,6 +57,8 @@ function ImpersonationBanner() {
     );
 }
 
+type PendingTask = (Requisition & { taskType: 'requisition' }) | (JmcEntry & { taskType: 'jmc' });
+
 
 export default function Header() {
   const pathname = usePathname();
@@ -67,7 +69,7 @@ export default function Header() {
   const [isSwitchUserOpen, setIsSwitchUserOpen] = useState(false);
   const { can } = useAuthorization();
   
-  const [pendingTasks, setPendingTasks] = useState<Requisition[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
 
@@ -77,25 +79,55 @@ export default function Header() {
   const canSwitchUser = can('Switch User', 'Settings.User Management');
 
   useEffect(() => {
-    if (!user || isImpersonating) { // Don't show pending tasks for impersonated user
+    if (!user || isImpersonating) {
         setPendingTasks([]);
         return;
     }
 
-    const q = query(
+    const unsubscribes: (() => void)[] = [];
+
+    // Listener for Site Fund Requisitions
+    const reqQuery = query(
       collection(db, 'requisitions'),
       where('assignees', 'array-contains', user.id),
       where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
     );
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-       const tasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
-       setPendingTasks(tasks);
+    const unsubscribeReqs = onSnapshot(reqQuery, (querySnapshot) => {
+       const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
+       setPendingTasks(prev => {
+           const otherTasks = prev.filter(t => t.taskType !== 'requisition');
+           return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+       });
     }, (error) => {
-      console.error("Error fetching pending tasks:", error);
+      console.error("Error fetching pending requisitions:", error);
     });
+    unsubscribes.push(unsubscribeReqs);
+
+    // Listener for JMC Entries
+    const jmcQuery = query(
+      collectionGroup(db, 'jmcEntries'),
+      where('assignees', 'array-contains', user.id),
+      where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+    );
+    const unsubscribeJmcs = onSnapshot(jmcQuery, (querySnapshot) => {
+        const jmcTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask));
+        setPendingTasks(prev => {
+            const otherTasks = prev.filter(t => t.taskType !== 'jmc');
+            return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+        });
+    }, (error) => {
+        console.error("Error fetching pending JMC tasks:", error);
+        if (error.code === 'failed-precondition') {
+            toast({
+                title: "Index Required",
+                description: "A database index is needed for JMC notifications. Please create it in your Firebase console.",
+                variant: "destructive"
+            });
+        }
+    });
+    unsubscribes.push(unsubscribeJmcs);
     
-    // Fetch projects and departments needed for the dialog
+    // Fetch supporting data
     const fetchSupportingData = async () => {
         try {
             const projectsSnap = await getDocs(collection(db, 'projects'));
@@ -109,12 +141,23 @@ export default function Header() {
     };
     fetchSupportingData();
 
-    return () => unsubscribe();
-  }, [user, isImpersonating]);
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [user, isImpersonating, toast]);
   
-  const handleViewTask = (task: Requisition) => {
-    setSelectedRequisition(task);
-    setIsViewDialogOpen(true);
+  const handleViewTask = (task: PendingTask) => {
+    if(task.taskType === 'requisition'){
+        setSelectedRequisition(task as Requisition);
+        setIsViewDialogOpen(true);
+    } else if (task.taskType === 'jmc') {
+        const jmcTask = task as JmcEntry;
+        const projectSlug = projects.find(p => p.id === jmcTask.projectId)?.projectName;
+        if(projectSlug) {
+             const slug = projectSlug.toLowerCase().replace(/\s+/g, '-');
+             // For now, let's just log it, as opening JMC dialog from here is complex
+             console.log(`Navigate to JMC Task: /billing-recon/${slug}/jmc/stage/${jmcTask.currentStepId}`);
+             toast({title: "JMC Task", description: `Task ${jmcTask.jmcNo} is pending at stage: ${jmcTask.stage}`})
+        }
+    }
   };
   
   const refreshTasks = () => {
@@ -228,7 +271,9 @@ export default function Header() {
                     pendingTasks.map(task => (
                         <DropdownMenuItem key={task.id} onSelect={() => handleViewTask(task)}>
                           <div className="flex flex-col">
-                            <span className="font-semibold">{task.requisitionId}</span>
+                            <span className="font-semibold">
+                                {task.taskType === 'requisition' ? (task as Requisition).requisitionId : (task as JmcEntry).jmcNo}
+                            </span>
                             <span className="text-xs text-muted-foreground">{task.stage}</span>
                           </div>
                         </DropdownMenuItem>
