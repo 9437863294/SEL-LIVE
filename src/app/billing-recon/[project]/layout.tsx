@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -43,7 +44,10 @@ export default function ProjectLayout({
 
   React.useEffect(() => {
     const fetchProject = async () => {
-      if (!projectSlug) return;
+      if (!projectSlug || projectSlug === 'all') {
+          setCurrentProject(null);
+          return;
+      };
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
       const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
@@ -56,7 +60,7 @@ export default function ProjectLayout({
   const projectId = currentProject?.id || '';
 
   const navItems = [
-    { href: `/billing-recon/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard', permission: can('View Module', 'Billing Recon')},
+    { href: `/billing-recon`, icon: LayoutDashboard, label: 'Dashboard', permission: can('View Module', 'Billing Recon')},
     { href: `/billing-recon/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ', permission: can('View', 'Billing Recon.BOQ') },
     { href: `/billing-recon/${projectSlug}/mvac`, icon: Truck, label: 'MVAC', permission: can('View', 'Billing Recon.MVAC') },
     { href: `/billing-recon/${projectSlug}/jmc`, icon: HardHat, label: 'JMC', permission: can('View', 'Billing Recon.JMC') },
@@ -86,7 +90,7 @@ export default function ProjectLayout({
                     <TooltipTrigger asChild>
                        <Link href={item.href}>
                          <Button
-                            variant={pathname === item.href || (item.href !== `/billing-recon/${projectSlug}` && pathname.startsWith(item.href)) ? 'secondary' : 'ghost'}
+                            variant={pathname === item.href || (item.href !== `/billing-recon` && pathname.startsWith(item.href)) ? 'secondary' : 'ghost'}
                             className={cn(
                                 "w-full justify-start",
                                 !isExpanded && "h-10 w-10 p-0"

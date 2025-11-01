@@ -167,8 +167,12 @@ export default function ProjectDashboardPage() {
   }, [projects, projectSlugParam]);
 
   const handleProjectChange = (slug: string) => {
-    if (!slug || slug === projectSlugParam) return;
-    router.push(`/billing-recon/${slug}`);
+    if (!slug) return;
+    if (slug === 'all') {
+      router.push('/billing-recon');
+    } else {
+      router.push(`/billing-recon/${slug}`);
+    }
   };
 
   const billingItems = useMemo(
@@ -283,6 +287,7 @@ export default function ProjectDashboardPage() {
               <SelectValue placeholder="Select Project" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
               {projects.map((p) => {
                 const value = slugify(p.projectName);
                 return (
