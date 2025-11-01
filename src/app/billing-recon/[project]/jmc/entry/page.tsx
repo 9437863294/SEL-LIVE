@@ -570,7 +570,7 @@ export default function JmcEntryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ERP Sl. No.</TableHead>    {/* ✅ new column */}
+                    <TableHead>ERP Sl. No.</TableHead>
                     <TableHead>BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
@@ -583,58 +583,57 @@ export default function JmcEntryPage() {
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
-
                 <TableBody>
                   {items.map((item, index) => (
                     <TableRow key={`${item.erpSlNo || 'erp'}_${item.boqSlNo || 'boq'}_${index}`}>
-                      <TableCell>{item.erpSlNo || '-'}</TableCell>
-                      <TableCell>
-                        <BoqItemSelector
-                          boqItems={boqItems}
-                          selectedSlNo={item.boqSlNo}
-                          onSelect={(boq) => handleBoqSelect(index, boq)}
-                          isLoading={isBoqLoading}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <p className="truncate max-w-xs">{item.description}</p>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="max-w-md">{item.description}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                      <TableCell>{item.unit}</TableCell>
-                      <TableCell>{item.boqQty}</TableCell>
-                      <TableCell>{item.rate}</TableCell>
-                      <TableCell>{item.scope1 || '-'}</TableCell>
-                      <TableCell>{item.totalCertifiedQty}</TableCell>
-                      <TableCell>
-                        <Input
-                          name="executedQty"
-                          type="number"
-                          step="any"
-                          min={0}
-                          value={item.executedQty}
-                          onChange={(e) => handleItemChange(index, e)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {new Intl.NumberFormat('en-IN', {
-                          style: 'currency',
-                          currency: 'INR',
-                          maximumFractionDigits: 2,
-                        }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
+                        <TableCell>{item.erpSlNo || '-'}</TableCell>
+                        <TableCell>
+                            <BoqItemSelector
+                            boqItems={boqItems}
+                            selectedSlNo={item.boqSlNo}
+                            onSelect={(boq) => handleBoqSelect(index, boq)}
+                            isLoading={isBoqLoading}
+                            />
+                        </TableCell>
+                        <TableCell>
+                            <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger>
+                                <p className="truncate max-w-xs">{item.description}</p>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                <p className="max-w-md">{item.description}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                            </TooltipProvider>
+                        </TableCell>
+                        <TableCell>{item.unit}</TableCell>
+                        <TableCell>{item.boqQty}</TableCell>
+                        <TableCell>{item.rate}</TableCell>
+                        <TableCell>{item.scope1 || '-'}</TableCell>
+                        <TableCell>{item.totalCertifiedQty}</TableCell>
+                        <TableCell>
+                            <Input
+                            name="executedQty"
+                            type="number"
+                            step="any"
+                            min={0}
+                            value={item.executedQty}
+                            onChange={(e) => handleItemChange(index, e)}
+                            />
+                        </TableCell>
+                        <TableCell>
+                            {new Intl.NumberFormat('en-IN', {
+                            style: 'currency',
+                            currency: 'INR',
+                            maximumFractionDigits: 2,
+                            }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
+                        </TableCell>
+                        <TableCell>
+                            <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                        </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
