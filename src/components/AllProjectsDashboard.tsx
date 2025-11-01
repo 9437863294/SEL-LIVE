@@ -71,7 +71,6 @@ export default function AllProjectsDashboard() {
   const statsToDisplay = [
     { title: 'Pending Requisitions', value: stats.pendingRequisitions.toLocaleString(), icon: Clock },
     { title: 'Completed Requisitions', value: stats.completedRequisitions.toLocaleString(), icon: CheckCircle },
-    { title: 'Total Requisition Amount', value: formatCurrency(stats.totalAmount), icon: Users },
   ];
 
   return (
