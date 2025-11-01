@@ -15,14 +15,12 @@ interface DashboardStats {
     pendingRequisitions: number;
     completedRequisitions: number;
     totalAmount: number;
-    rejectedRequisitions: number;
 }
 
 const initialStats: DashboardStats = {
     pendingRequisitions: 0,
     completedRequisitions: 0,
     totalAmount: 0,
-    rejectedRequisitions: 0,
 };
 
 export default function AllProjectsDashboard() {
@@ -46,12 +44,9 @@ export default function AllProjectsDashboard() {
             if (req.status === 'Completed' || req.status === 'Approved') {
                 acc.completedRequisitions += 1;
             }
-            if (req.status === 'Rejected') {
-                acc.rejectedRequisitions += 1;
-            }
             acc.totalAmount += req.amount;
             return acc;
-        }, {...initialStats});
+        }, {...initialStats, rejectedRequisitions: 0}); // Keep rejectedRequisitions in the accumulator for type consistency if needed, but we won't display it
 
         setStats(calculatedStats);
 
@@ -77,13 +72,12 @@ export default function AllProjectsDashboard() {
     { title: 'Pending Requisitions', value: stats.pendingRequisitions.toLocaleString(), icon: Clock },
     { title: 'Completed Requisitions', value: stats.completedRequisitions.toLocaleString(), icon: CheckCircle },
     { title: 'Total Requisition Amount', value: formatCurrency(stats.totalAmount), icon: Users },
-    { title: 'Rejected Requisitions', value: stats.rejectedRequisitions.toLocaleString(), icon: XCircle },
   ];
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {isLoading ? (
-        Array.from({ length: 4 }).map((_, index) => (
+        Array.from({ length: 3 }).map((_, index) => (
           <Card key={index}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-5 w-3/5" />
