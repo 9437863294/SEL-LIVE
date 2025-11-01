@@ -23,7 +23,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select';
+} from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 
 interface BoqMultiSelectDialogProps {
@@ -91,23 +91,23 @@ export function BoqMultiSelectDialog({
   };
 
   const getSlNo = (item: BoqItem): string => {
-    return String(item['BOQ SL No'] ?? item['SL. No.'] ?? '');
+    return String((item as any)['BOQ SL No'] ?? (item as any)['SL. No.'] ?? (item as any)['SL No'] ?? '');
   };
 
   const getErpSlNo = (item: BoqItem): string => {
-    return String(item['ERP SL NO'] ?? '');
+    return String((item as any)['ERP SL NO'] ?? (item as any)['ERP Sl No'] ?? '');
   };
 
   const getItemDescription = (item: BoqItem): string => {
-    return String(item['Description'] ?? '');
+    return String((item as any)['Description'] ?? '');
   };
 
   const getBoqQty = (item: BoqItem): string => {
-    return String(item['QTY'] ?? item['Total Qty'] ?? '0');
+    return String((item as any)['QTY'] ?? (item as any)['Total Qty'] ?? '0');
   };
 
   const getUnit = (item: BoqItem): string => {
-    return String(item['UNIT'] ?? item['Unit'] ?? '');
+    return String((item as any)['UNIT'] ?? (item as any)['Unit'] ?? '');
   };
 
   const findRateKey = (item: BoqItem): string | undefined => {
@@ -127,20 +127,20 @@ export function BoqMultiSelectDialog({
   const filterOptions = useMemo(() => {
     let base = [...boqItems];
 
-    const scope1Options = [...new Set(base.map((i) => i['Scope 1']).filter(Boolean))] as string[];
+    const scope1Options = [...new Set(base.map((i) => (i as any)['Scope 1']).filter(Boolean))] as string[];
 
     if (filters['Scope 1'] !== 'all') {
-      base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
+      base = base.filter((i) => (i as any)['Scope 1'] === filters['Scope 1']);
     }
 
-    const scope2Options = [...new Set(base.map((i) => i['Scope 2']).filter(Boolean))] as string[];
+    const scope2Options = [...new Set(base.map((i) => (i as any)['Scope 2']).filter(Boolean))] as string[];
 
     if (filters['Scope 2'] !== 'all') {
-      base = base.filter((i) => i['Scope 2'] === filters['Scope 2']);
+      base = base.filter((i) => (i as any)['Scope 2'] === filters['Scope 2']);
     }
 
     const category1Options = [
-      ...new Set(base.map((i) => i['Category 1']).filter(Boolean)),
+      ...new Set(base.map((i) => (i as any)['Category 1']).filter(Boolean)),
     ] as string[];
 
     return {
@@ -166,7 +166,7 @@ export function BoqMultiSelectDialog({
   };
 
   const addedItemIds = useMemo(
-    () => new Set(alreadyAddedItems.map((it: BillItem) => it.jmcItemId)),
+    () => new Set(alreadyAddedItems.map((it: BillItem) => (it as any).jmcItemId)),
     [alreadyAddedItems],
   );
 
@@ -174,14 +174,11 @@ export function BoqMultiSelectDialog({
     const q = searchTerm.toLowerCase();
 
     let items = boqItems.filter((item: BoqItem) => {
-      if (addedItemIds.has(item.id)) return false;
+      if (addedItemIds.has((item as any).id)) return false;
 
-      const scope1Match =
-        filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
-      const scope2Match =
-        filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
-      const category1Match =
-        filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+      const scope1Match = filters['Scope 1'] === 'all' || (item as any)['Scope 1'] === filters['Scope 1'];
+      const scope2Match = filters['Scope 2'] === 'all' || (item as any)['Scope 2'] === filters['Scope 2'];
+      const category1Match = filters['Category 1'] === 'all' || (item as any)['Category 1'] === filters['Category 1'];
 
       if (!(scope1Match && scope2Match && category1Match)) return false;
 
@@ -237,13 +234,13 @@ export function BoqMultiSelectDialog({
 
   // Select-all logic
   const allOnPageSelected =
-    filteredItems.length > 0 && filteredItems.every((it: BoqItem) => selectedIds.has(it.id));
-  const noneSelected = filteredItems.every((it: BoqItem) => !selectedIds.has(it.id));
+    filteredItems.length > 0 && filteredItems.every((it: BoqItem) => selectedIds.has((it as any).id));
+  const noneSelected = filteredItems.every((it: BoqItem) => !selectedIds.has((it as any).id));
   const selectAllState: CheckedState =
     allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
 
   const handleSelectAll = (checked: CheckedState) => {
-    setSelectedIds(new Set(checked ? filteredItems.map((i: BoqItem) => i.id) : []));
+    setSelectedIds(new Set(checked ? filteredItems.map((i: BoqItem) => (i as any).id) : []));
   };
 
   const handleSelectRow = useCallback((id: string, checked: boolean) => {
@@ -265,7 +262,7 @@ export function BoqMultiSelectDialog({
   };
 
   const handleConfirm = () => {
-    const selectedBoqItems = boqItems.filter((item: BoqItem) => selectedIds.has(item.id));
+    const selectedBoqItems = boqItems.filter((item: BoqItem) => selectedIds.has((item as any).id));
     onConfirm(selectedBoqItems);
     onOpenChange(false);
     setSelectedIds(new Set());
@@ -380,23 +377,23 @@ export function BoqMultiSelectDialog({
                 </div>
               ) : filteredItems.length > 0 ? (
                 filteredItems.map((item: BoqItem) => {
-                  const rowChecked = selectedIds.has(item.id);
+                  const rowChecked = selectedIds.has((item as any).id);
                   const rateKey = findRateKey(item);
                   const rate = rateKey ? (item as any)[rateKey] : 0;
 
                   return (
                     <div
-                      key={item.id}
+                      key={(item as any).id}
                       className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
-                      onClick={() => handleSelectRow(item.id, !rowChecked)}
+                      onClick={() => handleSelectRow((item as any).id, !rowChecked)}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           e.preventDefault();
-                          handleSelectRow(item.id, !rowChecked);
+                          handleSelectRow((item as any).id, !rowChecked);
                         }
                       }}
                     >
@@ -406,7 +403,7 @@ export function BoqMultiSelectDialog({
                           checked={rowChecked}
                           onCheckedChange={(checked) => {
                             // Avoid double-toggle from parent onClick
-                            handleSelectRow(item.id, Boolean(checked));
+                            handleSelectRow((item as any).id, Boolean(checked));
                           }}
                           onClick={(e) => e.stopPropagation()}
                         />

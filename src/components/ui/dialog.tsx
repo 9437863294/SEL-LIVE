@@ -35,18 +35,16 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         // Centering + animations
-        'fixed left-1/2 top-1/2 z-50 grid translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200',
+        'fixed left-1/2 top-1/2 z-50 translate-x-[-50%] translate-y-[-50%] border bg-background p-6 shadow-lg duration-200',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         'data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]',
         'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
-        // ✔ Width/height defaults tuned for wide content (tables)
-        // No hard max-w-lg cap anymore. Let callers pass larger max-w via className.
-        'w-full max-w-[95vw] sm:rounded-lg',
-        // Keep big content from overflowing viewport; inner body can scroll
-        'max-h-[90vh] overflow-hidden',
+        // ⬇️ Layout fix: make the dialog a flex column with min-h-0 so inner content can scroll
+        'w-full max-w-[95vw] sm:rounded-lg max-h-[90vh] overflow-hidden flex flex-col min-h-0',
         className
       )}
+      style={{ scrollbarGutter: 'stable both-edges' }} // keep scrollbars from shifting layout
       {...props}
     >
       {children}

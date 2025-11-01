@@ -38,6 +38,7 @@ const initialJmcDetails = {
 };
 
 const initialItem = {
+  erpSlNo: '',         // ✅ store ERP SL NO on each JMC item
   boqSlNo: '',
   description: '',
   unit: '',
@@ -80,7 +81,60 @@ const slugify = (text: string) =>
 const compositeKey = (scope1: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
-/* ---------- component ---------- */
+/* ---------- field extractors ---------- */
+const extractSlNo = (boqItem: BoqItem): string => {
+  const slKey =
+    normalizeKey(boqItem as any, 'BOQ SL No') ??
+    normalizeKey(boqItem as any, 'BOQ SL NO') ??
+    normalizeKey(boqItem as any, 'SL. No.') ??
+    normalizeKey(boqItem as any, 'SL No') ??
+    normalizeKey(boqItem as any, 'SL');
+  return slKey ? String((boqItem as any)[slKey] ?? '') : '';
+};
+
+const extractScope1 = (boqItem: BoqItem): string => {
+  const key = normalizeKey(boqItem as any, 'Scope 1');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
+const extractScope2 = (boqItem: BoqItem): string => {
+  const key = normalizeKey(boqItem as any, 'Scope 2');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
+const extractErpSlNo = (boqItem: BoqItem): string => {
+  const key =
+    normalizeKey(boqItem as any, 'ERP SL NO') ??
+    normalizeKey(boqItem as any, 'ERP Sl No') ??
+    normalizeKey(boqItem as any, 'ERP SLNo');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
+const valueOf = (obj: any, keys: string[]): any =>
+  keys.reduce<any>((acc, k) => (acc !== undefined ? acc : (obj ?? {})[k]), undefined);
+
+const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
+  const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Basic Rate', 'UNIT RATE'];
+  for (const k of candidates) {
+    const key = normalizeKey(boqItem as any, k);
+    if (key) return key;
+  }
+  return Object.keys(boqItem).find((k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
+};
+
+/* ---------- ERP-first sort ---------- */
+const sortItemsByErp = (arr: JmcItem[]): JmcItem[] => {
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  return [...arr].sort((a, b) => {
+    const ea = String(a.erpSlNo ?? '');
+    const eb = String(b.erpSlNo ?? '');
+    const cmp = collator.compare(ea, eb);
+    if (cmp !== 0) return cmp;
+    // stable tiebreaker: BOQ Sl. No.
+    return collator.compare(String(a.boqSlNo ?? ''), String(b.boqSlNo ?? ''));
+  });
+};
+
 export default function JmcEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -220,37 +274,7 @@ export default function JmcEntryPage() {
     setDetails((prev) => ({ ...prev, [name]: value }));
   };
 
-  const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-    const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Basic Rate', 'UNIT RATE'];
-    for (const k of candidates) {
-      const key = normalizeKey(boqItem as any, k);
-      if (key) return key;
-    }
-    return Object.keys(boqItem).find((k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
-  };
-
-  const extractSlNo = (boqItem: BoqItem): string => {
-    const slKey =
-      normalizeKey(boqItem as any, 'BOQ SL No') ??
-      normalizeKey(boqItem as any, 'BOQ SL NO') ??
-      normalizeKey(boqItem as any, 'SL. No.') ??
-      normalizeKey(boqItem as any, 'SL No') ??
-      normalizeKey(boqItem as any, 'SL');
-    return slKey ? String((boqItem as any)[slKey] ?? '') : '';
-  };
-
-  const extractScope1 = (boqItem: BoqItem): string => {
-    const key = normalizeKey(boqItem as any, 'Scope 1');
-    return key ? String((boqItem as any)[key] ?? '') : '';
-  };
-  const extractScope2 = (boqItem: BoqItem): string => {
-    const key = normalizeKey(boqItem as any, 'Scope 2');
-    return key ? String((boqItem as any)[key] ?? '') : '';
-  };
-
-  const valueOf = (obj: any, keys: string[]): any =>
-    keys.reduce<any>((acc, k) => (acc !== undefined ? acc : (obj ?? {})[k]), undefined);
-
+  /* ---------- selections & edits ---------- */
   const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
     const newItems = [...items];
     const it = { ...newItems[index] };
@@ -261,13 +285,13 @@ export default function JmcEntryPage() {
       const sl = extractSlNo(boqItem);
       const s1 = extractScope1(boqItem);
       const s2 = extractScope2(boqItem);
+      const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
 
+      it.erpSlNo = erp;
       it.boqSlNo = sl;
       it.scope1 = s1;
       it.scope2 = s2;
-      it.description = String(
-        valueOf(boqItem, ['Description', 'description', 'Item Description']) ?? ''
-      );
+      it.description = String(valueOf(boqItem, ['Description', 'description', 'Item Description']) ?? '');
       it.unit = valueOf(boqItem, ['Unit', 'UNIT', 'UOM']) ?? '';
       it.rate = rate;
       it.boqQty = num0(valueOf(boqItem, ['QTY', 'Qty', 'Quantity']));
@@ -282,7 +306,7 @@ export default function JmcEntryPage() {
     }
 
     newItems[index] = it;
-    setItems(newItems);
+    setItems(sortItemsByErp(newItems)); // keep ERP order
   };
 
   const handleMultiBoqSelect = (selected: BoqItem[]) => {
@@ -293,11 +317,13 @@ export default function JmcEntryPage() {
         const sl = extractSlNo(boqItem);
         const s1 = extractScope1(boqItem);
         const s2 = extractScope2(boqItem);
+        const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
         if (!String(sl).trim()) return null; // skip bad rows
         const key = compositeKey(s1, sl);
 
         return {
           ...initialItem,
+          erpSlNo: erp,
           boqSlNo: sl,
           scope1: s1,
           scope2: s2,
@@ -310,8 +336,10 @@ export default function JmcEntryPage() {
       })
       .filter(Boolean) as JmcItem[];
 
-    const existing = items.length === 1 && items[0].boqSlNo === '' ? [] : items;
-    setItems([...existing, ...newJmcItems]);
+    const existing = items.length === 1 && items[0].boqSlNo === '' && items[0].erpSlNo === '' ? [] : items;
+
+    const merged = [...existing, ...newJmcItems];
+    setItems(sortItemsByErp(merged)); // ✅ ensure ERP order
   };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,15 +357,20 @@ export default function JmcEntryPage() {
     it.totalAmount = qty * rate;
 
     newItems[index] = it;
-    setItems(newItems);
+    setItems(sortItemsByErp(newItems)); // keep ERP order on edits too
   };
 
-  const addItem = () => setItems((prev) => [...prev, { ...initialItem }]);
+  const addItem = () => setItems((prev) => sortItemsByErp([...prev, { ...initialItem }]));
   const removeItem = (index: number) => {
-    if (items.length > 1) setItems(items.filter((_, i) => i !== index));
-    else setItems([{ ...initialItem }]);
+    if (items.length > 1) {
+      const next = items.filter((_, i) => i !== index);
+      setItems(sortItemsByErp(next));
+    } else {
+      setItems([{ ...initialItem }]);
+    }
   };
 
+  /* ---------- save ---------- */
   const handleSave = async () => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
@@ -536,6 +569,7 @@ export default function JmcEntryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>ERP Sl. No.</TableHead>    {/* ✅ new column */}
                     <TableHead>BOQ Sl. No.</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
@@ -551,7 +585,8 @@ export default function JmcEntryPage() {
 
                 <TableBody>
                   {items.map((item, index) => (
-                    <TableRow key={index}>
+                    <TableRow key={`${item.erpSlNo || 'erp'}_${item.boqSlNo || 'boq'}_${index}`}>
+                      <TableCell>{item.erpSlNo || '-'}</TableCell>
                       <TableCell>
                         <BoqItemSelector
                           boqItems={boqItems}
@@ -587,7 +622,13 @@ export default function JmcEntryPage() {
                           onChange={(e) => handleItemChange(index, e)}
                         />
                       </TableCell>
-                      <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                      <TableCell>
+                        {new Intl.NumberFormat('en-IN', {
+                          style: 'currency',
+                          currency: 'INR',
+                          maximumFractionDigits: 2,
+                        }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
+                      </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
                           <Trash2 className="h-4 w-4 text-destructive" />
