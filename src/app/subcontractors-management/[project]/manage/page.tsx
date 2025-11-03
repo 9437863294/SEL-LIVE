@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,7 @@ export default function ManageSubcontractorsPage() {
   const canEdit = can('Edit', 'Subcontractors Management.Manage Subcontractors');
   const canDelete = can('Delete', 'Subcontractors Management.Manage Subcontractors');
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
@@ -64,7 +64,7 @@ export default function ManageSubcontractorsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectSlug, toast]);
 
   useEffect(() => {
     if (!authLoading && canViewPage) {
@@ -72,7 +72,7 @@ export default function ManageSubcontractorsPage() {
     } else if (!authLoading) {
       setIsLoading(false);
     }
-  }, [authLoading, canViewPage, projectSlug]);
+  }, [authLoading, canViewPage, fetchData]);
 
 
   const handleDelete = async (id: string) => {
