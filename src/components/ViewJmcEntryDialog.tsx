@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -216,13 +217,13 @@ export default function ViewJmcEntryDialog({
     boq: '6rem',
     rate: '6rem',
     prev: '6rem',
-    exec: '6rem',
-    cert: '6rem',
+    exec: '8rem',
+    cert: '8rem',
     upToDate: '6rem',
     execAmt: '8rem',
     certAmt: '8rem',
   } as const;
-  const tableMinWidthRem = 86;
+  const tableMinWidthRem = 88;
 
   // rows
   const rows = useMemo(() => {
@@ -256,7 +257,6 @@ export default function ViewJmcEntryDialog({
                 step="any"
                 value={(item as any).executedQty ?? ''}
                 onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
-                className="h-8"
               />
             ) : (
               execQty || '-'
@@ -329,21 +329,9 @@ export default function ViewJmcEntryDialog({
             ) : (
               // This is the element that actually scrolls horizontally.
               <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
-                <Table className="w-full table-fixed" style={{ minWidth: `${86}rem` }}>
-                  <colgroup>
-                    <col style={{ width: COLS.sl }} />
-                    <col style={{ width: COLS.desc }} />
-                    <col style={{ width: COLS.unit }} />
-                    <col style={{ width: COLS.boq }} />
-                    <col style={{ width: COLS.rate }} />
-                    <col style={{ width: COLS.prev }} />
-                    <col style={{ width: COLS.exec }} />
-                    <col style={{ width: COLS.cert }} />
-                    <col style={{ width: COLS.upToDate }} />
-                    <col style={{ width: COLS.execAmt }} />
-                    <col style={{ width: COLS.certAmt }} />
-                  </colgroup>
-                  <TableHeader>
+                <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidthRem}rem` }}>
+                  <colgroup>{Object.keys(COLS).map(key => <col key={key} style={{width: COLS[key as keyof typeof COLS]}} />)}</colgroup>
+                  <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
                       <TableHead className="text-center text-[11px] px-2">Description</TableHead>
