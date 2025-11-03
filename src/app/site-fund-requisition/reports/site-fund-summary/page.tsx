@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -32,9 +31,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { calculateDeadline, getAssigneeForStep } from '@/lib/workflow-utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
-
 
 interface SummaryStats {
     totalRequisitions: number;
@@ -284,7 +281,7 @@ export default function SiteFundSummaryPage() {
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-        <div className="flex flex-col w-full pr-14">
+        <div className="w-full pr-14">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
@@ -302,7 +299,7 @@ export default function SiteFundSummaryPage() {
 
   if(!canViewPage) {
     return (
-        <div className="flex flex-col w-full pr-14">
+        <div className="w-full pr-14">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/site-fund-requisition/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
@@ -324,7 +321,7 @@ export default function SiteFundSummaryPage() {
 
 
   return (
-    <div className="flex flex-col w-full pr-14">
+    <div className="w-full pr-14">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/site-fund-requisition/reports">
@@ -345,7 +342,7 @@ export default function SiteFundSummaryPage() {
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
             <div className="space-y-1">
-              <p className="text-sm font-medium">Year</p>
+              <p className="text-sm font-medium text-muted-foreground">Year</p>
               <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Years" />
@@ -357,7 +354,7 @@ export default function SiteFundSummaryPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium">Month</p>
+              <p className="text-sm font-medium text-muted-foreground">Month</p>
               <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Months" />
@@ -369,7 +366,7 @@ export default function SiteFundSummaryPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium">Project</p>
+              <p className="text-sm font-medium text-muted-foreground">Project</p>
               <Select value={filters.project} onValueChange={(val) => handleFilterChange('project', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Projects" />
@@ -381,7 +378,7 @@ export default function SiteFundSummaryPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium">Applicant</p>
+              <p className="text-sm font-medium text-muted-foreground">Applicant</p>
               <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Applicants" />
@@ -400,12 +397,8 @@ export default function SiteFundSummaryPage() {
         {isLoading ? (
             Array.from({ length: 5 }).map((_, index) => (
                 <Card key={index}>
-                    <CardHeader className="p-4">
-                        <Skeleton className="h-4 w-3/4" />
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0">
-                        <Skeleton className="h-8 w-1/2" />
-                    </CardContent>
+                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                    <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                 </Card>
             ))
         ) : (
