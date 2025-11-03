@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import type { Requisition, Project, Department } from '@/lib/types';
@@ -31,7 +31,7 @@ export default function MyPendingTasksTab() {
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
 
@@ -53,7 +53,6 @@ export default function MyPendingTasksTab() {
       const querySnapshot = await getDocs(q);
       const tasksData = querySnapshot.docs.map(doc => {
         const data = doc.data();
-
         return {
           id: doc.id,
           ...data,
@@ -72,11 +71,12 @@ export default function MyPendingTasksTab() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user, toast]);
 
   useEffect(() => {
     fetchData();
-  }, [user, toast]);
+  }, [fetchData]);
+
 
   const handleViewDetails = (task: Requisition) => {
     setSelectedRequisition(task);

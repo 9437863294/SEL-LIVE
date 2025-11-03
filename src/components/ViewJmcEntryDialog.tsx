@@ -284,13 +284,11 @@ export default function ViewJmcEntryDialog({
     const syncFromBar = () => { x.scrollLeft = bar.scrollLeft; };
     const syncFromX = () => { bar.scrollLeft = x.scrollLeft; };
 
-    // set width of fake inner to match content scroll width
     const setWidths = () => {
       inner.style.width = `${x.scrollWidth}px`;
     };
     setWidths();
 
-    // observe size changes
     const ro = new ResizeObserver(setWidths);
     ro.observe(x);
 
@@ -321,15 +319,15 @@ export default function ViewJmcEntryDialog({
           </div>
 
           {/* BODY: vertical scroller (Y) + hidden X; inside it we keep a real X scroller */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-t-md border">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-md border">
             {!hasJmc ? (
               <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
                 No JMC selected.
               </div>
             ) : (
-              // This is the element that actually scrolls horizontally.
-              <div ref={xScrollRef} className="w-full overflow-x-auto">
-                <Table className="w-full table-fixed" style={{ minWidth: `${86}rem` }}>
+              // This element actually scrolls horizontally.
+              <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
+                <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidthRem}rem` }}>
                   <colgroup>
                     <col style={{ width: COLS.sl }} />
                     <col style={{ width: COLS.desc }} />
@@ -343,28 +341,31 @@ export default function ViewJmcEntryDialog({
                     <col style={{ width: COLS.execAmt }} />
                     <col style={{ width: COLS.certAmt }} />
                   </colgroup>
-                  <TableHeader>
+
+                  {/* ✅ Sticky header */}
+                  <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                     <TableRow>
-                      <TableHead className="text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Description</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Unit</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">BOQ Qty</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Rate</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Prev. Certified</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Executed in this JMC</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Certified in this JMC</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Up to Date Certified Qty</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Amount Executed</TableHead>
-                      <TableHead className="text-center text-[11px] px-2">Amount Certified</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Description</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Unit</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Qty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Rate</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Prev. Certified</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Executed in this JMC</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Certified in this JMC</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Up to Date Certified Qty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Executed</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Certified</TableHead>
                     </TableRow>
                   </TableHeader>
+
                   <TableBody>{rows}</TableBody>
                 </Table>
               </div>
             )}
           </div>
 
-          {/* DEDICATED HORIZONTAL SCROLLBAR, DOCKED AT DIALOG BOTTOM */}
+          {/* ✅ Dedicated horizontal scrollbar, docked at dialog bottom */}
           <div
             ref={hBarRef}
             className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
@@ -390,7 +391,7 @@ export default function ViewJmcEntryDialog({
                 </DialogClose>
                 {isEditMode && (
                   <Button onClick={handleSaveChanges} disabled={isLoading || !hasJmc}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-8 animate-spin" /> : <Save className="mr-2 h-4 w-8" />}
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Save &amp; Verify
                   </Button>
                 )}
