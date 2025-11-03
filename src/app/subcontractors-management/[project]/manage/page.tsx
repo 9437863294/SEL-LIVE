@@ -197,54 +197,61 @@ export default function ManageSubcontractorsPage() {
         </div>
         <Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Subcontractor</Button>
       </div>
-
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64" />)
-        ) : subcontractors.length > 0 ? (
-          subcontractors.map(sub => {
-            const primaryContact = getPrimaryContact(sub);
-            return (
-              <Card key={sub.id}>
-                <CardHeader>
-                  <CardTitle>{sub.legalName}</CardTitle>
-                  <CardDescription>{sub.dbaName || 'No DBA'}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                   <div className="text-sm">
-                        <p className="font-semibold">Primary Contact</p>
-                        <p>{primaryContact.name} ({primaryContact.mobile})</p>
-                   </div>
-                   <div className="text-sm">
-                        <p className="font-semibold">Tax Info</p>
-                        <p>GST: {sub.gstNumber || 'N/A'}</p>
-                        <p>PAN: {sub.panNumber || 'N/A'}</p>
-                   </div>
-                   <div>
-                       <Badge variant={sub.status === 'Active' ? 'default' : 'secondary'}>{sub.status}</Badge>
-                   </div>
-                   <div className="flex justify-end gap-2 pt-2">
-                       <Button variant="outline" size="sm" onClick={() => openDialog('edit', sub)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="sm" disabled={!canDelete}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Are you sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete "{sub.legalName}".</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(sub.id)}>Delete</AlertDialogAction></AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                   </div>
-                </CardContent>
-              </Card>
-            );
-          })
-        ) : (
-           <div className="col-span-full text-center py-10">
-                <p className="text-muted-foreground">No subcontractors found for this project.</p>
-           </div>
-        )}
-      </div>
+      
+       <Card>
+          <CardContent className="p-0">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Legal Name</TableHead>
+                        <TableHead>DBA Name</TableHead>
+                        <TableHead>Primary Contact</TableHead>
+                        <TableHead>GST No.</TableHead>
+                        <TableHead>PAN No.</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {isLoading ? (
+                        Array.from({ length: 3 }).map((_, i) => (
+                            <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-8" /></TableCell></TableRow>
+                        ))
+                    ) : subcontractors.length > 0 ? (
+                        subcontractors.map(sub => {
+                            const primaryContact = getPrimaryContact(sub);
+                            return (
+                                <TableRow key={sub.id}>
+                                    <TableCell className="font-medium">{sub.legalName}</TableCell>
+                                    <TableCell>{sub.dbaName || 'N/A'}</TableCell>
+                                    <TableCell>{primaryContact.name} ({primaryContact.mobile})</TableCell>
+                                    <TableCell>{sub.gstNumber || 'N/A'}</TableCell>
+                                    <TableCell>{sub.panNumber || 'N/A'}</TableCell>
+                                    <TableCell><Badge variant={sub.status === 'Active' ? 'default' : 'secondary'}>{sub.status}</Badge></TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', sub)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="destructive" size="sm" className="ml-2" disabled={!canDelete}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader><AlertDialogTitle>Are you sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete "{sub.legalName}".</AlertDialogDescription></AlertDialogHeader>
+                                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(sub.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </TableCell>
+                                </TableRow>
+                            )
+                        })
+                    ) : (
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-center h-24">No subcontractors found for this project.</TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+          </CardContent>
+       </Card>
       
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl">
@@ -325,3 +332,5 @@ export default function ManageSubcontractorsPage() {
     </div>
   );
 }
+
+    
