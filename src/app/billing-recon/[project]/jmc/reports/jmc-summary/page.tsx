@@ -38,6 +38,7 @@ interface SummaryStats {
     totalJmcs: number;
     totalAmount: number;
     rejected: number;
+    createdNotInWorkflow: number;
 }
 
 interface StepWiseReportData {
@@ -137,9 +138,10 @@ export default function JmcSummaryPage() {
               return date && (new Date(date).getMonth() + 1).toString() === filters.month;
             });
         }
-        if (filters.applicant !== 'all') {
-            items = items.filter(task => (task as any).raisedById === filters.applicant);
-        }
+        // Applicant filter needs to be based on your logic, e.g. raisedById
+        // if (filters.applicant !== 'all') {
+        //     items = items.filter(task => (task as any).raisedById === filters.applicant);
+        // }
         
         setFilteredTasks(items);
     }, [filters, allTasks]);
@@ -147,15 +149,18 @@ export default function JmcSummaryPage() {
 
   useEffect(() => {
         if (isLoading || allTasks.length === 0) {
-           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0 });
+           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0, createdNotInWorkflow: 0 });
            return;
         };
         
         const totalJmcs = filteredTasks.length;
         const totalAmount = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
         const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
+        const createdNotInWorkflow = filteredTasks.filter(
+            (task) => task.status === 'Pending' && task.history?.length <= 1
+        ).length;
         
-        setSummaryStats({ totalJmcs, totalAmount, rejected });
+        setSummaryStats({ totalJmcs, totalAmount, rejected, createdNotInWorkflow });
   }, [filteredTasks, isLoading, allTasks]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -181,7 +186,7 @@ export default function JmcSummaryPage() {
     const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
 
     filteredTasks.forEach(task => {
-        const history: ActionLog[] = task.history || [];
+        const history: ActionLog[] = (task as any).history || [];
         const processedStepsForTotal = new Set<string>();
         const processedStepsForActions = new Set<string>();
 
@@ -219,7 +224,7 @@ export default function JmcSummaryPage() {
 }, [filteredTasks, workflow, users]);
 
 
-  const getFilterOptions = (key: 'year' | 'month' | 'applicant') => {
+  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
       const allDates = allTasks.map(r => (r as any).jmcDate).filter(Boolean);
 
@@ -247,6 +252,7 @@ export default function JmcSummaryPage() {
 
   const statsToDisplay = [
       { title: 'Total JMCs', value: summaryStats?.totalJmcs.toLocaleString() || '0' },
+      { title: 'Created (Not Yet in Workflow)', value: summaryStats?.createdNotInWorkflow.toLocaleString() || '0' },
       { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalAmount || 0) },
       { title: 'Rejected', value: summaryStats?.rejected.toLocaleString() || '0' },
   ];
@@ -256,8 +262,8 @@ export default function JmcSummaryPage() {
         <div className="w-full pr-14">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-                {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                {Array.from({length: 4}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -338,9 +344,9 @@ export default function JmcSummaryPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
         {isLoading ? (
-            Array.from({ length: 3 }).map((_, index) => (
+            Array.from({ length: 4 }).map((_, index) => (
                 <Card key={index}>
   <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
