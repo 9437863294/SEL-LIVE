@@ -52,6 +52,13 @@ interface StepWiseReportData {
     }
 }
 
+interface AmountWiseSummary {
+    [range: string]: {
+        count: number;
+        value: number;
+    }
+}
+
 export default function JmcSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { project: projectSlug } = useParams() as { project: string };
@@ -72,6 +79,14 @@ export default function JmcSummaryPage() {
   
   const canViewPage = can('View Reports', 'Billing Recon.JMC');
 
+  const computeExecutedValue = (items: any[] = []) => {
+    return items.reduce((sum, it) => {
+        const rate = Number(it?.rate ?? 0);
+        const qty = Number(it?.executedQty ?? 0);
+        return sum + (rate * qty);
+    }, 0);
+  };
+  
   const fetchSummaryData = useCallback(async () => {
       setIsLoading(true);
       try {
@@ -154,7 +169,7 @@ export default function JmcSummaryPage() {
            return;
         };
         
-        const totalExecutedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.executedQty || 0) * item.rate, 0) || 0), 0);
+        const totalExecutedValue = filteredTasks.reduce((sum, task) => sum + computeExecutedValue(task.items), 0);
         const totalCertifiedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
         const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
         
@@ -165,7 +180,7 @@ export default function JmcSummaryPage() {
     if (!workflow || !users.length || !filteredTasks.length) {
       return {};
     }
-  
+
     const report: StepWiseReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
     const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
@@ -185,52 +200,73 @@ export default function JmcSummaryPage() {
   
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
-        const stepAssignments = new Map<string, string>(); // stepName -> userId
-        let lastCompletedStepIndex = -1;
-
-        // Determine who was assigned which step
-        for (let i = history.length - 1; i >= 0; i--) {
-            const log = history[i];
-            const stepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
-            if (stepIndex > -1 && !stepAssignments.has(log.stepName)) {
-                stepAssignments.set(log.stepName, log.userId);
-            }
-            if (log.stepName && isCompletionAction(log.action)) {
-                if (stepIndex > lastCompletedStepIndex) {
-                    lastCompletedStepIndex = stepIndex;
-                }
-            }
-        }
+        const processedStepsForTotal = new Set<string>();
         
-        // Add current assignment if task is still open
-        if (task.currentStepId && task.status !== 'Completed' && task.status !== 'Rejected') {
-            const currentStep = workflow.steps.find(s => s.id === task.currentStepId);
-            if(currentStep && task.assignees && task.assignees.length > 0) {
-                 stepAssignments.set(currentStep.name, task.assignees[0]);
-            }
-        }
-        
-        // Populate the report object based on assignments and actions
-        stepAssignments.forEach((userId, stepName) => {
-             const userName = userMap.get(userId) || 'Unknown User';
-             initializeUserInStep(stepName, userName);
-             report[stepName][userName].total++;
+        const assignedUserForStep: Record<string, string> = {};
 
-             const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
-             if (completionLog) {
-                 report[stepName][userName].completed++;
-             }
-             
-             const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
-             if (rejectionLog) {
-                 report[stepName][userName].rejected++;
-             }
+        workflow.steps.forEach((step, index) => {
+            const actionInStep = history.find(h => h.stepName === step.name);
+            const userForStep = actionInStep?.userId || task.assignees[0];
+
+            if(userForStep) {
+                assignedUserForStep[step.name] = userForStep;
+            }
+        });
+
+        Object.entries(assignedUserForStep).forEach(([stepName, userId]) => {
+            const userName = userMap.get(userId) || 'Unknown User';
+            initializeUserInStep(stepName, userName);
+
+            if (!processedStepsForTotal.has(stepName)) {
+                report[stepName][userName].total++;
+                processedStepsForTotal.add(stepName);
+            }
+
+            const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
+            if (completionLog) {
+                report[stepName][userName].completed++;
+            }
+            
+            const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
+            if (rejectionLog) {
+                report[stepName][userName].rejected++;
+            }
         });
     });
   
     return report;
   }, [filteredTasks, workflow, users]);
+  
+  const amountWiseSummary = useMemo((): AmountWiseSummary => {
+    const buckets = {
+        '0 - 1 Lakh': { count: 0, value: 0 },
+        '1 - 5 Lakhs': { count: 0, value: 0 },
+        '5 - 10 Lakhs': { count: 0, value: 0 },
+        '10 - 25 Lakhs': { count: 0, value: 0 },
+        '25+ Lakhs': { count: 0, value: 0 },
+    };
 
+    filteredTasks.forEach(task => {
+        const executedValue = computeExecutedValue(task.items);
+        if (executedValue <= 100000) {
+            buckets['0 - 1 Lakh'].count++;
+            buckets['0 - 1 Lakh'].value += executedValue;
+        } else if (executedValue <= 500000) {
+            buckets['1 - 5 Lakhs'].count++;
+            buckets['1 - 5 Lakhs'].value += executedValue;
+        } else if (executedValue <= 1000000) {
+            buckets['5 - 10 Lakhs'].count++;
+            buckets['5 - 10 Lakhs'].value += executedValue;
+        } else if (executedValue <= 2500000) {
+            buckets['10 - 25 Lakhs'].count++;
+            buckets['10 - 25 Lakhs'].value += executedValue;
+        } else {
+            buckets['25+ Lakhs'].count++;
+            buckets['25+ Lakhs'].value += executedValue;
+        }
+    });
+    return buckets;
+  }, [filteredTasks]);
 
   const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
@@ -335,7 +371,7 @@ export default function JmcSummaryPage() {
               <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
-  {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
+                {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
                   <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -376,6 +412,34 @@ export default function JmcSummaryPage() {
             ))
         )}
       </div>
+
+       <div className="mb-6">
+        <h2 className="text-xl font-bold">Amount-wise JMC Summary</h2>
+      </div>
+
+      <Card className="mb-8">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Amount Range</TableHead>
+                <TableHead className="text-center">No. of JMCs</TableHead>
+                <TableHead className="text-right">Total Value</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Object.entries(amountWiseSummary).map(([range, data]) => (
+                <TableRow key={range}>
+                  <TableCell className="font-medium">{range}</TableCell>
+                  <TableCell className="text-center">{data.count}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(data.value)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
 
          <div className="mb-6">
         <h2 className="text-xl font-bold">Step-wise Report</h2>
