@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Home, Loader2, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Home, Loader2, ShieldAlert, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -36,6 +36,7 @@ import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface SummaryStats {
+    totalJMCs: number;
     totalExecutedValue: number;
     totalCertifiedValue: number;
     rejected: number;
@@ -47,7 +48,6 @@ interface StepWiseReportData {
         [userName: string]: {
             total: number;
             completed: number;
-            onTime: number;
             rejected: number;
         }
     }
@@ -150,7 +150,7 @@ export default function JmcSummaryPage() {
             });
         }
         if (filters.applicant !== 'all') {
-            const firstActorId = (task: JmcEntry) => (task.history && task.history.length > 1) ? task.history[1].userId : null;
+            const firstActorId = (task: JmcEntry) => (task.history && task.history.length > 0) ? task.history[0].userId : null;
             items = items.filter(task => firstActorId(task) === filters.applicant);
         }
         
@@ -160,16 +160,17 @@ export default function JmcSummaryPage() {
 
   useEffect(() => {
         if (isLoading || allTasks.length === 0) {
-           setSummaryStats({ totalExecutedValue: 0, totalCertifiedValue: 0, rejected: 0, completed: 0 });
+           setSummaryStats({ totalJMCs: 0, totalExecutedValue: 0, totalCertifiedValue: 0, rejected: 0, completed: 0 });
            return;
         };
         
+        const totalJMCs = filteredTasks.length;
         const totalExecutedValue = filteredTasks.reduce((sum, task) => sum + computeExecutedValue(task.items), 0);
         const totalCertifiedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
         const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
         const completed = filteredTasks.filter(req => req.status === 'Completed').length;
         
-        setSummaryStats({ totalExecutedValue, totalCertifiedValue, rejected, completed });
+        setSummaryStats({ totalJMCs, totalExecutedValue, totalCertifiedValue, rejected, completed });
   }, [filteredTasks, isLoading, allTasks]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -179,16 +180,18 @@ export default function JmcSummaryPage() {
   
     const report: StepWiseReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
-    const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
-  
-    workflow.steps.forEach(step => {
-      report[step.name] = {};
+    
+    // Manually add a "Created" step at the beginning
+    const allSteps = [{ id: 'created', name: 'Created' }, ...workflow.steps];
+
+    allSteps.forEach(step => {
+        report[step.name] = {};
     });
   
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
       }
     };
     
@@ -196,47 +199,39 @@ export default function JmcSummaryPage() {
   
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
-        const taskValue = computeExecutedValue(task.items);
-        const processedStepsForTotal = new Set<string>();
-
-        const stepAssignments: { stepName: string; userId: string; }[] = [];
         
-        if (history.length > 0) {
-            const firstStep = workflow.steps[0];
-            if (firstStep) {
-                stepAssignments.push({ stepName: firstStep.name, userId: history[0].userId });
-            }
+        // Handle "Created" stage
+        const creationLog = history.find(h => h.action === 'Created');
+        if (creationLog) {
+            const creatorName = userMap.get(creationLog.userId) || 'Unknown User';
+            initializeUserInStep('Created', creatorName);
+            report['Created'][creatorName].total++;
+            report['Created'][creatorName].completed++; // Creation is always a "completed" action for this stage
         }
         
-        history.forEach(log => {
-            if (isCompletionAction(log.action)) {
-                const currentStepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
-                const nextStep = workflow.steps[currentStepIndex + 1];
-                if (nextStep) {
-                    const nextAssignee = history.find(h => h.stepName === nextStep.name)?.userId || task.assignees[0];
-                    if (nextAssignee) {
-                        stepAssignments.push({ stepName: nextStep.name, userId: nextAssignee });
-                    }
-                }
+        // Handle workflow stages
+        const stepAssignments: { [stepName: string]: string } = {};
+
+        workflow.steps.forEach((step, index) => {
+            const stepLogs = history.filter(h => h.stepName === step.name);
+            const assigneeLog = stepLogs.find(l => l.userId); // First user to act on this step is the assignee
+            
+            if (assigneeLog) {
+                stepAssignments[step.name] = assigneeLog.userId;
+            } else if (task.currentStepId === step.id && task.assignees?.length > 0) {
+                 // If it's the current step, the assignee is known
+                stepAssignments[step.name] = task.assignees[0];
             }
         });
-        
-        if (task.status === 'In Progress' || task.status === 'Pending') {
-            const currentStep = workflow.steps.find(s => s.id === task.currentStepId);
-            if (currentStep && task.assignees.length > 0) {
-                stepAssignments.push({ stepName: currentStep.name, userId: task.assignees[0] });
-            }
-        }
-        
-        const uniqueAssignments = Array.from(new Map(stepAssignments.map(item => [item.stepName, item])).values());
 
-        uniqueAssignments.forEach(({ stepName, userId }) => {
+        Object.entries(stepAssignments).forEach(([stepName, userId]) => {
             const userName = userMap.get(userId) || 'Unknown User';
             initializeUserInStep(stepName, userName);
+
             report[stepName][userName].total++;
 
-            const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
-            const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
+            const completionLog = history.find(h => h.stepName === stepName && isCompletionAction(h.action));
+            const rejectionLog = history.find(h => h.stepName === stepName && h.action.toLowerCase() === 'reject');
 
             if (completionLog) {
                 report[stepName][userName].completed++;
@@ -280,6 +275,7 @@ export default function JmcSummaryPage() {
   }
 
   const statsToDisplay = [
+      { title: 'Total JMCs', value: summaryStats?.totalJMCs.toLocaleString() || '0' },
       { title: 'JMC Executed Value', value: formatCurrency(summaryStats?.totalExecutedValue || 0) },
       { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalCertifiedValue || 0) },
       { title: 'Completed', value: summaryStats?.completed.toLocaleString() || '0' },
@@ -291,8 +287,8 @@ export default function JmcSummaryPage() {
         <div className="w-full pr-14">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                {Array.from({length: 4}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-6 mb-8">
+                {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -373,9 +369,9 @@ export default function JmcSummaryPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
         {isLoading ? (
-            Array.from({ length: 4 }).map((_, index) => (
+            Array.from({ length: 5 }).map((_, index) => (
                 <Card key={index}>
                     <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
@@ -384,10 +380,8 @@ export default function JmcSummaryPage() {
         ) : (
             statsToDisplay.map((stat) => (
               <Card key={stat.title}>
-                <CardHeader className="p-4">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.title}
-                  </CardTitle>
+                <CardHeader className="p-4 flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
                   <p className="text-2xl font-bold">{stat.value}</p>
@@ -405,13 +399,13 @@ export default function JmcSummaryPage() {
         {isLoading ? (
           Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
         ) : (
-          (workflow?.steps || []).map((step) => {
+          [{ id: 'created', name: 'Created' }, ...(workflow?.steps || [])].map((step) => {
               const stepData = stepWiseReport[step.name];
-              if (!stepData || Object.values(stepData).every(data => data.total === 0)) {
+              if (!stepData || Object.keys(stepData).length === 0) {
                 return null; 
               }
               return (
-              <Card key={step.name}>
+              <Card key={step.id}>
                 <CardHeader className="p-4 bg-muted/50">
                   <CardTitle className="text-base text-center">{step.name}</CardTitle>
                 </CardHeader>
@@ -427,7 +421,7 @@ export default function JmcSummaryPage() {
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
-                         if (data.total === 0 && data.completed === 0) return null;
+                         if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
                          return (
                              <TableRow key={userName}>
                                  <TableCell>{userName}</TableCell>
@@ -447,5 +441,3 @@ export default function JmcSummaryPage() {
     </div>
   );
 }
-
-    
