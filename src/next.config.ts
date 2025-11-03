@@ -31,6 +31,16 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  devIndicators: {
+    buildActivity: false,
+  },
+  experimental: {
+    // This allows the Next.js dev server to accept requests from the
+    // Firebase Studio environment.
+    allowedDevOrigins: [
+        'https://*.cluster-ys234awlzbhwoxmkkse6qo3fz6.cloudworkstations.dev'
+    ],
+  },
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },
