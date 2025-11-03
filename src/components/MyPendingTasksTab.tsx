@@ -1,9 +1,14 @@
-
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  Timestamp,
+} from 'firebase/firestore';
 import type { Requisition, Project, Department } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -17,84 +22,154 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
-import ViewRequisitionDialog from './ViewRequisitionDialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import ViewRequisitionDialog from '@/components/ViewRequisitionDialog';
+
+/* ---------------- helpers ---------------- */
+
+function isFsTimestamp(v: unknown): v is Timestamp {
+  return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
+}
+
+function toDateSafe(v: unknown): Date | null {
+  if (!v) return null;
+  if (isFsTimestamp(v)) return v.toDate();
+  if (v instanceof Date) return v;
+  const d = new Date(v as any);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDateSafe(v: unknown, fmt = 'dd MMM, yyyy HH:mm'): string {
+  const d = toDateSafe(v);
+  return d ? format(d, fmt) : '—';
+}
+
+type BadgeVariant = 'default' | 'secondary' | 'destructive';
+
+function getDeadlineBadgeVariant(deadline: unknown): BadgeVariant {
+  const d = toDateSafe(deadline);
+  if (!d) return 'secondary';
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffMs < 0) return 'destructive';
+  if (diffDays <= 2) return 'default';
+  return 'secondary';
+}
+
+function inr(amount: number | string | null | undefined): string {
+  const n = typeof amount === 'number' ? amount : Number(amount ?? 0);
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
+}
+
+/* ---------------- component ---------------- */
 
 export default function MyPendingTasksTab() {
   const { user } = useAuth();
   const { toast } = useToast();
+
   const [tasks, setTasks] = useState<Requisition[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const assigneeId = useMemo(
+    () => (user as any)?.id ?? (user as any)?.uid ?? null,
+    [user]
+  );
+
+  const projectNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projects) {
+      const maybeAny = p as any;
+      const name: string = maybeAny.projectName ?? maybeAny.name ?? p.id;
+      map.set(p.id as any, name);
+    }
+    return map;
+  }, [projects]);
+
+  const getProjectName = useCallback(
+    (id: string) => projectNameById.get(id) ?? id,
+    [projectNameById]
+  );
+
   const fetchData = useCallback(async () => {
-    if (!user) return;
+    if (!assigneeId) return;
+
     setIsLoading(true);
 
     try {
-      const projectsSnap = await getDocs(collection(db, 'projects'));
-      setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+      const [projectsSnap, deptsSnap] = await Promise.all([
+        getDocs(collection(db, 'projects')),
+        getDocs(collection(db, 'departments')),
+      ]);
 
-      const deptsSnap = await getDocs(collection(db, 'departments'));
-      setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+      if (!isMountedRef.current) return;
 
-      const q = query(
+      // Avoid id overwrite by stripping any existing `id` from data
+      const projectsData: Project[] = projectsSnap.docs.map((doc) => {
+        const { id: _ignored, ...rest } = (doc.data() as any) ?? {};
+        return { id: doc.id, ...(rest as Omit<Project, 'id'>) };
+      });
+
+      const departmentsData: Department[] = deptsSnap.docs.map((doc) => {
+        const { id: _ignored, ...rest } = (doc.data() as any) ?? {};
+        return { id: doc.id, ...(rest as Omit<Department, 'id'>) };
+      });
+
+      setProjects(projectsData);
+      setDepartments(departmentsData);
+
+      const qRef = query(
         collection(db, 'requisitions'),
-        where('assignees', 'array-contains', user.id),
+        where('assignees', 'array-contains', assigneeId),
         where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
       );
 
-      const querySnapshot = await getDocs(q);
-      const tasksData = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          date: format(new Date(data.date), 'dd MMM, yyyy'),
-        } as Requisition;
-      });
-      setTasks(tasksData);
+      const reqSnap = await getDocs(qRef);
+      if (!isMountedRef.current) return;
 
+      // Strongly type the data to satisfy Requisition
+      const tasksData: Requisition[] = reqSnap.docs.map((doc) => {
+        const raw = doc.data() as unknown as Omit<Requisition, 'id'>;
+        // If your Firestore schema might be missing some fields in practice,
+        // you can add default fallbacks here before the spread.
+        return { id: doc.id, ...raw };
+      });
+
+      setTasks(tasksData);
     } catch (error) {
-      console.error("Error fetching pending tasks: ", error);
+      console.error('Error fetching pending tasks: ', error);
       toast({
         title: 'Error',
         description: 'Failed to fetch your pending tasks.',
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
-  }, [user, toast]);
+  }, [assigneeId, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-
   const handleViewDetails = (task: Requisition) => {
     setSelectedRequisition(task);
     setIsViewDialogOpen(true);
   };
-
-  const getProjectName = (id: string) => projects.find(p => p.id === id)?.projectName || id;
-  
-  const getDeadlineBadgeVariant = (deadline: any): "default" | "secondary" | "destructive" => {
-    if (!deadline) return "secondary";
-    const deadlineDate = deadline.toDate();
-    const now = new Date();
-    const diff = deadlineDate.getTime() - now.getTime();
-    const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
-
-    if (diff < 0) return "destructive";
-    if (diffDays <= 2) return "default"; // Use primary color for urgency
-    return "secondary";
-  };
-
 
   return (
     <>
@@ -110,34 +185,58 @@ export default function MyPendingTasksTab() {
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
+
           <TableBody>
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}>
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
                   <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-28" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-36" /></TableCell>
-                  <TableCell className="text-center"><Skeleton className="h-8 w-20 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-40" /></TableCell>
+                  <TableCell className="text-center">
+                    <Skeleton className="h-8 w-24 mx-auto" />
+                  </TableCell>
                 </TableRow>
               ))
             ) : tasks.length > 0 ? (
               tasks.map((task) => (
                 <TableRow key={task.id}>
-                  <TableCell className="font-medium">{task.requisitionId}</TableCell>
-                  <TableCell>{getProjectName(task.projectId)}</TableCell>
-                  <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(task.amount)}</TableCell>
-                  <TableCell>{task.stage}</TableCell>
+                  <TableCell className="font-medium">
+                    {(task as any).requisitionId ?? task.id}
+                  </TableCell>
+
                   <TableCell>
-                    {task.deadline ? (
-                       <Badge variant={getDeadlineBadgeVariant(task.deadline)}>{format(task.deadline.toDate(), 'dd MMM, yyyy HH:mm')}</Badge>
+                    {getProjectName(
+                      (task as any).projectId ?? (task as any).project?.id ?? '—'
+                    )}
+                  </TableCell>
+
+                  <TableCell>{inr((task as any).amount)}</TableCell>
+
+                  <TableCell>
+                    {(task as any).stage ?? (task as any).status ?? '—'}
+                  </TableCell>
+
+                  <TableCell>
+                    {(task as any).deadline ? (
+                      <Badge variant={getDeadlineBadgeVariant((task as any).deadline)}>
+                        {formatDateSafe((task as any).deadline)}
+                      </Badge>
                     ) : (
                       'N/A'
                     )}
                   </TableCell>
+
                   <TableCell className="text-center">
-                    <Button variant="outline" size="sm" onClick={() => handleViewDetails(task)}>View Details</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleViewDetails(task)}
+                    >
+                      View Details
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -151,6 +250,7 @@ export default function MyPendingTasksTab() {
           </TableBody>
         </Table>
       </div>
+
       {selectedRequisition && (
         <ViewRequisitionDialog
           isOpen={isViewDialogOpen}
@@ -158,7 +258,7 @@ export default function MyPendingTasksTab() {
           requisition={selectedRequisition}
           projects={projects}
           departments={departments}
-          onRequisitionUpdate={fetchData} // Refresh list on update
+          onRequisitionUpdate={fetchData}
         />
       )}
     </>
