@@ -29,17 +29,15 @@ import {
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
-import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
+import type { JmcEntry, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
 
 interface SummaryStats {
-    totalRequisitions: number;
+    totalJmcs: number;
     totalAmount: number;
-    cancelled: number;
-    approved: number;
-    balance: number;
+    rejected: number;
 }
 
 interface StepWiseReportData {
@@ -58,8 +56,8 @@ export default function JmcSummaryPage() {
   const { project: projectSlug } = useParams() as { project: string };
   const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [allRequisitions, setAllRequisitions] = useState<Requisition[]>([]);
-  const [filteredRequisitions, setFilteredRequisitions] = useState<Requisition[]>([]);
+  const [allTasks, setAllTasks] = useState<JmcEntry[]>([]);
+  const [filteredTasks, setFilteredTasks] = useState<JmcEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
@@ -91,15 +89,15 @@ export default function JmcSummaryPage() {
 
         const currentProjectId = currentProject.id;
         
-        const [reqsSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-          getDocs(query(collection(db, 'jmcEntries'), where('projectId', '==', currentProjectId))),
+        const [tasksSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
+          getDocs(query(collection(db, 'projects', currentProjectId, 'jmcEntries'))),
           getDocs(collection(db, 'users')),
           getDoc(doc(db, 'workflows', 'jmc-workflow')),
         ]);
         
-        const requisitionsData = reqsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Requisition));
-        setAllRequisitions(requisitionsData);
-        setFilteredRequisitions(requisitionsData);
+        const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));
+        setAllTasks(tasksData);
+        setFilteredTasks(tasksData);
 
         setProjects(allProjects);
         setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
@@ -125,47 +123,43 @@ export default function JmcSummaryPage() {
   }, [isAuthLoading, canViewPage, fetchSummaryData]);
 
     useEffect(() => {
-        let items = allRequisitions;
+        let items = allTasks;
 
         if (filters.year !== 'all') {
-            items = items.filter(req => {
-              const date = req.date || (req as any).jmcDate;
+            items = items.filter(task => {
+              const date = (task as any).jmcDate;
               return date && new Date(date).getFullYear().toString() === filters.year;
             });
         }
         if (filters.month !== 'all') {
-            items = items.filter(req => {
-              const date = req.date || (req as any).jmcDate;
+            items = items.filter(task => {
+              const date = (task as any).jmcDate;
               return date && (new Date(date).getMonth() + 1).toString() === filters.month;
             });
         }
         if (filters.applicant !== 'all') {
-            items = items.filter(req => req.raisedById === filters.applicant);
+            items = items.filter(task => (task as any).raisedById === filters.applicant);
         }
         
-        setFilteredRequisitions(items);
-    }, [filters, allRequisitions]);
+        setFilteredTasks(items);
+    }, [filters, allTasks]);
 
 
   useEffect(() => {
-        if (isLoading || allRequisitions.length === 0) {
-           setSummaryStats({ totalRequisitions: 0, totalAmount: 0, cancelled: 0, approved: 0, balance: 0 });
+        if (isLoading || allTasks.length === 0) {
+           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0 });
            return;
         };
         
-        const totalRequisitions = filteredRequisitions.length;
-        const totalAmount = filteredRequisitions.reduce((sum, req) => sum + (req.amount || 0), 0);
-        const cancelled = filteredRequisitions.filter(req => req.status === 'Rejected').length;
-        const approved = filteredRequisitions
-            .filter(req => req.status === 'Completed')
-            .reduce((sum, req) => sum + (req.amount || 0), 0);
-        const balance = totalAmount - approved;
+        const totalJmcs = filteredTasks.length;
+        const totalAmount = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
+        const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
         
-        setSummaryStats({ totalRequisitions, totalAmount, cancelled, approved, balance });
-  }, [filteredRequisitions, isLoading, allRequisitions]);
+        setSummaryStats({ totalJmcs, totalAmount, rejected });
+  }, [filteredTasks, isLoading, allTasks]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
-    if (!workflow || !users.length || !filteredRequisitions.length) {
+    if (!workflow || !users.length || !filteredTasks.length) {
         return {};
     }
 
@@ -186,8 +180,8 @@ export default function JmcSummaryPage() {
     
     const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
 
-    filteredRequisitions.forEach(req => {
-        const history: ActionLog[] = req.history || [];
+    filteredTasks.forEach(task => {
+        const history: ActionLog[] = task.history || [];
         const processedStepsForTotal = new Set<string>();
         const processedStepsForActions = new Set<string>();
 
@@ -222,12 +216,12 @@ export default function JmcSummaryPage() {
     });
 
     return report;
-}, [filteredRequisitions, workflow, users]);
+}, [filteredTasks, workflow, users]);
 
 
-  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
+  const getFilterOptions = (key: 'year' | 'month' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
-      const allDates = allRequisitions.map(r => r.date || (r as any).jmcDate).filter(Boolean);
+      const allDates = allTasks.map(r => (r as any).jmcDate).filter(Boolean);
 
       switch (key) {
           case 'year':
@@ -235,7 +229,7 @@ export default function JmcSummaryPage() {
           case 'month':
               return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
           case 'applicant':
-              const applicantIds = new Set(allRequisitions.map(r => r.raisedById));
+              const applicantIds = new Set(allTasks.map(r => (r as any).raisedById));
               return users.filter(u => applicantIds.has(u.id));
           default:
               return [];
@@ -252,9 +246,9 @@ export default function JmcSummaryPage() {
 }
 
   const statsToDisplay = [
-      { title: 'Total JMCs', value: summaryStats?.totalRequisitions.toLocaleString() || '0' },
+      { title: 'Total JMCs', value: summaryStats?.totalJmcs.toLocaleString() || '0' },
       { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalAmount || 0) },
-      { title: 'Rejected', value: summaryStats?.cancelled.toLocaleString() || '0' },
+      { title: 'Rejected', value: summaryStats?.rejected.toLocaleString() || '0' },
   ];
   
   if (isAuthLoading || (isLoading && canViewPage)) {
@@ -262,8 +256,8 @@ export default function JmcSummaryPage() {
         <div className="w-full pr-14">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                {Array.from({length: 4}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -313,8 +307,8 @@ export default function JmcSummaryPage() {
       <Card className="mb-6">
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
-            <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
-              <SelectTrigger><SelectValue placeholder="Select Year" /></SelectTrigger>
+            <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
+              <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Years</SelectItem>
                 {(getFilterOptions('year') as string[]).map(year => (
@@ -322,8 +316,8 @@ export default function JmcSummaryPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
-              <SelectTrigger><SelectValue placeholder="Select Month" /></SelectTrigger>
+            <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
+              <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
   {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
@@ -331,8 +325,8 @@ export default function JmcSummaryPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={filters.applicant} onValueChange={(v) => handleFilterChange('applicant', v)}>
-              <SelectTrigger><SelectValue placeholder="Select Applicant" /></SelectTrigger>
+            <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
+              <SelectTrigger><SelectValue placeholder="All Applicants" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Applicants</SelectItem>
                 {(getFilterOptions('applicant') as User[]).map(user => (
