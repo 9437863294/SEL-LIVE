@@ -41,13 +41,12 @@ interface SummaryStats {
     rejected: number;
 }
 
-interface StepWiseReportData {
+interface StepWiseAmountReportData {
     [stepName: string]: {
         [userName: string]: {
-            total: number;
-            completed: number;
-            onTime: number; 
-            rejected: number;
+            totalAssignedAmount: number;
+            completedAmount: number;
+            rejectedAmount: number;
         }
     }
 }
@@ -176,12 +175,12 @@ export default function JmcSummaryPage() {
         setSummaryStats({ totalExecutedValue, totalCertifiedValue, rejected });
   }, [filteredTasks, isLoading, allTasks]);
   
-  const stepWiseReport = useMemo((): StepWiseReportData => {
+  const stepWiseReport = useMemo((): StepWiseAmountReportData => {
     if (!workflow || !users.length || !filteredTasks.length) {
       return {};
     }
-
-    const report: StepWiseReportData = {};
+  
+    const report: StepWiseAmountReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
     const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
   
@@ -192,7 +191,7 @@ export default function JmcSummaryPage() {
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+        report[stepName][userName] = { totalAssignedAmount: 0, completedAmount: 0, rejectedAmount: 0 };
       }
     };
     
@@ -200,42 +199,65 @@ export default function JmcSummaryPage() {
   
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
+        const taskValue = computeExecutedValue(task.items);
         const processedStepsForTotal = new Set<string>();
+
+        // This revised logic correctly determines who was assigned the task at each step of its journey.
+        const stepAssignments: { stepName: string; userId: string; }[] = [];
         
-        const assignedUserForStep: Record<string, string> = {};
-
-        workflow.steps.forEach((step, index) => {
-            const actionInStep = history.find(h => h.stepName === step.name);
-            const userForStep = actionInStep?.userId || task.assignees[0];
-
-            if(userForStep) {
-                assignedUserForStep[step.name] = userForStep;
+        // The first person in the workflow is the creator
+        if (history.length > 0) {
+            const firstStep = workflow.steps[0];
+            if (firstStep) {
+                stepAssignments.push({ stepName: firstStep.name, userId: history[0].userId });
+            }
+        }
+        
+        // Subsequent assignments are determined by who acted upon the previous step
+        history.forEach(log => {
+            if (isCompletionAction(log.action)) {
+                const currentStepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
+                const nextStep = workflow.steps[currentStepIndex + 1];
+                if (nextStep) {
+                    const nextAssignee = history.find(h => h.stepName === nextStep.name)?.userId || task.assignees[0];
+                    if (nextAssignee) {
+                        stepAssignments.push({ stepName: nextStep.name, userId: nextAssignee });
+                    }
+                }
             }
         });
+        
+        // Add the current pending step if not completed/rejected
+        if (task.status === 'In Progress' || task.status === 'Pending') {
+            const currentStep = workflow.steps.find(s => s.id === task.currentStepId);
+            if (currentStep && task.assignees.length > 0) {
+                stepAssignments.push({ stepName: currentStep.name, userId: task.assignees[0] });
+            }
+        }
+        
+        // Now, populate the report with amounts based on the correct assignments
+        const uniqueAssignments = Array.from(new Map(stepAssignments.map(item => [item.stepName, item])).values());
 
-        Object.entries(assignedUserForStep).forEach(([stepName, userId]) => {
+        uniqueAssignments.forEach(({ stepName, userId }) => {
             const userName = userMap.get(userId) || 'Unknown User';
             initializeUserInStep(stepName, userName);
-
-            if (!processedStepsForTotal.has(stepName)) {
-                report[stepName][userName].total++;
-                processedStepsForTotal.add(stepName);
-            }
+            report[stepName][userName].totalAssignedAmount += taskValue;
 
             const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
-            if (completionLog) {
-                report[stepName][userName].completed++;
-            }
-            
             const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
+
+            if (completionLog) {
+                report[stepName][userName].completedAmount += taskValue;
+            }
             if (rejectionLog) {
-                report[stepName][userName].rejected++;
+                report[stepName][userName].rejectedAmount += taskValue;
             }
         });
     });
   
     return report;
   }, [filteredTasks, workflow, users]);
+  
   
   const amountWiseSummary = useMemo((): AmountWiseSummary => {
     const buckets = {
@@ -451,7 +473,7 @@ export default function JmcSummaryPage() {
         ) : (
           (workflow?.steps || []).map((step) => {
               const stepData = stepWiseReport[step.name];
-              if (!stepData || Object.values(stepData).every(data => data.total === 0 && data.completed === 0 && data.rejected === 0)) {
+              if (!stepData || Object.values(stepData).every(data => data.totalAssignedAmount === 0)) {
                 return null; 
               }
               return (
@@ -464,22 +486,20 @@ export default function JmcSummaryPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>User</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Done</TableHead>
-                        <TableHead>On Time</TableHead>
-                        <TableHead>Rejected</TableHead>
+                        <TableHead className="text-right">Assigned</TableHead>
+                        <TableHead className="text-right">Verified</TableHead>
+                        <TableHead className="text-right">Rejected</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
-                         if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
+                         if (data.totalAssignedAmount === 0) return null;
                          return (
                              <TableRow key={userName}>
                                  <TableCell>{userName}</TableCell>
-                                 <TableCell>{data.total}</TableCell>
-                                 <TableCell>{data.completed}</TableCell>
-                                 <TableCell>{data.onTime}</TableCell>
-                                 <TableCell>{data.rejected}</TableCell>
+                                 <TableCell className="text-right">{formatCurrency(data.totalAssignedAmount)}</TableCell>
+                                 <TableCell className="text-right">{formatCurrency(data.completedAmount)}</TableCell>
+                                 <TableCell className="text-right">{formatCurrency(data.rejectedAmount)}</TableCell>
                              </TableRow>
                          )
                      })}
