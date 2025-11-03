@@ -139,7 +139,7 @@ export default function SiteFundSummaryPage() {
         const totalAmount = filteredRequisitions.reduce((sum, req) => sum + req.amount, 0);
         const cancelled = filteredRequisitions.filter(req => req.status === 'Rejected').length;
         const approved = filteredRequisitions
-            .filter(req => req.status === 'Completed' || req.status === 'Approved')
+            .filter(req => req.status === 'Completed') // Changed from 'Approved'
             .reduce((sum, req) => sum + req.amount, 0);
         const balance = totalAmount - approved;
         
@@ -183,7 +183,7 @@ export default function SiteFundSummaryPage() {
         workflow.steps.forEach((step, index) => {
              const stepReached = history.some(h => h.stepName === step.name) || req.currentStepId === step.id;
              if (stepReached) {
-                const assigneeId = req.history.find(h => h.stepName === step.name)?.userId || req.assignedToId;
+                const assigneeId = req.history.find(h => h.stepName === step.name)?.userId || (req.assignees ? req.assignees[0] : undefined);
                 if(assigneeId) {
                    stepAssignments[step.name] = { userId: assigneeId, timestamp: previousStepCompletionTime };
                    const completionLog = history.find(h => h.stepName === step.name && isCompletionAction(h.action));
@@ -197,8 +197,8 @@ export default function SiteFundSummaryPage() {
          // Add current assignment if not completed
         if (req.currentStepId && req.status !== 'Completed' && req.status !== 'Rejected') {
             const currentStep = workflow.steps.find(s => s.id === req.currentStepId);
-            if(currentStep && req.assignedToId) {
-                 stepAssignments[currentStep.name] = { userId: req.assignedToId, timestamp: previousStepCompletionTime };
+            if(currentStep && req.assignees && req.assignees.length > 0) {
+                 stepAssignments[currentStep.name] = { userId: req.assignees[0], timestamp: previousStepCompletionTime };
             }
         }
         
