@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -60,36 +61,38 @@ interface PrintJmcDialogProps {
   enrichedItems: EnrichedJmcItem[];
 }
 
-function PrintableJmcStyles() {
-  return (
-    <style>{`
-      @media print {
-        body * { visibility: hidden; }
-        #printable-jmc-content, #printable-jmc-content * {
-          visibility: visible;
-          font-family: Arial, sans-serif;
-          margin: 0; padding: 0; box-sizing: border-box;
+class PrintableJmcStyles extends React.Component {
+  render() {
+    return (
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #printable-jmc-content, #printable-jmc-content * {
+            visibility: visible;
+            font-family: Arial, sans-serif;
+            margin: 0; padding: 0; box-sizing: border-box;
+          }
+          #printable-jmc-content {
+            position: absolute; left: 0; top: 0;
+            width: 100%; height: auto; min-height: 297mm;
+            padding: 15mm; font-size: 8pt; color: #000;
+          }
+          table {
+            width: 100%; border-collapse: collapse; border: 1px solid #000;
+            -webkit-print-color-adjust: exact; color-adjust: exact;
+          }
+          th, td {
+            border: 1px solid #000; padding: 3px 6px; word-wrap: break-word;
+            vertical-align: top; height: 100%;
+          }
+          th { background-color: #f4f4f4; font-weight: bold; text-transform: uppercase; text-align: center; }
+          .print-header-cell { padding: 1px 4px !important; }
+          tr { page-break-inside: avoid; }
+          [role="dialog"] header, [role="dialog"] footer { display: none; }
         }
-        #printable-jmc-content {
-          position: absolute; left: 0; top: 0;
-          width: 100%; height: auto; min-height: 297mm;
-          padding: 15mm; font-size: 8pt; color: #000;
-        }
-        table {
-          width: 100%; border-collapse: collapse; border: 1px solid #000;
-          -webkit-print-color-adjust: exact; color-adjust: exact;
-        }
-        th, td {
-          border: 1px solid #000; padding: 3px 6px; word-wrap: break-word;
-          vertical-align: top; height: 100%;
-        }
-        th { background-color: #f4f4f4; font-weight: bold; text-transform: uppercase; text-align: center; }
-        .print-header-cell { padding: 1px 4px !important; }
-        tr { page-break-inside: avoid; }
-        [role="dialog"] header, [role="dialog"] footer { display: none; }
-      }
-    `}</style>
-  );
+      `}</style>
+    );
+  }
 }
 
 const COMPANY_NAME_1 = 'M/s Siddharth Engineering Limited';
@@ -135,13 +138,13 @@ export default function PrintJmcDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <PrintableJmcStyles />
       <DialogContent className="sm:max-w-[90rem] mx-auto">
         <DialogHeader>
           <DialogTitle>Print JMC: {jmcEntry.jmcNo}</DialogTitle>
         </DialogHeader>
 
         <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
+          <PrintableJmcStyles />
           {/* Header */}
           <div className="flex justify-between border-b-2 border-black pb-1 mb-4">
             <div className="w-1/3 text-left">
