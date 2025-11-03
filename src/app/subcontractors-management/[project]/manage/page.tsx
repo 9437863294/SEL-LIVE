@@ -50,10 +50,8 @@ export default function ManageSubcontractorsPage() {
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
-  const [formData, setFormData] = useState<Omit<Subcontractor, 'id' | 'attachments'>>(initialFormState);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSubcontractor, setEditingSubcontractor] = useState<Subcontractor | null>(null);
 
   const canViewPage = can('View', 'Subcontractors Management.Manage Subcontractors');
   const canAdd = can('Add', 'Subcontractors Management.Manage Subcontractors');
@@ -93,66 +91,7 @@ export default function ManageSubcontractorsPage() {
     }
   }, [authLoading, canViewPage, projectSlug]);
 
-  const openDialog = (mode: 'add' | 'edit', sub?: Subcontractor) => {
-    setDialogMode(mode);
-    if (mode === 'edit' && sub) {
-        const { id, attachments, ...dataToEdit } = sub;
-        const contactsWithIds = (dataToEdit.contacts || []).map(c => ({...c, id: c.id || crypto.randomUUID()}));
-        setFormData({ ...initialFormState, ...dataToEdit, contacts: contactsWithIds.length > 0 ? contactsWithIds : [{...initialContact, id: crypto.randomUUID()}] });
-        setEditingId(sub.id);
-    } else {
-        setFormData({...initialFormState, contacts: [{...initialContact, id: crypto.randomUUID() }]});
-        setEditingId(null);
-    }
-    setIsDialogOpen(true);
-  };
-  
-  const handleFormChange = (field: keyof Omit<Subcontractor, 'id'|'attachments'|'contacts'>, value: string) => {
-    setFormData(prev => ({...prev, [field]: value}));
-  };
 
-  const handleContactChange = (index: number, field: keyof Omit<ContactPerson, 'id'>, value: string) => {
-      const newContacts = [...formData.contacts];
-      newContacts[index] = {...newContacts[index], [field]: value};
-      setFormData(prev => ({ ...prev, contacts: newContacts }));
-  };
-  
-  const addContact = () => {
-      setFormData(prev => ({...prev, contacts: [...prev.contacts, {...initialContact, id: crypto.randomUUID()}]}));
-  }
-
-  const removeContact = (id: string) => {
-      if (formData.contacts.length <= 1) {
-          toast({ title: "Cannot Remove", description: "At least one contact person is required.", variant: "destructive"});
-          return;
-      }
-      setFormData(prev => ({...prev, contacts: prev.contacts.filter(c => c.id !== id)}));
-  }
-
-  const handleSubmit = async () => {
-    if (!currentProject || !formData.legalName.trim()) {
-      toast({ title: 'Validation Error', description: 'Legal Business Name is required.', variant: 'destructive' });
-      return;
-    }
-    
-    try {
-      const subsCollection = collection(db, 'projects', currentProject.id, 'subcontractors');
-      const dataToSave = {...formData, contacts: formData.contacts.map(({id, ...rest}) => rest)};
-
-      if (dialogMode === 'edit' && editingId) {
-        await updateDoc(doc(subsCollection, editingId), dataToSave);
-        toast({ title: 'Success', description: 'Subcontractor updated.' });
-      } else {
-        await addDoc(subsCollection, dataToSave);
-        toast({ title: 'Success', description: 'New subcontractor added.' });
-      }
-      setIsDialogOpen(false);
-      fetchData();
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to save data.', variant: 'destructive' });
-    }
-  };
-  
   const handleDelete = async (id: string) => {
     if (!currentProject) return;
     try {
@@ -168,6 +107,48 @@ export default function ManageSubcontractorsPage() {
       const projContact = sub.contacts?.find(c => c.type === 'Project');
       return projContact || sub.contacts?.[0] || { name: 'N/A', mobile: 'N/A' };
   }
+
+  const openEditDialog = (sub: Subcontractor) => {
+    setEditingSubcontractor(sub);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdate = async () => {
+      if(!editingSubcontractor) return;
+
+      try {
+        const subRef = doc(db, 'projects', currentProject!.id, 'subcontractors', editingSubcontractor.id);
+        const { id, ...dataToUpdate } = editingSubcontractor;
+        await updateDoc(subRef, dataToUpdate);
+        toast({ title: 'Success', description: 'Subcontractor updated.' });
+        setIsEditDialogOpen(false);
+        fetchData();
+      } catch (error) {
+        toast({ title: 'Error', description: 'Failed to update subcontractor.', variant: 'destructive' });
+      }
+  };
+  
+  const handleEditContactChange = (index: number, field: keyof Omit<ContactPerson, 'id'>, value: string) => {
+    if (!editingSubcontractor) return;
+    const newContacts = [...editingSubcontractor.contacts];
+    newContacts[index] = {...newContacts[index], [field]: value};
+    setEditingSubcontractor(prev => prev ? ({ ...prev, contacts: newContacts }) : null);
+  };
+
+  const addEditContact = () => {
+    if (!editingSubcontractor) return;
+    const newContact = { ...initialContact, id: crypto.randomUUID() };
+    setEditingSubcontractor(prev => prev ? ({ ...prev, contacts: [...prev.contacts, newContact] }) : null);
+  };
+
+  const removeEditContact = (id: string) => {
+    if (!editingSubcontractor || editingSubcontractor.contacts.length <= 1) {
+      toast({ title: "Cannot Remove", description: "At least one contact person is required.", variant: "destructive" });
+      return;
+    }
+    setEditingSubcontractor(prev => prev ? ({ ...prev, contacts: prev.contacts.filter(c => c.id !== id) }) : null);
+  };
+
 
   if (authLoading || (isLoading && canViewPage)) {
     return <div className="w-full px-4 sm:px-6 lg:px-8"><Skeleton className="h-96" /></div>;
@@ -195,7 +176,9 @@ export default function ManageSubcontractorsPage() {
             <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
             <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
         </div>
-        <Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Subcontractor</Button>
+        <Link href={`/subcontractors-management/${projectSlug}/manage/add`}>
+            <Button disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Subcontractor</Button>
+        </Link>
       </div>
       
        <Card>
@@ -229,7 +212,7 @@ export default function ManageSubcontractorsPage() {
                                     <TableCell>{sub.panNumber || 'N/A'}</TableCell>
                                     <TableCell><Badge variant={sub.status === 'Active' ? 'default' : 'secondary'}>{sub.status}</Badge></TableCell>
                                     <TableCell className="text-right">
-                                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', sub)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
+                                        <Button variant="outline" size="sm" onClick={() => openEditDialog(sub)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                                         <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                                 <Button variant="destructive" size="sm" className="ml-2" disabled={!canDelete}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
@@ -253,84 +236,84 @@ export default function ManageSubcontractorsPage() {
           </CardContent>
        </Card>
       
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader><DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Subcontractor</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-[70vh] pr-6">
-            <div className="py-4 space-y-6">
-              <Accordion type="multiple" defaultValue={['item-1', 'item-2', 'item-3']} className="w-full">
-                <AccordionItem value="item-1">
-                  <AccordionTrigger className="font-semibold">1. Company & Business Details</AccordionTrigger>
-                  <AccordionContent className="space-y-4 pt-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1"><Label>Legal Business Name</Label><Input value={formData.legalName} onChange={e => handleFormChange('legalName', e.target.value)} /></div>
-                      <div className="space-y-1"><Label>DBA Name</Label><Input value={formData.dbaName} onChange={e => handleFormChange('dbaName', e.target.value)} /></div>
-                    </div>
-                    <div className="space-y-1"><Label>Registered Address</Label><Input value={formData.registeredAddress} onChange={e => handleFormChange('registeredAddress', e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Operating Address</Label><Input value={formData.operatingAddress} onChange={e => handleFormChange('operatingAddress', e.target.value)} /></div>
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="item-2">
-                  <AccordionTrigger className="font-semibold">2. Financial & Tax Details</AccordionTrigger>
-                  <AccordionContent className="space-y-4 pt-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1"><Label>GST Number</Label><Input value={formData.gstNumber} onChange={e => handleFormChange('gstNumber', e.target.value)} /></div>
-                      <div className="space-y-1"><Label>PAN Number</Label><Input value={formData.panNumber} onChange={e => handleFormChange('panNumber', e.target.value)} /></div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1"><Label>Bank Name</Label><Input value={formData.bankName} onChange={e => handleFormChange('bankName', e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Bank Branch</Label><Input value={formData.bankBranch} onChange={e => handleFormChange('bankBranch', e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Account Number</Label><Input value={formData.accountNumber} onChange={e => handleFormChange('accountNumber', e.target.value)} /></div>
-                      <div className="space-y-1"><Label>IFSC Code</Label><Input value={formData.ifscCode} onChange={e => handleFormChange('ifscCode', e.target.value)} /></div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="item-3">
-                  <AccordionTrigger className="font-semibold">3. Key Contact Personnel</AccordionTrigger>
-                  <AccordionContent className="space-y-4 pt-2">
-                    {formData.contacts.map((contact, index) => (
-                      <div key={contact.id} className="p-4 border rounded-lg space-y-4 relative">
-                        {formData.contacts.length > 1 && (
-                          <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-6 w-6" onClick={() => removeContact(contact.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                        )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div className="space-y-1"><Label>Contact Type</Label><Input value={contact.type} onChange={e => handleContactChange(index, 'type', e.target.value)} placeholder="e.g., Project, Billing"/></div>
-                            <div className="space-y-1"><Label>Name</Label><Input value={contact.name} onChange={e => handleContactChange(index, 'name', e.target.value)} /></div>
-                            <div className="space-y-1"><Label>Job Title</Label><Input value={contact.title} onChange={e => handleContactChange(index, 'title', e.target.value)} /></div>
-                            <div className="space-y-1"><Label>Mobile</Label><Input value={contact.mobile} onChange={e => handleContactChange(index, 'mobile', e.target.value)} /></div>
-                            <div className="space-y-1 lg:col-span-2"><Label>Email</Label><Input type="email" value={contact.email} onChange={e => handleContactChange(index, 'email', e.target.value)} /></div>
+      {editingSubcontractor && (
+          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader><DialogTitle>Edit Subcontractor</DialogTitle></DialogHeader>
+              <ScrollArea className="max-h-[70vh] pr-6">
+                <div className="py-4 space-y-6">
+                  <Accordion type="multiple" defaultValue={['item-1', 'item-2', 'item-3']} className="w-full">
+                    <AccordionItem value="item-1">
+                      <AccordionTrigger className="font-semibold">1. Company & Business Details</AccordionTrigger>
+                      <AccordionContent className="space-y-4 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1"><Label>Legal Business Name</Label><Input value={editingSubcontractor.legalName} onChange={e => setEditingSubcontractor(p => p ? {...p, legalName: e.target.value} : null)} /></div>
+                          <div className="space-y-1"><Label>DBA Name</Label><Input value={editingSubcontractor.dbaName} onChange={e => setEditingSubcontractor(p => p ? {...p, dbaName: e.target.value} : null)} /></div>
                         </div>
-                      </div>
-                    ))}
-                    <Button variant="outline" size="sm" onClick={addContact}><Plus className="mr-2 h-4 w-4"/>Add Another Contact</Button>
-                  </AccordionContent>
-                </AccordionItem>
-                 <AccordionItem value="item-4">
-                  <AccordionTrigger className="font-semibold">4. Status</AccordionTrigger>
-                  <AccordionContent className="space-y-4 pt-2">
-                    <div className="space-y-2">
-                      <Label>Status</Label>
-                      <Select value={formData.status} onValueChange={(value: 'Active' | 'Inactive') => handleFormChange('status', value)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                              <SelectItem value="Active">Active</SelectItem>
-                              <SelectItem value="Inactive">Inactive</SelectItem>
-                          </SelectContent>
-                      </Select>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
-          </ScrollArea>
-          <DialogFooter>
-            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-            <Button type="button" onClick={handleSubmit}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                        <div className="space-y-1"><Label>Registered Address</Label><Input value={editingSubcontractor.registeredAddress} onChange={e => setEditingSubcontractor(p => p ? {...p, registeredAddress: e.target.value} : null)} /></div>
+                        <div className="space-y-1"><Label>Operating Address</Label><Input value={editingSubcontractor.operatingAddress} onChange={e => setEditingSubcontractor(p => p ? {...p, operatingAddress: e.target.value} : null)} /></div>
+                      </AccordionContent>
+                    </AccordionItem>
+                     <AccordionItem value="item-2">
+                        <AccordionTrigger className="font-semibold">2. Financial & Tax Details</AccordionTrigger>
+                        <AccordionContent className="space-y-4 pt-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1"><Label>GST Number</Label><Input value={editingSubcontractor.gstNumber} onChange={e => setEditingSubcontractor(p => p ? {...p, gstNumber: e.target.value} : null)} /></div>
+                            <div className="space-y-1"><Label>PAN Number</Label><Input value={editingSubcontractor.panNumber} onChange={e => setEditingSubcontractor(p => p ? {...p, panNumber: e.target.value} : null)} /></div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1"><Label>Bank Name</Label><Input value={editingSubcontractor.bankName} onChange={e => setEditingSubcontractor(p => p ? {...p, bankName: e.target.value} : null)} /></div>
+                            <div className="space-y-1"><Label>Bank Branch</Label><Input value={editingSubcontractor.bankBranch} onChange={e => setEditingSubcontractor(p => p ? {...p, bankBranch: e.target.value} : null)} /></div>
+                            <div className="space-y-1"><Label>Account Number</Label><Input value={editingSubcontractor.accountNumber} onChange={e => setEditingSubcontractor(p => p ? {...p, accountNumber: e.target.value} : null)} /></div>
+                            <div className="space-y-1"><Label>IFSC Code</Label><Input value={editingSubcontractor.ifscCode} onChange={e => setEditingSubcontractor(p => p ? {...p, ifscCode: e.target.value} : null)} /></div>
+                            </div>
+                        </AccordionContent>
+                     </AccordionItem>
+                     <AccordionItem value="item-3">
+                        <AccordionTrigger className="font-semibold">3. Key Contact Personnel</AccordionTrigger>
+                        <AccordionContent className="space-y-4 pt-2">
+                            {editingSubcontractor.contacts.map((contact, index) => (
+                            <div key={contact.id} className="p-4 border rounded-lg space-y-4 relative">
+                                {editingSubcontractor.contacts.length > 1 && (
+                                <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-6 w-6" onClick={() => removeEditContact(contact.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                )}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div className="space-y-1"><Label>Contact Type</Label><Input value={contact.type} onChange={e => handleEditContactChange(index, 'type', e.target.value)} placeholder="e.g., Project, Billing"/></div>
+                                    <div className="space-y-1"><Label>Name</Label><Input value={contact.name} onChange={e => handleEditContactChange(index, 'name', e.target.value)} /></div>
+                                    <div className="space-y-1"><Label>Job Title</Label><Input value={contact.title} onChange={e => handleEditContactChange(index, 'title', e.target.value)} /></div>
+                                    <div className="space-y-1"><Label>Mobile</Label><Input value={contact.mobile} onChange={e => handleEditContactChange(index, 'mobile', e.target.value)} /></div>
+                                    <div className="space-y-1 lg:col-span-2"><Label>Email</Label><Input type="email" value={contact.email} onChange={e => handleEditContactChange(index, 'email', e.target.value)} /></div>
+                                </div>
+                            </div>
+                            ))}
+                            <Button variant="outline" size="sm" onClick={addEditContact}><Plus className="mr-2 h-4 w-4"/>Add Another Contact</Button>
+                        </AccordionContent>
+                     </AccordionItem>
+                      <AccordionItem value="item-4">
+                        <AccordionTrigger className="font-semibold">4. Status</AccordionTrigger>
+                        <AccordionContent className="space-y-4 pt-2">
+                            <div className="space-y-2">
+                            <Label>Status</Label>
+                            <Select value={editingSubcontractor.status} onValueChange={(value: 'Active' | 'Inactive') => setEditingSubcontractor(p => p ? {...p, status: value} : null)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Active">Active</SelectItem>
+                                    <SelectItem value="Inactive">Inactive</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                  </Accordion>
+                </div>
+              </ScrollArea>
+              <DialogFooter>
+                <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+                <Button type="button" onClick={handleUpdate}>Save Changes</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+      )}
     </div>
   );
 }
-
-    
