@@ -14,13 +14,11 @@ import { useToast } from '@/hooks/use-toast';
 interface DashboardStats {
     pendingRequisitions: number;
     completedRequisitions: number;
-    totalAmount: number;
 }
 
 const initialStats: DashboardStats = {
     pendingRequisitions: 0,
     completedRequisitions: 0,
-    totalAmount: 0,
 };
 
 export default function AllProjectsDashboard() {
@@ -44,9 +42,8 @@ export default function AllProjectsDashboard() {
             if (req.status === 'Completed' || req.status === 'Approved') {
                 acc.completedRequisitions += 1;
             }
-            acc.totalAmount += req.amount;
             return acc;
-        }, {...initialStats, rejectedRequisitions: 0}); // Keep rejectedRequisitions in the accumulator for type consistency if needed, but we won't display it
+        }, {...initialStats});
 
         setStats(calculatedStats);
 
@@ -76,7 +73,7 @@ export default function AllProjectsDashboard() {
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {isLoading ? (
-        Array.from({ length: 3 }).map((_, index) => (
+        Array.from({ length: 2 }).map((_, index) => (
           <Card key={index}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-5 w-3/5" />
