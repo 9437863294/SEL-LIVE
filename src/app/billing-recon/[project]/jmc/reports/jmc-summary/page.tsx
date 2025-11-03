@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Home, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Home, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -39,7 +39,6 @@ interface SummaryStats {
     totalJmcs: number;
     totalAmount: number;
     rejected: number;
-    createdNotInWorkflow: number;
 }
 
 interface StepWiseReportData {
@@ -151,18 +150,15 @@ export default function JmcSummaryPage() {
 
   useEffect(() => {
         if (isLoading || allTasks.length === 0) {
-           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0, createdNotInWorkflow: 0 });
+           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0 });
            return;
         };
         
         const totalJmcs = filteredTasks.length;
         const totalAmount = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
         const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
-        const createdNotInWorkflow = filteredTasks.filter(
-            (task) => task.status === 'Pending' && task.history?.length <= 1
-        ).length;
         
-        setSummaryStats({ totalJmcs, totalAmount, rejected, createdNotInWorkflow });
+        setSummaryStats({ totalJmcs, totalAmount, rejected });
   }, [filteredTasks, isLoading, allTasks]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -190,16 +186,9 @@ export default function JmcSummaryPage() {
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
         
-        // This set will track which user has "processed" a step for a given task,
-        // so we don't double-count completions if there are multiple actions in one step.
-        const processedStepsForCompletion = new Set<string>();
-
-        // Iterate through history to determine which user was responsible for each step.
-        const stepAssignments = new Map<string, string>(); // Map<stepName, userId>
-
+        const stepAssignments = new Map<string, string>(); 
         let lastCompletedStepIndex = -1;
 
-        // Find the last completed step to determine current assignment
         for (let i = history.length - 1; i >= 0; i--) {
             const log = history[i];
             if (log.stepName && isCompletionAction(log.action)) {
@@ -210,18 +199,15 @@ export default function JmcSummaryPage() {
             }
         }
         
-        // Determine assignments for past and current steps
         workflow.steps.forEach((step, index) => {
             const logsForStep = history.filter(h => h.stepName === step.name);
             let responsibleUser: string | undefined;
 
             if (logsForStep.length > 0) {
-                // If there's history, the user who took the last action is responsible
                 responsibleUser = logsForStep[logsForStep.length - 1].userId;
             } else if (index === lastCompletedStepIndex + 1 && task.status !== 'Completed' && task.status !== 'Rejected') {
-                 // This is the current pending step, get the assigned user
                  if (task.assignees && task.assignees.length > 0) {
-                     responsibleUser = task.assignees[0]; // Assuming primary assignee is first
+                     responsibleUser = task.assignees[0];
                  }
             }
             
@@ -230,14 +216,13 @@ export default function JmcSummaryPage() {
             }
         });
         
-        // Aggregate totals based on assignments
         stepAssignments.forEach((userId, stepName) => {
              const userName = userMap.get(userId) || 'Unknown User';
              initializeUserInStep(stepName, userName);
              report[stepName][userName].total++;
         });
 
-        // Aggregate actions (completed, rejected)
+        const processedStepsForCompletion = new Set<string>();
         history.forEach(log => {
             if (!log.stepName || log.action === 'Created') return;
             const userName = userMap.get(log.userId) || 'Unknown User';
@@ -287,7 +272,6 @@ export default function JmcSummaryPage() {
 
   const statsToDisplay = [
       { title: 'Total JMCs', value: summaryStats?.totalJmcs.toLocaleString() || '0' },
-      { title: 'Created (Not Yet in Workflow)', value: summaryStats?.createdNotInWorkflow.toLocaleString() || '0' },
       { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalAmount || 0) },
       { title: 'Rejected', value: summaryStats?.rejected.toLocaleString() || '0' },
   ];
@@ -379,9 +363,9 @@ export default function JmcSummaryPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
         {isLoading ? (
-            Array.from({ length: 4 }).map((_, index) => (
+            Array.from({ length: 3 }).map((_, index) => (
                 <Card key={index}>
                     <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
