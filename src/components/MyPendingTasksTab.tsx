@@ -36,14 +36,12 @@ export default function MyPendingTasksTab() {
     setIsLoading(true);
 
     try {
-      // Fetch projects and departments for mapping names
       const projectsSnap = await getDocs(collection(db, 'projects'));
       setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
 
       const deptsSnap = await getDocs(collection(db, 'departments'));
       setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
 
-      // Fetch requisitions assigned to the current user
       const q = query(
         collection(db, 'requisitions'),
         where('assignees', 'array-contains', user.id),
