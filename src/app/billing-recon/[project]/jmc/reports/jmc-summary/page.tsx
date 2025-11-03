@@ -33,6 +33,7 @@ import type { JmcEntry, Project, User, WorkflowStep, ActionLog } from '@/lib/typ
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 interface SummaryStats {
     totalJmcs: number;
@@ -62,6 +63,7 @@ export default function JmcSummaryPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
+  const { toast } = useToast();
 
   const [filters, setFilters] = useState({
       year: 'all',
@@ -138,10 +140,10 @@ export default function JmcSummaryPage() {
               return date && (new Date(date).getMonth() + 1).toString() === filters.month;
             });
         }
-        // Applicant filter needs to be based on your logic, e.g. raisedById
-        // if (filters.applicant !== 'all') {
-        //     items = items.filter(task => (task as any).raisedById === filters.applicant);
-        // }
+        if (filters.applicant !== 'all') {
+            const firstActorId = (task: JmcEntry) => (task.history && task.history.length > 1) ? task.history[1].userId : null;
+            items = items.filter(task => firstActorId(task) === filters.applicant);
+        }
         
         setFilteredTasks(items);
     }, [filters, allTasks]);
@@ -165,76 +167,109 @@ export default function JmcSummaryPage() {
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
     if (!workflow || !users.length || !filteredTasks.length) {
-        return {};
+      return {};
     }
-
+  
     const report: StepWiseReportData = {};
     const userMap = new Map(users.map(u => [u.id, u.name]));
     const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
-
+  
     workflow.steps.forEach(step => {
-        report[step.name] = {};
+      report[step.name] = {};
     });
-
+  
     const initializeUserInStep = (stepName: string, userName: string) => {
-        if (!report[stepName]) report[stepName] = {};
-        if (!report[stepName][userName]) {
-            report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
-        }
+      if (!report[stepName]) report[stepName] = {};
+      if (!report[stepName][userName]) {
+        report[stepName][userName] = { total: 0, completed: 0, onTime: 0, rejected: 0 };
+      }
     };
     
     const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
-
+  
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
-        const processedStepsForTotal = new Set<string>();
-        const processedStepsForActions = new Set<string>();
+        
+        // This set will track which user has "processed" a step for a given task,
+        // so we don't double-count completions if there are multiple actions in one step.
+        const processedStepsForCompletion = new Set<string>();
 
-        history.forEach(log => {
-            if (!log.stepName || log.action === 'Created') return;
+        // Iterate through history to determine which user was responsible for each step.
+        const stepAssignments = new Map<string, string>(); // Map<stepName, userId>
 
-            const userName = userMap.get(log.userId) || 'Unknown User';
-            initializeUserInStep(log.stepName, userName);
+        let lastCompletedStepIndex = -1;
 
-            if (!processedStepsForTotal.has(log.stepName)) {
-                report[log.stepName][userName].total++;
-                processedStepsForTotal.add(log.stepName);
+        // Find the last completed step to determine current assignment
+        for (let i = history.length - 1; i >= 0; i--) {
+            const log = history[i];
+            if (log.stepName && isCompletionAction(log.action)) {
+                const stepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
+                if (stepIndex > lastCompletedStepIndex) {
+                    lastCompletedStepIndex = stepIndex;
+                }
+            }
+        }
+        
+        // Determine assignments for past and current steps
+        workflow.steps.forEach((step, index) => {
+            const logsForStep = history.filter(h => h.stepName === step.name);
+            let responsibleUser: string | undefined;
+
+            if (logsForStep.length > 0) {
+                // If there's history, the user who took the last action is responsible
+                responsibleUser = logsForStep[logsForStep.length - 1].userId;
+            } else if (index === lastCompletedStepIndex + 1 && task.status !== 'Completed' && task.status !== 'Rejected') {
+                 // This is the current pending step, get the assigned user
+                 if (task.assignees && task.assignees.length > 0) {
+                     responsibleUser = task.assignees[0]; // Assuming primary assignee is first
+                 }
+            }
+            
+            if (responsibleUser) {
+                stepAssignments.set(step.name, responsibleUser);
             }
         });
         
-        history.slice().reverse().forEach(log => {
-            if (!log.stepName || log.action === 'Created') return;
-            
-            if (processedStepsForActions.has(log.stepName)) return;
+        // Aggregate totals based on assignments
+        stepAssignments.forEach((userId, stepName) => {
+             const userName = userMap.get(userId) || 'Unknown User';
+             initializeUserInStep(stepName, userName);
+             report[stepName][userName].total++;
+        });
 
+        // Aggregate actions (completed, rejected)
+        history.forEach(log => {
+            if (!log.stepName || log.action === 'Created') return;
             const userName = userMap.get(log.userId) || 'Unknown User';
             initializeUserInStep(log.stepName, userName);
 
-            if (isCompletionAction(log.action)) {
+            if (isCompletionAction(log.action) && !processedStepsForCompletion.has(log.stepName)) {
                 report[log.stepName][userName].completed++;
-                processedStepsForActions.add(log.stepName);
-            } else if (log.action.toLowerCase() === 'reject') {
+                processedStepsForCompletion.add(log.stepName);
+            } else if (log.action.toLowerCase() === 'reject' && !processedStepsForCompletion.has(log.stepName)) {
                 report[log.stepName][userName].rejected++;
-                processedStepsForActions.add(log.stepName);
+                processedStepsForCompletion.add(log.stepName);
             }
         });
     });
-
+  
     return report;
-}, [filteredTasks, workflow, users]);
+  }, [filteredTasks, workflow, users]);
 
 
   const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
       const unique = (arr: any[]) => [...new Set(arr)];
-      const allDates = allTasks.map(r => (r as any).jmcDate).filter(Boolean);
-
       switch (key) {
           case 'year':
-              return unique(allDates.map(d => new Date(d).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
+              const allYears = allTasks.map(r => (r as any).jmcDate ? new Date((r as any).jmcDate).getFullYear().toString() : null).filter(Boolean);
+              return unique(allYears).sort((a,b) => Number(b) - Number(a));
           case 'month':
               return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
+          case 'project':
+              const projectIdsInTasks = new Set(allTasks.map(t => t.projectId));
+              return projects.filter(p => projectIdsInTasks.has(p.id));
           case 'applicant':
-              const applicantIds = new Set(allTasks.map(r => (r as any).raisedById));
+               const applicantIds = new Set(allTasks.map(r => (r.history && r.history.length > 0) ? r.history[0].userId : null).filter(Boolean));
               return users.filter(u => applicantIds.has(u.id));
           default:
               return [];
@@ -312,7 +347,7 @@ export default function JmcSummaryPage() {
 
       <Card className="mb-6">
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
             <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
               <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
               <SelectContent>
@@ -348,7 +383,7 @@ export default function JmcSummaryPage() {
         {isLoading ? (
             Array.from({ length: 4 }).map((_, index) => (
                 <Card key={index}>
-  <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                 </Card>
             ))
