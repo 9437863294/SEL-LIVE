@@ -12,14 +12,17 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
-import type { Subcontractor, ContactPerson } from '@/lib/types';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import type { Subcontractor, ContactPerson, Project } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const initialContact: Omit<ContactPerson, 'id'> = { type: 'Project', name: '', title: '', mobile: '', email: '' };
 
 const initialFormState: Omit<Subcontractor, 'id' | 'attachments'> = {
   status: 'Active',
+  projectId: '',
   legalName: '',
   dbaName: '',
   registeredAddress: '',
@@ -33,15 +36,44 @@ const initialFormState: Omit<Subcontractor, 'id' | 'attachments'> = {
   contacts: [{ ...initialContact, id: crypto.randomUUID() }],
 };
 
+const slugify = (text: string) => {
+    if (!text) return '';
+    return text.toString().toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\-]+/g, '')
+      .replace(/\-\-+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+}
+
 export default function AddSubcontractorPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const params = useParams();
-  const projectSlug = params.project as string;
+  const { user } = useAuth();
+  const { project: projectSlug } = useParams() as { project: string };
   const [formData, setFormData] = useState<Omit<Subcontractor, 'id' | 'attachments'>>(initialFormState);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
-  const handleFormChange = (field: keyof Omit<Subcontractor, 'id'|'attachments'|'contacts'>, value: string) => {
+  useEffect(() => {
+    const fetchProject = async () => {
+        if(!projectSlug) return;
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        setCurrentProject(projectData || null);
+    }
+    fetchProject();
+  }, [projectSlug]);
+  
+  useEffect(() => {
+      if(currentProject) {
+          setFormData(prev => ({...prev, projectId: currentProject.id}));
+      }
+  }, [currentProject]);
+
+
+  const handleFormChange = (field: keyof Omit<Subcontractor, 'id'|'attachments'|'contacts'|'projectId'>, value: string) => {
     setFormData(prev => ({...prev, [field]: value}));
   };
 
@@ -68,6 +100,10 @@ export default function AddSubcontractorPage() {
       toast({ title: 'Validation Error', description: 'Legal Business Name is required.', variant: 'destructive' });
       return;
     }
+    if (!currentProject || !user) {
+        toast({ title: 'Error', description: 'Project or user information is missing.', variant: 'destructive' });
+        return;
+    }
 
     const { projectId, ...dataToSave } = {
         ...formData,
@@ -76,7 +112,7 @@ export default function AddSubcontractorPage() {
     
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'projects', projectId, 'subcontractors'), dataToSave);
+      await addDoc(collection(db, 'projects', currentProject.id, 'subcontractors'), dataToSave);
       toast({ title: 'Success', description: 'New subcontractor added.' });
       router.push(`/subcontractors-management/${projectSlug}/manage`);
     } catch (error) {
