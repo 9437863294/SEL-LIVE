@@ -235,10 +235,12 @@ export default function PrintJmcDialog({
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
-          <Button onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print Document
-          </Button>
+          <div>
+            <Button onClick={handlePrint}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print Document
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
