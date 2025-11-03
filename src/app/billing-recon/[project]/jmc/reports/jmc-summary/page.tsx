@@ -36,8 +36,8 @@ import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface SummaryStats {
-    totalJmcs: number;
-    totalAmount: number;
+    totalExecutedValue: number;
+    totalCertifiedValue: number;
     rejected: number;
 }
 
@@ -150,15 +150,15 @@ export default function JmcSummaryPage() {
 
   useEffect(() => {
         if (isLoading || allTasks.length === 0) {
-           setSummaryStats({ totalJmcs: 0, totalAmount: 0, rejected: 0 });
+           setSummaryStats({ totalExecutedValue: 0, totalCertifiedValue: 0, rejected: 0 });
            return;
         };
         
-        const totalJmcs = filteredTasks.length;
-        const totalAmount = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
+        const totalExecutedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.executedQty || 0) * item.rate, 0) || 0), 0);
+        const totalCertifiedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
         const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
         
-        setSummaryStats({ totalJmcs, totalAmount, rejected });
+        setSummaryStats({ totalExecutedValue, totalCertifiedValue, rejected });
   }, [filteredTasks, isLoading, allTasks]);
   
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -185,56 +185,46 @@ export default function JmcSummaryPage() {
   
     filteredTasks.forEach(task => {
         const history: ActionLog[] = (task as any).history || [];
-        
-        const stepAssignments = new Map<string, string>(); 
+        const stepAssignments = new Map<string, string>(); // stepName -> userId
         let lastCompletedStepIndex = -1;
 
+        // Determine who was assigned which step
         for (let i = history.length - 1; i >= 0; i--) {
             const log = history[i];
+            const stepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
+            if (stepIndex > -1 && !stepAssignments.has(log.stepName)) {
+                stepAssignments.set(log.stepName, log.userId);
+            }
             if (log.stepName && isCompletionAction(log.action)) {
-                const stepIndex = workflow.steps.findIndex(s => s.name === log.stepName);
                 if (stepIndex > lastCompletedStepIndex) {
                     lastCompletedStepIndex = stepIndex;
                 }
             }
         }
         
-        workflow.steps.forEach((step, index) => {
-            const logsForStep = history.filter(h => h.stepName === step.name);
-            let responsibleUser: string | undefined;
-
-            if (logsForStep.length > 0) {
-                responsibleUser = logsForStep[logsForStep.length - 1].userId;
-            } else if (index === lastCompletedStepIndex + 1 && task.status !== 'Completed' && task.status !== 'Rejected') {
-                 if (task.assignees && task.assignees.length > 0) {
-                     responsibleUser = task.assignees[0];
-                 }
+        // Add current assignment if task is still open
+        if (task.currentStepId && task.status !== 'Completed' && task.status !== 'Rejected') {
+            const currentStep = workflow.steps.find(s => s.id === task.currentStepId);
+            if(currentStep && task.assignees && task.assignees.length > 0) {
+                 stepAssignments.set(currentStep.name, task.assignees[0]);
             }
-            
-            if (responsibleUser) {
-                stepAssignments.set(step.name, responsibleUser);
-            }
-        });
+        }
         
+        // Populate the report object based on assignments and actions
         stepAssignments.forEach((userId, stepName) => {
              const userName = userMap.get(userId) || 'Unknown User';
              initializeUserInStep(stepName, userName);
              report[stepName][userName].total++;
-        });
 
-        const processedStepsForCompletion = new Set<string>();
-        history.forEach(log => {
-            if (!log.stepName || log.action === 'Created') return;
-            const userName = userMap.get(log.userId) || 'Unknown User';
-            initializeUserInStep(log.stepName, userName);
-
-            if (isCompletionAction(log.action) && !processedStepsForCompletion.has(log.stepName)) {
-                report[log.stepName][userName].completed++;
-                processedStepsForCompletion.add(log.stepName);
-            } else if (log.action.toLowerCase() === 'reject' && !processedStepsForCompletion.has(log.stepName)) {
-                report[log.stepName][userName].rejected++;
-                processedStepsForCompletion.add(log.stepName);
-            }
+             const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
+             if (completionLog) {
+                 report[stepName][userName].completed++;
+             }
+             
+             const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
+             if (rejectionLog) {
+                 report[stepName][userName].rejected++;
+             }
         });
     });
   
@@ -271,8 +261,8 @@ export default function JmcSummaryPage() {
 }
 
   const statsToDisplay = [
-      { title: 'Total JMCs', value: summaryStats?.totalJmcs.toLocaleString() || '0' },
-      { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalAmount || 0) },
+      { title: 'JMC Executed Value', value: formatCurrency(summaryStats?.totalExecutedValue || 0) },
+      { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalCertifiedValue || 0) },
       { title: 'Rejected', value: summaryStats?.rejected.toLocaleString() || '0' },
   ];
   
