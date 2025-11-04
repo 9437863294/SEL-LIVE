@@ -14,13 +14,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, getDocs } from 'firebase/firestore';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import type { JmcEntry, JmcItem, ActionConfig, Project } from '@/lib/types';
-import { Loader2, Upload, File as FileIcon, X } from 'lucide-react';
+import { Loader2, Upload, File as FileIcon, X, Maximize, Minimize } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from './ui/progress';
 
@@ -64,25 +63,30 @@ export function UpdateCertifiedQtyDialog({
   const [isUploading, setIsUploading] = useState(false);
   const [uploaded, setUploaded] = useState<CertifiedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
 
+
+  // ---------- project context from slug ----------
   useEffect(() => {
     const fetchProject = async () => {
-        if (!projectSlug) return;
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-        
-        if (projectData) {
-            setCurrentProject(projectData);
-        } else {
-            toast({ title: "Error", description: "Project context not found.", variant: "destructive" });
-        }
+      if (!projectSlug) return;
+      const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
+      const slugify = (text: string) =>
+        text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+        .find(p => slugify(p.projectName) === projectSlug);
+
+      if (projectData) {
+        setCurrentProject(projectData);
+      } else {
+        toast({ title: 'Error', description: 'Project context not found.', variant: 'destructive' });
+      }
     };
     fetchProject();
   }, [projectSlug, toast]);
 
-
+  // ---------- dialog open: seed items + attachments ----------
   useEffect(() => {
     if (isOpen && jmcEntry) {
       const cloned: EditableItem[] = JSON.parse(JSON.stringify(jmcEntry.items || []));
@@ -92,7 +96,6 @@ export function UpdateCertifiedQtyDialog({
       });
       setItems(cloned);
       setUploaded((jmcEntry as any).certifiedAttachments || []);
-      
       setSelectedFiles([]);
       setUploadProgress({});
       setIsDragging(false);
@@ -101,6 +104,7 @@ export function UpdateCertifiedQtyDialog({
 
   const hasErrors = useMemo(() => items.some((it) => it.__error), [items]);
 
+  // ---------- table editing ----------
   const handleCertifiedQtyChange = (index: number, raw: string) => {
     setItems((prev) => {
       const next = [...prev];
@@ -113,7 +117,7 @@ export function UpdateCertifiedQtyDialog({
 
       if (raw.trim() === '') {
         row.__error = null;
-        row.certifiedQty = 0; // Default to 0 for empty string
+        row.certifiedQty = 0; // empty -> treat as 0
       } else if (Number.isNaN(parsed)) {
         row.__error = 'Enter a valid number';
       } else if (parsed < 0) {
@@ -133,6 +137,7 @@ export function UpdateCertifiedQtyDialog({
     });
   };
 
+  // ---------- attachments ----------
   const onPickFiles: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -216,9 +221,12 @@ export function UpdateCertifiedQtyDialog({
       });
 
     try {
-      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length || CONCURRENCY) }, async () => {
-        while (queue.length > 0) await runOne();
-      });
+      const workers = Array.from(
+        { length: Math.min(CONCURRENCY, queue.length || CONCURRENCY) },
+        async () => {
+          while (queue.length > 0) await runOne();
+        }
+      );
       await Promise.all(workers);
       setUploaded((prev) => [...prev, ...results]);
       setSelectedFiles([]);
@@ -229,6 +237,7 @@ export function UpdateCertifiedQtyDialog({
     }
   }
 
+  // ---------- save ----------
   const handleSave = async () => {
     if (!jmcEntry || !currentProject) return;
 
@@ -249,11 +258,7 @@ export function UpdateCertifiedQtyDialog({
       }
     } catch (e) {
       console.error('Attachment upload failed:', e);
-      toast({
-        title: 'Upload failed',
-        description: 'One or more files could not be uploaded.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Upload failed', description: 'One or more files could not be uploaded.', variant: 'destructive' });
       setIsSaving(false);
       return;
     }
@@ -261,9 +266,7 @@ export function UpdateCertifiedQtyDialog({
     const payloadItems: JmcItem[] = items.map(({ __certStr, __error, ...rest }) => ({
       ...rest,
       certifiedQty:
-        rest.certifiedQty === undefined || rest.certifiedQty === null
-          ? 0 // Default to 0 instead of undefined
-          : Number(rest.certifiedQty),
+        rest.certifiedQty === undefined || rest.certifiedQty === null ? 0 : Number(rest.certifiedQty),
     }));
 
     try {
@@ -289,40 +292,56 @@ export function UpdateCertifiedQtyDialog({
   };
 
   const canClose = useCallback(() => !isSaving && !isUploading, [isSaving, isUploading]);
+  
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
+
+  const dialogSizeClass =
+    dialogSize === 'full' ? 'sm:max-w-[95vw]' :
+    dialogSize === '2xl' ? 'sm:max-w-6xl' :
+    'sm:max-w-3xl';
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => (canClose() ? onOpenChange(o) : undefined)}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className={cn("max-h-[90vh] flex flex-col min-h-0", dialogSizeClass)}>
         <DialogHeader>
           <DialogTitle>Update Certified Quantities</DialogTitle>
           <DialogDescription>JMC No: {jmcEntry?.jmcNo}</DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[60vh] border rounded-md">
+        {/* Native scroller so sticky header works */}
+        <div className="flex-1 min-h-0 overflow-y-auto border rounded-md">
           <div className="overflow-x-auto">
-            <Table className="w-full table-fixed">
-                <colgroup>
-                    <col style={{ width: '6rem' }}/>
-                    <col style={{ width: '20rem' }}/>
-                    <col style={{ width: '8rem' }}/>
-                    <col style={{ width: '10rem' }}/>
-                </colgroup>
-              <TableHeader>
+            <Table className="w-full">
+              {/* sticky header */}
+              <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                 <TableRow>
-                  <TableHead className="text-center">BOQ Sl. No.</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Executed Qty</TableHead>
-                  <TableHead className="whitespace-nowrap">Certified Qty</TableHead>
+                  <TableHead className="sticky top-0 z-20 bg-background text-center">BOQ Sl. No.</TableHead>
+                  <TableHead className="sticky top-0 z-20 bg-background">Description</TableHead>
+                  <TableHead className="sticky top-0 z-20 bg-background text-right whitespace-nowrap">
+                    Executed Qty
+                  </TableHead>
+                  <TableHead className="sticky top-0 z-20 bg-background whitespace-nowrap">
+                    Certified Qty
+                  </TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {items.map((item, idx) => (
                   <TableRow key={`${item.boqSlNo}-${idx}`}>
                     <TableCell className="text-center font-medium" title={String(item.boqSlNo ?? '')}>
                       {item.boqSlNo ?? '-'}
                     </TableCell>
-                    <TableCell className="align-top truncate" title={item.description ?? ''}>
-                      {item.description}
+                    <TableCell className="align-top">
+                      <div className="line-clamp-3 break-words whitespace-pre-line" title={item.description ?? ''}>
+                        {item.description}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right align-top whitespace-nowrap">
                       {item.executedQty}
@@ -351,8 +370,9 @@ export function UpdateCertifiedQtyDialog({
               </TableBody>
             </Table>
           </div>
-        </ScrollArea>
-        
+        </div>
+
+        {/* Attachments */}
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-medium">Attachments (optional)</h4>
           <p className="text-xs text-muted-foreground">
@@ -382,63 +402,71 @@ export function UpdateCertifiedQtyDialog({
 
           {(selectedFiles.length > 0 || uploaded.length > 0) && (
             <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
-                {uploaded.length > 0 && (
-                    <div className="space-y-1 mb-2">
-                        <p className="text-xs font-medium">Already Uploaded:</p>
-                        <ul className="space-y-1">
-                          {uploaded.map((f) => (
-                            <li key={f.url} className="text-xs flex items-center justify-between">
-                              <a className="underline truncate" href={f.url} target="_blank" rel="noreferrer">
-                                {f.name}
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                    </div>
-                )}
-                {selectedFiles.length > 0 && (
-                     <div className="space-y-1">
-                        <p className="text-xs font-medium">To Upload:</p>
-                        <ul className="space-y-2">
-                            {selectedFiles.map((f) => (
-                            <li key={f.name} className="text-sm">
-                                <div className="flex items-center justify-between">
-                                <div className="min-w-0">
-                                    <div className="truncate">{f.name}</div>
-                                    <div className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</div>
-                                </div>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => removeFile(f.name)}
-                                    disabled={isUploading || isSaving}
-                                >
-                                    Remove
-                                </Button>
-                                </div>
-                                {uploadProgress[f.name] != null && (
-                                <Progress value={uploadProgress[f.name]} className="h-1 mt-1" />
-                                )}
-                            </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
+              {uploaded.length > 0 && (
+                <div className="space-y-1 mb-2">
+                  <p className="text-xs font-medium">Already Uploaded:</p>
+                  <ul className="space-y-1">
+                    {uploaded.map((f) => (
+                      <li key={f.url} className="text-xs flex items-center justify-between">
+                        <a className="underline truncate" href={f.url} target="_blank" rel="noreferrer">
+                          {f.name}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selectedFiles.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">To Upload:</p>
+                  <ul className="space-y-2">
+                    {selectedFiles.map((f) => (
+                      <li key={f.name} className="text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="truncate">{f.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {(f.size / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(f.name)}
+                            disabled={isUploading || isSaving}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                        {uploadProgress[f.name] != null && (
+                          <Progress value={uploadProgress[f.name]} className="h-1 mt-1" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={isSaving || isUploading}>
-              Cancel
-            </Button>
-          </DialogClose>
-          <Button onClick={handleSave} disabled={isSaving || hasErrors || isUploading}>
-            {(isSaving || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {onAction ? 'Upload & Verify' : 'Upload & Save'}
+        <DialogFooter className="flex justify-between w-full">
+          <Button variant="outline" size="icon" onClick={toggleDialogSize}>
+            {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </Button>
+          <div className="flex gap-2">
+            <DialogClose asChild>
+              <Button variant="outline" disabled={isSaving || isUploading}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button onClick={handleSave} disabled={isSaving || hasErrors || isUploading}>
+              {(isSaving || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {onAction ? 'Upload & Verify' : 'Upload & Save'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
