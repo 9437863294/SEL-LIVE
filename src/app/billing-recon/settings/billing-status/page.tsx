@@ -1,16 +1,17 @@
 
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Save, Edit } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Edit, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import type { Project } from '@/lib/types';
+import type { Project, Signature } from '@/lib/types';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -35,6 +36,7 @@ type ProjectExtras = {
   siteInCharge?: string;
   projectDivision?: string;
   projectSite?: string;
+  signatures?: Signature[];
 };
 
 type ProjectWithExtras = Project & ProjectExtras;
@@ -57,9 +59,7 @@ export default function BillingStatusPage() {
   const [refRoNo, setRefRoNo] = useState('');
   const [nameOfSs, setNameOfSs] = useState('');
   const [subWork, setSubWork] = useState('');
-  const [siteInCharge, setSiteInCharge] = useState('');
-  const [projectDivision, setProjectDivision] = useState('');
-  const [projectSite, setProjectSite] = useState('');
+  const [signatures, setSignatures] = useState<Signature[]>([]);
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   const resetForm = () => {
@@ -69,9 +69,7 @@ export default function BillingStatusPage() {
     setRefRoNo('');
     setNameOfSs('');
     setSubWork('');
-    setSiteInCharge('');
-    setProjectDivision('');
-    setProjectSite('');
+    setSignatures([]);
   };
 
   const fetchProjects = useCallback(async () => {
@@ -97,6 +95,18 @@ export default function BillingStatusPage() {
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  const handleSignatureChange = (id: string, field: 'designation' | 'name', value: string) => {
+    setSignatures(prev => prev.map(sig => sig.id === id ? { ...sig, [field]: value } : sig));
+  };
+  
+  const handleAddSignature = () => {
+    setSignatures(prev => [...prev, { id: crypto.randomUUID(), designation: '', name: '' }]);
+  };
+
+  const handleRemoveSignature = (id: string) => {
+    setSignatures(prev => prev.filter(sig => sig.id !== id));
+  };
 
   // Toggle handler
   const handleBillingToggle = async (project: ProjectWithExtras, nextChecked: boolean) => {
@@ -128,9 +138,7 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
-    setSiteInCharge(project.siteInCharge ?? '');
-    setProjectDivision(project.projectDivision ?? '');
-    setProjectSite(project.projectSite ?? '');
+    setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
     setIsDetailDialogOpen(true);
   };
 
@@ -142,9 +150,7 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
-    setSiteInCharge(project.siteInCharge ?? '');
-    setProjectDivision(project.projectDivision ?? '');
-    setProjectSite(project.projectSite ?? '');
+    setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
     setIsDetailDialogOpen(true);
   };
 
@@ -161,16 +167,13 @@ export default function BillingStatusPage() {
     try {
       const projectRef = doc(db, 'projects', pendingProject.id);
 
-      // Build an update payload that TS understands, including extra Firestore fields
-      const updateData: Partial<Project> & ProjectExtras = {
+      const updateData: Partial<ProjectWithExtras> = {
         woNo,
         projectName: nameOfWork,
         refRoNo,
         nameOfSs,
         subWork,
-        siteInCharge,
-        projectDivision,
-        projectSite,
+        signatures: signatures.map(({ id, ...rest }) => rest), // remove temporary client-side ID
       };
 
       if (dialogMode === 'enable') {
@@ -351,32 +354,31 @@ export default function BillingStatusPage() {
                 placeholder="e.g., Stringing + Bay Works"
               />
             </div>
-            <div className="space-y-2">
-                <Label htmlFor="siteInCharge">Site In charge</Label>
-                <Input
-                id="siteInCharge"
-                value={siteInCharge}
-                onChange={(e) => setSiteInCharge(e.target.value)}
-                placeholder="e.g., SEL, M.Rampur"
-                />
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="projectDivision">Asst.Manager(Elect.)</Label>
-                <Input
-                id="projectDivision"
-                value={projectDivision}
-                onChange={(e) => setProjectDivision(e.target.value)}
-                placeholder="e.g., EHT(Projects). Sub-Division"
-                />
-            </div>
-             <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="projectSite">Sub-Divisional Officer(Elect.)</Label>
-                <Input
-                id="projectSite"
-                value={projectSite}
-                onChange={(e) => setProjectSite(e.target.value)}
-                placeholder="e.g., Optcl, Bolangir"
-                />
+            
+            <div className="sm:col-span-2 space-y-4 border-t pt-4 mt-2">
+                <h3 className="font-medium">Signatories for Print</h3>
+                {signatures.map((sig, index) => (
+                    <div key={sig.id} className="flex items-center gap-2">
+                        <Input 
+                            placeholder="Designation (e.g., Site In charge)" 
+                            value={sig.designation} 
+                            onChange={(e) => handleSignatureChange(sig.id, 'designation', e.target.value)}
+                            className="flex-1"
+                        />
+                        <Input 
+                            placeholder="Name / Department" 
+                            value={sig.name} 
+                            onChange={(e) => handleSignatureChange(sig.id, 'name', e.target.value)}
+                             className="flex-1"
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => handleRemoveSignature(sig.id)} disabled={signatures.length <= 1}>
+                            <Trash2 className="h-4 w-4 text-destructive"/>
+                        </Button>
+                    </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={handleAddSignature}>
+                    <Plus className="mr-2 h-4 w-4"/> Add Signatory
+                </Button>
             </div>
           </div>
 

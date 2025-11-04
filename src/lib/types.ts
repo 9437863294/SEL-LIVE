@@ -62,6 +62,12 @@ export interface Department {
   status: 'Active' | 'Inactive';
 }
 
+export interface Signature {
+  id: string;
+  designation: string;
+  name: string;
+}
+
 export interface Project {
   id: string;
   projectName: string;
@@ -74,6 +80,7 @@ export interface Project {
   billingRequired?: boolean;
   stockManagementRequired?: boolean;
   woNo?: string;
+  signatures?: Signature[];
 }
 
 export interface Site {

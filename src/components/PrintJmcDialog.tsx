@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as React from 'react';
@@ -129,7 +130,7 @@ export default function PrintJmcDialog({
   const workDetails = {
     orderNo: (project as any)?.['Order No'] || 'CPC-51/2023-24',
     bidNo: (project as any)?.['BID DOCUMENT No'] || 'SGM-CPC-e-Tender-MRampur-51/2023-24',
-    projectName: project?.nameOfWork || 'Engineering, Supply, Erection, Testing and commissioning of 2x40 MVA, 220/33 KV AIS Grid S/S, Madanpur Rampur along with its associated 220 KV LILO line of 220 KV Kesinga-Baliguda DC line on EPC contract basis (Line length - 3 Kms. approx.)',
+    projectName: project?.projectName || 'Engineering, Supply, Erection, Testing and commissioning of 2x40 MVA, 220/33 KV AIS Grid S/S, Madanpur Rampur along with its associated 220 KV LILO line of 220 KV Kesinga-Baliguda DC line on EPC contract basis (Line length - 3 Kms. approx.)',
     projectSite: project?.projectSite || 'M.Rampur',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
@@ -216,22 +217,14 @@ export default function PrintJmcDialog({
           </div>
 
           {/* Signatures */}
-           <div className="flex justify-between mt-16 text-[9pt] px-4">
-              <div className="w-[30%] text-center">
-                  <p>Site In charge</p>
-                  <p className="font-bold">{project?.siteInCharge || 'SEL, M.Rampur'}</p>
-              </div>
-              <div className="w-[30%] text-center">
-                  <p>Asst.Manager(Elect.)</p>
-                  <p className="font-bold">{project?.projectDivision || 'EHT(Projects). Sub-Division'}</p>
-                  <p className="font-bold">{project?.projectSite || 'Optcl, Bolangir'}</p>
-              </div>
-              <div className="w-[30%] text-center">
-                  <p>Sub-Divisional Officer(Elect.)</p>
-                  <p className="font-bold">{project?.projectDivision || 'EHT(Projects). Sub-Division'}</p>
-                  <p className="font-bold">{project?.projectSite || 'Optcl, Bolangir'}</p>
-              </div>
-            </div>
+          <div className="flex justify-between mt-16 text-[9pt] px-4">
+              {(project?.signatures || []).map(sig => (
+                  <div key={sig.id} className="w-[30%] text-center">
+                      <p>{sig.designation}</p>
+                      <p className="font-bold">{sig.name}</p>
+                  </div>
+              ))}
+          </div>
         </div>
 
         <DialogFooter className="mt-4 pr-4 no-print">
