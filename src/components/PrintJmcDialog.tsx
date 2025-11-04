@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
-import { Printer, Download } from 'lucide-react';
+import { Printer, Maximize, Minimize } from 'lucide-react';
 import Image from 'next/image';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { useReactToPrint } from 'react-to-print';
+import { cn } from '@/lib/utils';
 
 /* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -100,7 +100,6 @@ const PrintableJmcStyles = ({ orientation }: { orientation: 'portrait' | 'landsc
     `}</style>
 );
 
-
 export default function PrintJmcDialog({
   isOpen,
   onOpenChange,
@@ -111,11 +110,11 @@ export default function PrintJmcDialog({
   const [orientation, setOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
   const componentRef = React.useRef<HTMLDivElement>(null);
 
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current,
-    pageStyle: `@page { size: A4 ${orientation}; margin: 10mm; } body { -webkit-print-color-adjust: exact; }`,
-    documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
-  });
+  const handlePrint = () => {
+    window.print();
+  };
+  
+  const [dialogSize, setDialogSize] = React.useState<'xl' | '2xl' | 'full'>('2xl');
 
   if (!jmcEntry) return null;
 
@@ -139,16 +138,31 @@ export default function PrintJmcDialog({
   };
   
   const getDisplayValue = (value: number | undefined) => value || '';
+  
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
+
+  const dialogWidthClass =
+    dialogSize === 'full'
+      ? 'sm:max-w-[95vw]'
+      : dialogSize === '2xl'
+      ? 'sm:max-w-[80rem]'
+      : 'sm:max-w-4xl';
 
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[90rem] mx-auto">
+      <DialogContent className={cn("max-h-[90vh] flex flex-col min-h-0", dialogWidthClass)}>
         <DialogHeader className="no-print">
           <DialogTitle>Print JMC: {jmcEntry.jmcNo}</DialogTitle>
         </DialogHeader>
 
-        <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
+        <div id="printable-jmc-content" className="max-h-full overflow-y-auto" ref={componentRef}>
           <PrintableJmcStyles orientation={orientation} />
           {/* Header */}
            <div className="flex justify-between items-start mb-2">
@@ -225,7 +239,7 @@ export default function PrintJmcDialog({
           </div>
 
           {/* Signatures */}
-          <div className="flex justify-between mt-16 text-[9pt] px-4">
+           <div className="flex justify-between mt-16 text-[9pt] px-4">
               {(project?.signatures || []).map((sig, index) => (
                   <div key={`${sig.designation}-${index}`} className="w-1/3 text-center">
                       <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
@@ -243,13 +257,16 @@ export default function PrintJmcDialog({
                     onCheckedChange={(checked) => setOrientation(checked ? 'landscape' : 'portrait')}
                 />
                 <Label htmlFor="orientation-switch">Landscape Mode</Label>
+                 <Button variant="outline" size="icon" onClick={toggleDialogSize} className="ml-4">
+                    {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                </Button>
             </div>
             <div>
                 <DialogClose asChild>
                     <Button variant="outline">Close</Button>
                 </DialogClose>
                 <Button onClick={handlePrint} className="ml-2">
-                    <Printer className="mr-2 h-4 w-4" /> Print / Download PDF
+                    <Printer className="mr-2 h-4 w-4" /> Print Document
                 </Button>
             </div>
         </DialogFooter>
