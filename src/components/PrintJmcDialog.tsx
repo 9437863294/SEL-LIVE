@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { useRef } from 'react';
+import Image from 'next/image';
 
 /* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -51,6 +52,8 @@ type ProjectExtras = {
   subWork?: string;
   woNo?: string;
   projectName?: string; // sometimes used instead of nameOfWork
+  'Order No'?: string;
+  'BID DOCUMENT No'?: string;
 };
 
 interface PrintJmcDialogProps {
@@ -66,39 +69,37 @@ class PrintableJmcStyles extends React.Component {
     return (
       <style>{`
         @media print {
+          body {
+            -webkit-print-color-adjust: exact;
+            color-adjust: exact;
+          }
           body * { visibility: hidden; }
           #printable-jmc-content, #printable-jmc-content * {
             visibility: visible;
-            font-family: Arial, sans-serif;
-            margin: 0; padding: 0; box-sizing: border-box;
           }
           #printable-jmc-content {
             position: absolute; left: 0; top: 0;
-            width: 100%; height: auto; min-height: 297mm;
-            padding: 15mm; font-size: 8pt; color: #000;
+            width: 100%; height: auto;
+            padding: 10mm;
+            font-size: 9pt;
+            color: #000;
           }
           table {
             width: 100%; border-collapse: collapse; border: 1px solid #000;
-            -webkit-print-color-adjust: exact; color-adjust: exact;
           }
           th, td {
-            border: 1px solid #000; padding: 3px 6px; word-wrap: break-word;
-            vertical-align: top; height: 100%;
+            border: 1px solid #000; padding: 2px 4px;
+            vertical-align: top;
           }
-          th { background-color: #f4f4f4; font-weight: bold; text-transform: uppercase; text-align: center; }
-          .print-header-cell { padding: 1px 4px !important; }
+          th { font-weight: bold; text-align: center; }
           tr { page-break-inside: avoid; }
-          [role="dialog"] header, [role="dialog"] footer { display: none; }
+          .print-header-cell { padding: 1px 4px !important; }
+          .no-print { display: none; }
         }
       `}</style>
     );
   }
 }
-
-const COMPANY_NAME_1 = 'M/s Siddharth Engineering Limited';
-const COMPANY_NAME_2 = 'TP Southern Odisha Distribution Limited';
-const COMPANY_SLOGAN_1 = 'T P S O D L / O D S S P / P H A S E - I V / P k g - 2 B';
-const COMPANY_SLOGAN_2 = 'A Tata Power and Odisha Government Joint Venture';
 
 export default function PrintJmcDialog({
   isOpen,
@@ -122,116 +123,115 @@ export default function PrintJmcDialog({
     return prev + current;
   };
 
-  // Safely read optional fields; fall back where useful
   const workDetails = {
-    refNo: project?.refRoNo ?? 'N/A',
-    date:
-      project?.woNo && project.woNo.includes(' Dt: ')
-        ? formatDateSafe(project.woNo.split(' Dt: ')[1])
-        : 'N/A',
-    ssName: project?.nameOfSs ?? 'N/A',
-    mainWork: project?.nameOfWork ?? project?.projectName ?? 'N/A',
-    subWork: project?.subWork ?? 'N/A',
+    orderNo: (project as any)?.['Order No'] || 'CPC-51/2023-24',
+    bidNo: (project as any)?.['BID DOCUMENT No'] || 'SGM-CPC-e-Tender-MRampur-51/2023-24',
+    projectName: project?.nameOfWork || 'Engineering, Supply, Erection, Testing and commissioning of 2x40 MVA, 220/33 KV AIS Grid S/S, Madanpur Rampur along with its associated 220 KV LILO line of 220 KV Kesinga-Baliguda DC line on EPC contract basis (Line length - 3 Kms. approx.)',
+    projectSite: project?.projectSite || 'M.Rampur',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
   };
+  
+  const getDisplayValue = (value: number | undefined) => value || '';
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[90rem] mx-auto">
-        <DialogHeader>
+        <DialogHeader className="no-print">
           <DialogTitle>Print JMC: {jmcEntry.jmcNo}</DialogTitle>
         </DialogHeader>
 
         <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
           <PrintableJmcStyles />
           {/* Header */}
-          <div className="flex justify-between border-b-2 border-black pb-1 mb-4">
-            <div className="w-1/3 text-left">
-              <div className="text-2xl font-black text-red-700">SEL</div>
+           <div className="flex justify-between items-start mb-2">
+            <div className="w-1/4">
+               <Image src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fsel_logo.png?alt=media&token=1612743a-1423-441f-bd8a-73330687114b" alt="SEL Logo" width={80} height={40} />
             </div>
-            <div className="w-1/3 text-center">
-              <p className="text-[10pt] font-extrabold">{COMPANY_NAME_1}</p>
-              <p className="text-[8pt] font-medium text-gray-700">{COMPANY_SLOGAN_1}</p>
-              <p className="text-base font-extrabold border-y border-black mt-1 py-1">JOINT MEASUREMENT CERTIFICATE</p>
+            <div className="w-1/2 text-center">
+              <p className="text-lg font-extrabold">SIDDHARTHA ENGINEERING LIMITED</p>
+              <p className="text-[7pt] font-semibold">ELECTRICAL ENGINEERS, CONTRACTORS (EHV) & CONSULTANTS</p>
+              <p className="text-[7pt]">PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)</p>
+              <p className="text-[7pt]">Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915</p>
+              <p className="text-[7pt]">E-mail: sel.techhead@gmail.com</p>
             </div>
-            <div className="w-1/3 text-right">
-              <p className="text-[10pt] font-extrabold">TPSODL</p>
-              <p className="text-[8pt] font-medium text-gray-700">{COMPANY_NAME_2}</p>
-              <p className="text-[7pt] text-gray-700">{COMPANY_SLOGAN_2}</p>
+            <div className="w-1/4 text-right">
+                <Image src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fjas-anz_logo.png?alt=media&token=904e5399-528b-49c7-8763-718335017056" alt="JAS-ANZ Logo" width={80} height={50} className="ml-auto"/>
+                <p className="text-[6pt]">ISO 9001:2008 Registered Company</p>
+                <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
             </div>
           </div>
+          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR SUBSTATION</p>
 
           {/* Work details */}
-          <div className="space-y-1 mb-4 text-[9pt]">
-            <p><strong>Name of Work:</strong> {workDetails.mainWork}</p>
-            <p><strong>Ref. RO No:</strong> {workDetails.refNo}, <strong>Dt:</strong>{workDetails.date}</p>
-            <div className="flex justify-between">
-              <p><strong>Name of S/S:</strong> {workDetails.ssName}</p>
-              <p className="font-bold">JMC No: <span className="font-normal border-b border-black">{workDetails.jmcNo}</span></p>
-            </div>
-            <div className="flex justify-between">
-              <p><strong>Name of Work:</strong> {workDetails.subWork}</p>
-              <p className="font-bold">DATE: <span className="font-normal border-b border-black">{workDetails.jmcDate}</span></p>
-            </div>
+          <div className="text-[9pt] space-y-1 mb-2">
+             <div className="flex justify-between">
+                <span><strong>JMC No.:</strong> {workDetails.jmcNo}</span>
+                <span><strong>DATE:</strong> {workDetails.jmcDate}</span>
+             </div>
+             <p><strong>Order No.</strong> {workDetails.orderNo} <strong>& BID DOCUMENT No.</strong>{workDetails.bidNo}</p>
+             <p><strong>Name of the project:-</strong> {workDetails.projectName}</p>
+             <p><strong>Project Site :</strong> {workDetails.projectSite}</p>
           </div>
 
           {/* Table */}
           <div className="overflow-x-auto border border-black">
-            <Table className="w-full table-auto">
+            <Table className="w-full table-auto text-[8pt]">
               <TableHeader>
                 <TableRow>
-                  <TableHead rowSpan={2} className="w-[4%] print-header-cell border-black text-center">Sl. No.</TableHead>
-                  <TableHead rowSpan={2} className="w-[5%] print-header-cell border-black text-center">RO No.</TableHead>
-                  <TableHead rowSpan={2} className="w-[42%] print-header-cell border-black text-center">L.O.A DESCRIPTION</TableHead>
-                  <TableHead rowSpan={2} className="w-[6%] print-header-cell border-black text-center">U.O.M</TableHead>
-                  <TableHead colSpan={2} className="w-[18%] print-header-cell border-black text-center font-bold text-base">QUANTITY</TableHead>
-                  <TableHead colSpan={3} className="w-[25%] print-header-cell border-black text-center font-bold text-base">JMC QUANTITY</TableHead>
+                  <TableHead rowSpan={2} className="w-[4%] print-header-cell border-black text-center align-middle">SL. NO.</TableHead>
+                  <TableHead rowSpan={2} className="w-[48%] print-header-cell border-black text-center align-middle">DESCRIPTION OF ITEMS(SCHEDULE-VIIC-SS)</TableHead>
+                  <TableHead rowSpan={2} className="w-[6%] print-header-cell border-black text-center align-middle">Unit</TableHead>
+                  <TableHead rowSpan={2} className="w-[8%] print-header-cell border-black text-center align-middle">BOQ Qty</TableHead>
+                  <TableHead colSpan={3} className="print-header-cell border-black text-center font-bold">QNTY EXECUTED</TableHead>
                 </TableRow>
                 <TableRow>
-                  <TableHead className="w-[9%] print-header-cell border-black text-center">AS PER BOQ</TableHead>
-                  <TableHead className="w-[9%] print-header-cell border-black text-center">AS PER DRG</TableHead>
-                  <TableHead className="w-[9%] print-header-cell border-black text-center">PREVIOUS</TableHead>
-                  <TableHead className="w-[9%] print-header-cell border-black text-center">SINCE PREVIOUS</TableHead>
-                  <TableHead className="w-[7%] print-header-cell border-black text-center">UP TO DATE</TableHead>
+                  <TableHead className="w-[8%] print-header-cell border-black text-center">Up to Previous</TableHead>
+                  <TableHead className="w-[8%] print-header-cell border-black text-center">In this JMC</TableHead>
+                  <TableHead className="w-[8%] print-header-cell border-black text-center">Up to date</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
-                {enrichedItems.map((item, index) => (
-                  <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-                    <TableCell className="text-center font-medium border-black print-header-cell">{index + 1}</TableCell>
-                    <TableCell className="text-center border-black print-header-cell">{item.boqSlNo ?? '-'}</TableCell>
-                    <TableCell className="border-black print-header-cell">{item.description ?? '-'}</TableCell>
-                    <TableCell className="text-center border-black print-header-cell">{item.unit ?? '-'}</TableCell>
-                    <TableCell className="text-right border-black print-header-cell">{Number(item.boqQty) || 0}</TableCell>
-                    <TableCell className="text-right border-black print-header-cell">-</TableCell>
-                    <TableCell className="text-right border-black print-header-cell">{Number(item.previousCertifiedQty) || 0}</TableCell>
-                    <TableCell className="text-right border-black print-header-cell">{Number(item.certifiedQty) || 0}</TableCell>
-                    <TableCell className="text-right border-black print-header-cell font-bold">
-                      {calculateUpToDateQty(item)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {enrichedItems.map((item, index) => {
+                    const upToDateQty = calculateUpToDateQty(item);
+                    return (
+                        <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
+                            <TableCell className="text-center border-black print-header-cell">{item.boqSlNo ?? '-'}</TableCell>
+                            <TableCell className="border-black print-header-cell">{item.description ?? '-'}</TableCell>
+                            <TableCell className="text-center border-black print-header-cell">{item.unit ?? '-'}</TableCell>
+                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.boqQty)}</TableCell>
+                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
+                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.certifiedQty)}</TableCell>
+                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(upToDateQty)}</TableCell>
+                        </TableRow>
+                    );
+                })}
               </TableBody>
             </Table>
           </div>
 
           {/* Signatures */}
-          <div className="flex justify-between mt-12 text-[9pt]">
+          <div className="flex justify-between mt-16 text-[9pt] px-4">
             <div className="w-[30%] text-center">
-              <p className="border-t border-black pt-1">Signature of EPC</p>
+                <p>Site In charge</p>
+                <p className="font-bold">SEL, M.Rampur</p>
             </div>
             <div className="w-[30%] text-center">
-              <p className="border-t border-black pt-1">Signature of Field Engg, TPSODL</p>
+                <p>Asst.Manager(Elect.)</p>
+                <p className="font-bold">EHT(Projects). Sub-Division</p>
+                <p className="font-bold">Optcl, Bolangir</p>
             </div>
             <div className="w-[30%] text-center">
-              <p className="border-t border-black pt-1">Signature of Field Engg, WAPCOS</p>
+                <p>Sub-Divisional Officer(Elect.)</p>
+                <p className="font-bold">EHT(Projects). Sub-Division</p>
+                <p className="font-bold">Optcl, Bolangir</p>
             </div>
           </div>
         </div>
 
-        <DialogFooter className="mt-4 pr-4">
+        <DialogFooter className="mt-4 pr-4 no-print">
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
