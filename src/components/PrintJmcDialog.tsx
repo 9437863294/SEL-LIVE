@@ -127,6 +127,10 @@ export default function PrintJmcDialog({
     return prev + current;
   };
 
+  const scope1 = (jmcEntry.items && jmcEntry.items.length > 0)
+    ? (jmcEntry.items[0] as any)['Scope 1'] || ''
+    : '';
+
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
     bidNo: 'N/A',
@@ -166,7 +170,7 @@ export default function PrintJmcDialog({
                 <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
             </div>
           </div>
-          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR SUBSTATION</p>
+          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR {scope1.toUpperCase()}</p>
 
           {/* Work details */}
           <div className="text-[9pt] space-y-1 mb-2">
@@ -219,7 +223,7 @@ export default function PrintJmcDialog({
           {/* Signatures */}
           <div className="flex justify-between mt-16 text-[9pt] px-4">
               {(project?.signatures || []).map((sig, index) => (
-                  <div key={`${sig.designation}-${index}`} className="w-1/3 text-center">
+                  <div key={index} className="w-1/3 text-center">
                       <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
                       <p className="font-bold">{sig.name}</p>
                   </div>
