@@ -179,7 +179,7 @@ export default function LoginPage() {
     <div className="text-center w-full">
       <div className="relative h-40 w-full max-w-[70%] mx-auto">
         <Image
-          src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
+          src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
           alt="Company Logo"
           fill
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -225,7 +225,8 @@ export default function LoginPage() {
     <div className="w-full text-center">
       <div className="relative h-40 w-full max-w-[70%] mx-auto">
         <Image
-          src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
+          src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
+          
           alt="Company Logo"
           fill
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
