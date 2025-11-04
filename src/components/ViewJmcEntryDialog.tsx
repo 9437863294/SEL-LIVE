@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -9,14 +10,13 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
-import { Loader2, Save, Printer } from 'lucide-react';
+import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
@@ -80,7 +80,6 @@ interface ViewJmcEntryDialogProps {
     updatedItems: JmcItem[]
   ) => Promise<void>;
   isLoading?: boolean;
-  dialogSize?: 'default' | 'xl' | '2xl' | 'full';
 }
 
 export default function ViewJmcEntryDialog({
@@ -92,11 +91,11 @@ export default function ViewJmcEntryDialog({
   isEditMode = false,
   onVerify,
   isLoading = false,
-  dialogSize = 'default',
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
 
   // refs for split-axis scrolling
   const xScrollRef = useRef<HTMLDivElement | null>(null);     // inner container that actually scrolls horizontally (contains table)
@@ -204,8 +203,6 @@ export default function ViewJmcEntryDialog({
       ? 'sm:max-w-[95vw]'
       : dialogSize === '2xl'
       ? 'sm:max-w-[80rem]'
-      : dialogSize === 'xl'
-      ? 'sm:max-w-[64rem]'
       : 'sm:max-w-4xl';
 
   // columns and min table width (to force horizontal overflow when needed)
@@ -284,11 +281,13 @@ export default function ViewJmcEntryDialog({
     const syncFromBar = () => { x.scrollLeft = bar.scrollLeft; };
     const syncFromX = () => { bar.scrollLeft = x.scrollLeft; };
 
+    // set width of fake inner to match content scroll width
     const setWidths = () => {
       inner.style.width = `${x.scrollWidth}px`;
     };
     setWidths();
 
+    // observe size changes
     const ro = new ResizeObserver(setWidths);
     ro.observe(x);
 
@@ -303,6 +302,14 @@ export default function ViewJmcEntryDialog({
       window.removeEventListener('resize', setWidths);
     };
   }, [rows.length, dialogSize, hasJmc]);
+  
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
 
   return (
     <>
@@ -342,7 +349,7 @@ export default function ViewJmcEntryDialog({
                     <col style={{ width: COLS.certAmt }} />
                   </colgroup>
 
-                  {/* ✅ Sticky header */}
+                  {/* Sticky header */}
                   <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                     <TableRow>
                       <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
@@ -365,7 +372,7 @@ export default function ViewJmcEntryDialog({
             )}
           </div>
 
-          {/* ✅ Dedicated horizontal scrollbar, docked at dialog bottom */}
+          {/* Dedicated horizontal scrollbar, docked at dialog bottom */}
           <div
             ref={hBarRef}
             className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
@@ -379,10 +386,13 @@ export default function ViewJmcEntryDialog({
           <div className="pt-4">
             <Separator />
             <DialogFooter className="pt-3 sm:justify-between">
-              <div>
+              <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)} disabled={!hasJmc}>
                   <Printer className="mr-2 h-4 w-4" />
                   Print
+                </Button>
+                 <Button variant="outline" size="icon" onClick={toggleDialogSize}>
+                    {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </Button>
               </div>
               <div className="flex gap-2">
