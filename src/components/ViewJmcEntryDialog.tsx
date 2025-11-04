@@ -17,10 +17,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
-
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-
+import { collection, getDocs, doc, updateDoc, writeBatch, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
 import PrintJmcDialog from '@/components/PrintJmcDialog';
 
 /* ---------- helpers ---------- */
@@ -132,8 +130,10 @@ export default function ViewJmcEntryDialog({
         setProjectJmcEntries([]);
       }
     };
-    fetchProjectData();
-  }, [jmcEntry]);
+    if (isOpen && jmcEntry) {
+      fetchProjectData();
+    }
+  }, [jmcEntry, isOpen]);
 
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
