@@ -203,7 +203,7 @@ export default function PrintJmcDialog({
                             <TableCell className="text-center border-black print-header-cell">{item.unit ?? '-'}</TableCell>
                             <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.boqQty)}</TableCell>
                             <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
-                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.certifiedQty)}</TableCell>
+                            <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.executedQty)}</TableCell>
                             <TableCell className="text-right border-black print-header-cell">{getDisplayValue(upToDateQty)}</TableCell>
                         </TableRow>
                     );
