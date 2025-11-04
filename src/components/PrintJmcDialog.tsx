@@ -123,13 +123,13 @@ export default function PrintJmcDialog({
 
   const calculateUpToDateQty = (item: EnrichedJmcItem) => {
     const prev = Number(item.previousCertifiedQty) || 0;
-    const current = Number(item.certifiedQty) || 0;
+    const current = Number(item.executedQty) || 0; // Use executed, not certified, for "In this JMC"
     return prev + current;
   };
 
   const scope1 = (jmcEntry.items && jmcEntry.items.length > 0)
     ? (jmcEntry.items[0] as any)['Scope 1'] || ''
-    : '';
+    : 'WORK'; // Fallback title
 
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
@@ -189,7 +189,7 @@ export default function PrintJmcDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead rowSpan={2} className="w-[4%] print-header-cell border-black text-center align-middle">SL. NO.</TableHead>
-                  <TableHead rowSpan={2} className="w-[48%] print-header-cell border-black text-center align-middle">DESCRIPTION OF ITEMS(SCHEDULE-VIIC-SS)</TableHead>
+                  <TableHead rowSpan={2} className="w-[48%] print-header-cell border-black text-center align-middle">Description of Items</TableHead>
                   <TableHead rowSpan={2} className="w-[6%] print-header-cell border-black text-center align-middle">Unit</TableHead>
                   <TableHead rowSpan={2} className="w-[8%] print-header-cell border-black text-center align-middle">BOQ Qty</TableHead>
                   <TableHead colSpan={3} className="print-header-cell border-black text-center font-bold">QNTY EXECUTED</TableHead>
@@ -223,7 +223,7 @@ export default function PrintJmcDialog({
           {/* Signatures */}
           <div className="flex justify-between mt-16 text-[9pt] px-4">
               {(project?.signatures || []).map((sig, index) => (
-                  <div key={index} className="w-1/3 text-center">
+                  <div key={`${sig.designation}-${index}`} className="w-1/3 text-center">
                       <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
                       <p className="font-bold">{sig.name}</p>
                   </div>
