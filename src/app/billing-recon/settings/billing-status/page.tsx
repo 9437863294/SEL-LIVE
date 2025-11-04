@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -32,7 +31,7 @@ type ProjectWithExtras = Project & {
   nameOfSs?: string;
   subWork?: string;
   billingRequired?: boolean;
-  projectName?: string; // already on your Project in many setups, but keep as optional fallback
+  projectName?: string; // fallback
   siteInCharge?: string;
   projectDivision?: string;
   projectSite?: string;
@@ -40,7 +39,8 @@ type ProjectWithExtras = Project & {
   projectDescription?: string;
 };
 
-type ProjectWithExtras = Project & ProjectExtras;
+/** Use Signature directly (it already has id, designation, name) */
+type UISignature = Signature;
 
 export default function BillingStatusPage() {
   const { toast } = useToast();
@@ -60,7 +60,7 @@ export default function BillingStatusPage() {
   const [refRoNo, setRefRoNo] = useState('');
   const [nameOfSs, setNameOfSs] = useState('');
   const [subWork, setSubWork] = useState('');
-  const [signatures, setSignatures] = useState<Signature[]>([]);
+  const [signatures, setSignatures] = useState<UISignature[]>([]);
   const [projectDescription, setProjectDescription] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
@@ -80,7 +80,7 @@ export default function BillingStatusPage() {
     try {
       const querySnapshot = await getDocs(collection(db, 'projects'));
       const projectsData = querySnapshot.docs.map((d) => {
-        // Remove any 'id' coming from Firestore data to avoid duplicate key
+        // Remove any 'id' coming from Firestore data to avoid duplicate key conflicts
         const raw = d.data() as (ProjectWithExtras & { id?: string }) | undefined;
         const { id: _ignored, ...rest } = raw ?? {};
         return { id: d.id, ...rest } as ProjectWithExtras;
@@ -93,22 +93,31 @@ export default function BillingStatusPage() {
       setIsLoading(false);
     }
   }, [toast]);
-  
 
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
 
-  const handleSignatureChange = (id: string, field: 'designation' | 'name', value: string) => {
-    setSignatures(prev => prev.map(sig => sig.id === id ? { ...sig, [field]: value } : sig));
+  const ensureSignatureIds = (arr?: Signature[]): UISignature[] => {
+    const base = (arr && arr.length > 0)
+      ? arr
+      : [{ id: crypto.randomUUID(), designation: 'Site In charge', name: '' }];
+    return base.map((s) => ({ ...s, id: s.id ?? crypto.randomUUID() }));
   };
-  
+
+  const handleSignatureChange = (id: string, field: 'designation' | 'name', value: string) => {
+    setSignatures((prev) => prev.map((sig) => (sig.id === id ? { ...sig, [field]: value } : sig)));
+  };
+
   const handleAddSignature = () => {
-    setSignatures(prev => [...prev, { id: crypto.randomUUID(), designation: '', name: '' }]);
+    setSignatures((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), designation: '', name: '' },
+    ]);
   };
 
   const handleRemoveSignature = (id: string) => {
-    setSignatures(prev => prev.filter(sig => sig.id !== id));
+    setSignatures((prev) => prev.filter((sig) => sig.id !== id));
   };
 
   // Toggle handler
@@ -141,7 +150,7 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
-    setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
+    setSignatures(ensureSignatureIds(project.signatures));
     setProjectDescription(project.projectDescription ?? '');
     setIsDetailDialogOpen(true);
   };
@@ -154,7 +163,7 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
-    setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
+    setSignatures(ensureSignatureIds(project.signatures));
     setProjectDescription(project.projectDescription ?? '');
     setIsDetailDialogOpen(true);
   };
@@ -178,8 +187,9 @@ export default function BillingStatusPage() {
         refRoNo,
         nameOfSs,
         subWork,
-        signatures: signatures.map(({ id, ...rest }) => rest), // remove temporary client-side ID
-        projectDescription: projectDescription,
+        // Keep ids so it matches Signature[]
+        signatures: signatures.map(({ id, designation, name }) => ({ id, designation, name })),
+        projectDescription,
       };
 
       if (dialogMode === 'enable') {
@@ -190,7 +200,11 @@ export default function BillingStatusPage() {
 
       // Optimistic local update
       setProjects((prev) =>
-        prev.map((p) => (p.id === pendingProject.id ? { ...p, ...updateData } : p))
+        prev.map((p) =>
+          p.id === pendingProject.id
+            ? { ...p, ...updateData }
+            : p
+        )
       );
 
       toast({
@@ -261,7 +275,7 @@ export default function BillingStatusPage() {
                 ) : (
                   projects.map((project) => (
                     <TableRow key={project.id}>
-                      <TableCell className="font-medium">{project.projectName}</TableCell>
+                      <TableCell className="font-medium">{project.projectName ?? '—'}</TableCell>
                       <TableCell>{project.woNo ?? '—'}</TableCell>
                       <TableCell>
                         {savingId === project.id ? (
@@ -311,91 +325,97 @@ export default function BillingStatusPage() {
 
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="nameOfWork">Name of Work</Label>
-                  <Input
-                    id="nameOfWork"
-                    value={nameOfWork}
-                    onChange={(e) => setNameOfWork(e.target.value)}
-                    placeholder="e.g., 33kV Bay Extension at XYZ"
-                  />
-                </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="nameOfWork">Name of Work</Label>
+                <Input
+                  id="nameOfWork"
+                  value={nameOfWork}
+                  onChange={(e) => setNameOfWork(e.target.value)}
+                  placeholder="e.g., 33kV Bay Extension at XYZ"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="refRoNo">Ref. RO No</Label>
-                  <Input
-                    id="refRoNo"
-                    value={refRoNo}
-                    onChange={(e) => setRefRoNo(e.target.value)}
-                    placeholder="e.g., RO/2025/123"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="refRoNo">Ref. RO No</Label>
+                <Input
+                  id="refRoNo"
+                  value={refRoNo}
+                  onChange={(e) => setRefRoNo(e.target.value)}
+                  placeholder="e.g., RO/2025/123"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="woNo">WO No</Label>
-                  <Input
-                    id="woNo"
-                    value={woInput}
-                    onChange={(e) => setWoInput(e.target.value)}
-                    placeholder="e.g., WO-2025-001"
-                    autoFocus
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="woNo">WO No</Label>
+                <Input
+                  id="woNo"
+                  value={woInput}
+                  onChange={(e) => setWoInput(e.target.value)}
+                  placeholder="e.g., WO-2025-001"
+                  autoFocus
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="nameOfSs">Name of S/S</Label>
-                  <Input
-                    id="nameOfSs"
-                    value={nameOfSs}
-                    onChange={(e) => setNameOfSs(e.target.value)}
-                    placeholder="e.g., Berhampur 132/33kV"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="nameOfSs">Name of S/S</Label>
+                <Input
+                  id="nameOfSs"
+                  value={nameOfSs}
+                  onChange={(e) => setNameOfSs(e.target.value)}
+                  placeholder="e.g., Berhampur 132/33kV"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="subWork">Name of Work 2</Label>
-                  <Input
-                    id="subWork"
-                    value={subWork}
-                    onChange={(e) => setSubWork(e.target.value)}
-                    placeholder="e.g., Stringing + Bay Works"
-                  />
-                </div>
-                 <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="projectDescription">Project Description</Label>
-                    <Textarea
-                        id="projectDescription"
-                        value={projectDescription}
-                        onChange={(e) => setProjectDescription(e.target.value)}
-                        placeholder="Detailed description of the project scope..."
-                    />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="subWork">Name of Work 2</Label>
+                <Input
+                  id="subWork"
+                  value={subWork}
+                  onChange={(e) => setSubWork(e.target.value)}
+                  placeholder="e.g., Stringing + Bay Works"
+                />
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="projectDescription">Project Description</Label>
+                <Textarea
+                  id="projectDescription"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="Detailed description of the project scope..."
+                />
+              </div>
             </div>
-            
+
             <div className="space-y-4 border-t pt-4 mt-2">
-                <h3 className="font-medium">Signatories for Print</h3>
-                {signatures.map((sig, index) => (
-                    <div key={sig.id} className="flex items-center gap-2">
-                        <Input 
-                            placeholder="Designation (e.g., Site In charge)" 
-                            value={sig.designation} 
-                            onChange={(e) => handleSignatureChange(sig.id, 'designation', e.target.value)}
-                            className="flex-1"
-                        />
-                        <Input 
-                            placeholder="Name / Department" 
-                            value={sig.name} 
-                            onChange={(e) => handleSignatureChange(sig.id, 'name', e.target.value)}
-                             className="flex-1"
-                        />
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveSignature(sig.id)} disabled={signatures.length <= 1}>
-                            <Trash2 className="h-4 w-4 text-destructive"/>
-                        </Button>
-                    </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={handleAddSignature}>
-                    <Plus className="mr-2 h-4 w-4"/> Add Signatory
-                </Button>
+              <h3 className="font-medium">Signatories for Print</h3>
+              {signatures.map((sig) => (
+                <div key={sig.id} className="flex items-center gap-2">
+                  <Input
+                    placeholder="Designation (e.g., Site In charge)"
+                    value={sig.designation}
+                    onChange={(e) => handleSignatureChange(sig.id, 'designation', e.target.value)}
+                    className="flex-1"
+                  />
+                  <Input
+                    placeholder="Name / Department"
+                    value={sig.name}
+                    onChange={(e) => handleSignatureChange(sig.id, 'name', e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveSignature(sig.id)}
+                    disabled={signatures.length <= 1}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={handleAddSignature}>
+                <Plus className="mr-2 h-4 w-4" /> Add Signatory
+              </Button>
             </div>
           </div>
 
@@ -419,4 +439,3 @@ export default function BillingStatusPage() {
     </div>
   );
 }
-

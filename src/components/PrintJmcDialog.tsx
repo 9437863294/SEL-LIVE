@@ -56,6 +56,7 @@ type ProjectWithExtras = Project & {
   projectSite?: string;
   siteInCharge?: string;
   signatures?: Signature[];
+  projectDescription?: string;
 };
 
 interface PrintJmcDialogProps {
@@ -127,8 +128,8 @@ export default function PrintJmcDialog({
 
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
-    bidNo: 'N/A',
-    projectName: project?.projectName || 'N/A',
+    bidNo: project?.['BID DOCUMENT No'] || 'N/A',
+    projectName: project?.projectDescription || 'N/A',
     projectSite: project?.projectSite || 'N/A',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
@@ -164,7 +165,7 @@ export default function PrintJmcDialog({
                 <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
             </div>
           </div>
-          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE</p>
+          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR {scope1}</p>
 
           {/* Work details */}
           <div className="text-[9pt] space-y-1 mb-2">
@@ -172,7 +173,7 @@ export default function PrintJmcDialog({
                 <span><strong>JMC No.:</strong> {workDetails.jmcNo}</span>
                 <span><strong>DATE:</strong> {workDetails.jmcDate}</span>
              </div>
-             <p><strong>Order No.</strong> {workDetails.orderNo}</p>
+             <p><strong>Order No.</strong> {workDetails.orderNo} & <strong>BID DOCUMENT No.</strong>{workDetails.bidNo}</p>
              <p><strong>Name of the project:-</strong> {workDetails.projectName}</p>
              <p><strong>Project Site :</strong> {workDetails.projectSite}</p>
           </div>
@@ -201,7 +202,11 @@ export default function PrintJmcDialog({
                     return (
                         <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
                             <TableCell className="text-center border-black print-header-cell">{item.boqSlNo ?? '-'}</TableCell>
-                            <TableCell className="border-black print-header-cell">{item.description ?? '-'}</TableCell>
+                            <TableCell className="border-black print-header-cell">
+                                <div className="line-clamp-4 break-words whitespace-pre-line">
+                                    {item.description ?? '-'}
+                                </div>
+                            </TableCell>
                             <TableCell className="text-center border-black print-header-cell">{item.unit ?? '-'}</TableCell>
                             <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.boqQty)}</TableCell>
                             <TableCell className="text-right border-black print-header-cell">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
