@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -29,7 +28,8 @@ type UserLog = {
 };
 
 export default function UserLogsPage() {
-    const { userId } = useParams() as { userId: string };
+    const params = useParams();
+    const userId = params.userId as string;
     const [user, setUser] = useState<User | null>(null);
     const [logs, setLogs] = useState<UserLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -170,6 +170,3 @@ export default function UserLogsPage() {
         </div>
     );
 }
-
-
-    
