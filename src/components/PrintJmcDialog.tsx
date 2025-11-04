@@ -218,8 +218,8 @@ export default function PrintJmcDialog({
 
           {/* Signatures */}
           <div className="flex justify-between mt-16 text-[9pt] px-4">
-              {(project?.signatures || []).map(sig => (
-                  <div key={sig.id} className="w-1/3 text-center">
+              {(project?.signatures || []).map((sig, index) => (
+                  <div key={`${sig.designation}-${index}`} className="w-1/3 text-center">
                       <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
                       <p className="font-bold">{sig.name}</p>
                   </div>
