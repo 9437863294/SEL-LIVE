@@ -9,10 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
-import { Printer } from 'lucide-react';
+import { Printer, Download } from 'lucide-react';
 import Image from 'next/image';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
+import { useReactToPrint } from 'react-to-print';
 
 /* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -80,15 +81,10 @@ const PrintableJmcStyles = ({ orientation }: { orientation: 'portrait' | 'landsc
           -webkit-print-color-adjust: exact;
           color-adjust: exact;
         }
-        body * { visibility: hidden; }
-        #printable-jmc-content, #printable-jmc-content * {
-          visibility: visible;
-        }
+        .no-print { display: none !important; }
         #printable-jmc-content {
-          position: absolute; left: 0; top: 0;
-          width: 100%; height: auto;
-          font-size: 9pt;
           color: #000;
+          font-size: 9pt;
         }
         table {
           width: 100%; border-collapse: collapse; border: 1px solid #000;
@@ -100,7 +96,6 @@ const PrintableJmcStyles = ({ orientation }: { orientation: 'portrait' | 'landsc
         th { font-weight: bold; text-align: center; }
         tr { page-break-inside: avoid; }
         .print-header-cell { padding: 1px 4px !important; }
-        .no-print { display: none; }
       }
     `}</style>
 );
@@ -116,9 +111,11 @@ export default function PrintJmcDialog({
   const [orientation, setOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
   const componentRef = React.useRef<HTMLDivElement>(null);
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = useReactToPrint({
+    content: () => componentRef.current,
+    pageStyle: `@page { size: A4 ${orientation}; margin: 10mm; } body { -webkit-print-color-adjust: exact; }`,
+    documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
+  });
 
   if (!jmcEntry) return null;
 
@@ -192,7 +189,7 @@ export default function PrintJmcDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead rowSpan={2} className="w-[4%] print-header-cell border-black text-center align-middle">SL. NO.</TableHead>
-                  <TableHead rowSpan={2} className="w-[48%] print-header-cell border-black text-center align-middle">Description of Items</TableHead>
+                  <TableHead rowSpan={2} className="w-[34%] print-header-cell border-black text-center align-middle">Description of Items</TableHead>
                   <TableHead rowSpan={2} className="w-[6%] print-header-cell border-black text-center align-middle">Unit</TableHead>
                   <TableHead rowSpan={2} className="w-[8%] print-header-cell border-black text-center align-middle">BOQ Qty</TableHead>
                   <TableHead colSpan={3} className="print-header-cell border-black text-center font-bold">QNTY EXECUTED</TableHead>
@@ -252,8 +249,7 @@ export default function PrintJmcDialog({
                     <Button variant="outline">Close</Button>
                 </DialogClose>
                 <Button onClick={handlePrint} className="ml-2">
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print Document
+                    <Printer className="mr-2 h-4 w-4" /> Print / Download PDF
                 </Button>
             </div>
         </DialogFooter>
