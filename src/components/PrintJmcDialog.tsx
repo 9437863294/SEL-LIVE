@@ -172,7 +172,7 @@ export default function PrintJmcDialog({
                 <span><strong>JMC No.:</strong> {workDetails.jmcNo}</span>
                 <span><strong>DATE:</strong> {workDetails.jmcDate}</span>
              </div>
-             <p><strong>Order No.</strong> {workDetails.orderNo} <strong>& BID DOCUMENT No.</strong>{workDetails.bidNo}</p>
+             <p><strong>Order No.</strong> {workDetails.orderNo}</p>
              <p><strong>Name of the project:-</strong> {workDetails.projectName}</p>
              <p><strong>Project Site :</strong> {workDetails.projectSite}</p>
           </div>
