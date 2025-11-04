@@ -10,8 +10,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
-import { useReactToPrint } from 'react-to-print';
-import { useRef } from 'react';
 import Image from 'next/image';
 
 /* ---------- Helpers ---------- */
@@ -68,42 +66,39 @@ interface PrintJmcDialogProps {
   enrichedItems: EnrichedJmcItem[];
 }
 
-class PrintableJmcStyles extends React.Component {
-  render() {
-    return (
-      <style>{`
-        @media print {
-          body {
-            -webkit-print-color-adjust: exact;
-            color-adjust: exact;
-          }
-          body * { visibility: hidden; }
-          #printable-jmc-content, #printable-jmc-content * {
-            visibility: visible;
-          }
-          #printable-jmc-content {
-            position: absolute; left: 0; top: 0;
-            width: 100%; height: auto;
-            padding: 10mm;
-            font-size: 9pt;
-            color: #000;
-          }
-          table {
-            width: 100%; border-collapse: collapse; border: 1px solid #000;
-          }
-          th, td {
-            border: 1px solid #000; padding: 2px 4px;
-            vertical-align: top;
-          }
-          th { font-weight: bold; text-align: center; }
-          tr { page-break-inside: avoid; }
-          .print-header-cell { padding: 1px 4px !important; }
-          .no-print { display: none; }
+const PrintableJmcStyles = () => (
+    <style>{`
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact;
+          color-adjust: exact;
         }
-      `}</style>
-    );
-  }
-}
+        body * { visibility: hidden; }
+        #printable-jmc-content, #printable-jmc-content * {
+          visibility: visible;
+        }
+        #printable-jmc-content {
+          position: absolute; left: 0; top: 0;
+          width: 100%; height: auto;
+          padding: 10mm;
+          font-size: 9pt;
+          color: #000;
+        }
+        table {
+          width: 100%; border-collapse: collapse; border: 1px solid #000;
+        }
+        th, td {
+          border: 1px solid #000; padding: 2px 4px;
+          vertical-align: top;
+        }
+        th { font-weight: bold; text-align: center; }
+        tr { page-break-inside: avoid; }
+        .print-header-cell { padding: 1px 4px !important; }
+        .no-print { display: none; }
+      }
+    `}</style>
+);
+
 
 export default function PrintJmcDialog({
   isOpen,
@@ -112,12 +107,11 @@ export default function PrintJmcDialog({
   project,
   enrichedItems,
 }: PrintJmcDialogProps) {
-  const componentRef = useRef<HTMLDivElement>(null);
+  const componentRef = React.useRef<HTMLDivElement>(null);
 
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current,
-    documentTitle: `JMC-${jmcEntry?.jmcNo || 'document'}`,
-  });
+  const handlePrint = () => {
+    window.print();
+  };
 
   if (!jmcEntry) return null;
 
@@ -128,8 +122,8 @@ export default function PrintJmcDialog({
   };
 
   const scope1 = (jmcEntry.items && jmcEntry.items.length > 0)
-    ? (jmcEntry.items[0] as any)['Scope 1'] || ''
-    : 'WORK'; // Fallback title
+    ? (jmcEntry.items[0] as any)['Scope 1'] || 'WORK'
+    : 'WORK';
 
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
