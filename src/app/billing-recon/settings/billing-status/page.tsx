@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -24,9 +23,10 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 /** Extra fields present in Firestore but not declared on core Project type */
-type ProjectExtras = {
+type ProjectWithExtras = Project & {
   woNo?: string;
   refRoNo?: string;
   nameOfSs?: string;
@@ -37,6 +37,7 @@ type ProjectExtras = {
   projectDivision?: string;
   projectSite?: string;
   signatures?: Signature[];
+  projectDescription?: string;
 };
 
 type ProjectWithExtras = Project & ProjectExtras;
@@ -60,6 +61,7 @@ export default function BillingStatusPage() {
   const [nameOfSs, setNameOfSs] = useState('');
   const [subWork, setSubWork] = useState('');
   const [signatures, setSignatures] = useState<Signature[]>([]);
+  const [projectDescription, setProjectDescription] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   const resetForm = () => {
@@ -70,6 +72,7 @@ export default function BillingStatusPage() {
     setNameOfSs('');
     setSubWork('');
     setSignatures([]);
+    setProjectDescription('');
   };
 
   const fetchProjects = useCallback(async () => {
@@ -139,6 +142,7 @@ export default function BillingStatusPage() {
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
     setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
+    setProjectDescription(project.projectDescription ?? '');
     setIsDetailDialogOpen(true);
   };
 
@@ -151,6 +155,7 @@ export default function BillingStatusPage() {
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
     setSignatures(project.signatures?.map(s => ({...s, id: crypto.randomUUID()})) || [{ id: crypto.randomUUID(), designation: 'Site In charge', name: ''}]);
+    setProjectDescription(project.projectDescription ?? '');
     setIsDetailDialogOpen(true);
   };
 
@@ -174,6 +179,7 @@ export default function BillingStatusPage() {
         nameOfSs,
         subWork,
         signatures: signatures.map(({ id, ...rest }) => rest), // remove temporary client-side ID
+        projectDescription: projectDescription,
       };
 
       if (dialogMode === 'enable') {
@@ -303,59 +309,70 @@ export default function BillingStatusPage() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="nameOfWork">Name of Work</Label>
-              <Input
-                id="nameOfWork"
-                value={nameOfWork}
-                onChange={(e) => setNameOfWork(e.target.value)}
-                placeholder="e.g., 33kV Bay Extension at XYZ"
-              />
-            </div>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="nameOfWork">Name of Work</Label>
+                  <Input
+                    id="nameOfWork"
+                    value={nameOfWork}
+                    onChange={(e) => setNameOfWork(e.target.value)}
+                    placeholder="e.g., 33kV Bay Extension at XYZ"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="refRoNo">Ref. RO No</Label>
-              <Input
-                id="refRoNo"
-                value={refRoNo}
-                onChange={(e) => setRefRoNo(e.target.value)}
-                placeholder="e.g., RO/2025/123"
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="refRoNo">Ref. RO No</Label>
+                  <Input
+                    id="refRoNo"
+                    value={refRoNo}
+                    onChange={(e) => setRefRoNo(e.target.value)}
+                    placeholder="e.g., RO/2025/123"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="woNo">WO No</Label>
-              <Input
-                id="woNo"
-                value={woInput}
-                onChange={(e) => setWoInput(e.target.value)}
-                placeholder="e.g., WO-2025-001"
-                autoFocus
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="woNo">WO No</Label>
+                  <Input
+                    id="woNo"
+                    value={woInput}
+                    onChange={(e) => setWoInput(e.target.value)}
+                    placeholder="e.g., WO-2025-001"
+                    autoFocus
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="nameOfSs">Name of S/S</Label>
-              <Input
-                id="nameOfSs"
-                value={nameOfSs}
-                onChange={(e) => setNameOfSs(e.target.value)}
-                placeholder="e.g., Berhampur 132/33kV"
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nameOfSs">Name of S/S</Label>
+                  <Input
+                    id="nameOfSs"
+                    value={nameOfSs}
+                    onChange={(e) => setNameOfSs(e.target.value)}
+                    placeholder="e.g., Berhampur 132/33kV"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="subWork">Name of Work 2</Label>
-              <Input
-                id="subWork"
-                value={subWork}
-                onChange={(e) => setSubWork(e.target.value)}
-                placeholder="e.g., Stringing + Bay Works"
-              />
+                <div className="space-y-2">
+                  <Label htmlFor="subWork">Name of Work 2</Label>
+                  <Input
+                    id="subWork"
+                    value={subWork}
+                    onChange={(e) => setSubWork(e.target.value)}
+                    placeholder="e.g., Stringing + Bay Works"
+                  />
+                </div>
+                 <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="projectDescription">Project Description</Label>
+                    <Textarea
+                        id="projectDescription"
+                        value={projectDescription}
+                        onChange={(e) => setProjectDescription(e.target.value)}
+                        placeholder="Detailed description of the project scope..."
+                    />
+                </div>
             </div>
             
-            <div className="sm:col-span-2 space-y-4 border-t pt-4 mt-2">
+            <div className="space-y-4 border-t pt-4 mt-2">
                 <h3 className="font-medium">Signatories for Print</h3>
                 {signatures.map((sig, index) => (
                     <div key={sig.id} className="flex items-center gap-2">
@@ -402,3 +419,4 @@ export default function BillingStatusPage() {
     </div>
   );
 }
+

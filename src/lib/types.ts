@@ -81,6 +81,7 @@ export interface Project {
   stockManagementRequired?: boolean;
   woNo?: string;
   signatures?: Signature[];
+  projectDescription?: string;
 }
 
 export interface Site {

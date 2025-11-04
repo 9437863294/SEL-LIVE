@@ -164,7 +164,7 @@ export default function PrintJmcDialog({
                 <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
             </div>
           </div>
-          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR {scope1.toUpperCase()}</p>
+          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE</p>
 
           {/* Work details */}
           <div className="text-[9pt] space-y-1 mb-2">
