@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -31,6 +32,9 @@ type ProjectExtras = {
   subWork?: string;
   billingRequired?: boolean;
   projectName?: string; // already on your Project in many setups, but keep as optional fallback
+  siteInCharge?: string;
+  projectDivision?: string;
+  projectSite?: string;
 };
 
 type ProjectWithExtras = Project & ProjectExtras;
@@ -53,6 +57,9 @@ export default function BillingStatusPage() {
   const [refRoNo, setRefRoNo] = useState('');
   const [nameOfSs, setNameOfSs] = useState('');
   const [subWork, setSubWork] = useState('');
+  const [siteInCharge, setSiteInCharge] = useState('');
+  const [projectDivision, setProjectDivision] = useState('');
+  const [projectSite, setProjectSite] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   const resetForm = () => {
@@ -62,6 +69,9 @@ export default function BillingStatusPage() {
     setRefRoNo('');
     setNameOfSs('');
     setSubWork('');
+    setSiteInCharge('');
+    setProjectDivision('');
+    setProjectSite('');
   };
 
   const fetchProjects = useCallback(async () => {
@@ -118,6 +128,9 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
+    setSiteInCharge(project.siteInCharge ?? '');
+    setProjectDivision(project.projectDivision ?? '');
+    setProjectSite(project.projectSite ?? '');
     setIsDetailDialogOpen(true);
   };
 
@@ -129,6 +142,9 @@ export default function BillingStatusPage() {
     setRefRoNo(project.refRoNo ?? '');
     setNameOfSs(project.nameOfSs ?? '');
     setSubWork(project.subWork ?? '');
+    setSiteInCharge(project.siteInCharge ?? '');
+    setProjectDivision(project.projectDivision ?? '');
+    setProjectSite(project.projectSite ?? '');
     setIsDetailDialogOpen(true);
   };
 
@@ -152,6 +168,9 @@ export default function BillingStatusPage() {
         refRoNo,
         nameOfSs,
         subWork,
+        siteInCharge,
+        projectDivision,
+        projectSite,
       };
 
       if (dialogMode === 'enable') {
@@ -274,7 +293,7 @@ export default function BillingStatusPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {dialogMode === 'enable' ? 'Enter Work Order Details' : 'Edit Work Order Details'}
@@ -331,6 +350,33 @@ export default function BillingStatusPage() {
                 onChange={(e) => setSubWork(e.target.value)}
                 placeholder="e.g., Stringing + Bay Works"
               />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="siteInCharge">Site In charge</Label>
+                <Input
+                id="siteInCharge"
+                value={siteInCharge}
+                onChange={(e) => setSiteInCharge(e.target.value)}
+                placeholder="e.g., SEL, M.Rampur"
+                />
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="projectDivision">Asst.Manager(Elect.)</Label>
+                <Input
+                id="projectDivision"
+                value={projectDivision}
+                onChange={(e) => setProjectDivision(e.target.value)}
+                placeholder="e.g., EHT(Projects). Sub-Division"
+                />
+            </div>
+             <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="projectSite">Sub-Divisional Officer(Elect.)</Label>
+                <Input
+                id="projectSite"
+                value={projectSite}
+                onChange={(e) => setProjectSite(e.target.value)}
+                placeholder="e.g., Optcl, Bolangir"
+                />
             </div>
           </div>
 
