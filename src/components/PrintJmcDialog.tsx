@@ -11,6 +11,8 @@ import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import Image from 'next/image';
+import { Switch } from './ui/switch';
+import { Label } from './ui/label';
 
 /* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -67,9 +69,13 @@ interface PrintJmcDialogProps {
   enrichedItems: EnrichedJmcItem[];
 }
 
-const PrintableJmcStyles = () => (
+const PrintableJmcStyles = ({ orientation }: { orientation: 'portrait' | 'landscape' }) => (
     <style>{`
       @media print {
+        @page {
+          size: A4 ${orientation};
+          margin: 10mm;
+        }
         body {
           -webkit-print-color-adjust: exact;
           color-adjust: exact;
@@ -81,7 +87,6 @@ const PrintableJmcStyles = () => (
         #printable-jmc-content {
           position: absolute; left: 0; top: 0;
           width: 100%; height: auto;
-          padding: 10mm;
           font-size: 9pt;
           color: #000;
         }
@@ -108,6 +113,7 @@ export default function PrintJmcDialog({
   project,
   enrichedItems,
 }: PrintJmcDialogProps) {
+  const [orientation, setOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
   const componentRef = React.useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -118,7 +124,7 @@ export default function PrintJmcDialog({
 
   const calculateUpToDateQty = (item: EnrichedJmcItem) => {
     const prev = Number(item.previousCertifiedQty) || 0;
-    const current = Number(item.executedQty) || 0; // Use executed, not certified, for "In this JMC"
+    const current = Number(item.executedQty) || 0;
     return prev + current;
   };
 
@@ -129,7 +135,7 @@ export default function PrintJmcDialog({
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
     bidNo: project?.['BID DOCUMENT No'] || 'N/A',
-    projectName: project?.projectDescription || 'N/A',
+    projectName: project?.projectDescription || project?.projectName || 'N/A',
     projectSite: project?.projectSite || 'N/A',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
@@ -146,7 +152,7 @@ export default function PrintJmcDialog({
         </DialogHeader>
 
         <div id="printable-jmc-content" className="max-h-[85vh] overflow-y-auto" ref={componentRef}>
-          <PrintableJmcStyles />
+          <PrintableJmcStyles orientation={orientation} />
           {/* Header */}
            <div className="flex justify-between items-start mb-2">
             <div className="w-1/4">
@@ -165,7 +171,9 @@ export default function PrintJmcDialog({
                 <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
             </div>
           </div>
-          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">JOINT MEASUREMENT CERTIFICATE FOR {scope1}</p>
+          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">
+            JOINT MEASUREMENT CERTIFICATE FOR {scope1}
+          </p>
 
           {/* Work details */}
           <div className="text-[9pt] space-y-1 mb-2">
@@ -173,7 +181,7 @@ export default function PrintJmcDialog({
                 <span><strong>JMC No.:</strong> {workDetails.jmcNo}</span>
                 <span><strong>DATE:</strong> {workDetails.jmcDate}</span>
              </div>
-             <p><strong>Order No.</strong> {workDetails.orderNo} & <strong>BID DOCUMENT No.</strong>{workDetails.bidNo}</p>
+             <p><strong>Order No.</strong> {workDetails.orderNo} &amp; <strong>BID DOCUMENT No.</strong>{workDetails.bidNo}</p>
              <p><strong>Name of the project:-</strong> {workDetails.projectName}</p>
              <p><strong>Project Site :</strong> {workDetails.projectSite}</p>
           </div>
@@ -230,16 +238,24 @@ export default function PrintJmcDialog({
           </div>
         </div>
 
-        <DialogFooter className="mt-4 pr-4 no-print">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
-          <div>
-            <Button onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" />
-                Print Document
-            </Button>
-          </div>
+        <DialogFooter className="mt-4 pr-4 no-print flex justify-between w-full">
+           <div className="flex items-center space-x-2">
+                <Switch 
+                    id="orientation-switch" 
+                    checked={orientation === 'landscape'} 
+                    onCheckedChange={(checked) => setOrientation(checked ? 'landscape' : 'portrait')}
+                />
+                <Label htmlFor="orientation-switch">Landscape Mode</Label>
+            </div>
+            <div>
+                <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                </DialogClose>
+                <Button onClick={handlePrint} className="ml-2">
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print Document
+                </Button>
+            </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
