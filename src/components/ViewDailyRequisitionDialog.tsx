@@ -1,20 +1,35 @@
 
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import React, { Fragment, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import type { DailyRequisitionEntry, Project, Department, ExpenseRequest } from '@/lib/types';
-import { Printer, Paperclip, Download, Eye, Loader2 } from 'lucide-react';
-import Link from 'next/link';
-import { format } from 'date-fns';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { useAuth } from './auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
-import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { useState } from 'react';
+import { doc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import type { DailyRequisitionEntry, Project, Department, ExpenseRequest, Attachment } from '@/lib/types';
+import { format } from 'date-fns';
+import { useAuth } from './auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Loader2, Printer, Paperclip, Download, Eye } from 'lucide-react';
+import { Separator } from './ui/separator';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -26,11 +41,30 @@ interface ViewDailyRequisitionDialogProps {
   onActionComplete?: () => void;
 }
 
+const formatDateSafe = (date: any) => {
+    if (!date) return 'N/A';
+    if (date instanceof Timestamp) {
+        return format(date.toDate(), 'dd MMM, yyyy');
+    }
+    if (date instanceof Date) {
+        return format(date, 'dd MMM, yyyy');
+    }
+    try {
+        const parsedDate = new Date(date);
+        if (!isNaN(parsedDate.getTime())) {
+            return format(parsedDate, 'dd MMM, yyyy');
+        }
+    } catch (e) {
+        // fall through
+    }
+    return String(date);
+};
+
 export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest, onActionComplete }: ViewDailyRequisitionDialogProps) {
   const { can } = useAuthorization();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [isActionLoading, setIsActionLoading] = React.useState(false);
 
   const handlePrint = () => {
     window.print();
@@ -112,8 +146,8 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                 <div><Label className="text-xs">Reception No.</Label><p className="font-medium">{entry.receptionNo}</p></div>
-                <div><Label className="text-xs">Date</Label><p className="font-medium">{entry.date}</p></div>
-                <div><Label className="text-xs">Created At</Label><p className="font-medium">{entry.createdAt}</p></div>
+                <div><Label className="text-xs">Date</Label><p className="font-medium">{formatDateSafe(entry.date)}</p></div>
+                <div><Label className="text-xs">Created At</Label><p className="font-medium">{formatDateSafe(entry.createdAt)}</p></div>
                 <div><Label className="text-xs">Project</Label><p className="font-medium">{project?.projectName || 'N/A'}</p></div>
                 <div><Label className="text-xs">Department</Label><p className="font-medium">{department?.name || 'N/A'}</p></div>
                 <div><Label className="text-xs">DEP No.</Label><p className="font-medium">{entry.depNo || 'N/A'}</p></div>
