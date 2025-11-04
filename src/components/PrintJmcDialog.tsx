@@ -54,6 +54,9 @@ type ProjectExtras = {
   projectName?: string; // sometimes used instead of nameOfWork
   'Order No'?: string;
   'BID DOCUMENT No'?: string;
+  projectDivision?: string;
+  projectSite?: string;
+  siteInCharge?: string;
 };
 
 interface PrintJmcDialogProps {
@@ -213,22 +216,22 @@ export default function PrintJmcDialog({
           </div>
 
           {/* Signatures */}
-          <div className="flex justify-between mt-16 text-[9pt] px-4">
-            <div className="w-[30%] text-center">
-                <p>Site In charge</p>
-                <p className="font-bold">SEL, M.Rampur</p>
+           <div className="flex justify-between mt-16 text-[9pt] px-4">
+              <div className="w-[30%] text-center">
+                  <p>Site In charge</p>
+                  <p className="font-bold">{project?.siteInCharge || 'SEL, M.Rampur'}</p>
+              </div>
+              <div className="w-[30%] text-center">
+                  <p>Asst.Manager(Elect.)</p>
+                  <p className="font-bold">{project?.projectDivision || 'EHT(Projects). Sub-Division'}</p>
+                  <p className="font-bold">{project?.projectSite || 'Optcl, Bolangir'}</p>
+              </div>
+              <div className="w-[30%] text-center">
+                  <p>Sub-Divisional Officer(Elect.)</p>
+                  <p className="font-bold">{project?.projectDivision || 'EHT(Projects). Sub-Division'}</p>
+                  <p className="font-bold">{project?.projectSite || 'Optcl, Bolangir'}</p>
+              </div>
             </div>
-            <div className="w-[30%] text-center">
-                <p>Asst.Manager(Elect.)</p>
-                <p className="font-bold">EHT(Projects). Sub-Division</p>
-                <p className="font-bold">Optcl, Bolangir</p>
-            </div>
-            <div className="w-[30%] text-center">
-                <p>Sub-Divisional Officer(Elect.)</p>
-                <p className="font-bold">EHT(Projects). Sub-Division</p>
-                <p className="font-bold">Optcl, Bolangir</p>
-            </div>
-          </div>
         </div>
 
         <DialogFooter className="mt-4 pr-4 no-print">
