@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import * as React from 'react';
@@ -8,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { JmcEntry, JmcItem, Project } from '@/lib/types';
+import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
@@ -46,7 +45,7 @@ type EnrichedJmcItem = JmcItem & {
 };
 
 /** Optional extra fields present in Firestore but not on the core Project type */
-type ProjectExtras = {
+type ProjectWithExtras = Project & {
   refRoNo?: string;
   nameOfSs?: string;
   nameOfWork?: string;
@@ -58,13 +57,14 @@ type ProjectExtras = {
   projectDivision?: string;
   projectSite?: string;
   siteInCharge?: string;
+  signatures?: Signature[];
 };
 
 interface PrintJmcDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
-  project?: (Project & ProjectExtras) | null; // <-- allow extra optional fields
+  project?: ProjectWithExtras | null;
   enrichedItems: EnrichedJmcItem[];
 }
 
@@ -128,10 +128,10 @@ export default function PrintJmcDialog({
   };
 
   const workDetails = {
-    orderNo: (project as any)?.['Order No'] || 'CPC-51/2023-24',
-    bidNo: (project as any)?.['BID DOCUMENT No'] || 'SGM-CPC-e-Tender-MRampur-51/2023-24',
-    projectName: project?.projectName || 'Engineering, Supply, Erection, Testing and commissioning of 2x40 MVA, 220/33 KV AIS Grid S/S, Madanpur Rampur along with its associated 220 KV LILO line of 220 KV Kesinga-Baliguda DC line on EPC contract basis (Line length - 3 Kms. approx.)',
-    projectSite: project?.projectSite || 'M.Rampur',
+    orderNo: project?.woNo || 'N/A',
+    bidNo: 'N/A',
+    projectName: project?.projectName || 'N/A',
+    projectSite: project?.projectSite || 'N/A',
     jmcDate: formatDateSafe((jmcEntry as any).jmcDate),
     jmcNo: jmcEntry.jmcNo,
   };
@@ -219,8 +219,8 @@ export default function PrintJmcDialog({
           {/* Signatures */}
           <div className="flex justify-between mt-16 text-[9pt] px-4">
               {(project?.signatures || []).map(sig => (
-                  <div key={sig.id} className="w-[30%] text-center">
-                      <p>{sig.designation}</p>
+                  <div key={sig.id} className="w-1/3 text-center">
+                      <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
                       <p className="font-bold">{sig.name}</p>
                   </div>
               ))}

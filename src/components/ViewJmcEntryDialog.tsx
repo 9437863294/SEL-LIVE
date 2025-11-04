@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import type { JmcEntry, BoqItem, Bill, JmcItem } from '@/lib/types';
+import type { JmcEntry, BoqItem, Bill, JmcItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMemo, useState, useEffect, useRef } from 'react';
@@ -96,6 +96,7 @@ export default function ViewJmcEntryDialog({
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+  const [currentProject, setCurrentProject] = useState<(Project & {signatures?: any[]}) | null>(null);
 
   // refs for split-axis scrolling
   const xScrollRef = useRef<HTMLDivElement | null>(null);     // inner container that actually scrolls horizontally (contains table)
@@ -107,22 +108,31 @@ export default function ViewJmcEntryDialog({
   }, [jmcEntry, isOpen]);
 
   useEffect(() => {
-    const fetchProjectJmcs = async () => {
+    const fetchProjectData = async () => {
       const projectId = (jmcEntry as any)?.projectId || undefined;
       if (!projectId) {
         setProjectJmcEntries([]);
+        setCurrentProject(null);
         return;
       }
       try {
-        const snap = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-        const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
+        const [projectSnap, jmcSnap] = await Promise.all([
+            getDoc(doc(db, 'projects', projectId)),
+            getDocs(collection(db, 'projects', projectId, 'jmcEntries'))
+        ]);
+        
+        if (projectSnap.exists()) {
+            setCurrentProject({ id: projectSnap.id, ...projectSnap.data() } as Project);
+        }
+
+        const all = jmcSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
         setProjectJmcEntries(all);
       } catch (e) {
         console.error('Failed to load project JMCs:', e);
         setProjectJmcEntries([]);
       }
     };
-    fetchProjectJmcs();
+    fetchProjectData();
   }, [jmcEntry]);
 
   const totalCertifiedQtyMap = useMemo(() => {
@@ -402,7 +412,7 @@ export default function ViewJmcEntryDialog({
                 {isEditMode && (
                   <Button onClick={handleSaveChanges} disabled={isLoading || !hasJmc}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save &amp; Verify
+                    Save & Verify
                   </Button>
                 )}
               </div>
@@ -415,6 +425,7 @@ export default function ViewJmcEntryDialog({
         isOpen={isPrintDialogOpen}
         onOpenChange={setIsPrintDialogOpen}
         jmcEntry={jmcEntry}
+        project={currentProject}
         enrichedItems={enrichedItems}
       />
     </>
