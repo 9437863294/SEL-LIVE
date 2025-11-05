@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill } from '@/lib/types';
+import type { BoqItem, JmcEntry, Bill, MvacItem } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -36,6 +36,7 @@ interface BoqItemDetailsDialogProps {
   item: BoqItem | null;
   jmcEntries: JmcEntry[];
   bills: Bill[];
+  mvacItems: MvacItem[];
   isPanel?: boolean; // New prop
 }
 
@@ -67,6 +68,7 @@ export default function BoqItemDetailsDialog({
   item,
   jmcEntries,
   bills,
+  mvacItems,
   isPanel = false,
 }: BoqItemDetailsDialogProps) {
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
@@ -128,6 +130,9 @@ export default function BoqItemDetailsDialog({
       0,
     );
 
+    const relevantMvacItems = mvacItems
+      .filter((mvacItem) => String(mvacItem['BOQ Sl. No.'] || '').trim() === boqSlNo);
+
     const relevantBillItems = bills
       .flatMap((bill) =>
         bill.items
@@ -163,13 +168,15 @@ export default function BoqItemDetailsDialog({
       boqSlNo,
       description,
       boqQty,
+      scope2: item['Scope 2'],
       relevantJmcItems: jmcItemsWithRunningTotals,
       totalExecutedQty,
       totalCertifiedQty,
+      relevantMvacItems,
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, bills]); 
+  }, [item, jmcEntries, bills, mvacItems]); 
 
   const formatDateSafe = (dateInput: any) => {
     if (!dateInput) return 'N/A';
@@ -189,9 +196,11 @@ export default function BoqItemDetailsDialog({
     boqSlNo,
     description,
     boqQty,
+    scope2,
     relevantJmcItems,
     totalExecutedQty,
     totalCertifiedQty,
+    relevantMvacItems,
     relevantBillItems,
     totalBilledQty,
   } = data;
@@ -241,51 +250,94 @@ export default function BoqItemDetailsDialog({
 
           <Separator />
 
-          <div>
-            <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
-            <div className="border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>JMC No.</TableHead>
-                    <TableHead>JMC Date</TableHead>
-                    <TableHead>Executed Qty</TableHead>
-                    <TableHead>Certified Qty</TableHead>
-                    <TableHead>Cumulative Executed</TableHead>
-                    <TableHead>Cumulative Certified</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {relevantJmcItems.length > 0 ? (
-                    relevantJmcItems.map((jmcItem, index) => (
-                      <TableRow key={`jmc-${jmcItem.jmcNo}-${index}`}>
-                        <TableCell>{jmcItem.jmcNo}</TableCell>
-                        <TableCell>
-                          {formatDateSafe(jmcItem.jmcDate)}
-                        </TableCell>
-                        <TableCell>{jmcItem.executedQty}</TableCell>
-                        <TableCell>{jmcItem.certifiedQty || 0}</TableCell>
-                        <TableCell>{jmcItem.runningExecuted}</TableCell>
-                        <TableCell>{jmcItem.runningCertified}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}>
-                            <Eye className="mr-2 h-4 w-4" /> View
-                          </Button>
+          {scope2 === 'Civil' && (
+            <div>
+              <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>JMC No.</TableHead>
+                      <TableHead>JMC Date</TableHead>
+                      <TableHead>Executed Qty</TableHead>
+                      <TableHead>Certified Qty</TableHead>
+                      <TableHead>Cumulative Executed</TableHead>
+                      <TableHead>Cumulative Certified</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {relevantJmcItems.length > 0 ? (
+                      relevantJmcItems.map((jmcItem, index) => (
+                        <TableRow key={`jmc-${jmcItem.jmcNo}-${index}`}>
+                          <TableCell>{jmcItem.jmcNo}</TableCell>
+                          <TableCell>
+                            {formatDateSafe(jmcItem.jmcDate)}
+                          </TableCell>
+                          <TableCell>{jmcItem.executedQty}</TableCell>
+                          <TableCell>{jmcItem.certifiedQty || 0}</TableCell>
+                          <TableCell>{jmcItem.runningExecuted}</TableCell>
+                          <TableCell>{jmcItem.runningCertified}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}>
+                              <Eye className="mr-2 h-4 w-4" /> View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center h-24">
+                          No JMC entries found for this item.
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center h-24">
-                        No JMC entries found for this item.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
-          </div>
+          )}
+          
+          {scope2 === 'Supply' && (
+             <div>
+              <h3 className="text-lg font-semibold mb-2">MVAC Details</h3>
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>WO No.</TableHead>
+                      <TableHead>Total BOQ Qty</TableHead>
+                      <TableHead>Rate</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                     {relevantMvacItems.length > 0 ? (
+                      relevantMvacItems.map((mvacItem, index) => (
+                        <TableRow key={`mvac-${index}`}>
+                          <TableCell>{mvacItem['WO']}</TableCell>
+                          <TableCell>{mvacItem['Total BOQ Qty']}</TableCell>
+                          <TableCell>{formatCurrency(mvacItem['Rate'])}</TableCell>
+                          <TableCell>{formatDateSafe(mvacItem['Start Date'])}</TableCell>
+                          <TableCell>{formatDateSafe(mvacItem['End Date'])}</TableCell>
+                          <TableCell>{mvacItem['Status']}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center h-24">
+                          No MVAC entries found for this item.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
 
           <Separator />
 

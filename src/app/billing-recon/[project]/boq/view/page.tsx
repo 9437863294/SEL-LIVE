@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -36,7 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacItem } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -91,6 +92,7 @@ export default function ViewBoqPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [mvacItems, setMvacItems] = useState<MvacItem[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -256,6 +258,10 @@ export default function ViewBoqPage() {
 
       const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+
+      const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacItems'));
+      setMvacItems(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacItem)));
+
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -926,31 +932,28 @@ export default function ViewBoqPage() {
         item={selectedBoqItem}
         jmcEntries={jmcEntries}
         bills={bills}
+        mvacItems={mvacItems}
       />
-
+      
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit BOQ Item</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-            {editingItem && dialogFields.map((key) => (
-              <div className="space-y-1" key={key}>
-                <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                <Input
-                  id={`edit-${String(key)}`}
-                  name={String(key)}
-                  value={(editingItem as any)[key] ?? ''}
-                  onChange={handleEditFormChange}
-                  readOnly={key === 'Project Name'}
-                />
-              </div>
-            ))}
+              {editingItem && dialogFields.map(key => (
+                  <div className="space-y-1" key={key}>
+                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                      <Input
+                          id={`edit-${String(key)}`}
+                          name={String(key)}
+                          value={editingItem[key] || ''}
+                          onChange={handleEditFormChange}
+                          readOnly={key === 'Project Name'}
+                      />
+                  </div>
+              ))}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveChanges} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save Changes
