@@ -312,17 +312,21 @@ export default function ViewRequisitionDialog({
             timestamp: Timestamp.now(),
             stepName: stepDisplay(currentStep as any),
         };
-
         if (attachmentData) {
             newActionLog.attachment = attachmentData;
         }
 
-        const currentDate = toDateSafe((currentRequisitionData as any).date) || new Date();
+        const date = toDateSafe((currentRequisitionData as any).date);
+        const createdAt = toDateSafe((currentRequisitionData as any).createdAt);
+        const deadline = toDateSafe((currentRequisitionData as any).deadline);
+
         const tempReqForAssignment = {
           ...currentRequisitionData,
-          date: format(currentDate, 'yyyy-MM-dd'),
+          date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+          createdAt: createdAt ? format(createdAt, 'yyyy-MM-dd') : undefined,
+          deadline: deadline ? format(deadline, 'yyyy-MM-dd') : undefined,
         };
-
+        
         let nextStep: WorkflowStep | undefined;
         let newStatus: Requisition['status'] = currentRequisitionData.status;
         let newStage = currentRequisitionData.stage;
@@ -341,7 +345,7 @@ export default function ViewRequisitionDialog({
             newStatus = 'In Progress';
             newCurrentStepId = nextStep.id;
 
-            const assignees = await getAssigneeForStep(nextStep, tempReqForAssignment);
+            const assignees = await getAssigneeForStep(nextStep, tempReqForAssignment as any);
             if (!Array.isArray(assignees) || assignees.length === 0) {
               throw new Error(`Could not determine assignee for step: ${stepDisplay(nextStep as any)}`);
             }
@@ -518,7 +522,7 @@ export default function ViewRequisitionDialog({
             <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[75vh] overflow-y-auto p-1 pr-4">
+          <ScrollArea className="max-h-[70vh] p-1 pr-4">
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
@@ -536,7 +540,7 @@ export default function ViewRequisitionDialog({
                 <div>
                   <Label>Date</Label>
                   <p className="font-medium">
-                    {formatDateSafe((requisition as any).date, 'dd MMM, yyyy')}
+                    {formatDateSafe(requisition.date, 'dd MMM, yyyy')}
                   </p>
                 </div>
                 <div>
@@ -589,7 +593,7 @@ export default function ViewRequisitionDialog({
               
               {isActionable && (
                 <div className="space-y-4 pt-4 border-t">
-                  {((currentStep as any)?.upload === 'Required') && (
+                  {(currentStep?.upload === 'Required') && (
                     <div>
                       <Label htmlFor="file-upload" className="font-semibold text-destructive">
                         Upload Required Document
@@ -614,7 +618,7 @@ export default function ViewRequisitionDialog({
 
                   <div className="flex flex-wrap gap-2">
                     <TooltipProvider>
-                      {(currentStep as any)?.actions?.map((action: string | ActionConfig) => {
+                      {(currentStep?.actions || []).map((action: string | ActionConfig) => {
                         const actionName = typeof action === 'string' ? action : action.name;
                         const isCreateExpenseAction = actionName === 'Create Expense Request';
                         const isDisabled =
@@ -653,7 +657,7 @@ export default function ViewRequisitionDialog({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <ScrollArea className="h-72 mt-2 border rounded-md">
+                  <div className="mt-2 border rounded-md">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -701,7 +705,7 @@ export default function ViewRequisitionDialog({
                         )}
                       </TableBody>
                     </Table>
-                  </ScrollArea>
+                  </div>
                 </CollapsibleContent>
               </Collapsible>
             </div>
@@ -838,4 +842,47 @@ export default function ViewRequisitionDialog({
   );
 }
 
-    
+```
+- src/hooks/use-local-storage.ts:
+```ts
+"use client"
+
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
+
+// A custom hook to synchronize state with local storage
+export function useLocalStorage<T>(
+  key: string,
+  initialValue: T
+): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState(() => {
+    try {
+      const storedValue = window.localStorage.getItem(key)
+      return storedValue ? JSON.parse(storedValue) : initialValue
+    } catch {
+      return initialValue
+    }
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    } catch (error) {
+      console.error("Error setting item in localStorage:", error)
+    }
+  }, [key, value])
+
+  return [value, setValue]
+}
+
+```
+- src/middleware.ts:
+```ts
+export { auth as middleware } from "./lib/auth"
+
+export const config = {
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+  ],
+}
+
+```
