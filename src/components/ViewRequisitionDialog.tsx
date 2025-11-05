@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { ScrollArea } from './ui/scroll-area';
 
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
@@ -499,15 +500,13 @@ export default function ViewRequisitionDialog({
       maximumFractionDigits: 2,
     }).format(value);
   };
-  
-  if (!requisition) return null;
 
   const getProjectName = (id: string) =>
     projects.find((p) => p.id === id)?.projectName || 'N/A';
   const getDepartmentName = (id: string) =>
     departments.find((d) => d.id === id)?.name || 'N/A';
-
-  const isActionAllowed = user && requisition?.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+    
+  const isActionable = user && requisition?.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
   return (
     <>
@@ -585,8 +584,8 @@ export default function ViewRequisitionDialog({
                   </div>
                 </div>
               )}
-
-              {isActionAllowed && (
+              
+              {isActionable && (
                 <div className="space-y-4 pt-4 border-t">
                   {((currentStep as any)?.upload === 'Required') && (
                     <div>
@@ -837,3 +836,508 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
+
+```
+- src/hooks/use-onclick-outside.ts:
+```ts
+
+import { useEffect, type RefObject } from "react"
+
+export function useOnClickOutside(
+  ref: RefObject<HTMLElement>,
+  handler: (e: MouseEvent | TouchEvent) => void
+) {
+  useEffect(() => {
+    const listener = (event: MouseEvent | TouchEvent) => {
+      // Do nothing if clicking ref's element or descendent elements
+      if (!ref.current || ref.current.contains(event.target as Node)) {
+        return
+      }
+
+      handler(event)
+    }
+
+    document.addEventListener("mousedown", listener)
+    document.addEventListener("touchstart", listener)
+
+    return () => {
+      document.removeEventListener("mousedown", listener)
+      document.removeEventListener("touchstart", listener)
+    }
+  }, [ref, handler])
+}
+
+```
+- src/hooks/use-toast.ts:
+```ts
+
+"use client"
+
+// Inspired by react-hot-toast library
+import * as React from "react"
+
+import type {
+  ToastActionElement,
+  ToastProps,
+} from "@/components/ui/toast"
+
+const TOAST_LIMIT = 3 // Increased limit for chat notifications
+const TOAST_REMOVE_DELAY = 1000000
+
+type ToasterToast = ToastProps & {
+  id: string
+  title?: React.ReactNode
+  description?: React.ReactNode
+  action?: ToastActionElement
+  component?: React.ReactNode
+}
+
+const actionTypes = {
+  ADD_TOAST: "ADD_TOAST",
+  UPDATE_TOAST: "UPDATE_TOAST",
+  DISMISS_TOAST: "DISMISS_TOAST",
+  REMOVE_TOAST: "REMOVE_TOAST",
+} as const
+
+let count = 0
+
+function genId() {
+  count = (count + 1) % Number.MAX_SAFE_INTEGER
+  return count.toString()
+}
+
+type ActionType = typeof actionTypes
+
+type Action =
+  | {
+      type: ActionType["ADD_TOAST"]
+      toast: ToasterToast
+    }
+  | {
+      type: ActionType["UPDATE_TOAST"]
+      toast: Partial<ToasterToast>
+    }
+  | {
+      type: ActionType["DISMISS_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+  | {
+      type: ActionType["REMOVE_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+
+interface State {
+  toasts: ToasterToast[]
+}
+
+const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+const addToRemoveQueue = (toastId: string) => {
+  if (toastTimeouts.has(toastId)) {
+    return
+  }
+
+  const timeout = setTimeout(() => {
+    toastTimeouts.delete(toastId)
+    dispatch({
+      type: "REMOVE_TOAST",
+      toastId: toastId,
+    })
+  }, TOAST_REMOVE_DELAY)
+
+  toastTimeouts.set(toastId, timeout)
+}
+
+export const reducer = (state: State, action: Action): State => {
+  switch (action.type) {
+    case "ADD_TOAST":
+      return {
+        ...state,
+        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+      }
+
+    case "UPDATE_TOAST":
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === action.toast.id ? { ...t, ...action.toast } : t
+        ),
+      }
+
+    case "DISMISS_TOAST": {
+      const { toastId } = action
+
+      // ! Side effects ! - This could be extracted into a dismissToast() action,
+      // but I'll keep it here for simplicity
+      if (toastId) {
+        addToRemoveQueue(toastId)
+      } else {
+        state.toasts.forEach((toast) => {
+          addToRemoveQueue(toast.id)
+        })
+      }
+
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === toastId || toastId === undefined
+            ? {
+                ...t,
+                open: false,
+              }
+            : t
+        ),
+      }
+    }
+    case "REMOVE_TOAST":
+      if (action.toastId === undefined) {
+        return {
+          ...state,
+          toasts: [],
+        }
+      }
+      return {
+        ...state,
+        toasts: state.toasts.filter((t) => t.id !== action.toastId),
+      }
+  }
+}
+
+const listeners: Array<(state: State) => void> = []
+
+let memoryState: State = { toasts: [] }
+
+function dispatch(action: Action) {
+  memoryState = reducer(memoryState, action)
+  listeners.forEach((listener) => {
+    listener(memoryState)
+  })
+}
+
+type Toast = Omit<ToasterToast, "id">
+
+function toast({ ...props }: Toast) {
+  const id = genId()
+
+  const update = (props: ToasterToast) =>
+    dispatch({
+      type: "UPDATE_TOAST",
+      toast: { ...props, id },
+    })
+  const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
+
+  dispatch({
+    type: "ADD_TOAST",
+    toast: {
+      ...props,
+      id,
+      open: true,
+      onOpenChange: (open) => {
+        if (!open) dismiss()
+      },
+    },
+  })
+
+  return {
+    id: id,
+    dismiss,
+    update,
+  }
+}
+
+function useToast() {
+  const [state, setState] = React.useState<State>(memoryState)
+
+  React.useEffect(() => {
+    listeners.push(setState)
+    return () => {
+      const index = listeners.indexOf(setState)
+      if (index > -1) {
+        listeners.splice(index, 1)
+      }
+    }
+  }, [state])
+
+  return {
+    ...state,
+    toast,
+    dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
+  }
+}
+
+export { useToast, toast }
+
+```
+- src/lib/permission-utils.ts:
+```ts
+
+import type { Role, Department, Project } from '@/lib/types';
+import { permissionModules } from '@/lib/types';
+
+
+// This function should ideally fetch departments from Firestore if they are dynamic.
+// For now, if you have a static or smaller list, you can pass them in.
+// If departments are managed in Firestore, this would need to be async.
+export const getTotalPermissionsForModule = (moduleName: string, departments: Department[] = [], projects: Project[] = []): number => {
+    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+    if (!moduleConfig) return 0;
+    
+    if (Array.isArray(moduleConfig)) {
+      return moduleConfig.length;
+    }
+    
+    let total = 0;
+    for (const key in moduleConfig) {
+      const perms = moduleConfig[key as keyof typeof moduleConfig];
+       if (key === 'View Module') {
+        total += 1;
+        continue;
+      }
+      if (Array.isArray(perms)) {
+        if(key === 'Departments' && departments.length > 0) {
+          total += perms.length * departments.length;
+        } else if (key === 'Projects' && projects.length > 0) {
+           total += perms.length * projects.length;
+        } else {
+          total += perms.length;
+        }
+      }
+    }
+    return total;
+  };
+  
+export const getGrantedPermissionsForModule = (permissions: Record<string, string[]> | undefined, moduleName: string): number => {
+    if (!permissions) return 0;
+    let count = 0;
+
+    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+
+    if (Array.isArray(moduleConfig)) {
+        // Simple module structure
+        if (permissions[moduleName] && Array.isArray(permissions[moduleName])) {
+            count += permissions[moduleName].length;
+        }
+    } else {
+        // Complex module structure
+        // Count 'View Module' permission if it exists
+        if (permissions[moduleName]?.includes('View Module')) {
+             count++;
+        }
+        
+        // Count permissions for sub-modules
+        Object.keys(moduleConfig).forEach(subModuleKey => {
+            if (subModuleKey === 'View Module') return;
+            const fullKeyPrefix = `${moduleName}.${subModuleKey}`;
+            
+            if (subModuleKey === 'Departments' || subModuleKey === 'Projects') {
+                // Special handling for dynamic department/project keys
+                Object.keys(permissions).forEach(permissionKey => {
+                    if (permissionKey.startsWith(fullKeyPrefix)) {
+                        if (Array.isArray(permissions[permissionKey])) {
+                            count += permissions[permissionKey].length;
+                        }
+                    }
+                });
+            } else {
+                 if (permissions[fullKeyPrefix] && Array.isArray(permissions[fullKeyPrefix])) {
+                    count += permissions[fullKeyPrefix].length;
+                }
+            }
+        });
+    }
+
+    return count;
+};
+
+```
+- src/lib/utils.ts:
+```ts
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+```
+- src/lib/workflow-utils.ts:
+```ts
+
+'use server';
+
+import { db } from './firebase';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import type { 
+    WorkflowStep, 
+    Requisition, 
+    AmountBasedCondition, 
+    WorkingHours, 
+    Holiday,
+    AssignedTo
+} from '@/lib/types';
+import { add, setHours, setMinutes, setSeconds, isSameDay, parse, formatISO } from 'date-fns';
+
+// Caching for settings to avoid repeated Firestore reads within a single operation
+let workingHoursCache: WorkingHours | null = null;
+let holidaysCache: Holiday[] | null = null;
+
+async function getWorkingHours(): Promise<WorkingHours> {
+    if (workingHoursCache) return workingHoursCache;
+    const docRef = doc(db, 'settings', 'workingHours');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        // Handle both the new structure { schedule: {...} } and the old flat structure
+        const schedule = data.schedule || data;
+        if (schedule && typeof schedule === 'object' && 'Monday' in schedule) {
+            workingHoursCache = schedule as WorkingHours;
+            return workingHoursCache;
+        }
+    }
+    throw new Error("Working hours not configured or in the wrong format.");
+}
+
+
+async function getHolidays(): Promise<Holiday[]> {
+    if (holidaysCache) return holidaysCache;
+    const querySnapshot = await getDocs(collection(db, 'holidays'));
+    holidaysCache = querySnapshot.docs.map(doc => doc.data() as Holiday);
+    return holidaysCache;
+}
+
+export async function calculateDeadline(startDate: Date, tatHours: number): Promise<Date> {
+    const workingHours = await getWorkingHours();
+    const holidays = await getHolidays();
+    const holidayDates = holidays.map(h => parse(h.date, 'yyyy-MM-dd', new Date()));
+
+    let remainingHours = tatHours;
+    let currentDate = new Date(startDate);
+
+    while (remainingHours > 0) {
+        const dayOfWeek = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+        const dayConfig = workingHours[dayOfWeek];
+
+        const isHoliday = holidayDates.some(holidayDate => isSameDay(currentDate, holidayDate));
+
+        if (dayConfig && dayConfig.isWorkDay && !isHoliday) {
+            const [startHour, startMinute] = dayConfig.startTime.split(':').map(Number);
+            const [endHour, endMinute] = dayConfig.endTime.split(':').map(Number);
+
+            let dayStartTime = setSeconds(setMinutes(setHours(currentDate, startHour), startMinute), 0);
+            let dayEndTime = setSeconds(setMinutes(setHours(currentDate, endHour), endMinute), 0);
+            
+            // If the start date is before working hours, advance it to the start of the working day
+            if(currentDate < dayStartTime) {
+                currentDate = dayStartTime;
+            }
+
+            // If the start date is after working hours, move to the next day and continue
+            if (currentDate >= dayEndTime) {
+                currentDate = add(currentDate, { days: 1 });
+                currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
+                continue;
+            }
+
+            const remainingWorkHoursToday = (dayEndTime.getTime() - currentDate.getTime()) / (1000 * 60 * 60);
+
+            if (remainingHours <= remainingWorkHoursToday) {
+                currentDate = add(currentDate, { hours: remainingHours });
+                remainingHours = 0;
+            } else {
+                remainingHours -= remainingWorkHoursToday;
+                currentDate = add(currentDate, { days: 1 });
+                currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
+            }
+        } else {
+            // It's a weekend or holiday, move to the next day
+            currentDate = add(currentDate, { days: 1 });
+            currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
+        }
+    }
+    return currentDate;
+}
+
+
+export async function getAssigneeForStep(step: WorkflowStep, requisition: Omit<Requisition, 'id' | 'createdAt'> | Record<string, any>): Promise<string[]> {
+    const assignees: (string | undefined)[] = [];
+
+    switch (step.assignmentType) {
+        case 'User-based':
+            if (Array.isArray(step.assignedTo)) {
+                return step.assignedTo.filter((id): id is string => !!id);
+            }
+            break;
+
+        case 'Project-based': {
+            if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.projectId) {
+                const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
+                const assignment = assignmentMap[requisition.projectId];
+                if (assignment) {
+                    assignees.push(assignment.primary, assignment.alternative);
+                }
+            }
+            break;
+        }
+
+        case 'Department-based': {
+             if (typeof step.assignedTo === 'object' && !Array.isArray(step.assignedTo) && requisition.departmentId) {
+                const assignmentMap = step.assignedTo as Record<string, { primary: string; alternative?: string }>;
+                const assignment = assignmentMap[requisition.departmentId];
+                 if (assignment) {
+                    assignees.push(assignment.primary, assignment.alternative);
+                }
+            }
+            break;
+        }
+        
+        case 'Amount-based': {
+            const conditions = step.assignedTo as AmountBasedCondition[];
+            const amount = requisition.amount;
+            
+            for (const condition of conditions) {
+                let match = false;
+                if (condition.type === 'Below' && amount < condition.amount1) match = true;
+                if (condition.type === 'Between' && amount >= condition.amount1 && amount <= (condition.amount2 ?? Infinity)) match = true;
+                if (condition.type === 'Above' && amount > condition.amount1) match = true;
+                
+                if (match) {
+                    assignees.push(condition.userId, condition.alternativeUserId);
+                    break; // Stop at the first matching condition
+                }
+            }
+            break;
+        }
+    }
+    
+    return assignees.filter((id): id is string => !!id);
+}
+
+```
+```json
+[
+  {
+    "resource": "/home/user/studio/src/components/ViewRequisitionDialog.tsx",
+    "owner": "typescript",
+    "code": "2322",
+    "severity": 8,
+    "message": "Type 'Requisition' is not assignable to type 'PendingTask'.\n  Types of property 'taskType' are incompatible.\n    Type 'undefined' is not assignable to type '\"requisition\" | \"jmc\"'.",
+    "source": "ts",
+    "startLineNumber": 117,
+    "startColumn": 34,
+    "endLineNumber": 117,
+    "endColumn": 53
+  },
+  {
+    "resource": "/home/user/studio/src/components/AllRequisitionsTab.tsx",
+    "owner": "typescript",
+    "code": "2339",
+    "severity": 8,
+    "message": "Property 'onRequisitionUpdate' does not exist on type 'IntrinsicAttributes & { isOpen: boolean; onOpenChange: (isOpen: boolean) => void; requisition: Requisition | null; projects: Project[]; departments: Department[]; }'.",
+    "source": "ts",
+    "startLineNumber": 980,
+    "startColumn": 13,
+    "endLineNumber": 980,
+    "endColumn": 33
+  }
+]
+```
