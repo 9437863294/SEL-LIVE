@@ -2,22 +2,16 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  FilePlus,
-  History,
-  ShieldAlert,
-  type LucideIcon,
-  Settings,
-} from 'lucide-react';
+import { ArrowLeft, GitMerge, ShieldAlert } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface MvacCardProps {
+interface SettingsCardProps {
   item: {
     icon: LucideIcon;
     text: string;
@@ -27,7 +21,7 @@ interface MvacCardProps {
   };
 }
 
-function MvacCard({ item }: MvacCardProps) {
+function SettingsCard({ item }: SettingsCardProps) {
     const cardContent = (
          <Card
             className={cn(
@@ -59,61 +53,56 @@ function MvacCard({ item }: MvacCardProps) {
 }
 
 
-export default function MvacDashboardPage() {
+export default function MvacSettingsPage() {
   const params = useParams();
   const projectSlug = params.project as string;
   const { can, isLoading } = useAuthorization();
   
-  const mvacItems = [
-    { icon: FilePlus, text: 'Create New MVAC', href: `/billing-recon/${projectSlug}/mvac/create`, description: 'Generate a new MVAC entry.', disabled: !can('Create', 'Billing Recon.MVAC') },
-    { icon: History, text: 'MVAC Log', href: `/billing-recon/${projectSlug}/mvac/log`, description: 'View and manage all past MVAC entries.', disabled: !can('View', 'Billing Recon.MVAC') },
-    { icon: Settings, text: 'Settings', href: `/billing-recon/${projectSlug}/mvac/settings`, description: 'Configure MVAC settings and workflow.', disabled: !can('View Settings', 'Billing Recon.MVAC') },
+  const settingsItems = [
+    { icon: GitMerge, text: 'Workflow Configuration', href: `/billing-recon/${projectSlug}/mvac/settings/workflow-configuration`, description: 'Set up approval workflows for MVAC entries.', disabled: !can('Edit Settings', 'Billing Recon.MVAC') },
   ];
   
-  const canViewModule = can('View', 'Billing Recon.MVAC');
+  const canViewPage = can('View Settings', 'Billing Recon.MVAC');
 
   if(isLoading) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+       <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-64 mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                <Skeleton className="h-28" />
-                <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
             </div>
        </div>
     )
   }
   
-  if(!canViewModule) {
+  if(!canViewPage) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">MVAC Management</h1>
+            <Link href={`/billing-recon/${projectSlug}/mvac`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">MVAC Settings</h1>
         </div>
         <Card>
-            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access MVAC management.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access MVAC settings.</CardDescription></CardHeader>
             <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
         </Card>
       </div>
     );
   }
 
-
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center gap-2">
-        <Link href={`/billing-recon/${projectSlug}`}>
+        <Link href={`/billing-recon/${projectSlug}/mvac`}>
             <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
             </Button>
         </Link>
-        <h1 className="text-2xl font-bold">MVAC Management</h1>
+        <h1 className="text-2xl font-bold">MVAC Settings</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {mvacItems.map((item) => (
-          <MvacCard key={item.text} item={item} />
+        {settingsItems.map((item) => (
+          <SettingsCard key={item.text} item={item} />
         ))}
       </div>
     </div>
