@@ -118,7 +118,7 @@ export const permissionModules = {
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'Billing': ['View', 'Create Bill', 'View Log'],
-    'MVAC': ['View', 'Add Item', 'View Settings', 'Edit Settings'],
+    'MVAC': ['View', 'Create', 'View Log', 'View Settings', 'Edit Settings'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
   },
   'Subcontractors Management': {
@@ -902,4 +902,28 @@ export interface EnrichedLogItem extends InventoryLog {
   originalQuantity: number;
   issuedQuantity: number;
   balanceQuantity: number;
+}
+
+export interface WorkOrder {
+  id: string;
+  projectId: string;
+  workOrderNo: string;
+  date: string;
+  subcontractorId: string;
+  subcontractorName: string;
+  items: WorkOrderItem[];
+  totalAmount: number;
+  createdAt: Timestamp;
+  createdBy: string;
+}
+
+export interface WorkOrderItem {
+  id: string;
+  boqItemId: string;
+  description: string;
+  unit: string;
+  orderQty: number;
+  rate: number;
+  totalAmount: number;
+  boqSlNo?: string;
 }
