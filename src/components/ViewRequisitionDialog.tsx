@@ -315,7 +315,7 @@ export default function ViewRequisitionDialog({
         if (attachmentData) {
             newActionLog.attachment = attachmentData;
         }
-
+        
         const date = toDateSafe((currentRequisitionData as any).date);
         const createdAt = toDateSafe((currentRequisitionData as any).createdAt);
         const deadline = toDateSafe((currentRequisitionData as any).deadline);
@@ -709,7 +709,7 @@ export default function ViewRequisitionDialog({
                 </CollapsibleContent>
               </Collapsible>
             </div>
-          </div>
+          </ScrollArea>
 
           <DialogFooter className="mt-4">
             <DialogClose asChild>
@@ -841,48 +841,3 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
-
-```
-- src/hooks/use-local-storage.ts:
-```ts
-"use client"
-
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
-
-// A custom hook to synchronize state with local storage
-export function useLocalStorage<T>(
-  key: string,
-  initialValue: T
-): [T, Dispatch<SetStateAction<T>>] {
-  const [value, setValue] = useState(() => {
-    try {
-      const storedValue = window.localStorage.getItem(key)
-      return storedValue ? JSON.parse(storedValue) : initialValue
-    } catch {
-      return initialValue
-    }
-  })
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value))
-    } catch (error) {
-      console.error("Error setting item in localStorage:", error)
-    }
-  }, [key, value])
-
-  return [value, setValue]
-}
-
-```
-- src/middleware.ts:
-```ts
-export { auth as middleware } from "./lib/auth"
-
-export const config = {
-  matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
-  ],
-}
-
-```
