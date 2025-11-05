@@ -93,6 +93,11 @@ export default function BoqItemDetailsDialog({
       (sum, jmcItem) => sum + Number(jmcItem.executedQty || 0),
       0,
     );
+    
+    const totalCertifiedQty = relevantJmcItems.reduce(
+      (sum, jmcItem) => sum + Number(jmcItem.certifiedQty || 0),
+      0,
+    );
 
     const relevantBillItems = bills
       .flatMap((bill) =>
@@ -119,6 +124,7 @@ export default function BoqItemDetailsDialog({
       boqQty,
       relevantJmcItems,
       totalExecutedQty,
+      totalCertifiedQty,
       relevantBillItems,
       totalBilledQty,
     };
@@ -147,6 +153,7 @@ export default function BoqItemDetailsDialog({
     boqQty,
     relevantJmcItems,
     totalExecutedQty,
+    totalCertifiedQty,
     relevantBillItems,
     totalBilledQty,
   } = data;
@@ -176,6 +183,7 @@ export default function BoqItemDetailsDialog({
                   <TableRow>
                     <TableHead>BOQ Quantity</TableHead>
                     <TableHead>JMC Executed Qty</TableHead>
+                    <TableHead>JMC Certified Qty</TableHead>
                     <TableHead>Billed Qty</TableHead>
                     <TableHead>Balance Qty</TableHead>
                   </TableRow>
@@ -184,6 +192,7 @@ export default function BoqItemDetailsDialog({
                   <TableRow>
                     <TableCell>{boqQty}</TableCell>
                     <TableCell>{totalExecutedQty}</TableCell>
+                    <TableCell>{totalCertifiedQty}</TableCell>
                     <TableCell>{totalBilledQty}</TableCell>
                     <TableCell>{boqQty - totalExecutedQty}</TableCell>
                   </TableRow>
@@ -203,6 +212,7 @@ export default function BoqItemDetailsDialog({
                     <TableHead>JMC No.</TableHead>
                     <TableHead>JMC Date</TableHead>
                     <TableHead>Executed Qty</TableHead>
+                    <TableHead>Certified Qty</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -215,6 +225,7 @@ export default function BoqItemDetailsDialog({
                           {formatDateSafe(jmcItem.jmcDate)}
                         </TableCell>
                         <TableCell>{jmcItem.executedQty}</TableCell>
+                        <TableCell>{jmcItem.certifiedQty || 0}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}>
                             <Eye className="mr-2 h-4 w-4" /> View
@@ -224,7 +235,7 @@ export default function BoqItemDetailsDialog({
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center h-24">
+                      <TableCell colSpan={5} className="text-center h-24">
                         No JMC entries found for this item.
                       </TableCell>
                     </TableRow>
