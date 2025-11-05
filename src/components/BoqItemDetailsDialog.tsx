@@ -26,8 +26,9 @@ import {
 import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
-import { Eye } from 'lucide-react';
+import { Eye, Maximize, Minimize } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
+import { cn } from '@/lib/utils';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -70,6 +71,15 @@ export default function BoqItemDetailsDialog({
 }: BoqItemDetailsDialogProps) {
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
+  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
 
   const handleViewJmc = (jmcNo: string) => {
     const jmc = jmcEntries.find(entry => entry.jmcNo === jmcNo);
@@ -332,11 +342,19 @@ export default function BoqItemDetailsDialog({
     return <>{content}</>;
   }
 
+  const dialogSizeClass =
+    dialogSize === 'full' ? 'sm:max-w-[95vw]' :
+    dialogSize === '2xl' ? 'sm:max-w-6xl' :
+    'sm:max-w-4xl';
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className={cn("sm:max-w-4xl", dialogSizeClass)}>
         <ScrollArea className="max-h-[70vh] p-1">{content}</ScrollArea>
-        <DialogFooter className="mt-4 pr-4">
+        <DialogFooter className="mt-4 pr-4 sm:justify-between">
+            <Button variant="outline" size="icon" onClick={toggleDialogSize} className="hidden sm:inline-flex">
+                {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            </Button>
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
