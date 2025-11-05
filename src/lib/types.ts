@@ -17,6 +17,7 @@ export type ActionConfig = {
   requiresComment?: boolean;
   requiresAttachment?: boolean;
   nextStatus?: string;
+  departmentId?: string; // Specific for 'Create Expense Request'
 };
 
 /** ---------- Core app types ---------- **/
@@ -395,13 +396,30 @@ export interface PivotConfig {
   value: string;
 }
 
-/** ---------- Billing / JMC ---------- **/
+/** ---------- Billing / JMC / MVAC ---------- **/
 
 export interface BoqItem {
   id: string;
   [key: string]: any;
   bom?: FabricationBomItem[];
   conversions?: Conversion[];
+}
+
+export interface MvacItem {
+    id: string;
+    projectSlug?: string;
+    boqItemId?: string;
+    'WO': string;
+    'Project'?: string;
+    'BOQ Sl. No.': string;
+    'Description': string;
+    'Unit': string;
+    'Total BOQ Qty': string;
+    'Rate': string;
+    'Amount': string;
+    'Start Date': string;
+    'End Date': string;
+    'Status': string;
 }
 
 export interface JmcItem {

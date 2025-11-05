@@ -74,21 +74,21 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader className="flex flex-row items-center justify-between">
+      <DialogContent className="sm:max-w-md p-0">
+        <DialogHeader className="p-4 flex flex-row items-center justify-between border-b">
             <DialogTitle className="text-lg font-semibold">Create event</DialogTitle>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenChange(false)}>
                 <X className="h-4 w-4" />
             </Button>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 px-4 py-2">
             <div className="relative">
                 <Input 
                     placeholder="Event name"
                     value={eventName}
                     onChange={(e) => setEventName(e.target.value)}
                     readOnly={isWhatsappCall}
-                    className="pr-10 border-0 border-b-2 border-green-500 rounded-none focus-visible:ring-0 focus-visible:border-primary"
+                    className="pr-10 border-0 border-b-2 border-green-500 rounded-none focus-visible:ring-0 focus-visible:border-primary text-xl font-medium"
                 />
                 <Smile className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground"/>
             </div>
@@ -128,7 +128,7 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
                 </div>
             </div>
 
-            <Button variant="ghost" className="p-0 h-auto hover:bg-transparent" onClick={() => setShowEndTime(!showEndTime)}>
+            <Button variant="ghost" className="p-0 h-auto hover:bg-transparent text-sm" onClick={() => setShowEndTime(!showEndTime)}>
                 <Plus className="mr-2 h-4 w-4" /> Add end time
             </Button>
 
@@ -152,7 +152,7 @@ export function CreateEventDialog({ isOpen, onOpenChange, onSendEvent }: CreateE
 
         </div>
         <DialogFooter className="pr-4 pb-4">
-            <Button type="button" size="icon" className="rounded-full h-12 w-12" onClick={handleSend}>
+            <Button type="button" size="icon" className="rounded-full h-12 w-12 bg-green-600 hover:bg-green-700" onClick={handleSend}>
                 <Send className="h-6 w-6" />
             </Button>
         </DialogFooter>
