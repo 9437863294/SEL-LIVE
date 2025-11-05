@@ -1,6 +1,16 @@
+
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { Fragment, useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -10,37 +20,16 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import type {
-  Requisition,
-  Project,
-  Department,
-  WorkflowStep,
-  ActionLog,
-  User,
-  ActionConfig,
-  AccountHead,
-  SubAccountHead,
-} from '@/lib/types';
-import { db, storage } from '@/lib/firebase';
-import {
-  doc,
-  getDoc,
-  runTransaction,
-  Timestamp,
-  arrayUnion,
-  collection,
-  getDocs,
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from './auth/AuthProvider';
-import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Loader2, ChevronDown, Paperclip, Download, Eye } from 'lucide-react';
+import { db, storage } from '@/lib/firebase';
+import { doc, getDoc, runTransaction, Timestamp, arrayUnion, collection, getDocs, updateDoc, query, where } from 'firebase/firestore';
+import type { Requisition, Project, Department, WorkflowStep, ActionLog, Attachment, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
 import { format } from 'date-fns';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { ScrollArea } from './ui/scroll-area';
+import { useAuth } from './auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
+import { Separator } from './ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { createExpenseRequest } from '@/ai';
 import { Input } from './ui/input';
@@ -48,42 +37,38 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
-/* ---------- helpers ---------- */
-function toDateSafe(value: any): Date | null {
-  if (!value) return null;
-  if (typeof value?.toDate === 'function') return value.toDate(); // Firestore Timestamp
-  if (value instanceof Date) return value;
-  const asNum = typeof value === 'number' ? value : Date.parse(value);
-  const d = new Date(asNum);
-  return isNaN(d.valueOf()) ? null : d;
+function isFsTimestamp(v: unknown): v is Timestamp {
+  return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
 }
 
-function formatMaybeDate(value: any, fmt = 'dd MMM, yy HH:mm'): string {
-  const d = toDateSafe(value);
-  return d ? format(d, fmt) : '-';
+function toDateSafe(v: unknown): Date | null {
+  if (!v) return null;
+  if (isFsTimestamp(v)) return v.toDate();
+  if (v instanceof Date) return v;
+  const d = new Date(v as any);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Some WorkflowStep variants may not have `name`. Prefer name → label → id */
+function formatDateSafe(v: unknown, fmt = 'dd MMM, yy HH:mm'): string {
+  const d = toDateSafe(v);
+  return d ? format(d, fmt) : '—';
+}
+
 function stepDisplay(step: Partial<WorkflowStep> & { id: string } | any): string {
   return step?.name ?? step?.label ?? step?.title ?? step?.id ?? '—';
 }
 
-/** Narrow an action object that may carry departmentId for "Create Expense Request" */
-function hasDeptId(
-  a: unknown,
-): a is ActionConfig & { departmentId?: string } {
+function hasDeptId(a: unknown): a is ActionConfig & { departmentId?: string } {
   return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
 }
 
-/* ---------- types ---------- */
-/** Use a type intersection instead of `interface extends ...` */
 type EnrichedStep = WorkflowStep & {
   assignedUserName?: string;
   completionDate?: string;
   deadline?: string;
   status: 'Pending' | 'Completed' | 'Current';
-  /** add optional name to satisfy rendering even if WorkflowStep doesn’t declare it */
   name?: string;
 };
 
@@ -96,7 +81,6 @@ interface ViewRequisitionDialogProps {
   onRequisitionUpdate: () => void;
 }
 
-/* ---------- component ---------- */
 export default function ViewRequisitionDialog({
   isOpen,
   onOpenChange,
@@ -126,7 +110,6 @@ export default function ViewRequisitionDialog({
     return workflow.find((s) => s.id === requisition.currentStepId) || null;
   }, [requisition, workflow]);
 
-  /* load workflow/users/heads when opened */
   useEffect(() => {
     const fetchWorkflowAndUsers = async () => {
       if (!requisition) return;
@@ -185,7 +168,6 @@ export default function ViewRequisitionDialog({
     }
   }, [requisition, isOpen, toast]);
 
-  /* build enriched workflow table */
   useEffect(() => {
     if (requisition && workflow && users.length > 0) {
       const history = requisition.history || [];
@@ -227,13 +209,12 @@ export default function ViewRequisitionDialog({
         return {
           ...wfStep,
           assignedUserName,
-          completionDate: completionEntry ? formatMaybeDate(completionEntry.timestamp) : '-',
+          completionDate: completionEntry ? formatDateSafe(completionEntry.timestamp) : '-',
           deadline:
             status === 'Current' && requisition.deadline
-              ? formatMaybeDate(requisition.deadline)
+              ? formatDateSafe(requisition.deadline)
               : '-',
           status,
-          // ensure TS knows name could exist
           name: (wfStep as any).name,
         } as EnrichedStep;
       });
@@ -242,13 +223,11 @@ export default function ViewRequisitionDialog({
     }
   }, [requisition, workflow, users, isOpen]);
 
-  /* actions */
   const handleAction = async (action: string | ActionConfig) => {
     if (!user || !requisition || !workflow || !currentStep) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
 
-    // Create Expense Request
     if (actionName === 'Create Expense Request') {
       const targetDepartmentId = typeof action !== 'string' && hasDeptId(action)
         ? action.departmentId
@@ -306,8 +285,8 @@ export default function ViewRequisitionDialog({
     setIsLoading(true);
     try {
       const requisitionRef = doc(db, 'requisitions', requisition.id);
-
-      let attachmentData: { name: string; url: string } | undefined;
+      
+      let attachmentData: Attachment | undefined = undefined;
       if (file) {
         const currStepName = stepDisplay(currentStep as any);
         const storagePath = `requisition-actions/${requisition.id}/${currStepName}/${file.name}`;
@@ -317,21 +296,23 @@ export default function ViewRequisitionDialog({
         attachmentData = { name: file.name, url: downloadURL };
       }
 
-      const newActionLog: ActionLog = {
-        action: actionName,
-        comment: actionComment,
-        userId: user.id,
-        userName: user.name,
-        timestamp: Timestamp.now(),
-        stepName: stepDisplay(currentStep as any),
-        attachment: attachmentData,
-      };
-
       await runTransaction(db, async (transaction) => {
         const reqDoc = await transaction.get(requisitionRef);
         if (!reqDoc.exists()) throw new Error('Requisition document not found!');
 
         const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
+        
+        const newActionLog: Partial<ActionLog> = {
+            action: actionName,
+            comment: actionComment,
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: stepDisplay(currentStep as any),
+        };
+        if (attachmentData) {
+            newActionLog.attachment = attachmentData;
+        }
 
         const currentDate = toDateSafe((currentRequisitionData as any).date) || new Date();
         const tempReqForAssignment = {
@@ -346,7 +327,7 @@ export default function ViewRequisitionDialog({
         let newAssignees: string[] = [];
         let newDeadline: Timestamp | null = null;
 
-        const isCompletionAction = ['Approve', 'Complete', 'Verified'].includes(actionName);
+        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(actionName);
 
         if (isCompletionAction) {
           const currentStepIndexTx = (workflow || []).findIndex((s) => s.id === currentStep.id);
@@ -383,7 +364,7 @@ export default function ViewRequisitionDialog({
           newDeadline = currentRequisitionData.deadline || null;
         }
 
-        const updatedData = {
+        const updatedData: any = {
           status: newStatus,
           stage: newStage,
           currentStepId: newCurrentStepId,
@@ -391,7 +372,7 @@ export default function ViewRequisitionDialog({
           deadline: newDeadline,
           history: arrayUnion(newActionLog),
         };
-
+        
         transaction.update(requisitionRef, updatedData);
       });
 
@@ -518,11 +499,7 @@ export default function ViewRequisitionDialog({
       maximumFractionDigits: 2,
     }).format(value);
   };
-
-  const parseCurrency = (value: string): number => {
-    return Number(value.replace(/[^0-9.-]+/g, ''));
-  };
-
+  
   if (!requisition) return null;
 
   const getProjectName = (id: string) =>
@@ -530,12 +507,7 @@ export default function ViewRequisitionDialog({
   const getDepartmentName = (id: string) =>
     departments.find((d) => d.id === id)?.name || 'N/A';
 
-  const isActionAllowed =
-    !!user &&
-    Array.isArray(requisition.assignees) &&
-    requisition.assignees.includes(user.id) &&
-    requisition.status !== 'Completed' &&
-    requisition.status !== 'Rejected';
+  const isActionAllowed = user && requisition?.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
   return (
     <>
@@ -563,7 +535,7 @@ export default function ViewRequisitionDialog({
                 <div>
                   <Label>Date</Label>
                   <p className="font-medium">
-                    {formatMaybeDate((requisition as any).date, 'dd MMM, yyyy')}
+                    {formatDateSafe((requisition as any).date, 'dd MMM, yyyy')}
                   </p>
                 </div>
                 <div>
@@ -672,7 +644,7 @@ export default function ViewRequisitionDialog({
                 </div>
               )}
 
-              <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen} className="border-t pt-2">
+              <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen}>
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="w-full justify-between px-2">
                     Workflow Status
@@ -741,8 +713,8 @@ export default function ViewRequisitionDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {expenseToCreate && (
+      
+       {expenseToCreate && (
         <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
           <DialogContent>
             <DialogHeader>
