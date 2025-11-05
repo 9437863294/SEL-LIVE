@@ -27,6 +27,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
 import { Eye } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -45,6 +46,19 @@ const formatCurrency = (amount: string | number) => {
     currency: 'INR',
   }).format(num);
 };
+
+// Helper function to safely convert various date formats to a Date object
+function toDateSafe(value: any): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value instanceof Timestamp) return value.toDate();
+  if (typeof value === 'number') return new Date(value); // handles milliseconds
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
 
 export default function BoqItemDetailsDialog({
   isOpen,
@@ -87,7 +101,12 @@ export default function BoqItemDetailsDialog({
             jmcNo: entry.jmcNo,
             jmcDate: entry.jmcDate,
           })),
-      ).sort((a,b) => (a.jmcDate?.toDate() ?? 0) > (b.jmcDate?.toDate() ?? 0) ? 1 : -1);
+      ).sort((a,b) => {
+          const dateA = toDateSafe(a.jmcDate);
+          const dateB = toDateSafe(b.jmcDate);
+          if (!dateA || !dateB) return 0;
+          return dateA.getTime() - dateB.getTime();
+      });
 
     const totalExecutedQty = relevantJmcItems.reduce(
       (sum, jmcItem) => sum + Number(jmcItem.executedQty || 0),
@@ -145,11 +164,8 @@ export default function BoqItemDetailsDialog({
   const formatDateSafe = (dateInput: any) => {
     if (!dateInput) return 'N/A';
     try {
-      if (typeof dateInput.toDate === 'function') {
-        return format(dateInput.toDate(), 'dd MMM, yyyy');
-      }
-      const date = new Date(dateInput);
-      if (isNaN(date.getTime())) return 'Invalid Date';
+      const date = toDateSafe(dateInput);
+      if (!date) return 'Invalid Date';
       return format(date, 'dd MMM, yyyy');
     } catch (error) {
       console.warn('Could not format date:', dateInput, error);
