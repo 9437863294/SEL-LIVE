@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import type { MvacItem, BoqItem, Project, SerialNumberConfig, JmcItem } from '@/lib/types';
+import type { MvacItem, BoqItem, Project, SerialNumberConfig, JmcEntry } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { format } from 'date-fns';
@@ -393,3 +393,5 @@ export default function CreateMvacPage() {
     </>
   );
 }
+
+    
