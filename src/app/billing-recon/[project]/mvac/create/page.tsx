@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import type { MvacItem, BoqItem, Project, SerialNumberConfig } from '@/lib/types';
+import type { MvacItem, BoqItem, Project, SerialNumberConfig, JmcItem } from '@/lib/types';
 import { BoqItemSelector } from '@/components/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
 import { format } from 'date-fns';
@@ -29,16 +29,19 @@ const initialMvacDetails = {
 const initialItemState = {
     id: '',
     boqItemId: '',
-    'BOQ Sl. No.': '',
-    'Description': '',
-    'Unit': '',
-    'Total BOQ Qty': '0',
-    'Rate': '0',
-    'Amount': '0',
-    'Start Date': '',
-    'End Date': '',
-    'Status': 'Pending'
+    erpSlNo: '',
+    boqSlNo: '',
+    description: '',
+    unit: '',
+    boqQty: 0,
+    rate: 0,
+    scope1: '',
+    totalCertifiedQty: 0,
+    executedQty: 0,
+    totalAmount: 0,
 };
+
+type MvacItemForm = typeof initialItemState;
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -50,6 +53,36 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 }
 
+const extractErpSlNo = (boqItem: BoqItem): string => {
+  const key = Object.keys(boqItem).find(k => k.toLowerCase().replace(/\s+/g, '') === 'erpslno');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
+const extractBoqSlNo = (boqItem: BoqItem): string => {
+    return String((boqItem as any)['BOQ SL No'] || (boqItem as any)['SL. No.'] || '');
+}
+
+const extractDescription = (boqItem: BoqItem): string => {
+    return String((boqItem as any)['Description'] || '');
+}
+
+const extractUnit = (boqItem: BoqItem): string => {
+    return String((boqItem as any)['UNIT'] || (boqItem as any)['Unit'] || '');
+}
+
+const extractBoqQty = (boqItem: BoqItem): number => {
+    return Number((boqItem as any)['QTY'] || (boqItem as any)['Total Qty'] || 0);
+}
+
+const extractRate = (boqItem: BoqItem): number => {
+    const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('rate')) || 'rate';
+    return Number((boqItem as any)[rateKey] || 0);
+}
+
+const extractScope1 = (boqItem: BoqItem): string => {
+    return String((boqItem as any)['Scope 1'] || '');
+}
+
 export default function CreateMvacPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -57,10 +90,11 @@ export default function CreateMvacPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [details, setDetails] = useState(initialMvacDetails);
-  const [items, setItems] = useState<MvacItem[]>([ { ...initialItemState, id: crypto.randomUUID() } ]);
+  const [items, setItems] = useState<MvacItemForm[]>([ { ...initialItemState, id: crypto.randomUUID() } ]);
   const [isSaving, setIsSaving] = useState(false);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
   const [previewMvacNo, setPreviewMvacNo] = useState('Generating...');
 
@@ -80,6 +114,9 @@ export default function CreateMvacPage() {
 
         const boqSnap = await getDocs(collection(db, 'projects', projectData.id, 'boqItems'));
         setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));
+
+        const jmcSnap = await getDocs(collection(db, 'projects', projectData.id, 'jmcEntries'));
+        setJmcEntries(jmcSnap.docs.map(d => ({id: d.id, ...d.data()} as JmcEntry)));
     };
     fetchData();
   }, [projectSlug, toast]);
@@ -106,19 +143,34 @@ export default function CreateMvacPage() {
     generatePreviewId();
   }, []);
 
+  const totalCertifiedQtyMap = useMemo(() => {
+      const map: Record<string, number> = {};
+      jmcEntries.forEach(entry => {
+          entry.items.forEach(item => {
+              const key = item.boqSlNo;
+              map[key] = (map[key] || 0) + (item.certifiedQty || 0);
+          });
+      });
+      return map;
+  }, [jmcEntries]);
+
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setDetails(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleItemChange = (index: number, field: keyof Omit<MvacItem, 'id'|'boqItemId'|'projectSlug'>, value: string) => {
+  const handleItemChange = (index: number, field: keyof MvacItemForm, value: string) => {
     const newItems = [...items];
-    const item = { ...newItems[index], [field]: value };
+    const item = { ...newItems[index] };
+    (item as any)[field] = value;
     
-    // Recalculate amount
-    const qty = parseFloat(item['Total BOQ Qty']) || 0;
-    const rate = parseFloat(item['Rate']) || 0;
-    item['Amount'] = (qty * rate).toFixed(2);
+    if (field === 'executedQty') {
+        const qty = parseFloat(value);
+        const rate = item.rate || 0;
+        if (!isNaN(qty)) {
+            item.totalAmount = qty * rate;
+        }
+    }
     
     newItems[index] = item;
     setItems(newItems);
@@ -130,41 +182,39 @@ export default function CreateMvacPage() {
 
   const handleBoqItemSelect = (index: number, boqItem: BoqItem | null) => {
     if (!boqItem) return;
-    const rateKey = Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate';
+    const boqSlNo = extractBoqSlNo(boqItem);
     const newItems = [...items];
     newItems[index] = {
       ...newItems[index],
       boqItemId: boqItem.id,
-      'BOQ Sl. No.': String(boqItem['BOQ SL No'] || ''),
-      'Description': String(boqItem.Description || boqItem.DESCRIPTION || ''),
-      'Unit': String(boqItem.UNIT || boqItem.Unit || ''),
-      'Total BOQ Qty': String(boqItem.QTY || 0),
-      'Rate': String((boqItem as any)[rateKey] || 0),
+      erpSlNo: extractErpSlNo(boqItem),
+      boqSlNo: boqSlNo,
+      description: extractDescription(boqItem),
+      unit: extractUnit(boqItem),
+      boqQty: extractBoqQty(boqItem),
+      rate: extractRate(boqItem),
+      scope1: extractScope1(boqItem),
+      totalCertifiedQty: totalCertifiedQtyMap[boqSlNo] || 0,
     };
-    // Recalculate amount after setting new values
-    const qty = parseFloat(newItems[index]['Total BOQ Qty']);
-    const rate = parseFloat(newItems[index]['Rate']);
-    newItems[index]['Amount'] = (qty * rate).toFixed(2);
     setItems(newItems);
   };
   
   const handleMultiBoqSelect = (selectedItems: BoqItem[]) => {
-      const newMvacItems: MvacItem[] = selectedItems.map(boqItem => {
-          const rateKey = Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate';
-          const qty = parseFloat(String(boqItem.QTY || 0));
-          const rate = parseFloat(String((boqItem as any)[rateKey] || 0));
+      const newMvacItems: MvacItemForm[] = selectedItems.map(boqItem => {
+          const boqSlNo = extractBoqSlNo(boqItem);
           return {
               id: crypto.randomUUID(),
               boqItemId: boqItem.id,
-              'BOQ Sl. No.': String(boqItem['BOQ SL No'] || ''),
-              'Description': String(boqItem.Description || boqItem.DESCRIPTION || ''),
-              'Unit': String(boqItem.UNIT || boqItem.Unit || ''),
-              'Total BOQ Qty': String(qty),
-              'Rate': String(rate),
-              'Amount': (qty * rate).toFixed(2),
-              'Start Date': '',
-              'End Date': '',
-              'Status': 'Pending',
+              erpSlNo: extractErpSlNo(boqItem),
+              boqSlNo: boqSlNo,
+              description: extractDescription(boqItem),
+              unit: extractUnit(boqItem),
+              boqQty: extractBoqQty(boqItem),
+              rate: extractRate(boqItem),
+              scope1: extractScope1(boqItem),
+              totalCertifiedQty: totalCertifiedQtyMap[boqSlNo] || 0,
+              executedQty: 0,
+              totalAmount: 0,
           };
       });
 
@@ -177,7 +227,11 @@ export default function CreateMvacPage() {
   }
 
   const removeItem = (id: string) => {
-    setItems(items.filter(item => item.id !== id));
+    if (items.length > 1) {
+      setItems(items.filter(item => item.id !== id));
+    } else {
+      setItems([{ ...initialItemState, id: crypto.randomUUID() }]);
+    }
   };
   
   const handleSave = async () => {
@@ -203,22 +257,19 @@ export default function CreateMvacPage() {
 
         const batch = writeBatch(db);
         
-        items.forEach(item => {
-            const { id, ...itemToSave } = item;
-            const mvacDocRef = doc(collection(db, 'mvacItems'));
-            const docData = {
-                ...itemToSave,
-                projectSlug,
-                mvacNo,
-                mvacDate: details.mvacDate,
-                'WO': details.woNo,
-                'Project': currentProject.projectName,
-            };
-            batch.set(mvacDocRef, docData);
-        });
+        const mvacDocRef = doc(collection(db, 'mvacEntries'));
+        const mvacData = {
+          ...details,
+          mvacNo,
+          projectId: currentProject.id,
+          projectSlug,
+          createdAt: serverTimestamp(),
+          items: items.map(({id, ...rest}) => rest) // remove client-side id
+        };
+        batch.set(mvacDocRef, mvacData);
 
         await batch.commit();
-        toast({ title: 'Success', description: 'MVAC entries saved successfully.' });
+        toast({ title: 'Success', description: 'MVAC entry saved successfully.' });
         router.push(`/billing-recon/${projectSlug}/mvac/log`);
     } catch (error: any) {
         console.error("Error saving MVAC entries:", error);
@@ -228,12 +279,6 @@ export default function CreateMvacPage() {
     }
   };
   
-  const formatCurrency = (amount: string | number) => {
-    const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
-  }
-
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -246,7 +291,7 @@ export default function CreateMvacPage() {
           </div>
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Entries
+            Save Entry
           </Button>
         </div>
         
@@ -272,11 +317,11 @@ export default function CreateMvacPage() {
           <CardHeader>
             <div className="flex justify-between items-center">
               <div>
-                <CardTitle>Items</CardTitle>
-                <CardDescription>Add items from the BOQ to include in this MVAC.</CardDescription>
+                <CardTitle>MVAC Items</CardTitle>
+                <CardDescription>Add one or more items executed under this MVAC.</CardDescription>
               </div>
               <Button variant="outline" type="button" onClick={() => setIsBoqMultiSelectOpen(true)}>
-                <Library className="mr-2 h-4 w-4" /> Add Multiple Items
+                <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
               </Button>
             </div>
           </CardHeader>
@@ -285,42 +330,44 @@ export default function CreateMvacPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>BOQ Item</TableHead>
-                    <TableHead>Qty</TableHead>
+                    <TableHead>ERP Sl. No.</TableHead>
+                    <TableHead>BOQ Sl. No.</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>BOQ Qty</TableHead>
                     <TableHead>Rate</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>End Date</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead>Scope 1</TableHead>
+                    <TableHead>Total Certified Qty</TableHead>
+                    <TableHead>Executed Qty</TableHead>
+                    <TableHead>Total Amount</TableHead>
+                    <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.map((item, index) => (
                     <TableRow key={item.id}>
-                      <TableCell className="min-w-[300px]">
-                        <BoqItemSelector
-                            boqItems={boqItems}
-                            selectedSlNo={item['BOQ Sl. No.'] || ''}
-                            onSelect={(selected) => handleBoqItemSelect(index, selected)}
-                            isLoading={false}
-                        />
+                      <TableCell>{item.erpSlNo || '-'}</TableCell>
+                      <TableCell>
+                          <BoqItemSelector
+                           boqItems={boqItems}
+                           selectedSlNo={item.boqSlNo}
+                           onSelect={(boq) => handleBoqItemSelect(index, boq)}
+                           isLoading={false}
+                          />
+                      </TableCell>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell>{item.unit}</TableCell>
+                      <TableCell>{item.boqQty}</TableCell>
+                      <TableCell>{item.rate}</TableCell>
+                      <TableCell>{item.scope1}</TableCell>
+                      <TableCell>{item.totalCertifiedQty}</TableCell>
+                      <TableCell>
+                           <Input type="number" value={item.executedQty} onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)} />
                       </TableCell>
                        <TableCell>
-                           <Input value={item['Total BOQ Qty']} onChange={(e) => handleItemChange(index, 'Total BOQ Qty', e.target.value)} type="number" />
-                       </TableCell>
-                       <TableCell>
-                           <Input value={item['Rate']} onChange={(e) => handleItemChange(index, 'Rate', e.target.value)} type="number" />
-                       </TableCell>
-                       <TableCell>
-                           <Input value={item['Amount']} readOnly className="bg-muted" />
-                       </TableCell>
-                       <TableCell>
-                           <Input value={item['Start Date']} onChange={(e) => handleItemChange(index, 'Start Date', e.target.value)} type="date" />
-                       </TableCell>
-                       <TableCell>
-                           <Input value={item['End Date']} onChange={(e) => handleItemChange(index, 'End Date', e.target.value)} type="date" />
-                       </TableCell>
-                      <TableCell className="text-right">
+                           <Input value={item.totalAmount.toFixed(2)} readOnly className="bg-muted" />
+                      </TableCell>
+                      <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -336,7 +383,7 @@ export default function CreateMvacPage() {
           </CardContent>
         </Card>
       </div>
-      <BoqMultiSelectDialog
+       <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
@@ -346,4 +393,3 @@ export default function CreateMvacPage() {
     </>
   );
 }
-
