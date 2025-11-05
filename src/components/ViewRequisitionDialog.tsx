@@ -25,7 +25,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, Timestamp, arrayUnion, runTransaction, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, Attachment, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
@@ -325,6 +325,11 @@ export default function ViewRequisitionDialog({
           date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
           createdAt: createdAt ? format(createdAt, 'yyyy-MM-dd') : undefined,
           deadline: deadline ? format(deadline, 'yyyy-MM-dd') : undefined,
+          // Convert history timestamps to strings to make it serializable
+          history: (currentRequisitionData.history || []).map(h => ({
+            ...h,
+            timestamp: toDateSafe(h.timestamp)?.toISOString() || new Date().toISOString(),
+          })),
         };
         
         let nextStep: WorkflowStep | undefined;
