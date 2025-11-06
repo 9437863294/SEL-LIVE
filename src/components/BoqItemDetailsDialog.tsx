@@ -162,7 +162,6 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     if (isOpen && item?.projectSlug) {
       fetchRelatedData();
     } else {
-        // Reset state on close
         setJmcEntries([]);
         setBills([]);
         setMvacEntries([]);
@@ -183,7 +182,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     const currentItemKey = compositeKey(scope2, boqSlNo);
     
     // JMC items for this BOQ item
-    const relevantJmcItems = (jmcEntries || [])
+    const relevantJmcItems = jmcEntries
       .flatMap((entry) =>
         (entry.items || [])
           .filter((jmcItem) => compositeKey(getScope2(jmcItem), getBoqSlNo(jmcItem)) === currentItemKey)
@@ -196,7 +195,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       });
 
     // MVAC items for this BOQ item
-    const relevantMvacItems = (mvacEntries || [])
+    const relevantMvacItems: MvacItemWithParent[] = mvacEntries
       .flatMap((entry) =>
         (entry.items || [])
           .filter((mvacItem) => compositeKey(getScope2(mvacItem), getBoqSlNo(mvacItem)) === currentItemKey)
@@ -244,7 +243,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     });
 
     const relevantBillItems: BillRow[] =
-      (bills || []).flatMap((bill) =>
+      bills.flatMap((bill) =>
         (bill.items || [])
           .filter((b) => compositeKey(getScope2(b), getBoqSlNo(b)) === currentItemKey)
           .map((b) => ({ ...(b as any), billNo: bill.billNo, billDate: bill.billDate }))
@@ -303,7 +302,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     totalCertifiedQty,
     relevantBillItems,
     totalBilledQty,
-  } = (data as any) || {};
+  } = data || {};
 
   const dialogSizeClass =
     dialogSize === 'full' ? 'sm:max-w-[95vw]' : dialogSize === '2xl' ? 'sm:max-w-6xl' : 'sm:max-w-4xl';
@@ -314,16 +313,16 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className={cn('max-h-[90vh] flex flex-col min-h-0', dialogSizeClass)}>
-            <DialogHeader className="text-center">
+            <DialogHeader className="text-center shrink-0">
                 <DialogTitle>Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
                 <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
             </DialogHeader>
 
-            <ScrollArea className="h-[70vh] flex-1 min-h-0 p-1 pr-4">
+            <ScrollArea className="flex-1 min-h-0 p-1 pr-4 -mx-4">
               {isLoading ? (
                 <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
               ) : (
-                <div className="space-y-6 mt-6">
+                <div className="space-y-6 mt-6 px-4">
                     <section>
                       <h3 className="text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
                       <div className="border rounded-md">
@@ -500,3 +499,5 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     </>
   );
 }
+
+    
