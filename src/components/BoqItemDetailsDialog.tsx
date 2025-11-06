@@ -113,11 +113,12 @@ export default function BoqItemDetailsDialog({
             jmcNo: entry.jmcNo,
             jmcDate: entry.jmcDate,
           })),
-      ).sort((a,b) => {
-          const dateA = toDateSafe(a.jmcDate);
-          const dateB = toDateSafe(b.jmcDate);
-          if (!dateA || !dateB) return 0;
-          return dateA.getTime() - dateB.getTime();
+      )
+      .sort((a, b) => {
+        const dateA = toDateSafe(a.jmcDate);
+        const dateB = toDateSafe(b.jmcDate);
+        if (!dateA || !dateB) return 0;
+        return dateA.getTime() - dateB.getTime();
       });
 
     const totalExecutedQty = relevantJmcItems.reduce(

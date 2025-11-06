@@ -119,7 +119,7 @@ export const permissionModules = {
     'View Module': [],
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
-    'MVAC': ['View', 'Create', 'View Log', 'View Settings', 'Edit Settings'],
+    'MVAC': ['View', 'Create Work Order', 'Create MVAC Entry', 'View Log', 'Delete MVAC', 'View Certified MVAC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'Billing': ['View', 'Create Bill', 'View Log'],
   },
   'Subcontractors Management': {
