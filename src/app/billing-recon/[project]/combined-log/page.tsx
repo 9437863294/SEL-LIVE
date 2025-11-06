@@ -51,6 +51,7 @@ export default function CombinedLogPage() {
 
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -113,10 +114,11 @@ export default function CombinedLogPage() {
         const entryDate = new Date(date);
         const yearMatch = yearFilter === 'all' || getYear(entryDate).toString() === yearFilter;
         const monthMatch = monthFilter === 'all' || entryDate.getMonth().toString() === monthFilter;
+        const typeMatch = typeFilter === 'all' || entry.type === typeFilter;
 
-        return yearMatch && monthMatch;
+        return yearMatch && monthMatch && typeMatch;
     });
-  }, [log, yearFilter, monthFilter]);
+  }, [log, yearFilter, monthFilter, typeFilter]);
 
   const handleViewDetails = (entry: CombinedLogEntry) => {
     if (entry.type === 'JMC') {
@@ -178,7 +180,15 @@ export default function CombinedLogPage() {
                         {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
                     </SelectContent>
                 </Select>
-                 <Button variant="secondary" onClick={() => { setYearFilter('all'); setMonthFilter('all'); }}>Clear Filters</Button>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Types" /></SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="JMC">JMC</SelectItem>
+                      <SelectItem value="MVAC">MVAC</SelectItem>
+                  </SelectContent>
+                </Select>
+                 <Button variant="secondary" onClick={() => { setYearFilter('all'); setMonthFilter('all'); setTypeFilter('all'); }}>Clear Filters</Button>
             </div>
           </CardHeader>
           <CardContent className="p-0">
