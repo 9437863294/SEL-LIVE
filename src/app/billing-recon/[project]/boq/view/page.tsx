@@ -878,7 +878,6 @@ export default function ViewBoqPage() {
         item={selectedBoqItem}
         mvacItems={allMvacItems}
       />
-
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -913,5 +912,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-```

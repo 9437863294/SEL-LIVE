@@ -77,8 +77,8 @@ export default function BoqItemDetailsDialog({
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
-  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>(initialJmcEntries);
-  const [bills, setBills] = useState<Bill[]>(initialBills);
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -139,9 +139,9 @@ export default function BoqItemDetailsDialog({
     const description = item['Description'] || item['Item Spec'];
     const boqQty = Number(item['Total Qty'] || item['qty'] || item['QTY'] || 0);
 
-    const relevantJmcItems = jmcEntries
+    const relevantJmcItems = (jmcEntries || [])
       .flatMap((entry) =>
-        entry.items
+        (entry.items || [])
           .filter((jmcItem) => {
             const jmcSlNo = String(jmcItem.boqSlNo || '').trim();
             return jmcSlNo === boqSlNo;
@@ -168,14 +168,13 @@ export default function BoqItemDetailsDialog({
       (sum, jmcItem) => sum + Number(jmcItem.certifiedQty || 0),
       0,
     );
+    
+    const relevantMvacEntries = (mvacEntries || [])
+      .filter((entry) => (entry.items || []).some(mvacItem => String(mvacItem.boqSlNo || '').trim() === boqSlNo));
 
-    const relevantMvacEntries = mvacEntries
-      .filter((entry) => entry.items.some(mvacItem => String(mvacItem.boqSlNo || '').trim() === boqSlNo));
-
-
-    const relevantBillItems = bills
+    const relevantBillItems = (bills || [])
       .flatMap((bill) =>
-        bill.items
+        (bill.items || [])
           .filter((billItem) => {
             const billSlNo = String(billItem.boqSlNo || '').trim();
             return billSlNo === boqSlNo;
@@ -213,10 +212,11 @@ export default function BoqItemDetailsDialog({
       totalExecutedQty,
       totalCertifiedQty,
       relevantMvacEntries,
+      relevantMvacItems: (mvacEntries || []).flatMap(e => e.items).filter(mi => mi.boqSlNo === boqSlNo),
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, bills, mvacEntries]); 
+  }, [item, jmcEntries, bills, mvacEntries]);
 
   const formatDateSafe = (dateInput: any) => {
     if (!dateInput) return 'N/A';
@@ -249,6 +249,7 @@ export default function BoqItemDetailsDialog({
     totalExecutedQty,
     totalCertifiedQty,
     relevantMvacEntries,
+    relevantMvacItems,
     relevantBillItems,
     totalBilledQty,
   } = data;
@@ -277,8 +278,8 @@ export default function BoqItemDetailsDialog({
                 <TableHeader>
                   <TableRow>
                     <TableHead>BOQ Quantity</TableHead>
-                    <TableHead>JMC Executed Qty</TableHead>
-                    <TableHead>JMC Certified Qty</TableHead>
+                    <TableHead>JMC/MVAC Executed Qty</TableHead>
+                    <TableHead>JMC/MVAC Certified Qty</TableHead>
                     <TableHead>Billed Qty</TableHead>
                     <TableHead>Balance Qty</TableHead>
                   </TableRow>
