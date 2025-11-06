@@ -14,13 +14,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill, MvacEntry, Project } from '@/lib/types';
+import type { BoqItem, JmcEntry, Bill, MvacEntry, MvacItem, Project } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
 import { Eye, Maximize, Minimize, Loader2 } from 'lucide-react';
-import { Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
+import { Timestamp, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -32,6 +32,10 @@ interface BoqItemDetailsDialogProps {
   item: BoqItem | null;
 }
 
+type MvacItemWithParent = MvacItem & {
+    mvacEntry: MvacEntry;
+};
+
 /* ---------- Lightweight row types to avoid implicit any ---------- */
 type JmcRow = {
   jmcNo?: string;
@@ -42,9 +46,6 @@ type JmcRow = {
   runningCertified?: number;
 };
 
-type MvacItemWithParent = MvacEntry['items'][0] & {
-    mvacEntry: MvacEntry;
-};
 
 type BillRow = {
   billNo?: string;
@@ -165,6 +166,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     const description = getItemDescription(item);
     const rawBoqQty = item['Total Qty'] ?? item['qty'] ?? item['QTY'] ?? 0;
     const boqQty = Number(String(rawBoqQty).replace(/[, ]/g, '')) || 0;
+    const scope2 = (item as any)['Scope 2'] as string | undefined;
 
     // JMC items for this BOQ
     const relevantJmcItems = jmcEntries
@@ -219,7 +221,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       boqSlNo,
       description,
       boqQty,
-      scope2: item['Scope 2'] as string | undefined,
+      scope2,
       jmcWithRunning,
       totalExecutedQty,
       totalCertifiedQty,
@@ -302,7 +304,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
                 <Separator />
 
                 {/* JMC Breakdown (Civil) */}
-                {(scope2 === 'Civil' || (!scope2 && jmcWithRunning?.length > 0)) && (
+                {scope2 === 'Civil' && (
                   <section>
                     <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
                     <div className="border rounded-md">
@@ -350,7 +352,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
                 )}
 
                 {/* MVAC Details (Supply) */}
-                {(scope2 === 'Supply' || (!scope2 && relevantMvacItems?.length > 0)) && (
+                {scope2 === 'Supply' && (
                   <section>
                     <h3 className="text-lg font-semibold mb-2 text-center">MVAC Details</h3>
                     <div className="border rounded-md">
@@ -450,3 +452,4 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     </Dialog>
   );
 }
+
