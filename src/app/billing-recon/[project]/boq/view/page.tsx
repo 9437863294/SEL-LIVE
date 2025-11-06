@@ -133,6 +133,7 @@ export default function ViewBoqPage() {
           'Unit',
           'QTY',
           'Unit Rate',
+          'JMC/MVAC Executed Qty',
           'JMC/MVAC Certified Qty',
           'JMC/MVAC Amount',
           'Total Amount',
