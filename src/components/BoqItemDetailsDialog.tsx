@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill, MvacItem } from '@/lib/types';
+import type { BoqItem, JmcEntry, Bill, MvacItem, Project } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -27,8 +27,10 @@ import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
 import { Eye, Maximize, Minimize } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
 
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
@@ -66,22 +68,58 @@ export default function BoqItemDetailsDialog({
   isOpen,
   onOpenChange,
   item,
-  jmcEntries,
-  bills,
-  mvacItems,
+  jmcEntries: initialJmcEntries,
+  bills: initialBills,
+  mvacItems: initialMvacItems,
   isPanel = false,
 }: BoqItemDetailsDialogProps) {
+  const { toast } = useToast();
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>(initialJmcEntries);
+  const [bills, setBills] = useState<Bill[]>(initialBills);
+  const [mvacItems, setMvacItems] = useState<MvacItem[]>(initialMvacItems);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  const toggleDialogSize = () => {
-    setDialogSize(current => {
-      if (current === 'xl') return '2xl';
-      if (current === '2xl') return 'full';
-      return 'xl';
-    });
-  };
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  const fetchProjectAndBoq = useCallback(async () => {
+    if (!item?.projectSlug) return;
+    setIsLoading(true);
+    try {
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === item.projectSlug);
+
+        if (projectData) {
+            const projectId = projectData.id;
+            const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
+            setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+
+            const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
+            setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+            
+            const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacItems'));
+            setMvacItems(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacItem)));
+        }
+    } catch (error) {
+        console.error("Error fetching related project data:", error);
+        toast({ title: 'Error', description: 'Failed to fetch related project data.', variant: 'destructive' });
+    }
+    setIsLoading(false);
+  }, [item?.projectSlug, toast]);
+
+  useEffect(() => {
+      if (isOpen && item) {
+          fetchProjectAndBoq();
+      }
+  }, [isOpen, item, fetchProjectAndBoq]);
+
 
   const handleViewJmc = (jmcNo: string) => {
     const jmc = jmcEntries.find(entry => entry.jmcNo === jmcNo);
@@ -191,7 +229,7 @@ export default function BoqItemDetailsDialog({
     }
   };
 
-  if (!item || !data) return null;
+  if (!isClient || !item || !data) return null;
 
   const {
     boqSlNo,
