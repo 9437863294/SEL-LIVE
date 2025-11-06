@@ -9,113 +9,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type {
-  BoqItem as BoqItemBase,
-  MvacEntry,
-  MvacItem,
-  WorkflowStep,
-  ActionLog,
-  Project,
-  SerialNumberConfig,
-} from '@/lib/types';
-import { BoqItemSelector } from '@/components/BoqItemSelector';
-import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import type { MvacEntry, MvacItem, BoqItem, WorkOrder, WorkOrderItem, JmcEntry, Project } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WorkOrderItemSelectorDialog } from '@/components/WorkOrderItemSelectorDialog';
 
-/* ---------- local types ---------- */
-type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
-
-const initialMvacDetails = {
-  mvacNo: '',
-  woNo: '',
-  mvacDate: new Date().toISOString().split('T')[0],
+const initialBillDetails = {
+    billNo: '',
+    billDate: new Date().toISOString().split('T')[0],
+    workOrderId: '',
 };
 
-const initialItem: MvacItem = {
-  boqSlNo: '',
-  description: '',
-  unit: '',
-  rate: 0,
-  executedQty: 0,
-  totalAmount: 0,
-};
-
-/* ---------- helpers ---------- */
-const normalizeKey = (obj: Record<string, unknown>, target: string) => {
-  const needle = target.toLowerCase().replace(/\s+|\./g, '');
-  return Object.keys(obj).find((k) => k.toLowerCase().replace(/\s+|\./g, '') === needle);
-};
-
-const num0 = (v: unknown): number => {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  if (typeof v === 'string') {
-    const n = Number(v.replace(/,/g, '').trim());
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
-};
-
-const slugify = (text: string) =>
-  (text || '')
-    .toString()
-    .toLowerCase()
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
-
-const compositeKey = (scope1: unknown, slNo: unknown) =>
-  `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
-
-/* ---------- field extractors ---------- */
-const extractSlNo = (boqItem: BoqItem): string => {
-  const slKey =
-    normalizeKey(boqItem as any, 'BOQ SL No') ??
-    normalizeKey(boqItem as any, 'BOQ SL NO') ??
-    normalizeKey(boqItem as any, 'SL. No.') ??
-    normalizeKey(boqItem as any, 'SL No') ??
-    normalizeKey(boqItem as any, 'SL');
-  return slKey ? String((boqItem as any)[slKey] ?? '') : '';
-};
-
-const extractScope1 = (boqItem: BoqItem): string => {
-  const key = normalizeKey(boqItem as any, 'Scope 1');
-  return key ? String((boqItem as any)[key] ?? '') : '';
-};
-
-const extractScope2 = (boqItem: BoqItem): string => {
-  const key = normalizeKey(boqItem as any, 'Scope 2');
-  return key ? String((boqItem as any)[key] ?? '') : '';
-};
-
-const extractErpSlNo = (boqItem: BoqItem): string => {
-  const key =
-    normalizeKey(boqItem as any, 'ERP SL NO') ??
-    normalizeKey(boqItem as any, 'ERP Sl No') ??
-    normalizeKey(boqItem as any, 'ERP SLNo');
-  return key ? String((boqItem as any)[key] ?? '') : '';
-};
-
-const valueOf = (obj: any, keys: string[]): any =>
-  keys.reduce<any>((acc, k) => (acc !== undefined ? acc : (obj ?? {})[k]), undefined);
-
-const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
-  const candidates = ['UNIT PRICE', 'Unit Rate', 'Rate', 'Basic Rate', 'UNIT RATE'];
-  for (const k of candidates) {
-    const key = normalizeKey(boqItem as any, k);
-    if (key) return key;
-  }
-  return Object.keys(boqItem).find((k) => k.toLowerCase().includes('rate') && !k.toLowerCase().includes('total'));
-};
+}
 
 export default function CreateMvacPage() {
   const { toast } = useToast();
@@ -123,260 +41,226 @@ export default function CreateMvacPage() {
   const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
 
-  const [details, setDetails] = useState(initialMvacDetails);
+  const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<MvacItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-
-  const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
-  const [isBoqLoading, setIsBoqLoading] = useState(true);
-  const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
-
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   
-  const [previewMvacNo, setPreviewMvacNo] = useState('Generating...');
-
-  const currentProject = useMemo(
-    () => allProjects.find((p) => p.id === selectedProjectId) || null,
-    [allProjects, selectedProjectId]
-  );
-
-  const boqItems = useMemo(() => {
-    if (!currentProject) return [];
-    return allBoqItems.filter((item) => (item as any).projectId === currentProject.id);
-  }, [allBoqItems, currentProject]);
-  
-  const jmcEntries: any[] = []; // Placeholder
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
   useEffect(() => {
-    const loadInitialData = async () => {
-      setIsBoqLoading(true);
-      try {
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const projectsData = projectsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
-        setAllProjects(projectsData);
+    const fetchWorkOrders = async () => {
+        if (!projectSlug) return;
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectSnap = await getDocs(projectsQuery);
+        
+        const project = projectSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+            .find(p => slugify(p.projectName) === projectSlug);
 
-        const initialProject = projectsData.find((p) => slugify(p.projectName) === projectSlug);
-        if (initialProject) {
-          setSelectedProjectId(initialProject.id);
-          setDetails((prev) => ({ ...prev, woNo: (initialProject as any).woNo || '' }));
+        if (!project) {
+            console.error("Project not found from slug:", projectSlug);
+            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+            return;
         }
-
-        const boqSnaps = await Promise.all(
-          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'boqItems')))
-        );
-       
-        const allBoq = boqSnaps.flatMap((snap, index) =>
-          snap.docs.map(
-            (d) =>
-              ({
-                ...(d.data() as object),
-                id: d.id,
-                projectId: projectsData[index].id,
-              } as BoqItem)
-          )
-        );
-        setAllBoqItems(allBoq);
-
-      } catch (e) {
-        console.error('Failed to load initial data:', e);
-        toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
-      } finally {
-        setIsBoqLoading(false);
-      }
+        const projectId = project.id;
+        
+        const woQuery = query(collection(db, 'projects', projectId, 'workOrders'));
+        const woSnap = await getDocs(woQuery);
+        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
     };
-    loadInitialData();
+    fetchWorkOrders();
   }, [projectSlug, toast]);
-
-  const totalCertifiedQtyMap = useMemo(() => {
-    return {};
-  }, [jmcEntries, selectedProjectId]);
+  
+  useEffect(() => {
+      const wo = workOrders.find(w => w.id === details.workOrderId);
+      setSelectedWorkOrder(wo || null);
+      setItems([]); // Reset items when WO changes
+  }, [details.workOrderId, workOrders]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setDetails((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleBoqSelect = (index: number, boqItem: BoqItem | null) => {
-    const newItems = [...items];
-    if (boqItem) {
-      const rateKey = findBasicPriceKey(boqItem);
-      const rate = num0(rateKey ? (boqItem as any)[rateKey] : 0);
-      const sl = extractSlNo(boqItem);
-
-      newItems[index] = {
-        ...initialItem,
-        boqSlNo: sl,
-        description: String(valueOf(boqItem, ['Description', 'description', 'Item Description']) ?? ''),
-        unit: valueOf(boqItem, ['Unit', 'UNIT', 'UOM']) ?? '',
-        rate,
-      };
-    } else {
-      newItems[index] = initialItem;
-    }
-    setItems(newItems);
+    setDetails(prev => ({ ...prev, [name]: value }));
   };
   
-  const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    const newItems = [...items];
-    const it = { ...newItems[index], [name]: value };
+  const handleItemChange = (index: number, field: 'executedQty', value: string) => {
+      const newItems = [...items];
+      const item = newItems[index];
+      const executedQty = parseFloat(value);
+      
+      if(isNaN(executedQty) || executedQty < 0) {
+        item.executedQty = 0;
+        item.totalAmount = 0;
+      } else {
+          item.executedQty = executedQty;
+      }
+      
+      const rate = item.rate;
+      if(!isNaN(rate) && item.executedQty) {
+          item.totalAmount = item.executedQty * rate;
+      } else {
+          item.totalAmount = 0;
+      }
 
-    if (name === 'executedQty') {
-      const q = Math.max(0, num0(value));
-      it.executedQty = q;
-    }
-
-    const qty = num0(it.executedQty);
-    const rate = num0(it.rate);
-    it.totalAmount = qty * rate;
-
-    newItems[index] = it;
-    setItems(newItems);
+      newItems[index] = item;
+      setItems(newItems);
   };
   
-  const addItem = () => setItems((prev) => [...prev, initialItem]);
+  const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
+      const newBillItems: MvacItem[] = selectedWoItems.map(woItem => ({
+        boqSlNo: woItem.boqSlNo || '',
+        description: woItem.description,
+        unit: woItem.unit,
+        rate: woItem.rate,
+        executedQty: 0,
+        totalAmount: 0,
+      }));
+      setItems(prev => [...prev, ...newBillItems]);
+  }
+
   const removeItem = (index: number) => {
-    if (items.length > 1) {
-      setItems((prev) => prev.filter((_, i) => i !== index));
-    } else {
-      setItems([initialItem]);
-    }
+    setItems(items.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
-    router.push(`/subcontractors-management/${projectSlug}/mvac/log`);
+    if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
+        toast({ title: 'Missing Required Fields', description: 'Please fill in Bill No, select a Work Order, and add at least one item.', variant: 'destructive'});
+        return;
+    }
+    setIsSaving(true);
+    
+    try {
+        const totalAmount = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+        const billData = {
+            ...details,
+            workOrderNo: selectedWorkOrder.workOrderNo,
+            items,
+            totalAmount,
+            createdAt: serverTimestamp()
+        };
+        const projectId = selectedWorkOrder.projectId;
+        await addDoc(collection(db, 'projects', projectId, 'mvacEntries'), billData);
+        
+        toast({ title: 'MVAC Entry Created', description: 'The new MVAC entry has been successfully saved.' });
+        router.push(`/subcontractors-management/${projectSlug}/billing/log`);
+
+    } catch (error) {
+        console.error("Error creating bill: ", error);
+        toast({ title: 'Save Failed', description: 'An error occurred while saving the bill.', variant: 'destructive' });
+    } finally {
+        setIsSaving(false);
+    }
   };
+  
+  const formatCurrency = (amount: string | number) => {
+    const num = parseFloat(String(amount));
+    if(isNaN(num)) return amount;
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  }
 
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/mvac`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Create MVAC Entry</h1>
+              <Link href={`/subcontractors-management/${projectSlug}/mvac`}>
+                  <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
+              </Link>
+              <h1 className="text-2xl font-bold">Create New MVAC Entry</h1>
           </div>
           <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Entry
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Entry
           </Button>
         </div>
 
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>MVAC Details</CardTitle>
-            <CardDescription>Provide the main details for this Material/Vehicle Administration Certificate.</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>MVAC Details</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="project">Project</Label>
-                <Input id="project" value={currentProject?.projectName || ''} readOnly className="bg-muted"/>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                      <Label htmlFor="workOrderId">Work Order No</Label>
+                      <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
+                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                          <SelectContent>
+                              {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="billNo">MVAC No</Label>
+                      <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="billDate">MVAC Date</Label>
+                      <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
+                  </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="mvacNo">MVAC No</Label>
-                <Input id="mvacNo" name="mvacNo" value={previewMvacNo} readOnly className="font-semibold bg-muted/50" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="woNo">WO No</Label>
-                <Input
-                  id="woNo"
-                  name="woNo"
-                  value={details.woNo || '— not set —'}
-                  readOnly
-                  className="bg-muted/50 cursor-not-allowed"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mvacDate">MVAC Date</Label>
-                <Input id="mvacDate" name="mvacDate" type="date" value={details.mvacDate} onChange={handleDetailChange} />
-              </div>
-            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>MVAC Items</CardTitle>
-                <CardDescription>Add one or more items executed under this MVAC.</CardDescription>
+               <div className="flex items-center justify-between">
+                  <div>
+                      <CardTitle>MVAC Items</CardTitle>
+                      <CardDescription>Add items from the selected Work Order to this MVAC.</CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                      <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
+                  </Button>
               </div>
-            </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>BOQ Sl. No.</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Executed Qty</TableHead>
-                    <TableHead>Total Amount</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item, index) => (
-                    <TableRow key={index}>
-                        <TableCell>
-                            <BoqItemSelector
-                            boqItems={boqItems}
-                            selectedSlNo={item.boqSlNo}
-                            onSelect={(boq) => handleBoqSelect(index, boq)}
-                            isLoading={isBoqLoading}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger>
-                                <p className="truncate max-w-xs">{item.description}</p>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                <p className="max-w-md">{item.description}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                            </TooltipProvider>
-                        </TableCell>
-                        <TableCell>{item.unit}</TableCell>
-                        <TableCell>{item.rate}</TableCell>
-                        <TableCell>
-                            <Input
-                            name="executedQty"
-                            type="number"
-                            step="any"
-                            min={0}
-                            value={item.executedQty}
-                            onChange={(e) => handleItemChange(index, e)}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            {formatCurrency(item.totalAmount)}
-                        </TableCell>
-                        <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                        </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <Button variant="outline" onClick={addItem} className="mt-4">
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
+              <div className="overflow-x-auto">
+                  <Table>
+                      <TableHeader>
+                          <TableRow>
+                              <TableHead>BOQ Sl. No.</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead>Unit</TableHead>
+                              <TableHead>Rate</TableHead>
+                              <TableHead>Executed Qty</TableHead>
+                              <TableHead>Total Amount</TableHead>
+                              <TableHead>Action</TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {items.map((item, index) => (
+                              <TableRow key={item.boqSlNo}>
+                                  <TableCell>{item.boqSlNo}</TableCell>
+                                  <TableCell>{item.description}</TableCell>
+                                  <TableCell>{item.unit}</TableCell>
+                                  <TableCell>{formatCurrency(item.rate)}</TableCell>
+                                  <TableCell>
+                                      <Input 
+                                        type="number" 
+                                        value={item.executedQty}
+                                        onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
+                                      />
+                                  </TableCell>
+                                  <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                                  <TableCell>
+                                      <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                  </TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                  </Table>
+              </div>
           </CardContent>
         </Card>
       </div>
+      <WorkOrderItemSelectorDialog
+        isOpen={isSelectorOpen}
+        onOpenChange={setIsSelectorOpen}
+        onConfirm={handleItemsAdd}
+        workOrder={selectedWorkOrder}
+        alreadyAddedItems={items as any}
+      />
     </>
   );
 }
