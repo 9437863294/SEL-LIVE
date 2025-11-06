@@ -51,7 +51,13 @@ export default function ModuleDashboard() {
     }
     
     // All modules available based on permissions
-    const availableModuleNames = Object.keys(permissionModules).filter(moduleName => can('View Module', moduleName));
+    const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
+        const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+        if (typeof moduleConfig === 'object' && !Array.isArray(moduleConfig) && moduleConfig['View Module'] !== undefined) {
+             return can('View Module', moduleName);
+        }
+        return can('View Module', moduleName);
+    });
 
     const defaultModules = availableModuleNames.map((moduleName, index) => ({
       id: moduleName, // Use name as a consistent key
