@@ -534,6 +534,8 @@ export default function ViewBoqPage() {
       ? v
       : 'N/A';
   };
+  
+  const allMvacItems = useMemo(() => mvacEntries.flatMap(entry => entry.items), [mvacEntries]);
 
   const dialogFields: (keyof BoqItem)[] = [
     'Project Name',
@@ -900,7 +902,7 @@ export default function ViewBoqPage() {
         item={selectedBoqItem}
         jmcEntries={jmcEntries}
         bills={bills}
-        mvacItems={mvacEntries}
+        mvacItems={allMvacItems}
       />
       
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -932,3 +934,5 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
+```
