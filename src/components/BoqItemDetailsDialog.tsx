@@ -104,7 +104,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
-  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('2xl');
 
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -263,17 +263,15 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className={cn('sm:max-w-4xl', dialogSizeClass)}>
+          <DialogHeader className="text-center">
+            <DialogTitle>Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
+            <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
+          </DialogHeader>
         <ScrollArea className="max-h-[70vh] p-1 pr-4">
           {isLoading ? (
             <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
           ) : (
-            <div>
-              <DialogHeader className="text-center">
-                <DialogTitle className="text-xl">Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
-                <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-6 mt-6">
+            <div className="space-y-6 mt-6">
                 {/* Quantity Summary */}
                 <section>
                   <h3 className="text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
@@ -302,58 +300,56 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
                 </section>
 
                 <Separator />
-
-                {/* JMC Breakdown (Civil) */}
-                {scope2 === 'Civil' && (
-                  <section>
-                    <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
-                    <div className="border rounded-md">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-center">JMC No.</TableHead>
-                            <TableHead className="text-center">JMC Date</TableHead>
-                            <TableHead className="text-center">Executed Qty</TableHead>
-                            <TableHead className="text-center">Certified Qty</TableHead>
-                            <TableHead className="text-center">Cumulative Executed</TableHead>
-                            <TableHead className="text-center">Cumulative Certified</TableHead>
-                            <TableHead className="text-center">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {jmcWithRunning?.length ? (
-                            jmcWithRunning.map((j: JmcRow, idx: number) => (
-                              <TableRow key={`jmc-${j.jmcNo ?? '—'}-${idx}`}>
-                                <TableCell className="text-center">{j.jmcNo ?? '—'}</TableCell>
-                                <TableCell className="text-center">{formatDateSafe(j.jmcDate)}</TableCell>
-                                <TableCell className="text-center">{j.executedQty ?? 0}</TableCell>
-                                <TableCell className="text-center">{j.certifiedQty ?? 0}</TableCell>
-                                <TableCell className="text-center">{j.runningExecuted ?? 0}</TableCell>
-                                <TableCell className="text-center">{j.runningCertified ?? 0}</TableCell>
-                                <TableCell className="text-center">
-                                  <Button variant="ghost" size="sm" onClick={() => handleViewJmc(j.jmcNo || '')}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View
-                                  </Button>
+                
+                {(!scope2 || scope2.toLowerCase() === 'civil' || (jmcWithRunning && jmcWithRunning.length > 0)) && (
+                    <section>
+                      <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
+                      <div className="border rounded-md">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-center">JMC No.</TableHead>
+                              <TableHead className="text-center">JMC Date</TableHead>
+                              <TableHead className="text-center">Executed Qty</TableHead>
+                              <TableHead className="text-center">Certified Qty</TableHead>
+                              <TableHead className="text-center">Cumulative Executed</TableHead>
+                              <TableHead className="text-center">Cumulative Certified</TableHead>
+                              <TableHead className="text-center">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {jmcWithRunning?.length ? (
+                              jmcWithRunning.map((j: JmcRow, idx: number) => (
+                                <TableRow key={`jmc-${j.jmcNo ?? '—'}-${idx}`}>
+                                  <TableCell className="text-center">{j.jmcNo ?? '—'}</TableCell>
+                                  <TableCell className="text-center">{formatDateSafe(j.jmcDate)}</TableCell>
+                                  <TableCell className="text-center">{j.executedQty ?? 0}</TableCell>
+                                  <TableCell className="text-center">{j.certifiedQty ?? 0}</TableCell>
+                                  <TableCell className="text-center">{j.runningExecuted ?? 0}</TableCell>
+                                  <TableCell className="text-center">{j.runningCertified ?? 0}</TableCell>
+                                  <TableCell className="text-center">
+                                    <Button variant="ghost" size="sm" onClick={() => handleViewJmc(j.jmcNo || '')}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={7} className="text-center h-24">
+                                  No JMC entries found for this item.
                                 </TableCell>
                               </TableRow>
-                            ))
-                          ) : (
-                            <TableRow>
-                              <TableCell colSpan={7} className="text-center h-24">
-                                No JMC entries found for this item.
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </section>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </section>
                 )}
 
-                {/* MVAC Details (Supply) */}
-                {scope2 === 'Supply' && (
-                  <section>
+                {(!scope2 || scope2.toLowerCase() === 'supply' || (relevantMvacItems && relevantMvacItems.length > 0)) && (
+                   <section>
                     <h3 className="text-lg font-semibold mb-2 text-center">MVAC Details</h3>
                     <div className="border rounded-md">
                       <Table>
@@ -427,9 +423,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
                   </div>
                 </section>
               </div>
-            </div>
           )}
-          <Label className="sr-only">hidden</Label>
         </ScrollArea>
 
         <DialogFooter className="mt-4 pr-4 sm:justify-between">
@@ -452,4 +446,3 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     </Dialog>
   );
 }
-
