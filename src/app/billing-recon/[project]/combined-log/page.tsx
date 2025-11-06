@@ -1,18 +1,18 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where, doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear } from 'date-fns';
-import type { Bill, Project, JmcEntry, MvacEntry, JmcItem, MvacItem } from '@/lib/types';
+import type { Bill, Project, JmcEntry, MvacEntry, JmcItem, MvacItem, WorkflowStep, ActionLog } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
@@ -33,7 +33,32 @@ type CombinedLogEntry = (JmcEntry | MvacEntry) & {
   type: 'JMC' | 'MVAC';
   executedAmount: number;
   certifiedAmount: number;
+  stageDates: Record<string, string>;
 };
+
+const APPROVE_ACTIONS = new Set(['Approve', 'Complete', 'Verified']);
+
+const buildStageDates = (steps: WorkflowStep[], history: ActionLog[] = []) => {
+    const map: Record<string, string> = {};
+    for (const step of steps) {
+      const logsForStep = history.filter(
+        (h) => h.stepName === step.name && APPROVE_ACTIONS.has(h.action)
+      );
+      if (logsForStep.length) {
+        const latest = logsForStep.reduce((a, b) => {
+          const da = (a.timestamp as any)?.toDate?.() ?? new Date(0);
+          const db = (b.timestamp as any)?.toDate?.() ?? new Date(0);
+          return db > da ? b : a;
+        });
+        const d = (latest.timestamp as any)?.toDate?.();
+        map[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+      } else {
+        map[step.name] = '-';
+      }
+    }
+    return map;
+};
+
 
 export default function CombinedLogPage() {
   const { toast } = useToast();
@@ -41,6 +66,8 @@ export default function CombinedLogPage() {
   const projectSlug = params.project as string;
 
   const [log, setLog] = useState<CombinedLogEntry[]>([]);
+  const [jmcWorkflow, setJmcWorkflow] = useState<WorkflowStep[]>([]);
+  const [mvacWorkflow, setMvacWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
@@ -53,58 +80,82 @@ export default function CombinedLogPage() {
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      if (!projectSlug) return;
-      setIsLoading(true);
-      try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectSnap = await getDocs(projectsQuery);
-        
-        const project = projectSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+  const allWorkflowSteps = useMemo(() => {
+      const allSteps = new Map<string, WorkflowStep>();
+      [...jmcWorkflow, ...mvacWorkflow].forEach(step => {
+          if (!allSteps.has(step.name)) {
+              allSteps.set(step.name, step);
+          }
+      });
+      return Array.from(allSteps.values());
+  }, [jmcWorkflow, mvacWorkflow]);
 
-        if (!project) {
-            console.error("Project not found");
-            return;
-        }
-        const projectId = project.id;
 
-        const jmcQuery = query(collection(db, 'projects', projectId, 'jmcEntries'), orderBy('createdAt', 'desc'));
-        const mvacQuery = query(collection(db, 'projects', projectId, 'mvacEntries'), orderBy('createdAt', 'desc'));
-        
-        const [jmcSnapshot, mvacSnapshot] = await Promise.all([
-            getDocs(jmcQuery),
-            getDocs(mvacQuery),
-        ]);
-        
-        const jmcEntries = jmcSnapshot.docs.map(doc => {
-            const data = doc.data() as JmcEntry;
-            const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
-            const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
-            return { id: doc.id, type: 'JMC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
-        });
-        const mvacEntries = mvacSnapshot.docs.map(doc => {
-            const data = doc.data() as MvacEntry;
-            const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
-            const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
-            return { id: doc.id, type: 'MVAC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
-        });
-        
-        const combined = [...jmcEntries, ...mvacEntries];
-        combined.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-        
-        setLog(combined);
+  const fetchLogs = useCallback(async () => {
+    if (!projectSlug) return;
+    setIsLoading(true);
+    try {
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectSnap = await getDocs(projectsQuery);
+      
+      const project = projectSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+          .find(p => slugify(p.projectName) === projectSlug);
 
-      } catch (error) {
-        console.error("Error fetching logs: ", error);
-        toast({ title: 'Error', description: 'Failed to fetch combined log for this project.', variant: 'destructive' });
+      if (!project) {
+          console.error("Project not found");
+          return;
       }
-      setIsLoading(false);
-    };
-    fetchLogs();
+      const projectId = project.id;
+      
+      const [jmcWorkflowSnap, mvacWorkflowSnap] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'jmc-workflow')),
+          getDoc(doc(db, 'workflows', 'mvac-workflow'))
+      ]);
+
+      const jmcSteps = jmcWorkflowSnap.exists() ? (jmcWorkflowSnap.data().steps as WorkflowStep[]) : [];
+      const mvacSteps = mvacWorkflowSnap.exists() ? (mvacWorkflowSnap.data().steps as WorkflowStep[]) : [];
+      setJmcWorkflow(jmcSteps);
+      setMvacWorkflow(mvacSteps);
+
+      const jmcQuery = query(collection(db, 'projects', projectId, 'jmcEntries'), orderBy('createdAt', 'desc'));
+      const mvacQuery = query(collection(db, 'projects', projectId, 'mvacEntries'), orderBy('createdAt', 'desc'));
+      
+      const [jmcSnapshot, mvacSnapshot] = await Promise.all([
+          getDocs(jmcQuery),
+          getDocs(mvacQuery),
+      ]);
+      
+      const jmcEntries = jmcSnapshot.docs.map(doc => {
+          const data = doc.data() as JmcEntry;
+          const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
+          const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
+          const stageDates = buildStageDates(jmcSteps, data.history);
+          return { id: doc.id, type: 'JMC', ...data, executedAmount, certifiedAmount, stageDates } as CombinedLogEntry;
+      });
+      const mvacEntries = mvacSnapshot.docs.map(doc => {
+          const data = doc.data() as MvacEntry;
+          const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
+          const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
+          const stageDates = buildStageDates(mvacSteps, data.history);
+          return { id: doc.id, type: 'MVAC', ...data, executedAmount, certifiedAmount, stageDates } as CombinedLogEntry;
+      });
+      
+      const combined = [...jmcEntries, ...mvacEntries];
+      combined.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+      
+      setLog(combined);
+
+    } catch (error) {
+      console.error("Error fetching logs: ", error);
+      toast({ title: 'Error', description: 'Failed to fetch combined log for this project.', variant: 'destructive' });
+    }
+    setIsLoading(false);
   }, [projectSlug, toast]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
   
   const filteredLog = useMemo(() => {
     return log.filter(entry => {
@@ -191,17 +242,21 @@ export default function CombinedLogPage() {
                  <Button variant="secondary" onClick={() => { setYearFilter('all'); setMonthFilter('all'); setTypeFilter('all'); }}>Clear Filters</Button>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <Table>
+          <CardContent className="p-0 overflow-x-auto">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Type</TableHead>
                   <TableHead>Number</TableHead>
                   <TableHead>Date</TableHead>
+                  {allWorkflowSteps.map(step => (
+                      <TableHead key={step.id}>{step.name} Date</TableHead>
+                  ))}
                   <TableHead>No. of Items</TableHead>
                   <TableHead>Executed Amount</TableHead>
                   <TableHead>Certified Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Stage Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -209,14 +264,7 @@ export default function CombinedLogPage() {
                 {isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+                      <TableCell colSpan={9 + allWorkflowSteps.length}><Skeleton className="h-5 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredLog.length > 0 ? (
@@ -227,9 +275,13 @@ export default function CombinedLogPage() {
                       </TableCell>
                       <TableCell className="font-medium">{(entry as JmcEntry).jmcNo || (entry as MvacEntry).mvacNo}</TableCell>
                       <TableCell>{getDate(entry)}</TableCell>
+                      {allWorkflowSteps.map(step => (
+                        <TableCell key={step.id}>{entry.stageDates[step.name] || '-'}</TableCell>
+                      ))}
                       <TableCell>{entry.items.length}</TableCell>
                       <TableCell>{formatCurrency(entry.executedAmount)}</TableCell>
                       <TableCell>{formatCurrency(entry.certifiedAmount)}</TableCell>
+                      <TableCell>{entry.stage}</TableCell>
                       <TableCell>{entry.status}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => handleViewDetails(entry)}>
@@ -240,7 +292,7 @@ export default function CombinedLogPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={9 + allWorkflowSteps.length} className="text-center h-24">
                       No JMC or MVAC entries found for the selected period.
                     </TableCell>
                   </TableRow>
