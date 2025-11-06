@@ -632,7 +632,7 @@ export default function ViewBoqPage() {
                     <DialogTitle>Customize Columns</DialogTitle>
                     <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="max-h-[60vh]">
+                <ScrollArea className="h-[60vh]">
                     <div className="py-4 space-y-2 pr-6">
                         {columnOrder.map((header) => (
                             <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
@@ -888,33 +888,28 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
-        mvacItems={allMvacItems}
+        allMvacItems={allMvacItems}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit BOQ Item</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-            {editingItem &&
-              dialogFields.map((key) => (
-                <div className="space-y-1" key={key}>
-                  <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                  <Input
-                    id={`edit-${String(key)}`}
-                    name={String(key)}
-                    value={(editingItem[key] as any) ?? ''}
-                    onChange={handleEditFormChange}
-                    readOnly={key === 'Project Name'}
-                  />
-                </div>
+              {editingItem && dialogFields.map((key) => (
+                  <div className="space-y-1" key={key}>
+                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
+                      <Input
+                          id={`edit-${String(key)}`}
+                          name={String(key)}
+                          value={(editingItem as any)[key] ?? ''}
+                          onChange={handleEditFormChange}
+                          readOnly={key === 'Project Name'}
+                      />
+                  </div>
               ))}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveChanges} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save Changes
@@ -925,4 +920,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
