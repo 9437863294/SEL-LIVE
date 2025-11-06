@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -41,7 +42,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
+import { UpdateMvacCertifiedQtyDialog } from '@/components/UpdateMvacCertifiedQtyDialog';
 
 /* -------- helpers -------- */
 function formatINR(n?: number) {
@@ -245,7 +246,7 @@ export default function StagePage() {
     setIsActionLoading(taskId);
 
     try {
-      const taskRef = doc(db, 'projects', projectId, 'MvacEntries', taskId);
+      const taskRef = doc(db, 'projects', projectId, 'mvacEntries', taskId);
 
       await runTransaction(db, async (tx) => {
         const preSnap = await tx.get(taskRef);
@@ -481,7 +482,7 @@ export default function StagePage() {
       <ViewMvacEntryDialog
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
-        MvacEntry={selectedMvac}
+        mvacEntry={selectedMvac}
         boqItems={boqItems}
         bills={bills}
         isEditMode={isVerifyOpen}
@@ -490,7 +491,7 @@ export default function StagePage() {
       />
 
       {selectedMvac && (
-        <UpdateCertifiedQtyDialog
+        <UpdateMvacCertifiedQtyDialog
           isOpen={isUpdateQtyOpen}
           onOpenChange={setIsUpdateQtyOpen}
           mvacEntry={selectedMvac}
