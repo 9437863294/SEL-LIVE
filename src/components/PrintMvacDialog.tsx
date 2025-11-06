@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -8,11 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { MvacEntry, MvacItem, Project, Signature } from '@/lib/types';
 import { format } from 'date-fns';
-import { Printer, Maximize, Minimize } from 'lucide-react';
+import { Printer, Maximize, Minimize, FileDown } from 'lucide-react';
 import Image from 'next/image';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
+
 
 /* ---------- Helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -168,6 +171,79 @@ export default function PrintmvacDialog({
   };
   const getDisplayValue = (v: number | undefined) => (v === 0 ? 0 : v ?? '');
 
+  const handleExport = () => {
+    const header = [
+        ['', 'SIDDHARTHA ENGINEERING LIMITED', ''],
+        ['', 'ELECTRICAL ENGINEERS, CONTRACTORS (EHV) & CONSULTANTS', ''],
+        ['', 'PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)', ''],
+        ['', 'Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915', ''],
+        ['', 'E-mail: sel.techhead@gmail.com', ''],
+    ];
+    
+    const titleRow = [title];
+    const detailsRows = [
+        [`MVAC No.: ${workDetails.mvacNo}`, `DATE: ${workDetails.mvacDate}`],
+        [`Order No. ${workDetails.orderNo}`],
+        [`Name of the project:- ${workDetails.projectName}`],
+        [`Project Site : ${workDetails.projectSite}`],
+    ];
+
+    const tableHeader = [
+        'SL. NO.', 
+        'Description of Items', 
+        'Unit', 
+        'BOQ Qty',
+        'Up to Previous',
+        'In this MVAC',
+        'Up to date'
+    ];
+    
+    const tableData = enrichedItems.map(item => [
+        item.boqSlNo ?? '-',
+        item.description ?? '-',
+        item.unit ?? '-',
+        getDisplayValue(item.boqQty),
+        getDisplayValue(item.previousCertifiedQty),
+        getDisplayValue(item.executedQty),
+        getDisplayValue(calculateUpToDateQty(item)),
+    ]);
+
+    const signatureRow = (project?.signatures || []).map(sig => `${sig.designation}\n${sig.name}`);
+
+    const ws_data = [
+        ...header,
+        [], // Empty row
+        titleRow,
+        [],
+        ...detailsRows,
+        [],
+        tableHeader,
+        ...tableData,
+        [], [], [], // spacing for signatures
+        signatureRow
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+    // Merging cells for headers
+    ws['!merges'] = [
+      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
+      { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
+      { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
+      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } },
+      { s: { r: 4, c: 1 }, e: { r: 4, c: 2 } },
+      { s: { r: 6, c: 0 }, e: { r: 6, c: 6 } }, // Title
+      { s: { r: 8, c: 0 }, e: { r: 8, c: 3 } }, // MVAC No & Date
+      { s: { r: 9, c: 0 }, e: { r: 9, c: 6 } }, // Order No
+      { s: { r: 10, c: 0 }, e: { r: 10, c: 6 } }, // Project Name
+      { s: { r: 11, c: 0 }, e: { r: 11, c: 6 } }, // Project Site
+    ];
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'MVAC Report');
+    XLSX.writeFile(wb, `MVAC_${workDetails.mvacNo}.xlsx`);
+  };
+
   const dialogWidthClass =
     dialogSize === 'full'
       ? 'sm:max-w-[95vw]'
@@ -302,6 +378,9 @@ export default function PrintmvacDialog({
             </Button>
           </div>
           <div>
+            <Button variant="secondary" onClick={handleExport} className="ml-2">
+                <FileDown className="mr-2 h-4 w-4" /> Export to Excel
+            </Button>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
             </DialogClose>
