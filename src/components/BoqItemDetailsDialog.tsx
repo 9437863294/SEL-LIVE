@@ -94,8 +94,18 @@ const getBoqSlNo = (item: any): string =>
 
 const getItemDescription = (item: any): string =>
   String(item?.Description ?? item?.description ?? item?.['Item Spec'] ?? '').trim();
+  
+const getScope2 = (x: any): string | undefined => {
+  if (!x) return undefined;
+  const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  const v = k ? x[k] : undefined;
+  return typeof v === 'string' ? v.trim() : undefined;
+};
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+const compositeKey = (scope2: unknown, slNo: unknown) =>
+  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 /* ---------- Component ---------- */
 
@@ -166,24 +176,25 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     const description = getItemDescription(item);
     const rawBoqQty = item['Total Qty'] ?? item['qty'] ?? item['QTY'] ?? 0;
     const boqQty = Number(String(rawBoqQty).replace(/[, ]/g, '')) || 0;
-    const scope2 = (item as any)['Scope 2'] as string | undefined;
+    const scope2 = getScope2(item);
+    const currentItemKey = compositeKey(scope2, boqSlNo);
 
-    // JMC items for this BOQ
-    const relevantJmcItems = jmcEntries
-        .flatMap((entry) =>
-          (entry.items || [])
-            .filter((jmcItem) => getBoqSlNo(jmcItem) === boqSlNo)
-            .map((jmcItem) => ({ ...jmcItem, jmcNo: entry.jmcNo, jmcDate: entry.jmcDate }))
-        )
-        .sort((a, b) => {
-          const A = toDateSafe(a.jmcDate)?.getTime() ?? 0;
-          const B = toDateSafe(b.jmcDate)?.getTime() ?? 0;
-          return A - B;
-        });
+    // JMC items for this BOQ item (matching by composite key)
+    const relevantJmcItems = (jmcEntries || [])
+      .flatMap((entry) =>
+        (entry.items || [])
+          .filter((jmcItem) => compositeKey(getScope2(jmcItem), getBoqSlNo(jmcItem)) === currentItemKey)
+          .map((jmcItem) => ({ ...jmcItem, jmcNo: entry.jmcNo, jmcDate: entry.jmcDate }))
+      )
+      .sort((a, b) => {
+        const A = toDateSafe(a.jmcDate)?.getTime() ?? 0;
+        const B = toDateSafe(b.jmcDate)?.getTime() ?? 0;
+        return A - B;
+      });
 
-    // MVAC items for this BOQ
-    const relevantMvacItems = mvacItems
-        .filter((m) => getBoqSlNo(m) === boqSlNo);
+    // MVAC items for this BOQ item
+    const relevantMvacItems = (mvacItems || [])
+      .filter((m) => compositeKey(getScope2(m), getBoqSlNo(m)) === currentItemKey);
 
     // Totals
     const totalJmcExecutedQty = relevantJmcItems.reduce((s, r) => s + Number((r as any).executedQty || 0), 0);
@@ -207,11 +218,11 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       } as JmcRow;
     });
 
-    // Bills for this BOQ
+    // Bills for this BOQ item
     const relevantBillItems: BillRow[] =
-      bills?.flatMap((bill) =>
+      (bills || []).flatMap((bill) =>
         (bill.items || [])
-          .filter((b) => getBoqSlNo(b) === boqSlNo)
+          .filter((b) => compositeKey(getScope2(b), getBoqSlNo(b)) === currentItemKey)
           .map((b) => ({ ...(b as any), billNo: bill.billNo, billDate: bill.billDate }))
       ) ?? [];
 
@@ -231,6 +242,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     };
   }, [item, jmcEntries, mvacItems, bills]);
 
+
   const handleViewJmc = (jmcNo: string) => {
     const jmc = jmcEntries.find((e) => e.jmcNo === jmcNo);
     if (jmc) {
@@ -238,9 +250,13 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       setIsJmcViewOpen(true);
     }
   };
-
+  
   const toggleDialogSize = () => {
-    setDialogSize((cur) => (cur === 'xl' ? '2xl' : cur === '2xl' ? 'full' : 'xl'));
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
   };
 
   if (!item) return null;
@@ -262,17 +278,16 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('sm:max-w-4xl', dialogSizeClass)}>
-          <DialogHeader className="text-center">
+      <DialogContent className={cn('max-h-[90vh] flex flex-col min-h-0', dialogSizeClass)}>
+        <DialogHeader className="text-center">
             <DialogTitle>Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
             <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
-          </DialogHeader>
+        </DialogHeader>
         <ScrollArea className="max-h-[70vh] p-1 pr-4">
           {isLoading ? (
             <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
           ) : (
             <div className="space-y-6 mt-6">
-                {/* Quantity Summary */}
                 <section>
                   <h3 className="text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
                   <div className="border rounded-md">
@@ -301,7 +316,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
                 <Separator />
                 
-                {(!scope2 || scope2.toLowerCase() === 'civil' || (jmcWithRunning && jmcWithRunning.length > 0)) && (
+                {(!scope2 || scope2.toLowerCase() === 'civil') && (
                     <section>
                       <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
                       <div className="border rounded-md">
@@ -348,7 +363,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
                     </section>
                 )}
 
-                {(!scope2 || scope2.toLowerCase() === 'supply' || (relevantMvacItems && relevantMvacItems.length > 0)) && (
+                {(!scope2 || scope2.toLowerCase() === 'supply') && (
                    <section>
                     <h3 className="text-lg font-semibold mb-2 text-center">MVAC Details</h3>
                     <div className="border rounded-md">
@@ -388,7 +403,6 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
                 <Separator />
 
-                {/* Billing Breakdown */}
                 <section>
                   <h3 className="text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
                   <div className="border rounded-md">
