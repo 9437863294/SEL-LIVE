@@ -204,7 +204,7 @@ export default function ProjectDashboardPage() {
         text: 'Combined Log',
         href: `/billing-recon/${projectSlugParam}/combined-log`,
         description: 'View JMC & MVAC entries together.',
-        disabled: !safeCan('View Combined Log', 'Billing Recon'),
+        disabled: !can('View', 'Billing Recon.Combined Log'),
       },
       {
         icon: Calculator,
@@ -235,7 +235,7 @@ export default function ProjectDashboardPage() {
         disabled: true,
       },
     ],
-    [projectSlugParam, safeCan]
+    [projectSlugParam, safeCan, can]
   );
 
   if (isLoading || isAuthLoading) {
@@ -291,7 +291,7 @@ export default function ProjectDashboardPage() {
         <div className="flex items-center gap-2">
           <FolderOpen className="h-5 w-5 text-muted-foreground" />
           <Select value={selectedValue} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-[260px]">
               <SelectValue placeholder="Select Project" />
             </SelectTrigger>
             <SelectContent>
