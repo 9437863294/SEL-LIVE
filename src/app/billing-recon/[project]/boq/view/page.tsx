@@ -889,15 +889,13 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
-        jmcEntries={jmcEntries}
-        bills={bills}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-              {editingItem && dialogFields.map((key) => (
+              {editingItem && dialogFields.map((key: keyof BoqItem) => (
                   <div className="space-y-1" key={key}>
                       <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
                       <Input
