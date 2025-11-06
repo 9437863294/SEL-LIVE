@@ -5,30 +5,35 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
-import type { Bill, Project, JmcEntry, MvacEntry } from '@/lib/types';
+import { format, getYear } from 'date-fns';
+import type { Bill, Project, JmcEntry, MvacEntry, JmcItem, MvacItem } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
 import ViewMvacEntryDialog from '@/components/ViewMvacEntryDialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
+    .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
 
-type CombinedLogEntry = (JmcEntry | MvacEntry) & { type: 'JMC' | 'MVAC' };
+type CombinedLogEntry = (JmcEntry | MvacEntry) & { 
+  type: 'JMC' | 'MVAC';
+  executedAmount: number;
+  certifiedAmount: number;
+};
 
 export default function CombinedLogPage() {
   const { toast } = useToast();
@@ -43,6 +48,9 @@ export default function CombinedLogPage() {
   
   const [selectedMvac, setSelectedMvac] = useState<MvacEntry | null>(null);
   const [isMvacViewOpen, setIsMvacViewOpen] = useState(false);
+
+  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -70,8 +78,18 @@ export default function CombinedLogPage() {
             getDocs(mvacQuery),
         ]);
         
-        const jmcEntries = jmcSnapshot.docs.map(doc => ({ id: doc.id, type: 'JMC', ...doc.data() } as CombinedLogEntry));
-        const mvacEntries = mvacSnapshot.docs.map(doc => ({ id: doc.id, type: 'MVAC', ...doc.data() } as CombinedLogEntry));
+        const jmcEntries = jmcSnapshot.docs.map(doc => {
+            const data = doc.data() as JmcEntry;
+            const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
+            const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
+            return { id: doc.id, type: 'JMC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
+        });
+        const mvacEntries = mvacSnapshot.docs.map(doc => {
+            const data = doc.data() as MvacEntry;
+            const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
+            const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
+            return { id: doc.id, type: 'MVAC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
+        });
         
         const combined = [...jmcEntries, ...mvacEntries];
         combined.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
@@ -87,6 +105,19 @@ export default function CombinedLogPage() {
     fetchLogs();
   }, [projectSlug, toast]);
   
+  const filteredLog = useMemo(() => {
+    return log.filter(entry => {
+        const date = entry.type === 'JMC' ? (entry as JmcEntry).jmcDate : (entry as MvacEntry).mvacDate;
+        if (!date) return false;
+        
+        const entryDate = new Date(date);
+        const yearMatch = yearFilter === 'all' || getYear(entryDate).toString() === yearFilter;
+        const monthMatch = monthFilter === 'all' || entryDate.getMonth().toString() === monthFilter;
+
+        return yearMatch && monthMatch;
+    });
+  }, [log, yearFilter, monthFilter]);
+
   const handleViewDetails = (entry: CombinedLogEntry) => {
     if (entry.type === 'JMC') {
         setSelectedJmc(entry as JmcEntry);
@@ -101,10 +132,6 @@ export default function CombinedLogPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
 
-  const getTotalAmount = (entry: CombinedLogEntry) => {
-    return entry.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0);
-  }
-
   const getDate = (entry: CombinedLogEntry) => {
     const date = (entry as JmcEntry).jmcDate || (entry as MvacEntry).mvacDate;
     if (!date) return 'N/A';
@@ -114,6 +141,12 @@ export default function CombinedLogPage() {
         return 'Invalid Date';
     }
   }
+
+  const yearOptions = useMemo(() => Array.from(new Set(log.map(l => getYear(new Date(l.type === 'JMC' ? (l as JmcEntry).jmcDate : (l as MvacEntry).mvacDate)))))
+    .sort((a,b) => b - a), [log]);
+  
+  const monthOptions = Array.from({length: 12}, (_, i) => ({ label: format(new Date(0, i), 'MMMM'), value: i.toString() }));
+
 
   return (
     <>
@@ -129,6 +162,25 @@ export default function CombinedLogPage() {
           </div>
         </div>
         <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center gap-4">
+               <Select value={yearFilter} onValueChange={setYearFilter}>
+                    <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Years" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        {yearOptions.map(year => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                <Select value={monthFilter} onValueChange={setMonthFilter}>
+                    <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Months" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        {monthOptions.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                 <Button variant="secondary" onClick={() => { setYearFilter('all'); setMonthFilter('all'); }}>Clear Filters</Button>
+            </div>
+          </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
@@ -137,7 +189,8 @@ export default function CombinedLogPage() {
                   <TableHead>Number</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>No. of Items</TableHead>
-                  <TableHead>Total Amount</TableHead>
+                  <TableHead>Executed Amount</TableHead>
+                  <TableHead>Certified Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -151,12 +204,13 @@ export default function CombinedLogPage() {
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-20" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                     </TableRow>
                   ))
-                ) : log.length > 0 ? (
-                  log.map((entry) => (
+                ) : filteredLog.length > 0 ? (
+                  filteredLog.map((entry) => (
                     <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                       <TableCell>
                         <Badge variant={entry.type === 'JMC' ? 'default' : 'secondary'}>{entry.type}</Badge>
@@ -164,7 +218,8 @@ export default function CombinedLogPage() {
                       <TableCell className="font-medium">{(entry as JmcEntry).jmcNo || (entry as MvacEntry).mvacNo}</TableCell>
                       <TableCell>{getDate(entry)}</TableCell>
                       <TableCell>{entry.items.length}</TableCell>
-                      <TableCell>{formatCurrency(getTotalAmount(entry))}</TableCell>
+                      <TableCell>{formatCurrency(entry.executedAmount)}</TableCell>
+                      <TableCell>{formatCurrency(entry.certifiedAmount)}</TableCell>
                       <TableCell>{entry.status}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => handleViewDetails(entry)}>
@@ -175,8 +230,8 @@ export default function CombinedLogPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">
-                      No JMC or MVAC entries found.
+                    <TableCell colSpan={8} className="text-center h-24">
+                      No JMC or MVAC entries found for the selected period.
                     </TableCell>
                   </TableRow>
                 )}
