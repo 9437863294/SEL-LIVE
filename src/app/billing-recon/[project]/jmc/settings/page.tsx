@@ -1,8 +1,20 @@
+
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, GitMerge, ShieldAlert, Hash } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import {
+  ArrowLeft,
+  GitMerge,
+  ShieldAlert,
+  Hash,
+} from 'lucide-react';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,13 +50,6 @@ const settingsItemsBase: SettingsBaseItem[] = [
     description: 'Set up approval workflows for JMC entries.',
     href: 'settings/workflow-configuration',
     permission: 'View Settings',
-  },
-  {
-    icon: Hash,
-    text: 'Serial Number Configuration',
-    description: 'Configure serial numbers for JMC entries.',
-    href: '#', // To be implemented
-    permission: 'Edit Serial Nos',
   },
 ];
 
