@@ -146,7 +146,7 @@ export default function BoqItemDetailsDialog({
   };
 
   const data = useMemo(() => {
-    if (!item) return null;
+    if (!item || !jmcEntries || !bills || !mvacEntries) return null;
 
     const boqSlNo = getBoqSlNo(item);
     
@@ -155,7 +155,7 @@ export default function BoqItemDetailsDialog({
     const description = getItemDescription(item);
     const boqQty = Number(item['Total Qty'] || item['qty'] || item['QTY'] || 0);
 
-    const relevantJmcItems = (jmcEntries || [])
+    const relevantJmcItems = jmcEntries
       .flatMap((entry) =>
         (entry.items || [])
           .filter((jmcItem) => getBoqSlNo(jmcItem) === boqSlNo)
@@ -167,10 +167,7 @@ export default function BoqItemDetailsDialog({
         return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
       });
       
-    const relevantMvacEntries = (mvacEntries || [])
-      .filter((entry) => (entry.items || []).some(mvacItem => getBoqSlNo(mvacItem) === boqSlNo));
-      
-    const allMvacItemsForBoq = relevantMvacEntries.flatMap(entry => entry.items.filter(mvacItem => getBoqSlNo(mvacItem) === boqSlNo));
+    const allMvacItemsForBoq = mvacEntries.flatMap(entry => (entry.items || []).filter(mvacItem => getBoqSlNo(mvacItem) === boqSlNo).map(mvacItem => ({...mvacItem, mvacEntry: entry})));
 
     const totalJmcExecutedQty = relevantJmcItems.reduce((sum, jmcItem) => sum + Number(jmcItem.executedQty || 0), 0);
     const totalMvacExecutedQty = allMvacItemsForBoq.reduce((sum, mvacItem) => sum + Number(mvacItem.executedQty || 0), 0);
@@ -180,7 +177,7 @@ export default function BoqItemDetailsDialog({
     const totalMvacCertifiedQty = allMvacItemsForBoq.reduce((sum, mvacItem) => sum + Number(mvacItem.certifiedQty || 0), 0);
     const totalCertifiedQty = totalJmcCertifiedQty + totalMvacCertifiedQty;
     
-    const relevantBillItems = (bills || [])
+    const relevantBillItems = bills
       .flatMap((bill) =>
         (bill.items || [])
           .filter((billItem) => getBoqSlNo(billItem) === boqSlNo)
@@ -202,7 +199,7 @@ export default function BoqItemDetailsDialog({
       scope2: item['Scope 2'],
       relevantJmcItems: jmcItemsWithRunningTotals,
       totalExecutedQty, totalCertifiedQty,
-      relevantMvacEntries,
+      relevantMvacItems: allMvacItemsForBoq,
       relevantBillItems, totalBilledQty,
     };
   }, [item, jmcEntries, bills, mvacEntries]);
@@ -216,7 +213,7 @@ export default function BoqItemDetailsDialog({
   const {
     boqSlNo, description, boqQty, scope2,
     relevantJmcItems, totalExecutedQty, totalCertifiedQty,
-    relevantMvacEntries, relevantBillItems, totalBilledQty,
+    relevantMvacItems, relevantBillItems, totalBilledQty,
   } = data || {};
 
   const content = (
@@ -224,18 +221,11 @@ export default function BoqItemDetailsDialog({
       {isLoading ? (
           <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
       ) : (
-        <div className={isPanel ? 'p-4' : ''}>
-          {isPanel ? (
-            <div>
-              <h3 className="text-lg font-semibold">Item Breakdown: Sl. No. {boqSlNo}</h3>
-              <p className="text-sm text-muted-foreground">{description}</p>
-            </div>
-          ) : (
+        <div>
             <DialogHeader>
               <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
               <DialogDescription>{description}</DialogDescription>
             </DialogHeader>
-          )}
           <div className="space-y-6 mt-4">
             <div>
               <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
@@ -281,7 +271,7 @@ export default function BoqItemDetailsDialog({
                             <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}><Eye className="mr-2 h-4 w-4" /> View</Button></TableCell>
                           </TableRow>
                         ))
-                      ) : (<TableRow><TableCell colSpan={7} className="text-center h-24">No JMC entries found.</TableCell></TableRow>)}
+                      ) : (<TableRow><TableCell colSpan={7} className="text-center h-24">No JMC entries found for this item.</TableCell></TableRow>)}
                     </TableBody>
                   </Table>
                 </div>
@@ -295,13 +285,12 @@ export default function BoqItemDetailsDialog({
                   <Table>
                     <TableHeader><TableRow><TableHead>MVAC No.</TableHead><TableHead>Date</TableHead><TableHead>Executed Qty</TableHead><TableHead>Certified Qty</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                     <TableBody>
-                       {relevantMvacEntries && relevantMvacEntries.length > 0 ? (
-                        relevantMvacEntries.map((mvacEntry) => {
-                            const mvacItem = mvacEntry.items.find(mi => getBoqSlNo(mi) === boqSlNo);
+                       {relevantMvacItems && relevantMvacItems.length > 0 ? (
+                        relevantMvacItems.map((mvacItem) => {
                             if (!mvacItem) return null;
-                            return (<TableRow key={mvacEntry.id}><TableCell>{mvacEntry.mvacNo}</TableCell><TableCell>{formatDateSafe(mvacEntry.mvacDate)}</TableCell><TableCell>{mvacItem.executedQty}</TableCell><TableCell>{mvacItem.certifiedQty || 0}</TableCell><TableCell>{mvacEntry.status}</TableCell></TableRow>)
+                            return (<TableRow key={mvacItem.mvacEntry.id}><TableCell>{mvacItem.mvacEntry.mvacNo}</TableCell><TableCell>{formatDateSafe(mvacItem.mvacEntry.mvacDate)}</TableCell><TableCell>{mvacItem.executedQty}</TableCell><TableCell>{mvacItem.certifiedQty || 0}</TableCell><TableCell>{mvacItem.mvacEntry.status}</TableCell></TableRow>)
                         })
-                      ) : (<TableRow><TableCell colSpan={5} className="text-center h-24">No MVAC entries found.</TableCell></TableRow>)}
+                      ) : (<TableRow><TableCell colSpan={5} className="text-center h-24">No MVAC entries found for this item.</TableCell></TableRow>)}
                     </TableBody>
                   </Table>
                 </div>
@@ -323,7 +312,7 @@ export default function BoqItemDetailsDialog({
                           <TableCell>{billItem.billedQty}</TableCell><TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
                         </TableRow>
                       ))
-                    ) : (<TableRow><TableCell colSpan={4} className="text-center h-24">No bills found.</TableCell></TableRow>)}
+                    ) : (<TableRow><TableCell colSpan={4} className="text-center h-24">No bills found for this item.</TableCell></TableRow>)}
                   </TableBody>
                 </Table>
               </div>
@@ -334,10 +323,6 @@ export default function BoqItemDetailsDialog({
       <ViewJmcEntryDialog isOpen={isJmcViewOpen} onOpenChange={setIsJmcViewOpen} jmcEntry={selectedJmc} boqItems={[]} bills={[]} />
     </>
   );
-
-  if (isPanel) {
-    return <>{content}</>;
-  }
 
   const dialogSizeClass =
     dialogSize === 'full' ? 'sm:max-w-[95vw]' :
