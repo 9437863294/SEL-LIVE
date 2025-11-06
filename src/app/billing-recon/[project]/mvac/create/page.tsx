@@ -154,7 +154,7 @@ export default function MvacEntryPage() {
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   
-  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [jmcEntries, setJmcEntries] = useState<MvacEntry[]>([]);
 
   const currentProject = useMemo(
     () => allProjects.find((p) => p.id === selectedProjectId) || null,
