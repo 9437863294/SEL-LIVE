@@ -65,3 +65,5 @@
 }
 .no-scrollbar{ -ms-overflow-style:none; scrollbar-width:none; }
 .no-scrollbar::-webkit-scrollbar{ display:none; }
+/* optional, prevents layout shift when bar appears */
+:root { scrollbar-gutter: stable both-edges; }

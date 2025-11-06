@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -45,13 +46,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 export type BoqItem = {
   id: string;
@@ -535,10 +538,9 @@ export default function ViewBoqPage() {
     'QTY',
     'Unit Rate',
     'Total Amount',
-    'JMC/MVAC Executed Qty',
-    'JMC/MVAC Certified Qty',
-    'JMC/MVAC Amount',
   ];
+
+  const selectAllState: CheckedState = allSelected ? true : someSelected ? 'indeterminate' : false;
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
@@ -626,29 +628,31 @@ export default function ViewBoqPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Customize Columns</DialogTitle>
-                <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
-              </DialogHeader>
-              <div className="py-4 space-y-2">
-                {columnOrder.map((header) => (
-                  <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
-                    <Checkbox
-                      id={`vis-${header}`}
-                      checked={!!columnVisibility[header]}
-                      onCheckedChange={(checked) => setColumnVisibility((prev) => ({ ...prev, [header]: !!checked }))}
-                    />
-                    <Label htmlFor={`vis-${header}`} className="flex-1">
-                      {columnNames[header] || header}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button>Done</Button>
-                </DialogClose>
-              </DialogFooter>
+                <DialogHeader>
+                    <DialogTitle>Customize Columns</DialogTitle>
+                    <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="max-h-[60vh]">
+                    <div className="py-4 space-y-2 pr-6">
+                        {columnOrder.map((header) => (
+                            <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                                <Checkbox
+                                    id={`vis-${header}`}
+                                    checked={!!columnVisibility[header]}
+                                    onCheckedChange={(checked) => setColumnVisibility((prev) => ({ ...prev, [header]: !!checked }))}
+                                />
+                                <Label htmlFor={`vis-${header}`} className="flex-1">
+                                    {columnNames[header] || header}
+                                </Label>
+                            </div>
+                        ))}
+                    </div>
+                </ScrollArea>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button>Done</Button>
+                    </DialogClose>
+                </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -669,7 +673,7 @@ export default function ViewBoqPage() {
                         aria-sort="none"
                       >
                         <Checkbox
-                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                          checked={selectAllState}
                           onCheckedChange={(state) => handleSelectAll(state)}
                           aria-label="Select all rows"
                           onClick={(e) => e.stopPropagation()}
@@ -884,6 +888,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
+        mvacItems={allMvacItems}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -920,3 +925,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+

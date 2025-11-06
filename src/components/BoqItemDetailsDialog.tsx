@@ -312,13 +312,13 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className={cn('max-h-[90vh] flex flex-col min-h-0', dialogSizeClass)}>
+      <DialogContent className={cn('h-[90vh] flex flex-col overflow-hidden', dialogSizeClass)}>
             <DialogHeader className="text-center shrink-0">
                 <DialogTitle>Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
                 <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
             </DialogHeader>
 
-            <ScrollArea className="flex-1 min-h-0 p-1 pr-4 -mx-4">
+            <ScrollArea className="h-[70vh] p-1 pr-4">
               {isLoading ? (
                 <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
               ) : (
@@ -471,7 +471,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
               )}
             </ScrollArea>
             
-            <DialogFooter className="mt-4 pr-4 sm:justify-between">
+            <DialogFooter className="mt-4 pr-4 sm:justify-between shrink-0">
               <Button variant="outline" size="icon" onClick={toggleDialogSize} className="hidden sm:inline-flex">
                 {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
               </Button>
