@@ -15,6 +15,7 @@ import {
   HardHat,
   FolderOpen,
   ShieldAlert,
+  History,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -197,6 +198,13 @@ export default function ProjectDashboardPage() {
         href: `/billing-recon/${projectSlugParam}/jmc`,
         description: 'Manage the civil workstream.',
         disabled: !safeCan('View', 'Billing Recon.JMC'),
+      },
+       {
+        icon: History,
+        text: 'Combined Log',
+        href: `/billing-recon/${projectSlugParam}/combined-log`,
+        description: 'View JMC & MVAC entries together.',
+        disabled: !safeCan('View Combined Log', 'Billing Recon'),
       },
       {
         icon: Calculator,

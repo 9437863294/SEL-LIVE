@@ -121,6 +121,7 @@ export const permissionModules = {
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'MVAC': ['View', 'Create Work Order', 'Create MVAC Entry', 'View Log', 'Delete MVAC', 'View Certified MVAC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'Billing': ['View', 'Create Bill', 'View Log'],
+    'View Combined Log': [],
   },
   'Subcontractors Management': {
     'View Module': true,
