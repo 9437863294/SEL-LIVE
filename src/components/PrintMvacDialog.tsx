@@ -120,10 +120,10 @@ const PrintableMvacStyles = ({ orientation }: { orientation: 'portrait' | 'lands
         text-align: center;
       }
 
-      /* Limit “Description of Items” to 4 lines */
+      /* Limit “Description of Items” to 3 lines */
       .desc-cell {
         display: -webkit-box;
-        -webkit-line-clamp: 4;
+        -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
         overflow: hidden;
         text-overflow: ellipsis;
