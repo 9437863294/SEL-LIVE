@@ -65,7 +65,7 @@ export default function MvacDashboardPage() {
   const { can, isLoading } = useAuthorization();
   
   const mvacItems = [
-    { icon: FilePlus, text: 'Create New MVAC', href: `/billing-recon/${projectSlug}/mvac/entry`, description: 'Generate a new MVAC entry.', disabled: !can('Create', 'Billing Recon.MVAC') },
+    { icon: FilePlus, text: 'Create New MVAC', href: `/billing-recon/${projectSlug}/mvac/create`, description: 'Generate a new MVAC entry.', disabled: !can('Create', 'Billing Recon.MVAC') },
     { icon: History, text: 'MVAC Log', href: `/billing-recon/${projectSlug}/mvac/log`, description: 'View and manage all past MVAC entries.', disabled: !can('View', 'Billing Recon.MVAC') },
     { icon: Settings, text: 'Settings', href: `/billing-recon/${projectSlug}/mvac/settings`, description: 'Configure MVAC settings and workflow.', disabled: !can('View Settings', 'Billing Recon.MVAC') },
   ];

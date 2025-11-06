@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type {
   BoqItem as BoqItemBase,
   MvacEntry,
-  WorkOrderItem as MvacItem,
+  MvacItem as MvacItemType,
   WorkflowStep,
   ActionLog,
   Project,
@@ -39,16 +39,21 @@ const initialMvacDetails = {
   mvacDate: new Date().toISOString().split('T')[0],
 };
 
-const initialItem: MvacItem = {
-    id: '',
-    boqItemId: '',
-    description: '',
-    unit: '',
-    orderQty: 0,
-    rate: 0,
-    totalAmount: 0,
+const initialItem = {
+  erpSlNo: '',         // ✅ store ERP SL NO on each Mvac item
+  boqSlNo: '',
+  description: '',
+  unit: '',
+  rate: 0,
+  executedQty: 0,
+  totalAmount: 0,
+  boqQty: 0,
+  totalCertifiedQty: 0,
+  scope1: '',
+  scope2: '',
 };
 
+type MvacItem = typeof initialItem;
 
 /* ---------- helpers ---------- */
 const normalizeKey = (obj: Record<string, unknown>, target: string) => {
@@ -123,8 +128,8 @@ const findBasicPriceKey = (boqItem: BoqItem): string | undefined => {
 const sortItemsByErp = (arr: MvacItem[]): MvacItem[] => {
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
   return [...arr].sort((a, b) => {
-    const ea = String((a as any).erpSlNo ?? '');
-    const eb = String((b as any).erpSlNo ?? '');
+    const ea = String(a.erpSlNo ?? '');
+    const eb = String(b.erpSlNo ?? '');
     const cmp = collator.compare(ea, eb);
     if (cmp !== 0) return cmp;
     // stable tiebreaker: BOQ Sl. No.
@@ -132,20 +137,13 @@ const sortItemsByErp = (arr: MvacItem[]): MvacItem[] => {
   });
 };
 
-const formatCurrency = (amount: number | string) => {
-    const num = parseFloat(String(amount));
-    if(isNaN(num)) return String(amount);
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
-  }
-
-export default function CreateMvacPage() {
+export default function MvacEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
 
   const [details, setDetails] = useState(initialMvacDetails);
-  const [items, setItems] = useState<MvacItem[]>([]);
+  const [items, setItems] = useState<MvacItem[]>([initialItem]);
   const [isSaving, setIsSaving] = useState(false);
 
   const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
@@ -155,6 +153,8 @@ export default function CreateMvacPage() {
 
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
 
   const currentProject = useMemo(
     () => allProjects.find((p) => p.id === selectedProjectId) || null,
@@ -184,7 +184,7 @@ export default function CreateMvacPage() {
           projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'boqItems')))
         );
         const mvacSnaps = await Promise.all(
-          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'mvacEntries')))
+            projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'mvacEntries')))
         );
 
         const allBoq = boqSnaps.flatMap((snap, index) =>
@@ -206,7 +206,7 @@ export default function CreateMvacPage() {
             projectId: projectsData[index].id,
           }))
         );
-        setAllMvacEntries(allMvac);
+        setAllMvacEntries(allMvac as any);
       } catch (e) {
         console.error('Failed to load initial data:', e);
         toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
@@ -219,9 +219,6 @@ export default function CreateMvacPage() {
 
   /* ---------- auto-generate Mvac No when scope1/scope2 ready ---------- */
   useEffect(() => {
-    if (items.length === 0) {
-      addItem();
-    }
     const generateMvacNo = async () => {
       const firstItem = items[0];
       if (!currentProject || !firstItem?.scope1 || !firstItem?.scope2) {
@@ -247,7 +244,8 @@ export default function CreateMvacPage() {
       }
     };
     generateMvacNo();
-  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id, items, addItem]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id]);
 
   const handleProjectChange = (projectId: string) => {
     const project = allProjects.find((p) => p.id === projectId);
@@ -258,7 +256,6 @@ export default function CreateMvacPage() {
     }
   };
 
-  /* ---------- certified qty map (robust to key casing) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
     const relevant = allMvacEntries.filter((e) => e.projectId === selectedProjectId);
@@ -274,6 +271,7 @@ export default function CreateMvacPage() {
     });
     return map;
   }, [allMvacEntries, selectedProjectId]);
+
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -291,9 +289,8 @@ export default function CreateMvacPage() {
       const sl = extractSlNo(boqItem);
       const s1 = extractScope1(boqItem);
       const s2 = extractScope2(boqItem);
-      const erp = extractErpSlNo(boqItem);
+      const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
 
-      it.boqItemId = boqItem.id;
       it.erpSlNo = erp;
       it.boqSlNo = sl;
       it.scope1 = s1;
@@ -306,14 +303,14 @@ export default function CreateMvacPage() {
       const key = compositeKey(s1, sl);
       it.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
 
-      const qty = num0((it as any).executedQty);
+      const qty = num0(it.executedQty);
       it.totalAmount = qty * it.rate;
     } else {
-      Object.assign(it, { ...initialItem, id: it.id });
+      Object.assign(it, initialItem);
     }
 
     newItems[index] = it;
-    setItems(sortItemsByErp(newItems));
+    setItems(sortItemsByErp(newItems)); // keep ERP order
   };
 
   const handleMultiBoqSelect = (selected: BoqItem[]) => {
@@ -324,14 +321,12 @@ export default function CreateMvacPage() {
         const sl = extractSlNo(boqItem);
         const s1 = extractScope1(boqItem);
         const s2 = extractScope2(boqItem);
-        const erp = extractErpSlNo(boqItem);
-        if (!String(sl).trim()) return null;
+        const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
+        if (!String(sl).trim()) return null; // skip bad rows
         const key = compositeKey(s1, sl);
 
         return {
           ...initialItem,
-          id: `item-${Date.now()}-${Math.random()}`,
-          boqItemId: boqItem.id,
           erpSlNo: erp,
           boqSlNo: sl,
           scope1: s1,
@@ -345,42 +340,37 @@ export default function CreateMvacPage() {
       })
       .filter(Boolean) as MvacItem[];
 
-    const existing = items.length === 1 && !items[0].boqItemId ? [] : items;
+    const existing = items.length === 1 && items[0].boqSlNo === '' && items[0].erpSlNo === '' ? [] : items;
 
     const merged = [...existing, ...newMvacItems];
-    setItems(sortItemsByErp(merged));
+    setItems(sortItemsByErp(merged)); // ✅ ensure ERP order
   };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     const newItems = [...items];
-    const it = { ...newItems[index] } as any;
+    const it = { ...newItems[index], [name]: value };
 
-    if (name === 'orderQty') {
+    if (name === 'executedQty') {
       const q = Math.max(0, num0(value));
-      it.orderQty = q;
-    } else {
-      it[name] = value;
+      it.executedQty = q;
     }
 
-    const qty = num0(it.orderQty);
+    const qty = num0(it.executedQty);
     const rate = num0(it.rate);
     it.totalAmount = qty * rate;
 
     newItems[index] = it;
-    setItems(sortItemsByErp(newItems));
+    setItems(sortItemsByErp(newItems)); // keep ERP order on edits too
   };
 
-  const addItem = useCallback(() => {
-    setItems((prev) => sortItemsByErp([...prev, { ...initialItem, id: `item-${Date.now()}` }]));
-  }, []);
-  
+  const addItem = () => setItems((prev) => sortItemsByErp([...prev, { ...initialItem }]));
   const removeItem = (index: number) => {
     if (items.length > 1) {
       const next = items.filter((_, i) => i !== index);
       setItems(sortItemsByErp(next));
     } else {
-      setItems([{ ...initialItem, id: `item-${Date.now()}` }]);
+      setItems([{ ...initialItem }]);
     }
   };
 
@@ -427,12 +417,12 @@ export default function CreateMvacPage() {
         }`;
 
         if (details.mvacNo !== expectedMvacNo) {
-          throw new Error(`MVAC number mismatch. Expected ${expectedMvacNo}, but found ${details.mvacNo}. Please refresh.`);
+          throw new Error(`Mvac number mismatch. Expected ${expectedMvacNo}, but found ${details.mvacNo}. Please refresh.`);
         }
 
         const workflowRef = doc(db, 'workflows', 'mvac-workflow');
         const workflowSnap = await getDoc(workflowRef);
-        if (!workflowSnap.exists()) throw new Error('Workflow not configured for MVAC.');
+        if (!workflowSnap.exists()) throw new Error('Workflow not configured for Mvac.');
 
         const steps = (workflowSnap.data()?.steps as WorkflowStep[]) ?? [];
         if (steps.length === 0) throw new Error('Workflow has no steps.');
@@ -454,12 +444,10 @@ export default function CreateMvacPage() {
           timestamp: Timestamp.now(),
           stepName: 'Creation',
         };
-        
-        const { id, ...itemsData } = items[0];
 
-        const mvacData = {
+        const MvacData = {
           ...details,
-          items: items.map(({id, ...rest}) => rest),
+          items,
           projectSlug,
           projectId: currentProject!.id,
           createdAt: Timestamp.now(),
@@ -472,7 +460,7 @@ export default function CreateMvacPage() {
         };
 
         const newMvacRef = doc(collection(db, 'projects', currentProject!.id, 'mvacEntries'));
-        transaction.set(newMvacRef, mvacData);
+        transaction.set(newMvacRef, MvacData);
         transaction.update(configRef, { startingIndex: currentIndex + 1 });
       });
 
@@ -487,8 +475,8 @@ export default function CreateMvacPage() {
         description: 'The new MVAC entry has been successfully saved and workflow started.',
       });
 
-      router.push(`/billing-recon/${projectSlug}/mvac/log`);
-
+      setDetails(initialMvacDetails);
+      setItems([initialItem]);
     } catch (error: any) {
       console.error('Error creating MVAC entry: ', error);
       toast({
@@ -522,7 +510,7 @@ export default function CreateMvacPage() {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>MVAC Details</CardTitle>
-            <CardDescription>Provide the main details for this Material and Vehicle Administration Certificate.</CardDescription>
+            <CardDescription>Provide the main details for this Material/Vehicle Administration Certificate.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -568,7 +556,7 @@ export default function CreateMvacPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>MVAC Items</CardTitle>
-                <CardDescription>Add one or more items to this MVAC.</CardDescription>
+                <CardDescription>Add one or more items executed under this MVAC.</CardDescription>
               </div>
               <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={!currentProject}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
@@ -588,19 +576,19 @@ export default function CreateMvacPage() {
                     <TableHead>Rate</TableHead>
                     <TableHead>Scope 1</TableHead>
                     <TableHead>Total Certified Qty</TableHead>
-                    <TableHead>Order Qty</TableHead>
+                    <TableHead>Executed Qty</TableHead>
                     <TableHead>Total Amount</TableHead>
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.map((item, index) => (
-                    <TableRow key={item.id}>
-                        <TableCell>{(item as any).erpSlNo || '-'}</TableCell>
+                    <TableRow key={index}>
+                        <TableCell>{item.erpSlNo || '-'}</TableCell>
                         <TableCell>
                             <BoqItemSelector
                             boqItems={boqItems}
-                            selectedSlNo={(item as any).boqSlNo}
+                            selectedSlNo={item.boqSlNo}
                             onSelect={(boq) => handleBoqSelect(index, boq)}
                             isLoading={isBoqLoading}
                             />
@@ -618,25 +606,29 @@ export default function CreateMvacPage() {
                             </TooltipProvider>
                         </TableCell>
                         <TableCell>{item.unit}</TableCell>
-                        <TableCell>{(item as any).boqQty}</TableCell>
+                        <TableCell>{item.boqQty}</TableCell>
                         <TableCell>{item.rate}</TableCell>
-                        <TableCell>{(item as any).scope1 || '-'}</TableCell>
-                        <TableCell>{(item as any).totalCertifiedQty}</TableCell>
+                        <TableCell>{item.scope1 || '-'}</TableCell>
+                        <TableCell>{item.totalCertifiedQty}</TableCell>
                         <TableCell>
                             <Input
-                            name="orderQty"
+                            name="executedQty"
                             type="number"
                             step="any"
                             min={0}
-                            value={item.orderQty}
+                            value={item.executedQty}
                             onChange={(e) => handleItemChange(index, e)}
                             />
                         </TableCell>
                         <TableCell>
-                            {formatCurrency(item.totalAmount)}
+                            {new Intl.NumberFormat('en-IN', {
+                            style: 'currency',
+                            currency: 'INR',
+                            maximumFractionDigits: 2,
+                            }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
                         </TableCell>
                         <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} aria-label="Remove row">
+                            <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
                             <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                         </TableCell>
@@ -659,9 +651,9 @@ export default function CreateMvacPage() {
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
-        alreadyAddedItems={[]}
         projectId={selectedProjectId}
       />
     </>
   );
 }
+
