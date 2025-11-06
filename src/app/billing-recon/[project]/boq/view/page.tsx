@@ -152,28 +152,29 @@ export default function ViewBoqPage() {
 
   /** LOAD/SAVE PREFERENCES **/
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const settingsRef = doc(db, 'userSettings', 'global'); // per-user? swap 'global' with uid
-        const settingsSnap = await getDoc(settingsRef);
-        if (settingsSnap.exists()) {
-          const settings = settingsSnap.data() as UserSettings;
-          const pageSettings = (settings as any).columnPreferences?.[settingsKey];
-          if (pageSettings) {
-            setColumnOrder(pageSettings.order || [...baseTableHeaders]);
-            setColumnVisibility(pageSettings.visibility || {});
-            setColumnNames(pageSettings.names || {});
-            if (pageSettings.sort) {
-              setSortKey(pageSettings.sort.key);
-              setSortDirection(pageSettings.sort.direction);
+    // This effect should not depend on user directly to avoid loops
+    const loadSettings = async () => {
+        try {
+            const settingsRef = doc(db, 'userSettings', 'global');
+            const settingsSnap = await getDoc(settingsRef);
+            if (settingsSnap.exists()) {
+              const settings = settingsSnap.data() as UserSettings;
+              const pageSettings = (settings as any).columnPreferences?.[settingsKey];
+              if (pageSettings) {
+                setColumnOrder(pageSettings.order || [...baseTableHeaders]);
+                setColumnVisibility(pageSettings.visibility || {});
+                setColumnNames(pageSettings.names || {});
+                if (pageSettings.sort) {
+                  setSortKey(pageSettings.sort.key);
+                  setSortDirection(pageSettings.sort.direction);
+                }
+              }
             }
-          }
+        } catch (e) {
+            console.warn('Failed to load column settings from Firestore', e);
         }
-      } catch (e) {
-        console.warn('Failed to load column settings from Firestore', e);
-      }
     };
-    if (settingsKey) fetchSettings();
+    if (settingsKey) loadSettings();
   }, [settingsKey]);
 
   const saveColumnSettings = useCallback(async () => {
@@ -206,7 +207,7 @@ export default function ViewBoqPage() {
       return;
     }
     saveColumnSettings();
-  }, [columnOrder, columnVisibility, columnNames, sortKey, sortDirection, saveColumnSettings]);
+  }, [saveColumnSettings]);
 
   /** NORMALIZE KEYS **/
   const normalizeKey = (obj: Record<string, unknown>, targetKey: string): string | undefined => {
@@ -215,65 +216,78 @@ export default function ViewBoqPage() {
   };
 
   /** FETCH DATA **/
-  const fetchBoqItems = useCallback(async () => {
-    if (!projectSlug) return;
-    setIsLoading(true);
-    try {
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQuery);
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+  useEffect(() => {
+    const fetchProjectAndBoq = async () => {
+        if (!projectSlug) return;
+        setIsLoading(true);
+        try {
+            const projectsQuery = query(collection(db, 'projects'));
+            const projectsSnapshot = await getDocs(projectsQuery);
+            const projectData = projectsSnapshot.docs
+            .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+            .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
-      if (!projectData) {
-        throw new Error('Project not found');
-      }
-      setCurrentProject(projectData);
+            if (!projectData) {
+                throw new Error('Project not found');
+            }
+            setCurrentProject(projectData);
 
-      const projectId = (projectData as any).id;
+            const projectId = (projectData as any).id;
+            const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
+            const boqSnapshot = await getDocs(query(boqItemsRef));
+            const items: BoqItem[] = boqSnapshot.docs
+                .map((d) => {
+                const data = d.data() as Record<string, unknown> | undefined;
+                if (!data) return null;
 
-      const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
-      const boqSnapshot = await getDocs(query(boqItemsRef));
-      const items: BoqItem[] = boqSnapshot.docs
-        .map((d) => {
-          const data = d.data() as Record<string, unknown> | undefined;
-          if (!data) return null;
+                const erpKey = normalizeKey(data, 'ERP SL NO');
+                const boqKey = normalizeKey(data, 'BOQ SL No');
+                const bom = Array.isArray((data as any).bom) ? (data as any).bom : undefined;
 
-          const erpKey = normalizeKey(data, 'ERP SL NO');
-          const boqKey = normalizeKey(data, 'BOQ SL No');
-          const bom = Array.isArray((data as any).bom) ? (data as any).bom : undefined;
+                return {
+                    id: d.id,
+                    ...data,
+                    ...(erpKey ? { 'ERP SL NO': (data as any)[erpKey] } : {}),
+                    ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
+                    ...(bom ? { bom } : {}),
+                } as BoqItem;
+                })
+                .filter(Boolean) as BoqItem[];
+            setBoqItems(items);
 
-          return {
-            id: d.id,
-            ...data,
-            ...(erpKey ? { 'ERP SL NO': (data as any)[erpKey] } : {}),
-            ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
-            ...(bom ? { bom } : {}),
-          } as BoqItem;
-        })
-        .filter(Boolean) as BoqItem[];
-      setBoqItems(items);
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-      const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-      setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-      
-      const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
-      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
-
-      const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
-      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-
-    } catch (error) {
-      console.error(error);
-      toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
+    fetchProjectAndBoq();
   }, [projectSlug, toast]);
 
   useEffect(() => {
-    fetchBoqItems();
-  }, [fetchBoqItems]);
+    const fetchDependentData = async () => {
+        if(!currentProject?.id) return;
+
+        try {
+             const projectId = currentProject.id;
+             const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
+             setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+            
+             const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
+             setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
+      
+             const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
+             setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+
+        } catch(error) {
+            console.error("Failed to fetch dependent data", error);
+            toast({ title: 'Error', description: 'Failed to load JMC/MVAC/Bill data.', variant: 'destructive' });
+        }
+    };
+    fetchDependentData();
+  }, [currentProject, toast]);
   
   const getQuantities = useCallback((scope2: string, boqSlNo: string) => {
     let executed = 0;
@@ -457,7 +471,7 @@ export default function ViewBoqPage() {
       await updateDoc(itemRef, payload);
       toast({ title: 'Success', description: 'BOQ item updated.' });
       setIsEditDialogOpen(false);
-      fetchBoqItems();
+      fetchProjectAndBoq();
     } catch (e) {
       console.error('Failed to save changes:', e);
       toast({ title: 'Error', description: 'Could not save changes.', variant: 'destructive' });
@@ -516,7 +530,7 @@ export default function ViewBoqPage() {
       await batch.commit();
       toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
       setSelectedItemIds([]);
-      fetchBoqItems();
+      fetchProjectAndBoq();
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'Failed to delete selected items.', variant: 'destructive' });
