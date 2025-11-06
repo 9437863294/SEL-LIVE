@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -33,11 +32,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -61,6 +69,7 @@ export type BoqItem = {
   'Category 2'?: string;
   'Category 3'?: string;
   'Project Name'?: string;
+  projectSlug?: string; // <-- add slug so the details dialog can fetch related data
   bom?: FabricationBomItem[];
   [key: string]: any;
 };
@@ -199,6 +208,7 @@ export default function ViewBoqPage() {
             ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
             ...(altBoqKey ? { 'SL. No.': (data as any)[altBoqKey] } : {}),
             ...(bom ? { bom } : {}),
+            projectSlug, // <-- stamp slug on each item for the details dialog
           };
           return result;
         })
@@ -224,7 +234,7 @@ export default function ViewBoqPage() {
   }, [projectSlug, toast]);
 
   useEffect(() => {
-    if(isClient) fetchProjectAndBoq();
+    if (isClient) fetchProjectAndBoq();
   }, [fetchProjectAndBoq, isClient]);
 
   /** PRE-AGGREGATE EXECUTED/CERTIFIED COUNTS (fast lookups) **/
@@ -263,13 +273,11 @@ export default function ViewBoqPage() {
 
   const getQuantities = useCallback(
     (scope2: string, boqSlNo: string) => {
-      // Civil -> JMC; Supply -> MVAC
       if (!boqSlNo) return { executed: 0, certified: 0 };
       const key = boqSlNo.trim();
       const scope2Lower = scope2?.toLowerCase();
       if (scope2Lower === 'civil') return jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
       if (scope2Lower === 'supply') return mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      // default (unknown scope) -> combine both
       const a = jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
       const b = mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
       return { executed: a.executed + b.executed, certified: a.certified + b.certified };
@@ -414,7 +422,8 @@ export default function ViewBoqPage() {
 
   /** ROW ACTIONS **/
   const handleRowClick = (item: BoqItem) => {
-    setSelectedBoqItem(item);
+    // ensure the dialog has the slug it needs
+    setSelectedBoqItem({ ...item, projectSlug });
     setIsDetailsDialogOpen(true);
   };
 
@@ -676,9 +685,7 @@ export default function ViewBoqPage() {
                           className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
                           onClick={() => handleSort(header)}
                           title="Sort"
-                          aria-sort={
-                            sortKey === header ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'
-                          }
+                          aria-sort={sortKey === header ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
                         >
                           <div className="flex items-center gap-1">
                             {columnNames[header] || header}
@@ -876,8 +883,8 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
-        mvacItems={allMvacItems}
       />
+
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

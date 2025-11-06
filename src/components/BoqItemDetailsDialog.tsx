@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,39 +14,56 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill, MvacItem, Project, MvacEntry } from '@/lib/types';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table';
+import type { BoqItem, JmcEntry, Bill, MvacEntry, Project } from '@/lib/types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
 import { Eye, Maximize, Minimize, Loader2 } from 'lucide-react';
-import { Timestamp, collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 
+/* ---------- Props ---------- */
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   item: BoqItem | null;
 }
 
-// --- Robust Helper Functions ---
+/* ---------- Lightweight row types to avoid implicit any ---------- */
+type JmcRow = {
+  jmcNo?: string;
+  jmcDate?: unknown;
+  executedQty?: number;
+  certifiedQty?: number;
+  runningExecuted?: number;
+  runningCertified?: number;
+};
 
-const formatCurrency = (amount: string | number) => {
-  const num = parseFloat(String(amount));
-  if (isNaN(num)) return String(amount ?? 'N/A');
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-  }).format(num);
+type MvacItemWithParent = MvacEntry['items'][0] & {
+    mvacEntry: MvacEntry;
+};
+
+type BillRow = {
+  billNo?: string;
+  billDate?: unknown;
+  billedQty?: number;
+  totalAmount?: number;
+};
+
+/* ---------- Helpers ---------- */
+
+const formatCurrency = (amount: unknown) => {
+  const n =
+    typeof amount === 'number'
+      ? amount
+      : typeof amount === 'string'
+      ? Number(amount.replace(/[, ]/g, ''))
+      : NaN;
+  if (!Number.isFinite(n)) return String(amount ?? 'N/A');
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(n);
 };
 
 function toDateSafe(value: any): Date | null {
@@ -61,286 +78,374 @@ function toDateSafe(value: any): Date | null {
   return null;
 }
 
-const formatDateSafe = (dateInput: any) => {
-    const d = toDateSafe(dateInput);
-    if (!d) return 'N/A';
-    try {
-      return format(d, 'dd MMM, yyyy');
-    } catch (error) {
-      return 'Invalid Date';
-    }
+const formatDateSafe = (dateInput: unknown) => {
+  const d = toDateSafe(dateInput);
+  if (!d) return 'N/A';
+  try {
+    return format(d, 'dd MMM, yyyy');
+  } catch {
+    return 'Invalid Date';
+  }
 };
 
-const getBoqSlNo = (item: any): string => {
-    if (!item) return '';
-    return String(item['BOQ SL No'] || item['SL. No.'] || item.boqSlNo || '').trim();
-};
+const getBoqSlNo = (item: any): string =>
+  String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
 
-const getItemDescription = (item: any): string => {
-    if (!item) return '';
-    return String(item.Description || item.description || item['Item Spec'] || '').trim();
-}
+const getItemDescription = (item: any): string =>
+  String(item?.Description ?? item?.description ?? item?.['Item Spec'] ?? '').trim();
 
-// --- Main Component ---
+const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
-export default function BoqItemDetailsDialog({
-  isOpen,
-  onOpenChange,
-  item,
-}: BoqItemDetailsDialogProps) {
+/* ---------- Component ---------- */
+
+export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: BoqItemDetailsDialogProps) {
   const { toast } = useToast();
+
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isClient, setIsClient] = useState(false);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
+  /* -------- Fetch related project data (self-contained) -------- */
   const fetchRelatedData = useCallback(async () => {
     if (!item?.projectSlug) return;
     setIsLoading(true);
     try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === item.projectSlug);
+      const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
+      const projectData = projectsSnapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+        .find((p) => slugify((p as any).projectName || '') === item.projectSlug);
 
-        if (projectData) {
-            const projectId = projectData.id;
-            const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-            setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+      if (!projectData) {
+        throw new Error('Project not found for this BOQ item.');
+      }
 
-            const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
-            setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-            
-            const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
-            setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
-        }
+      const projectId = (projectData as any).id;
+
+      const [jmcSnapshot, billsSnapshot, mvacSnapshot] = await Promise.all([
+        getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
+        getDocs(collection(db, 'projects', projectId, 'bills')),
+        getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
+      ]);
+
+      setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
     } catch (error) {
-        console.error("Error fetching related project data:", error);
-        toast({ title: 'Error', description: 'Failed to fetch related project data.', variant: 'destructive' });
+      console.error('Error fetching related project data:', error);
+      toast({ title: 'Error', description: 'Failed to fetch related project data.', variant: 'destructive' });
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   }, [item?.projectSlug, toast]);
 
   useEffect(() => {
-      if (isOpen && item) {
-          fetchRelatedData();
-      }
-  }, [isOpen, item, fetchRelatedData]);
+    if (isOpen && item?.projectSlug) {
+      fetchRelatedData();
+    }
+  }, [isOpen, item?.projectSlug, fetchRelatedData]);
 
+  /* -------- Data assembly -------- */
+  const data = useMemo(() => {
+    if (!item) return null;
+
+    const boqSlNo = getBoqSlNo(item);
+    if (!boqSlNo) return null;
+
+    const description = getItemDescription(item);
+    const rawBoqQty = item['Total Qty'] ?? item['qty'] ?? item['QTY'] ?? 0;
+    const boqQty = Number(String(rawBoqQty).replace(/[, ]/g, '')) || 0;
+
+    // JMC items for this BOQ
+    const relevantJmcItems = (jmcEntries || [])
+        .flatMap((entry) =>
+          (entry.items || [])
+            .filter((jmcItem) => getBoqSlNo(jmcItem) === boqSlNo)
+            .map((jmcItem) => ({ ...jmcItem, jmcNo: entry.jmcNo, jmcDate: entry.jmcDate }))
+        )
+        .sort((a, b) => {
+          const A = toDateSafe(a.jmcDate)?.getTime() ?? 0;
+          const B = toDateSafe(b.jmcDate)?.getTime() ?? 0;
+          return A - B;
+        });
+
+    // MVAC items for this BOQ
+    const relevantMvacItems: MvacItemWithParent[] = (mvacEntries || [])
+      .flatMap((entry) =>
+        (entry.items || [])
+          .filter((m) => getBoqSlNo(m) === boqSlNo)
+          .map((m) => ({ ...m, mvacEntry: entry }))
+      );
+
+    // Totals
+    const totalJmcExecutedQty = relevantJmcItems.reduce((s, r) => s + Number((r as any).executedQty || 0), 0);
+    const totalMvacExecutedQty = relevantMvacItems.reduce((s, r) => s + Number(r.executedQty || 0), 0);
+    const totalExecutedQty = totalJmcExecutedQty + totalMvacExecutedQty;
+
+    const totalJmcCertifiedQty = relevantJmcItems.reduce((s, r) => s + Number((r as any).certifiedQty || 0), 0);
+    const totalMvacCertifiedQty = relevantMvacItems.reduce((s, r) => s + Number(r.certifiedQty || 0), 0);
+    const totalCertifiedQty = totalJmcCertifiedQty + totalMvacCertifiedQty;
+
+    // Running totals for JMC
+    let runningExecuted = 0;
+    let runningCertified = 0;
+    const jmcWithRunning: JmcRow[] = relevantJmcItems.map((r) => {
+      runningExecuted += Number((r as any).executedQty || 0);
+      runningCertified += Number((r as any).certifiedQty || 0);
+      return {
+        ...r,
+        runningExecuted,
+        runningCertified,
+      } as JmcRow;
+    });
+
+    // Bills for this BOQ
+    const relevantBillItems: BillRow[] =
+      bills?.flatMap((bill) =>
+        (bill.items || [])
+          .filter((b) => getBoqSlNo(b) === boqSlNo)
+          .map((b) => ({ ...(b as any), billNo: bill.billNo, billDate: bill.billDate }))
+      ) ?? [];
+
+    const totalBilledQty = relevantBillItems.reduce((s, r) => s + Number(r.billedQty || 0), 0);
+
+    return {
+      boqSlNo,
+      description,
+      boqQty,
+      scope2: item['Scope 2'] as string | undefined,
+      jmcWithRunning,
+      totalExecutedQty,
+      totalCertifiedQty,
+      relevantMvacItems,
+      relevantBillItems,
+      totalBilledQty,
+    };
+  }, [item, jmcEntries, mvacEntries, bills]);
 
   const handleViewJmc = (jmcNo: string) => {
-    const jmc = jmcEntries.find(entry => entry.jmcNo === jmcNo);
+    const jmc = jmcEntries.find((e) => e.jmcNo === jmcNo);
     if (jmc) {
       setSelectedJmc(jmc);
       setIsJmcViewOpen(true);
     }
   };
 
-  const data = useMemo(() => {
-    if (!item || !jmcEntries || !bills || !mvacEntries) return null;
-
-    const boqSlNo = getBoqSlNo(item);
-    
-    if (!boqSlNo) return null; 
-
-    const description = getItemDescription(item);
-    const boqQty = Number(item['Total Qty'] || item['qty'] || item['QTY'] || 0);
-
-    const relevantJmcItems = jmcEntries
-      .flatMap((entry) =>
-        (entry.items || [])
-          .filter((jmcItem) => getBoqSlNo(jmcItem) === boqSlNo)
-          .map((jmcItem) => ({ ...jmcItem, jmcNo: entry.jmcNo, jmcDate: entry.jmcDate }))
-      )
-      .sort((a, b) => {
-        const dateA = toDateSafe(a.jmcDate);
-        const dateB = toDateSafe(b.jmcDate);
-        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
-      });
-      
-    const allMvacItemsForBoq = mvacEntries.flatMap(entry => (entry.items || []).filter(mvacItem => getBoqSlNo(mvacItem) === boqSlNo).map(mvacItem => ({...mvacItem, mvacEntry: entry})));
-
-    const totalJmcExecutedQty = relevantJmcItems.reduce((sum, jmcItem) => sum + Number(jmcItem.executedQty || 0), 0);
-    const totalMvacExecutedQty = allMvacItemsForBoq.reduce((sum, mvacItem) => sum + Number(mvacItem.executedQty || 0), 0);
-    const totalExecutedQty = totalJmcExecutedQty + totalMvacExecutedQty;
-    
-    const totalJmcCertifiedQty = relevantJmcItems.reduce((sum, jmcItem) => sum + Number(jmcItem.certifiedQty || 0), 0);
-    const totalMvacCertifiedQty = allMvacItemsForBoq.reduce((sum, mvacItem) => sum + Number(mvacItem.certifiedQty || 0), 0);
-    const totalCertifiedQty = totalJmcCertifiedQty + totalMvacCertifiedQty;
-    
-    const relevantBillItems = bills
-      .flatMap((bill) =>
-        (bill.items || [])
-          .filter((billItem) => getBoqSlNo(billItem) === boqSlNo)
-          .map((billItem) => ({ ...billItem, billNo: bill.billNo, billDate: bill.billDate }))
-      );
-
-    const totalBilledQty = relevantBillItems.reduce((sum, billItem) => sum + Number(billItem.billedQty || 0), 0);
-    
-    let runningExecuted = 0;
-    let runningCertified = 0;
-    const jmcItemsWithRunningTotals = relevantJmcItems.map(jmcItem => {
-        runningExecuted += Number(jmcItem.executedQty || 0);
-        runningCertified += Number(jmcItem.certifiedQty || 0);
-        return { ...jmcItem, runningExecuted, runningCertified };
-    });
-
-    return {
-      boqSlNo, description, boqQty,
-      scope2: item['Scope 2'],
-      relevantJmcItems: jmcItemsWithRunningTotals,
-      totalExecutedQty, totalCertifiedQty,
-      relevantMvacItems: allMvacItemsForBoq,
-      relevantBillItems, totalBilledQty,
-    };
-  }, [item, jmcEntries, bills, mvacEntries]);
-  
   const toggleDialogSize = () => {
-    setDialogSize(current => current === 'xl' ? '2xl' : current === '2xl' ? 'full' : 'xl');
+    setDialogSize((cur) => (cur === 'xl' ? '2xl' : cur === '2xl' ? 'full' : 'xl'));
   };
 
-  if (!isClient || !item) return null;
+  if (!item) return null;
 
   const {
-    boqSlNo, description, boqQty, scope2,
-    relevantJmcItems, totalExecutedQty, totalCertifiedQty,
-    relevantMvacItems, relevantBillItems, totalBilledQty,
-  } = data || {};
+    boqSlNo,
+    description,
+    boqQty,
+    scope2,
+    jmcWithRunning,
+    totalExecutedQty,
+    totalCertifiedQty,
+    relevantMvacItems,
+    relevantBillItems,
+    totalBilledQty,
+  } = data || ({} as any);
 
-  const content = (
-    <>
-      {isLoading ? (
-          <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
-      ) : (
-        <div>
-            <DialogHeader>
-              <DialogTitle>Item Breakdown: Sl. No. {boqSlNo}</DialogTitle>
-              <DialogDescription>{description}</DialogDescription>
-            </DialogHeader>
-          <div className="space-y-6 mt-4">
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Quantity Summary</h3>
-              <div className="border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>BOQ Quantity</TableHead>
-                      <TableHead>JMC/MVAC Executed</TableHead>
-                      <TableHead>JMC/MVAC Certified</TableHead>
-                      <TableHead>Billed Qty</TableHead>
-                      <TableHead>Balance Qty</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>{boqQty}</TableCell>
-                      <TableCell>{totalExecutedQty}</TableCell>
-                      <TableCell>{totalCertifiedQty}</TableCell>
-                      <TableCell>{totalBilledQty}</TableCell>
-                      <TableCell>{(boqQty || 0) - (totalExecutedQty || 0)}</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <Separator />
-
-            {scope2 === 'Civil' && (
-              <div>
-                <h3 className="text-lg font-semibold mb-2">JMC Breakdown</h3>
-                <div className="border rounded-md">
-                  <Table>
-                    <TableHeader><TableRow><TableHead>JMC No.</TableHead><TableHead>JMC Date</TableHead><TableHead>Executed Qty</TableHead><TableHead>Certified Qty</TableHead><TableHead>Cumulative Executed</TableHead><TableHead>Cumulative Certified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                      {relevantJmcItems && relevantJmcItems.length > 0 ? (
-                        relevantJmcItems.map((jmcItem, index) => (
-                          <TableRow key={`jmc-${jmcItem.jmcNo}-${index}`}>
-                            <TableCell>{jmcItem.jmcNo}</TableCell><TableCell>{formatDateSafe(jmcItem.jmcDate)}</TableCell>
-                            <TableCell>{jmcItem.executedQty}</TableCell><TableCell>{jmcItem.certifiedQty || 0}</TableCell>
-                            <TableCell>{jmcItem.runningExecuted}</TableCell><TableCell>{jmcItem.runningCertified}</TableCell>
-                            <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => handleViewJmc(jmcItem.jmcNo)}><Eye className="mr-2 h-4 w-4" /> View</Button></TableCell>
-                          </TableRow>
-                        ))
-                      ) : (<TableRow><TableCell colSpan={7} className="text-center h-24">No JMC entries found for this item.</TableCell></TableRow>)}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-            
-            {scope2 === 'Supply' && (
-               <div>
-                <h3 className="text-lg font-semibold mb-2">MVAC Details</h3>
-                <div className="border rounded-md">
-                  <Table>
-                    <TableHeader><TableRow><TableHead>MVAC No.</TableHead><TableHead>Date</TableHead><TableHead>Executed Qty</TableHead><TableHead>Certified Qty</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                       {relevantMvacItems && relevantMvacItems.length > 0 ? (
-                        relevantMvacItems.map((mvacItem) => {
-                            if (!mvacItem) return null;
-                            return (<TableRow key={mvacItem.mvacEntry.id}><TableCell>{mvacItem.mvacEntry.mvacNo}</TableCell><TableCell>{formatDateSafe(mvacItem.mvacEntry.mvacDate)}</TableCell><TableCell>{mvacItem.executedQty}</TableCell><TableCell>{mvacItem.certifiedQty || 0}</TableCell><TableCell>{mvacItem.mvacEntry.status}</TableCell></TableRow>)
-                        })
-                      ) : (<TableRow><TableCell colSpan={5} className="text-center h-24">No MVAC entries found for this item.</TableCell></TableRow>)}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-
-            <Separator />
-
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Billing Breakdown</h3>
-              <div className="border rounded-md">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Bill No.</TableHead><TableHead>Bill Date</TableHead><TableHead>Billed Qty</TableHead><TableHead>Total Amount</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {relevantBillItems && relevantBillItems.length > 0 ? (
-                      relevantBillItems.map((billItem, index) => (
-                        <TableRow key={`bill-${billItem.billNo}-${index}`}>
-                          <TableCell>{billItem.billNo}</TableCell><TableCell>{formatDateSafe(billItem.billDate)}</TableCell>
-                          <TableCell>{billItem.billedQty}</TableCell><TableCell>{formatCurrency(billItem.totalAmount)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (<TableRow><TableCell colSpan={4} className="text-center h-24">No bills found for this item.</TableCell></TableRow>)}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      <ViewJmcEntryDialog isOpen={isJmcViewOpen} onOpenChange={setIsJmcViewOpen} jmcEntry={selectedJmc} boqItems={[]} bills={[]} />
-    </>
-  );
-
-  const dialogSizeClass =
-    dialogSize === 'full' ? 'sm:max-w-[95vw]' :
-    dialogSize === '2xl' ? 'sm:max-w-6xl' :
-    'sm:max-w-4xl';
+  const dialogSizeClass = dialogSize === 'full' ? 'sm:max-w-[95vw]' : dialogSize === '2xl' ? 'sm:max-w-6xl' : 'sm:max-w-4xl';
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("sm:max-w-4xl", dialogSizeClass)}>
-        <ScrollArea className="max-h-[70vh] p-1 pr-4">{content}</ScrollArea>
+      <DialogContent className={cn('sm:max-w-4xl', dialogSizeClass)}>
+        <ScrollArea className="max-h-[70vh] p-1 pr-4">
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : (
+            <div>
+              <DialogHeader className="text-center">
+                <DialogTitle className="text-xl">Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
+                <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6 mt-6">
+                {/* Quantity Summary */}
+                <section>
+                  <h3 className="text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-center">BOQ Quantity</TableHead>
+                          <TableHead className="text-center">JMC/MVAC Executed</TableHead>
+                          <TableHead className="text-center">JMC/MVAC Certified</TableHead>
+                          <TableHead className="text-center">Billed Qty</TableHead>
+                          <TableHead className="text-center">Balance Qty</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell className="text-center">{boqQty ?? 0}</TableCell>
+                          <TableCell className="text-center">{totalExecutedQty ?? 0}</TableCell>
+                          <TableCell className="text-center">{totalCertifiedQty ?? 0}</TableCell>
+                          <TableCell className="text-center">{totalBilledQty ?? 0}</TableCell>
+                          <TableCell className="text-center">{(boqQty || 0) - (totalExecutedQty || 0)}</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+
+                <Separator />
+
+                {/* JMC Breakdown (Civil) */}
+                {(scope2 === 'Civil' || (!scope2 && jmcWithRunning?.length > 0)) && (
+                  <section>
+                    <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
+                    <div className="border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-center">JMC No.</TableHead>
+                            <TableHead className="text-center">JMC Date</TableHead>
+                            <TableHead className="text-center">Executed Qty</TableHead>
+                            <TableHead className="text-center">Certified Qty</TableHead>
+                            <TableHead className="text-center">Cumulative Executed</TableHead>
+                            <TableHead className="text-center">Cumulative Certified</TableHead>
+                            <TableHead className="text-center">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {jmcWithRunning?.length ? (
+                            jmcWithRunning.map((j: JmcRow, idx: number) => (
+                              <TableRow key={`jmc-${j.jmcNo ?? '—'}-${idx}`}>
+                                <TableCell className="text-center">{j.jmcNo ?? '—'}</TableCell>
+                                <TableCell className="text-center">{formatDateSafe(j.jmcDate)}</TableCell>
+                                <TableCell className="text-center">{j.executedQty ?? 0}</TableCell>
+                                <TableCell className="text-center">{j.certifiedQty ?? 0}</TableCell>
+                                <TableCell className="text-center">{j.runningExecuted ?? 0}</TableCell>
+                                <TableCell className="text-center">{j.runningCertified ?? 0}</TableCell>
+                                <TableCell className="text-center">
+                                  <Button variant="ghost" size="sm" onClick={() => handleViewJmc(j.jmcNo || '')}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center h-24">
+                                No JMC entries found for this item.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </section>
+                )}
+
+                {/* MVAC Details (Supply) */}
+                {(scope2 === 'Supply' || (!scope2 && relevantMvacItems?.length > 0)) && (
+                  <section>
+                    <h3 className="text-lg font-semibold mb-2 text-center">MVAC Details</h3>
+                    <div className="border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-center">MVAC No.</TableHead>
+                            <TableHead className="text-center">Date</TableHead>
+                            <TableHead className="text-center">Executed Qty</TableHead>
+                            <TableHead className="text-center">Certified Qty</TableHead>
+                            <TableHead className="text-center">Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {relevantMvacItems?.length ? (
+                            relevantMvacItems.map((m: MvacItemWithParent, idx: number) => (
+                              <TableRow key={m.mvacEntry?.id ?? `${m.mvacEntry?.mvacNo ?? '—'}-${idx}`}>
+                                <TableCell className="text-center">{m.mvacEntry?.mvacNo ?? '—'}</TableCell>
+                                <TableCell className="text-center">{formatDateSafe(m.mvacEntry?.mvacDate)}</TableCell>
+                                <TableCell className="text-center">{m.executedQty ?? 0}</TableCell>
+                                <TableCell className="text-center">{m.certifiedQty ?? 0}</TableCell>
+                                <TableCell className="text-center">{m.mvacEntry?.status ?? '—'}</TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center h-24">
+                                No MVAC entries found for this item.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </section>
+                )}
+
+                <Separator />
+
+                {/* Billing Breakdown */}
+                <section>
+                  <h3 className="text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-center">Bill No.</TableHead>
+                          <TableHead className="text-center">Bill Date</TableHead>
+                          <TableHead className="text-center">Billed Qty</TableHead>
+                          <TableHead className="text-center">Total Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {relevantBillItems?.length ? (
+                          relevantBillItems.map((b: BillRow, idx: number) => (
+                            <TableRow key={`bill-${b.billNo ?? '—'}-${idx}`}>
+                              <TableCell className="text-center">{b.billNo ?? '—'}</TableCell>
+                              <TableCell className="text-center">{formatDateSafe(b.billDate)}</TableCell>
+                              <TableCell className="text-center">{b.billedQty ?? 0}</TableCell>
+                              <TableCell className="text-center">{formatCurrency(b.totalAmount)}</TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center h-24">
+                              No bills found for this item.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+          <Label className="sr-only">hidden</Label>
+        </ScrollArea>
+
         <DialogFooter className="mt-4 pr-4 sm:justify-between">
-            <Button variant="outline" size="icon" onClick={toggleDialogSize} className="hidden sm:inline-flex">
-                {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-            </Button>
+          <Button variant="outline" size="icon" onClick={toggleDialogSize} className="hidden sm:inline-flex">
+            {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+          </Button>
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
         </DialogFooter>
+
+        <ViewJmcEntryDialog
+          isOpen={isJmcViewOpen}
+          onOpenChange={setIsJmcViewOpen}
+          jmcEntry={selectedJmc}
+          boqItems={[]}
+          bills={[]}
+        />
       </DialogContent>
     </Dialog>
   );
