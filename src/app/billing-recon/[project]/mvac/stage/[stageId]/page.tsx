@@ -482,7 +482,7 @@ export default function StagePage() {
       <ViewMvacEntryDialog
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
-        mvacEntry={selectedMvac}
+        MvacEntry={selectedMvac}
         boqItems={boqItems}
         bills={bills}
         isEditMode={isVerifyOpen}
