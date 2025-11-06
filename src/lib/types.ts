@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -118,9 +119,8 @@ export const permissionModules = {
     'View Module': [],
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
-    'Billing': ['View', 'Create Bill', 'View Log'],
     'MVAC': ['View', 'Create', 'View Log', 'View Settings', 'Edit Settings'],
-    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+    'Billing': ['View', 'Create Bill', 'View Log'],
   },
   'Subcontractors Management': {
     'View Module': true,
@@ -406,20 +406,30 @@ export interface BoqItem {
 }
 
 export interface MvacItem {
-    id: string;
-    projectSlug?: string;
-    boqItemId?: string;
-    'WO': string;
-    'Project'?: string;
-    'BOQ Sl. No.': string;
-    'Description': string;
-    'Unit': string;
-    'Total BOQ Qty': string;
-    'Rate': string;
-    'Amount': string;
-    'Start Date': string;
-    'End Date': string;
-    'Status': string;
+  boqSlNo: string;
+  description: string;
+  unit: string;
+  rate: number;
+  executedQty: number;
+  certifiedQty?: number;
+  totalAmount: number;
+}
+
+export interface MvacEntry {
+  id: string;
+  projectSlug: string;
+  projectId?: string;
+  mvacNo: string;
+  woNo: string;
+  mvacDate: string;
+  items: MvacItem[];
+  createdAt: Timestamp;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
+  stage: string;
+  currentStepId: string | null;
+  assignees: string[];
+  deadline: Timestamp | null;
+  history: ActionLog[];
 }
 
 export interface JmcItem {
