@@ -239,6 +239,13 @@ export default function PrintmvacDialog({
       { s: { r: 11, c: 0 }, e: { r: 11, c: 6 } }, // Project Site
     ];
     
+    // Add password protection
+    ws['!protect'] = {
+        password: 'Sel@123',
+        formatColumns: true,
+        formatRows: true,
+    };
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'MVAC Report');
     XLSX.writeFile(wb, `MVAC_${workDetails.mvacNo}.xlsx`);

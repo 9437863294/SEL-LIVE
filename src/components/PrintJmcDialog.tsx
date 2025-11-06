@@ -238,6 +238,14 @@ export default function PrintJmcDialog({
       { s: { r: 11, c: 0 }, e: { r: 11, c: 6 } }, // Project Site
     ];
 
+    // Add password protection
+    ws['!protect'] = {
+        password: 'Sel@123',
+        // Allow users to perform these actions even with protection
+        formatColumns: true,
+        formatRows: true,
+    };
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'JMC Report');
     XLSX.writeFile(wb, `JMC_${workDetails.jmcNo}.xlsx`);
