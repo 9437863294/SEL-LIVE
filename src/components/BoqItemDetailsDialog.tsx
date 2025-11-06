@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -107,7 +107,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
+  const [mvacItems, setMvacItems] = useState<MvacItemWithParent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   /* -------- Fetch related project data (self-contained) -------- */
@@ -134,7 +134,13 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
+      
+      const mvacEntriesData = mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry));
+      const allMvacItems = mvacEntriesData.flatMap(entry =>
+        (entry.items || []).map(mvacItem => ({ ...mvacItem, mvacEntry: entry }))
+      );
+      setMvacItems(allMvacItems);
+
     } catch (error) {
       console.error('Error fetching related project data:', error);
       toast({ title: 'Error', description: 'Failed to fetch related project data.', variant: 'destructive' });
@@ -161,7 +167,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     const boqQty = Number(String(rawBoqQty).replace(/[, ]/g, '')) || 0;
 
     // JMC items for this BOQ
-    const relevantJmcItems = (jmcEntries || [])
+    const relevantJmcItems = jmcEntries
         .flatMap((entry) =>
           (entry.items || [])
             .filter((jmcItem) => getBoqSlNo(jmcItem) === boqSlNo)
@@ -174,12 +180,8 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
         });
 
     // MVAC items for this BOQ
-    const relevantMvacItems: MvacItemWithParent[] = (mvacEntries || [])
-      .flatMap((entry) =>
-        (entry.items || [])
-          .filter((m) => getBoqSlNo(m) === boqSlNo)
-          .map((m) => ({ ...m, mvacEntry: entry }))
-      );
+    const relevantMvacItems = mvacItems
+        .filter((m) => getBoqSlNo(m) === boqSlNo);
 
     // Totals
     const totalJmcExecutedQty = relevantJmcItems.reduce((s, r) => s + Number((r as any).executedQty || 0), 0);
@@ -225,7 +227,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, mvacEntries, bills]);
+  }, [item, jmcEntries, mvacItems, bills]);
 
   const handleViewJmc = (jmcNo: string) => {
     const jmc = jmcEntries.find((e) => e.jmcNo === jmcNo);
@@ -261,9 +263,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       <DialogContent className={cn('sm:max-w-4xl', dialogSizeClass)}>
         <ScrollArea className="max-h-[70vh] p-1 pr-4">
           {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
+            <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
           ) : (
             <div>
               <DialogHeader className="text-center">
