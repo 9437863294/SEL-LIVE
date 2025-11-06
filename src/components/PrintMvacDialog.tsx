@@ -156,7 +156,7 @@ export default function PrintmvacDialog({
   const calculateUpToDateQty = (item: EnrichedMvacItem) =>
     (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
 
-  const title = `JOINT MEASUREMENT CERTIFICATE FOR ${(mvacEntry.items?.[0] as any)?.['Scope 1'] || ''}`.toUpperCase();
+  const title = `MATERIAL VERIFICATION AND ACCEPTANCE CERTIFICATE`.toUpperCase();
 
   const workDetails = {
     orderNo: project?.woNo || 'N/A',

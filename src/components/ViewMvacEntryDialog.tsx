@@ -330,7 +330,7 @@ export default function ViewMvacEntryDialog({
           <div className="pb-2">
             <DialogHeader>
               <DialogTitle className="text-center">
-                {isEditMode ? 'Verify & Edit' : 'MVAC Details'}: {MvacEntry?.MvacNo ?? '-'}
+                {isEditMode ? 'Verify & Edit' : 'MVAC Details'}: {MvacEntry?.mvacNo ?? '-'}
               </DialogTitle>
             </DialogHeader>
           </div>
@@ -424,7 +424,7 @@ export default function ViewMvacEntryDialog({
       <PrintMvacDialog
         isOpen={isPrintDialogOpen}
         onOpenChange={setIsPrintDialogOpen}
-        MvacEntry={MvacEntry}
+        mvacEntry={MvacEntry}
         project={currentProject}
         enrichedItems={enrichedItems}
       />

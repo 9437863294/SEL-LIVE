@@ -156,7 +156,7 @@ export default function PrintJmcDialog({
   const calculateUpToDateQty = (item: EnrichedJmcItem) =>
     (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
 
-  const title = `JOINT MEASUREMENT CERTIFICATE FOR ${(jmcEntry.items?.[0] as any)?.['Scope 1'] || ''}`.toUpperCase();
+  const title = `JOINT MEASUREMENT CERTIFICATE FOR `.toUpperCase();
 
   const workDetails = {
     orderNo: project?.woNo || 'N/A',
