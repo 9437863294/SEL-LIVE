@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -216,78 +215,64 @@ export default function ViewBoqPage() {
   };
 
   /** FETCH DATA **/
-  useEffect(() => {
-    const fetchProjectAndBoq = async () => {
-        if (!projectSlug) return;
-        setIsLoading(true);
-        try {
-            const projectsQuery = query(collection(db, 'projects'));
-            const projectsSnapshot = await getDocs(projectsQuery);
-            const projectData = projectsSnapshot.docs
-            .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-            .find((p) => slugify((p as any).projectName || '') === projectSlug);
+  const fetchProjectAndBoq = useCallback(async () => {
+    if (!projectSlug) return;
+    setIsLoading(true);
+    try {
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const projectData = projectsSnapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
-            if (!projectData) {
-                throw new Error('Project not found');
-            }
-            setCurrentProject(projectData);
-
-            const projectId = (projectData as any).id;
-            const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
-            const boqSnapshot = await getDocs(query(boqItemsRef));
-            const items: BoqItem[] = boqSnapshot.docs
-                .map((d) => {
-                const data = d.data() as Record<string, unknown> | undefined;
-                if (!data) return null;
-
-                const erpKey = normalizeKey(data, 'ERP SL NO');
-                const boqKey = normalizeKey(data, 'BOQ SL No');
-                const bom = Array.isArray((data as any).bom) ? (data as any).bom : undefined;
-
-                return {
-                    id: d.id,
-                    ...data,
-                    ...(erpKey ? { 'ERP SL NO': (data as any)[erpKey] } : {}),
-                    ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
-                    ...(bom ? { bom } : {}),
-                } as BoqItem;
-                })
-                .filter(Boolean) as BoqItem[];
-            setBoqItems(items);
-
-        } catch (error) {
-            console.error(error);
-            toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
-        } finally {
-            setIsLoading(false);
+        if (!projectData) {
+            throw new Error('Project not found');
         }
-    };
+        setCurrentProject(projectData);
 
-    fetchProjectAndBoq();
+        const projectId = (projectData as any).id;
+        const boqItemsRef = collection(db, 'projects', projectId, 'boqItems');
+        const boqSnapshot = await getDocs(query(boqItemsRef));
+        const items: BoqItem[] = boqSnapshot.docs
+            .map((d) => {
+            const data = d.data() as Record<string, unknown> | undefined;
+            if (!data) return null;
+
+            const erpKey = normalizeKey(data, 'ERP SL NO');
+            const boqKey = normalizeKey(data, 'BOQ SL No');
+            const bom = Array.isArray((data as any).bom) ? (data as any).bom : undefined;
+
+            return {
+                id: d.id,
+                ...data,
+                ...(erpKey ? { 'ERP SL NO': (data as any)[erpKey] } : {}),
+                ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
+                ...(bom ? { bom } : {}),
+            } as BoqItem;
+            })
+            .filter(Boolean) as BoqItem[];
+        setBoqItems(items);
+
+        const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
+        setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+       
+        const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
+        setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
+ 
+        const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
+        setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+
+    } catch (error) {
+        console.error(error);
+        toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
+    } finally {
+        setIsLoading(false);
+    }
   }, [projectSlug, toast]);
 
   useEffect(() => {
-    const fetchDependentData = async () => {
-        if(!currentProject?.id) return;
-
-        try {
-             const projectId = currentProject.id;
-             const jmcSnapshot = await getDocs(collection(db, 'projects', projectId, 'jmcEntries'));
-             setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-            
-             const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
-             setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
-      
-             const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
-             setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-
-        } catch(error) {
-            console.error("Failed to fetch dependent data", error);
-            toast({ title: 'Error', description: 'Failed to load JMC/MVAC/Bill data.', variant: 'destructive' });
-        }
-    };
-    fetchDependentData();
-  }, [currentProject, toast]);
+    fetchProjectAndBoq();
+  }, [fetchProjectAndBoq]);
   
   const getQuantities = useCallback((scope2: string, boqSlNo: string) => {
     let executed = 0;
