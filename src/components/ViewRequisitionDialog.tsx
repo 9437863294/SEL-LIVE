@@ -519,6 +519,8 @@ export default function ViewRequisitionDialog({
     
   const isActionable = user && requisition?.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
 
+  if (!requisition) return null;
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
