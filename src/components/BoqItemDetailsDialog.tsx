@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { BoqItem, JmcEntry, Bill, MvacItem, Project } from '@/lib/types';
+import type { BoqItem, JmcEntry, Bill, MvacItem, Project, MvacEntry } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -79,7 +79,7 @@ export default function BoqItemDetailsDialog({
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>(initialJmcEntries);
   const [bills, setBills] = useState<Bill[]>(initialBills);
-  const [mvacItems, setMvacItems] = useState<MvacItem[]>(initialMvacItems);
+  const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
 
@@ -104,8 +104,8 @@ export default function BoqItemDetailsDialog({
             const billsSnapshot = await getDocs(collection(db, 'projects', projectId, 'bills'));
             setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
             
-            const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacItems'));
-            setMvacItems(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacItem)));
+            const mvacSnapshot = await getDocs(collection(db, 'projects', projectId, 'mvacEntries'));
+            setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
         }
     } catch (error) {
         console.error("Error fetching related project data:", error);
@@ -169,8 +169,9 @@ export default function BoqItemDetailsDialog({
       0,
     );
 
-    const relevantMvacItems = mvacItems
-      .filter((mvacItem) => String(mvacItem['BOQ Sl. No.'] || '').trim() === boqSlNo);
+    const relevantMvacEntries = mvacEntries
+      .filter((entry) => entry.items.some(mvacItem => String(mvacItem.boqSlNo || '').trim() === boqSlNo));
+
 
     const relevantBillItems = bills
       .flatMap((bill) =>
@@ -211,11 +212,11 @@ export default function BoqItemDetailsDialog({
       relevantJmcItems: jmcItemsWithRunningTotals,
       totalExecutedQty,
       totalCertifiedQty,
-      relevantMvacItems,
+      relevantMvacEntries,
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, bills, mvacItems]); 
+  }, [item, jmcEntries, bills, mvacEntries]); 
 
   const formatDateSafe = (dateInput: any) => {
     if (!dateInput) return 'N/A';
@@ -228,6 +229,14 @@ export default function BoqItemDetailsDialog({
       return 'Invalid Date';
     }
   };
+  
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
 
   if (!isClient || !item || !data) return null;
 
@@ -239,7 +248,7 @@ export default function BoqItemDetailsDialog({
     relevantJmcItems,
     totalExecutedQty,
     totalCertifiedQty,
-    relevantMvacItems,
+    relevantMvacEntries,
     relevantBillItems,
     totalBilledQty,
   } = data;
@@ -344,29 +353,31 @@ export default function BoqItemDetailsDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>WO No.</TableHead>
-                      <TableHead>Total BOQ Qty</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
+                      <TableHead>MVAC No.</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Executed Qty</TableHead>
+                      <TableHead>Certified Qty</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                     {relevantMvacItems.length > 0 ? (
-                      relevantMvacItems.map((mvacItem, index) => (
-                        <TableRow key={`mvac-${index}`}>
-                          <TableCell>{mvacItem['WO']}</TableCell>
-                          <TableCell>{mvacItem['Total BOQ Qty']}</TableCell>
-                          <TableCell>{formatCurrency(mvacItem['Rate'])}</TableCell>
-                          <TableCell>{formatDateSafe(mvacItem['Start Date'])}</TableCell>
-                          <TableCell>{formatDateSafe(mvacItem['End Date'])}</TableCell>
-                          <TableCell>{mvacItem['Status']}</TableCell>
-                        </TableRow>
-                      ))
+                     {relevantMvacEntries.length > 0 ? (
+                      relevantMvacEntries.map((mvacEntry, index) => {
+                          const mvacItem = mvacEntry.items.find(mi => String(mi.boqSlNo || '').trim() === boqSlNo);
+                          if (!mvacItem) return null;
+                          return (
+                            <TableRow key={`mvac-${index}`}>
+                                <TableCell>{mvacEntry.mvacNo}</TableCell>
+                                <TableCell>{formatDateSafe(mvacEntry.mvacDate)}</TableCell>
+                                <TableCell>{mvacItem.executedQty}</TableCell>
+                                <TableCell>{mvacItem.certifiedQty || 0}</TableCell>
+                                <TableCell>{mvacEntry.status}</TableCell>
+                            </TableRow>
+                          )
+                      })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center h-24">
+                        <TableCell colSpan={5} className="text-center h-24">
                           No MVAC entries found for this item.
                         </TableCell>
                       </TableRow>

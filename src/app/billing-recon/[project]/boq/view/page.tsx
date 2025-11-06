@@ -934,5 +934,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-```
