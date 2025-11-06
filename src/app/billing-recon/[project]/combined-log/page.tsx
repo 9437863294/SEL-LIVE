@@ -82,14 +82,14 @@ export default function CombinedLogPage() {
           const data = doc.data() as JmcEntry;
           const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
           const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
-          return { id: doc.id, type: 'JMC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
+          return { ...data, id: doc.id, type: 'JMC', executedAmount, certifiedAmount } as CombinedLogEntry;
       });
 
       const mvacEntries = mvacSnapshot.docs.map(doc => {
           const data = doc.data() as MvacEntry;
           const executedAmount = (data.items || []).reduce((sum, item) => sum + ((item.executedQty || 0) * (item.rate || 0)), 0);
           const certifiedAmount = (data.items || []).reduce((sum, item) => sum + ((item.certifiedQty || 0) * (item.rate || 0)), 0);
-          return { id: doc.id, type: 'MVAC', ...data, executedAmount, certifiedAmount } as CombinedLogEntry;
+          return { ...data, id: doc.id, type: 'MVAC', executedAmount, certifiedAmount } as CombinedLogEntry;
       });
       
       const combined = [...jmcEntries, ...mvacEntries];
