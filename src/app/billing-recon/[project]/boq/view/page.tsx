@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
@@ -77,27 +76,6 @@ export type BoqItem = {
   bom?: FabricationBomItem[];
   [key: string]: any;
 };
-
-const baseTableHeaders = [
-  'Project Name',
-  'Sub-Division',
-  'Site',
-  'Scope 1',
-  'Scope 2',
-  'Category 1',
-  'Category 2',
-  'Category 3',
-  'ERP SL NO',
-  'BOQ SL No',
-  'Description',
-  'Unit',
-  'QTY',
-  'Unit Rate',
-  'Total Amount',
-  'JMC/MVAC Executed Qty',
-  'JMC/MVAC Certified Qty',
-  'JMC/MVAC Amount',
-] as const;
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
@@ -937,3 +915,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
