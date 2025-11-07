@@ -18,7 +18,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, writeBatch, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import Link from 'next/link';
 
 /* ---------- helpers ---------- */
@@ -51,15 +51,30 @@ function formatCurrency(amount: number | string) {
 
 const getScope1 = (item: any): string => {
   if (!item) return '';
-  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+  const key = Object.keys(item).find(
+    (k) => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1'
+  );
   return key ? String(item[key] || '') : '';
-}
+};
+
 const getScope2 = (item: any): string => {
   if (!item) return '';
-  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  const key = Object.keys(item).find(
+    (k) => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2'
+  );
   return key ? String(item[key] || '') : '';
-}
-const getBoqSlNo = (item: any): string => String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
+};
+
+const getBoqSlNo = (item: any): string =>
+  String(
+    item?.['BOQ SL No'] ??
+      item?.['BOQ SL NO'] ??
+      item?.['SL. No.'] ??
+      item?.['SL No'] ??
+      item?.['SL'] ??
+      item?.boqSlNo ??
+      ''
+  ).trim();
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -95,17 +110,24 @@ export default function ViewJmcEntryDialog({
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
-  const [currentProject, setCurrentProject] = useState<(Project & {signatures?: any[]}) | null>(null);
+  const [currentProject, setCurrentProject] =
+    useState<(Project & { signatures?: any[] }) | null>(null);
 
-  // refs for split-axis scrolling
-  const xScrollRef = useRef<HTMLDivElement | null>(null);     // inner container that actually scrolls horizontally (contains table)
-  const hBarRef = useRef<HTMLDivElement | null>(null);        // fixed bottom horizontal scrollbar
-  const hBarInnerRef = useRef<HTMLDivElement | null>(null);   // spacer that mirrors content scrollWidth
+  // split-axis scrolling refs
+  const xScrollRef = useRef<HTMLDivElement | null>(null);
+  const hBarRef = useRef<HTMLDivElement | null>(null);
+  const hBarInnerRef = useRef<HTMLDivElement | null>(null);
 
+  /* ---------- sync editableItems with jmcEntry ---------- */
   useEffect(() => {
-    setEditableItems(jmcEntry?.items ? (JSON.parse(JSON.stringify(jmcEntry.items)) as JmcItem[]) : []);
+    if (jmcEntry?.items && Array.isArray(jmcEntry.items)) {
+      setEditableItems(JSON.parse(JSON.stringify(jmcEntry.items)) as JmcItem[]);
+    } else {
+      setEditableItems([]);
+    }
   }, [jmcEntry, isOpen]);
 
+  /* ---------- load project + all JMCs of project ---------- */
   useEffect(() => {
     const fetchProjectData = async () => {
       const projectId = (jmcEntry as any)?.projectId || undefined;
@@ -116,60 +138,98 @@ export default function ViewJmcEntryDialog({
       }
       try {
         const [projectSnap, jmcSnap] = await Promise.all([
-            getDoc(doc(db, 'projects', projectId)),
-            getDocs(collection(db, 'projects', projectId, 'jmcEntries'))
+          getDoc(doc(db, 'projects', projectId)),
+          getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
         ]);
-        
+
         if (projectSnap.exists()) {
-            setCurrentProject({ id: projectSnap.id, ...projectSnap.data() } as Project);
+          setCurrentProject(
+            {
+              id: projectSnap.id,
+              ...(projectSnap.data() as any),
+            } as Project & { signatures?: any[] }
+          );
+        } else {
+          setCurrentProject(null);
         }
 
-        const all = jmcSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
+        const all = jmcSnap.docs.map(
+          (d) =>
+            ({
+              id: d.id,
+              ...(d.data() as any),
+            } as JmcEntry)
+        );
         setProjectJmcEntries(all);
       } catch (e) {
         console.error('Failed to load project JMCs:', e);
         setProjectJmcEntries([]);
+        setCurrentProject(null);
       }
     };
+
     if (isOpen && jmcEntry) {
       fetchProjectData();
     }
   }, [jmcEntry, isOpen]);
 
+  /* ---------- enriched items: BOQ qty + previous certified qty ---------- */
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
     if (!jmcEntry || !Array.isArray(boqItems)) return [];
-    const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
-    
-    return itemsToDisplay.map((item) => {
-        const itemScope1 = getScope1(item);
-        const itemScope2 = getScope2(item);
-        const itemSlNo = getBoqSlNo(item);
 
-        const boqItem = boqItems.find((b) => {
-            return getScope1(b) === itemScope1 && getScope2(b) === itemScope2 && getBoqSlNo(b) === itemSlNo;
-        });
+    const itemsToDisplay = isEditMode ? editableItems : (jmcEntry.items || []);
+    const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
 
-        const boqQty = boqItem ? Number((boqItem as any).QTY || (boqItem as any)['Total Qty'] || 0) : 0;
+    return itemsToDisplay.map((item: any) => {
+      const itemScope1 = getScope1(item);
+      const itemScope2 = getScope2(item);
+      const itemSlNo = getBoqSlNo(item);
+
+      const boqItem = boqItems.find(
+        (b: any) =>
+          getScope1(b) === itemScope1 &&
+          getScope2(b) === itemScope2 &&
+          getBoqSlNo(b) === itemSlNo
+      );
+
+      const boqQty = boqItem
+        ? Number(
+            (boqItem as any).QTY ??
+              (boqItem as any)['Qty'] ??
+              (boqItem as any)['Total Qty'] ??
+              0
+          )
+        : 0;
+
+      const previousCertifiedQty = projectJmcEntries
+        .filter((e) => {
+          const eDate = toDateSafe(e.jmcDate);
+          return (
+            e.id !== jmcEntry.id &&
+            eDate &&
+            currentEntryDate &&
+            eDate < currentEntryDate
+          );
+        })
+        .flatMap((e) => (e.items || []) as any[])
+        .filter(
+          (i) =>
+            getScope1(i) === itemScope1 &&
+            getScope2(i) === itemScope2 &&
+            getBoqSlNo(i) === itemSlNo
+        )
+        .reduce((sum, i: any) => sum + (Number(i.certifiedQty) || 0), 0);
         
-        const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
-        
-        const previousCertifiedQty = projectJmcEntries
-            .filter(e => {
-                const eDate = toDateSafe(e.jmcDate);
-                return eDate && currentEntryDate && eDate < currentEntryDate;
-            })
-            .flatMap(e => e.items)
-            .filter(i => getScope1(i) === itemScope1 && getScope2(i) === itemScope2 && getBoqSlNo(i) === itemSlNo)
-            .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
-
-        return {
-            ...(item as any),
-            boqQty,
-            previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
-        } as EnrichedJmcItem;
+      return {
+        ...(item as JmcItem),
+        boqQty,
+        previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
+      };
     });
-  }, [jmcEntry, boqItems, isEditMode, editableItems, projectJmcEntries]);
+}, [jmcEntry, boqItems, isEditMode, editableItems, projectJmcEntries]);
 
+
+  /* ---------- editing ---------- */
   const handleItemChange = (
     index: number,
     field: 'executedQty' | 'certifiedQty',
@@ -177,11 +237,14 @@ export default function ViewJmcEntryDialog({
   ) => {
     setEditableItems((prev) => {
       const next = [...prev];
-      const item = { ...(next[index] as any) };
-      const numValue = value === '' ? '' : Number(value);
+      const item: any = { ...(next[index] as any) };
 
-      if (value === '') item[field] = '';
-      else if (Number.isFinite(numValue)) item[field] = Number(numValue);
+      if (value === '') {
+        item[field] = '';
+      } else {
+        const num = Number(value);
+        if (Number.isFinite(num)) item[field] = num;
+      }
 
       const rate = Number(item.rate) || 0;
       const executedQty = Number(item.executedQty) || 0;
@@ -194,7 +257,12 @@ export default function ViewJmcEntryDialog({
 
   const handleSaveChanges = async () => {
     if (!onVerify || !jmcEntry) return;
-    await onVerify(jmcEntry.id, 'Verified', 'Verified with edits', editableItems);
+    await onVerify(
+      jmcEntry.id,
+      'Verified',
+      'Verified with edits',
+      editableItems
+    );
   };
 
   const formatDateSafe = (dateInput: any) => {
@@ -214,7 +282,6 @@ export default function ViewJmcEntryDialog({
       ? 'sm:max-w-[80rem]'
       : 'sm:max-w-4xl';
 
-  // columns and min table width (to force horizontal overflow when needed)
   const COLS = {
     sl: '6rem',
     desc: '22rem',
@@ -228,55 +295,92 @@ export default function ViewJmcEntryDialog({
     execAmt: '8rem',
     certAmt: '8rem',
   } as const;
+
   const tableMinWidthRem = 88;
 
-  // rows
-  const rows = useMemo(() => {
-    return enrichedItems.map((item, index) => {
-      const rate = Number((item as any).rate) || 0;
-      const execQty = Number((item as any).executedQty) || 0;
-      const certQty = Number((item as any).certifiedQty) || 0;
-      const prevCert = Number((item as any).previousCertifiedQty) || 0;
-      const upToDateCertifiedQty = prevCert + certQty;
-      const executedAmount = rate * execQty;
-      const certifiedAmount = rate * certQty;
+  /* ---------- rows ---------- */
+  const rows = useMemo(
+    () =>
+      enrichedItems.map((item, index) => {
+        const rate = Number((item as any).rate) || 0;
+        const execQty = Number((item as any).executedQty) || 0;
+        const certQty = Number((item as any).certifiedQty) || 0;
+        const prevCert = Number((item as any).previousCertifiedQty) || 0;
 
-      return (
-        <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-          <TableCell className="text-center font-medium truncate">{item.boqSlNo ?? '-'}</TableCell>
-          {/* Description clamped to 4 lines */}
-          <TableCell className="align-top">
-            <div className="line-clamp-4 break-words whitespace-pre-line" title={item.description ?? ''}>
-              {item.description ?? '-'}
-            </div>
-          </TableCell>
-          <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">{Number(item.boqQty) || 0}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(rate)}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">{prevCert}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">
-            {isEditMode ? (
-              <Input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                value={(item as any).executedQty ?? ''}
-                onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
-                className="h-8"
-              />
-            ) : (
-              execQty || '-'
-            )}
-          </TableCell>
-          {/* Certified in this JMC (non-editable) */}
-          <TableCell className="text-right whitespace-nowrap align-top">{certQty || '-'}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top font-semibold">{upToDateCertifiedQty || 0}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(executedAmount)}</TableCell>
-          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(certifiedAmount)}</TableCell>
-        </TableRow>
-      );
-    });
-  }, [enrichedItems, isEditMode]);
+        const upToDateCertifiedQty = prevCert + certQty;
+        const executedAmount = rate * execQty;
+        const certifiedAmount = rate * certQty;
+
+        return (
+          <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
+            <TableCell className="text-center font-medium truncate">
+              {item.boqSlNo ?? '-'}
+            </TableCell>
+
+            {/* Description: max 4 lines */}
+            <TableCell className="align-top">
+              <div
+                className="line-clamp-4 break-words whitespace-pre-line"
+                title={item.description ?? ''}
+              >
+                {item.description ?? '-'}
+              </div>
+            </TableCell>
+
+            <TableCell className="whitespace-nowrap align-top">
+              {item.unit ?? '-'}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {Number(item.boqQty) || 0}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {formatCurrency(rate)}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {prevCert}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {isEditMode ? (
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={(item as any).executedQty ?? ''}
+                  onChange={(e) =>
+                    handleItemChange(index, 'executedQty', e.target.value)
+                  }
+                  className="h-8"
+                />
+              ) : (
+                execQty || '-'
+              )}
+            </TableCell>
+
+            {/* Certified in this JMC (display only here; edit via workflow if needed) */}
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {certQty || '-'}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top font-semibold">
+              {upToDateCertifiedQty || 0}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {formatCurrency(executedAmount)}
+            </TableCell>
+
+            <TableCell className="text-right whitespace-nowrap align-top">
+              {formatCurrency(certifiedAmount)}
+            </TableCell>
+          </TableRow>
+        );
+      }),
+    [enrichedItems, isEditMode]
+  );
 
   const hasJmc = !!jmcEntry;
 
@@ -287,16 +391,18 @@ export default function ViewJmcEntryDialog({
     const inner = hBarInnerRef.current;
     if (!x || !bar || !inner) return;
 
-    const syncFromBar = () => { x.scrollLeft = bar.scrollLeft; };
-    const syncFromX = () => { bar.scrollLeft = x.scrollLeft; };
+    const syncFromBar = () => {
+      x.scrollLeft = bar.scrollLeft;
+    };
+    const syncFromX = () => {
+      bar.scrollLeft = x.scrollLeft;
+    };
 
-    // set width of fake inner to match content scroll width
     const setWidths = () => {
       inner.style.width = `${x.scrollWidth}px`;
     };
     setWidths();
 
-    // observe size changes
     const ro = new ResizeObserver(setWidths);
     ro.observe(x);
 
@@ -311,118 +417,176 @@ export default function ViewJmcEntryDialog({
       window.removeEventListener('resize', setWidths);
     };
   }, [rows.length, dialogSize, hasJmc]);
-  
+
   const toggleDialogSize = () => {
-    setDialogSize(current => {
+    setDialogSize((current) => {
       if (current === 'xl') return '2xl';
       if (current === '2xl') return 'full';
       return 'xl';
     });
   };
 
-  const slugify = (text: string | undefined) => text?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') || '';
+  const slugify = (text: string | undefined) =>
+    text
+      ? text
+          .toString()
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^\w-]+/g, '')
+      : '';
+
+  // Resolve project slug safely (TS-safe even if JmcEntry type has no projectSlug)
+  const resolvedProjectSlug =
+    (jmcEntry as any)?.projectSlug ||
+    (currentProject?.projectName ? slugify(currentProject.projectName as any) : '');
 
   return (
-    <>
-      <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        {/* height constrained; inner owns scroll */}
-        <DialogContent className={`${dialogWidthClass} max-h-[90vh] flex flex-col min-h-0`}>
-          {/* HEADER */}
-          <div className="pb-2">
-            <DialogHeader>
-              <DialogTitle className="text-center">
-                {isEditMode ? 'Verify & Edit' : 'JMC Details'}: {jmcEntry?.jmcNo ?? '-'}
-              </DialogTitle>
-            </DialogHeader>
-          </div>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={`${dialogWidthClass} max-h-[90vh] flex flex-col min-h-0`}
+      >
+        {/* HEADER */}
+        <div className="pb-2">
+          <DialogHeader>
+            <DialogTitle className="text-center">
+              {isEditMode ? 'Verify & Edit' : 'JMC Details'}:{' '}
+              {jmcEntry?.jmcNo ?? '-'}
+            </DialogTitle>
+          </DialogHeader>
+          {jmcEntry && (
+            <p className="text-center text-xs text-muted-foreground">
+              Date: {formatDateSafe(jmcEntry.jmcDate)}
+            </p>
+          )}
+        </div>
 
-          {/* BODY: vertical scroller (Y) + hidden X; inside it we keep a real X scroller */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-md border">
-            {!hasJmc ? (
-              <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-                No JMC selected.
-              </div>
-            ) : (
-              // This element actually scrolls horizontally.
-              <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
-                <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidthRem}rem` }}>
-                  <colgroup>
-                    <col style={{ width: COLS.sl }} />
-                    <col style={{ width: COLS.desc }} />
-                    <col style={{ width: COLS.unit }} />
-                    <col style={{ width: COLS.boq }} />
-                    <col style={{ width: COLS.rate }} />
-                    <col style={{ width: COLS.prev }} />
-                    <col style={{ width: COLS.exec }} />
-                    <col style={{ width: COLS.cert }} />
-                    <col style={{ width: COLS.upToDate }} />
-                    <col style={{ width: COLS.execAmt }} />
-                    <col style={{ width: COLS.certAmt }} />
-                  </colgroup>
+        {/* BODY */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-md border">
+          {!hasJmc ? (
+            <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+              No JMC selected.
+            </div>
+          ) : (
+            <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
+              <Table
+                className="w-full table-fixed"
+                style={{ minWidth: `${tableMinWidthRem}rem` }}
+              >
+                <colgroup>
+                  <col style={{ width: COLS.sl }} />
+                  <col style={{ width: COLS.desc }} />
+                  <col style={{ width: COLS.unit }} />
+                  <col style={{ width: COLS.boq }} />
+                  <col style={{ width: COLS.rate }} />
+                  <col style={{ width: COLS.prev }} />
+                  <col style={{ width: COLS.exec }} />
+                  <col style={{ width: COLS.cert }} />
+                  <col style={{ width: COLS.upToDate }} />
+                  <col style={{ width: COLS.execAmt }} />
+                  <col style={{ width: COLS.certAmt }} />
+                </colgroup>
 
-                  {/* Sticky header */}
-                  <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
-                    <TableRow>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Description</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Unit</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Qty</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Rate</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Prev. Certified</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Executed in this JMC</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Certified in this JMC</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Up to Date Certified Qty</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Executed</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Certified</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+                  <TableRow>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      BOQ Sl. No.
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Description
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Unit
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      BOQ Qty
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Rate
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Prev. Certified
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Executed in this JMC
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Certified in this JMC
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Up to Date Certified Qty
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Amount Executed
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                      Amount Certified
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
 
-                  <TableBody>{rows}</TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
+                <TableBody>{rows}</TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
 
-          {/* Dedicated horizontal scrollbar, docked at dialog bottom */}
-          <div
-            ref={hBarRef}
-            className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
-            style={{ scrollbarGutter: 'stable both-edges' }}
-            aria-hidden
-          >
-            <div ref={hBarInnerRef} className="h-4" />
-          </div>
+        {/* BOTTOM H-SCROLLBAR */}
+        <div
+          ref={hBarRef}
+          className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
+          style={{ scrollbarGutter: 'stable both-edges' }}
+          aria-hidden
+        >
+          <div ref={hBarInnerRef} className="h-4" />
+        </div>
 
-          {/* FOOTER */}
-          <div className="pt-4">
-            <Separator />
-            <DialogFooter className="pt-3 sm:justify-between">
-              <div className="flex gap-2">
-                 <Link href={`/billing-recon/${jmcEntry?.projectSlug}/jmc/${jmcEntry?.id}/print`} target="_blank">
-                    <Button variant="outline" disabled={!hasJmc}>
-                        <Printer className="mr-2 h-4 w-4" />
-                        Print
-                    </Button>
-                </Link>
-                 <Button variant="outline" size="icon" onClick={toggleDialogSize}>
-                    {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        {/* FOOTER */}
+        <div className="pt-4">
+          <Separator />
+          <DialogFooter className="pt-3 sm:justify-between">
+            <div className="flex gap-2">
+              <Link
+                href={
+                  hasJmc && resolvedProjectSlug && jmcEntry?.id
+                    ? `/billing-recon/${resolvedProjectSlug}/jmc/${jmcEntry.id}/print`
+                    : '#'
+                }
+                target="_blank"
+              >
+                <Button variant="outline" disabled={!hasJmc || !resolvedProjectSlug}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print
                 </Button>
-              </div>
-              <div className="flex gap-2">
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
-                {isEditMode && (
-                  <Button onClick={handleSaveChanges} disabled={isLoading || !hasJmc}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save & Verify
-                  </Button>
+              </Link>
+
+              <Button variant="outline" size="icon" onClick={toggleDialogSize}>
+                {dialogSize === 'full' ? (
+                  <Minimize className="h-4 w-4" />
+                ) : (
+                  <Maximize className="h-4 w-4" />
                 )}
-              </div>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              <DialogClose asChild>
+                <Button variant="outline">Close</Button>
+              </DialogClose>
+
+              {isEditMode && (
+                <Button onClick={handleSaveChanges} disabled={isLoading || !hasJmc}>
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save &amp; Verify
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
