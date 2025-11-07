@@ -116,9 +116,6 @@ export default function PrintMvacPage() {
                 const entry = { id: mvacDocSnap.id, ...mvacDocSnap.data() } as MvacEntry;
                 setMvacEntry(entry);
                 
-                const allMvacsSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'mvacEntries')));
-                const allMvacEntries = allMvacsSnap.docs.map(d => d.data() as MvacEntry);
-                
                 const boqSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
                 const boqItemsMap = new Map<string, BoqItem>();
                 boqSnap.docs.forEach(doc => {
@@ -128,33 +125,19 @@ export default function PrintMvacPage() {
                         boqItemsMap.set(key, item);
                     }
                 });
-
-                const currentEntryDate = toDateSafe(entry.mvacDate);
                 
                 const enriched = (entry.items || []).map(item => {
                     const itemScope1 = getScope1(item);
                     const itemScope2 = getScope2(item);
                     const itemSlNo = getBoqSlNo(item);
-
+                    
                     const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`;
                     const boqItem = boqItemsMap.get(itemKey);
-                    
-                    const previousCertifiedQty = allMvacEntries
-                        .filter(e => {
-                            const eDate = toDateSafe(e.mvacDate);
-                            return eDate && currentEntryDate && eDate < currentEntryDate;
-                        })
-                        .flatMap(e => e.items)
-                        .filter(i => {
-                             const iKey = `${getScope1(i)}_${getScope2(i)}_${getBoqSlNo(i)}`;
-                             return iKey === itemKey;
-                        })
-                        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
                         
                     return {
                         ...item,
                         boqQty: boqItem ? Number((boqItem as any).QTY || (boqItem as any)['Total Qty'] || 0) : 0,
-                        previousCertifiedQty: previousCertifiedQty,
+                        previousCertifiedQty: (item as any).totalCertifiedQty || 0,
                     };
                 });
                 setEnrichedItems(enriched);
