@@ -49,36 +49,27 @@ export default function ModuleDashboard() {
     if (isLoading || authLoading) {
       return [];
     }
-    
-    // All modules available based on permissions
+
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
-        const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
-        if (typeof moduleConfig === 'object' && !Array.isArray(moduleConfig) && moduleConfig['View Module'] !== undefined) {
-             return can('View Module', moduleName);
-        }
         return can('View Module', moduleName);
     });
 
     const defaultModules = availableModuleNames.map((moduleName, index) => ({
-      id: moduleName, // Use name as a consistent key
+      id: moduleName, 
       title: moduleName,
       content: moduleDescriptions[moduleName] || `Manage ${moduleName}.`,
       tags: [] as string[],
       icon: moduleIcons[moduleName] || 'FileText',
     }));
 
-    // User's saved modules (which includes their custom order and potentially other saved data)
     const savedModules = modules;
 
-    // Filter saved modules to only include those the user currently has permission to view
     const visibleSavedModules = savedModules.filter(sm => availableModuleNames.includes(sm.title));
 
-    // Identify which default modules are new (i.e., not in the user's saved/ordered list)
     const newModules = defaultModules.filter(
         dm => !visibleSavedModules.some(vsm => vsm.title === dm.title)
     );
 
-    // Combine the ordered, visible modules with any new modules
     return [...visibleSavedModules, ...newModules];
 
   }, [modules, isLoading, can, authLoading]);
@@ -137,5 +128,3 @@ export default function ModuleDashboard() {
     </div>
   );
 }
-
-    
