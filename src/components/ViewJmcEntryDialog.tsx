@@ -396,7 +396,7 @@ export default function ViewJmcEntryDialog({
             <Separator />
             <DialogFooter className="pt-3 sm:justify-between">
               <div className="flex gap-2">
-                 <Link href={`/billing-recon/${projectSlug}/jmc/${jmcEntry?.id}/print`} target="_blank">
+                 <Link href={`/billing-recon/${jmcEntry?.projectSlug}/jmc/${jmcEntry?.id}/print`} target="_blank">
                     <Button variant="outline" disabled={!hasJmc}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
@@ -424,7 +424,3 @@ export default function ViewJmcEntryDialog({
     </>
   );
 }
-```</content>
-  </change>
-  <change>
-    
