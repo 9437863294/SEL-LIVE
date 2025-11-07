@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -90,7 +91,7 @@ type EnrichedMvacItem = MvacItem & {
 interface ViewMvacEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  mvacEntry: MvacEntry | null;
+  MvacEntry: MvacEntry | null;
   boqItems: BoqItem[];
   bills: Bill[];
   isEditMode?: boolean;
@@ -106,7 +107,7 @@ interface ViewMvacEntryDialogProps {
 export default function ViewMvacEntryDialog({
   isOpen,
   onOpenChange,
-  mvacEntry,
+  MvacEntry,
   boqItems,
   bills, // eslint-disable-line @typescript-eslint/no-unused-vars
   isEditMode = false,
@@ -124,21 +125,21 @@ export default function ViewMvacEntryDialog({
   const hBarRef = useRef<HTMLDivElement | null>(null);
   const hBarInnerRef = useRef<HTMLDivElement | null>(null);
 
-  /* ---------- sync editableItems with mvacEntry ---------- */
+  /* ---------- sync editableItems with MvacEntry ---------- */
   useEffect(() => {
-    if (mvacEntry?.items && Array.isArray(mvacEntry.items)) {
+    if (MvacEntry?.items && Array.isArray(MvacEntry.items)) {
       setEditableItems(
-        JSON.parse(JSON.stringify(mvacEntry.items)) as MvacItem[]
+        JSON.parse(JSON.stringify(MvacEntry.items)) as MvacItem[]
       );
     } else {
       setEditableItems([]);
     }
-  }, [mvacEntry, isOpen]);
+  }, [MvacEntry, isOpen]);
 
   /* ---------- load project + all MVACs of project ---------- */
   useEffect(() => {
     const fetchProjectData = async () => {
-      const projectId = (mvacEntry as any)?.projectId || undefined;
+      const projectId = (MvacEntry as any)?.projectId || undefined;
       if (!projectId) {
         setProjectMvacEntries([]);
         setCurrentProject(null);
@@ -176,33 +177,25 @@ export default function ViewMvacEntryDialog({
       }
     };
 
-    if (isOpen && mvacEntry) {
+    if (isOpen && MvacEntry) {
       fetchProjectData();
     }
-  }, [mvacEntry, isOpen]);
+  }, [MvacEntry, isOpen]);
 
   /* ---------- enriched items: BOQ qty + previous certified qty ---------- */
   const enrichedItems: EnrichedMvacItem[] = useMemo(() => {
-    if (!mvacEntry || !Array.isArray(boqItems)) return [];
-
-    const itemsToDisplay = isEditMode
-      ? editableItems
-      : (mvacEntry.items || []) as MvacItem[];
-
-    const currentEntryDate = toDateSafe(mvacEntry.mvacDate);
-
+    if (!MvacEntry || !Array.isArray(boqItems)) return [];
+  
+    const itemsToDisplay = isEditMode ? editableItems : MvacEntry.items || [];
+  
     return itemsToDisplay.map((item: any) => {
-      const itemScope1 = getScope1(item);
-      const itemScope2 = getScope2(item);
-      const itemSlNo = getBoqSlNo(item);
-
       const boqItem = boqItems.find(
         (b: any) =>
-          getScope1(b) === itemScope1 &&
-          getScope2(b) === itemScope2 &&
-          getBoqSlNo(b) === itemSlNo
+          getScope1(b) === getScope1(item) &&
+          getScope2(b) === getScope2(item) &&
+          getBoqSlNo(b) === getBoqSlNo(item)
       );
-
+  
       const boqQty = boqItem
         ? Number(
             (boqItem as any).QTY ??
@@ -211,35 +204,14 @@ export default function ViewMvacEntryDialog({
               0
           )
         : 0;
-
-      const previousCertifiedQty = projectMvacEntries
-        .filter((e) => {
-          const eDate = toDateSafe(e.mvacDate);
-          return (
-            e.id !== mvacEntry.id &&
-            eDate &&
-            currentEntryDate &&
-            eDate < currentEntryDate
-          );
-        })
-        .flatMap((e) => (e.items || []) as any[])
-        .filter(
-          (i) =>
-            getScope1(i) === itemScope1 &&
-            getScope2(i) === itemScope2 &&
-            getBoqSlNo(i) === itemSlNo
-        )
-        .reduce((sum, i: any) => sum + (Number(i.certifiedQty) || 0), 0);
-
+  
       return {
         ...(item as MvacItem),
         boqQty,
-        previousCertifiedQty: Number.isFinite(previousCertifiedQty)
-          ? previousCertifiedQty
-          : 0,
+        previousCertifiedQty: Number(item.totalCertifiedQty || 0), // Directly use the stored value
       };
     });
-  }, [mvacEntry, boqItems, isEditMode, editableItems, projectMvacEntries]);
+  }, [MvacEntry, boqItems, isEditMode, editableItems]);
 
   /* ---------- editing ---------- */
   const handleItemChange = (
@@ -268,9 +240,9 @@ export default function ViewMvacEntryDialog({
   };
 
   const handleSaveChanges = async () => {
-    if (!onVerify || !mvacEntry) return;
+    if (!onVerify || !MvacEntry) return;
     await onVerify(
-      mvacEntry.id,
+      MvacEntry.id,
       'Verified',
       'Verified with edits',
       editableItems
@@ -328,7 +300,7 @@ export default function ViewMvacEntryDialog({
             <TableCell className="text-center font-medium truncate">
               {item.boqSlNo ?? '-'}
             </TableCell>
-
+            {/* Description: max 4 lines */}
             <TableCell className="align-top">
               <div
                 className="line-clamp-4 break-words whitespace-pre-line"
@@ -392,7 +364,7 @@ export default function ViewMvacEntryDialog({
     [enrichedItems, isEditMode]
   );
 
-  const hasMvac = !!mvacEntry;
+  const hasMvac = !!MvacEntry;
 
   /* ---------- split-axis scroll sync ---------- */
   useEffect(() => {
@@ -446,7 +418,7 @@ export default function ViewMvacEntryDialog({
       : '';
 
   const resolvedProjectSlug =
-    (mvacEntry as any)?.projectSlug ||
+    (MvacEntry as any)?.projectSlug ||
     (currentProject?.projectName
       ? slugify(currentProject.projectName as any)
       : '');
@@ -461,12 +433,12 @@ export default function ViewMvacEntryDialog({
           <DialogHeader>
             <DialogTitle className="text-center">
               {isEditMode ? 'Verify & Edit' : 'MVAC Details'}:{' '}
-              {mvacEntry?.mvacNo ?? '-'}
+              {MvacEntry?.mvacNo ?? '-'}
             </DialogTitle>
           </DialogHeader>
-          {mvacEntry && (
+          {MvacEntry && (
             <p className="text-center text-xs text-muted-foreground">
-              Date: {formatDateSafe(mvacEntry.mvacDate)}
+              Date: {formatDateSafe(MvacEntry.mvacDate)}
             </p>
           )}
         </div>
@@ -560,8 +532,8 @@ export default function ViewMvacEntryDialog({
                 href={
                   hasMvac &&
                   resolvedProjectSlug &&
-                  mvacEntry?.id
-                    ? `/billing-recon/${resolvedProjectSlug}/mvac/${mvacEntry.id}/print`
+                  MvacEntry?.id
+                    ? `/billing-recon/${resolvedProjectSlug}/mvac/${MvacEntry.id}/print`
                     : '#'
                 }
                 target="_blank"
