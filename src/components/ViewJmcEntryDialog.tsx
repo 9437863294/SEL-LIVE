@@ -49,22 +49,6 @@ function formatCurrency(amount: number | string) {
   }
 }
 
-const getScope1 = (item: any): string => {
-  if (!item) return '';
-  const key = Object.keys(item).find(
-    (k) => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1'
-  );
-  return key ? String(item[key] || '') : '';
-};
-
-const getScope2 = (item: any): string => {
-  if (!item) return '';
-  const key = Object.keys(item).find(
-    (k) => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2'
-  );
-  return key ? String(item[key] || '') : '';
-};
-
 const getBoqSlNo = (item: any): string =>
   String(
     item?.['BOQ SL No'] ??
@@ -78,7 +62,6 @@ const getBoqSlNo = (item: any): string =>
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
-  previousCertifiedQty: number;
 };
 
 interface ViewJmcEntryDialogProps {
@@ -108,7 +91,6 @@ export default function ViewJmcEntryDialog({
   isLoading = false,
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
-  const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
   const [currentProject, setCurrentProject] =
     useState<(Project & { signatures?: any[] }) | null>(null);
@@ -127,20 +109,16 @@ export default function ViewJmcEntryDialog({
     }
   }, [jmcEntry, isOpen]);
 
-  /* ---------- load project + all JMCs of project ---------- */
+  /* ---------- load project ---------- */
   useEffect(() => {
     const fetchProjectData = async () => {
       const projectId = (jmcEntry as any)?.projectId || undefined;
       if (!projectId) {
-        setProjectJmcEntries([]);
         setCurrentProject(null);
         return;
       }
       try {
-        const [projectSnap, jmcSnap] = await Promise.all([
-          getDoc(doc(db, 'projects', projectId)),
-          getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-        ]);
+        const projectSnap = await getDoc(doc(db, 'projects', projectId));
 
         if (projectSnap.exists()) {
           setCurrentProject(
@@ -152,18 +130,8 @@ export default function ViewJmcEntryDialog({
         } else {
           setCurrentProject(null);
         }
-
-        const all = jmcSnap.docs.map(
-          (d) =>
-            ({
-              id: d.id,
-              ...(d.data() as any),
-            } as JmcEntry)
-        );
-        setProjectJmcEntries(all);
       } catch (e) {
-        console.error('Failed to load project JMCs:', e);
-        setProjectJmcEntries([]);
+        console.error('Failed to load project data:', e);
         setCurrentProject(null);
       }
     };
@@ -178,19 +146,9 @@ export default function ViewJmcEntryDialog({
     if (!jmcEntry || !Array.isArray(boqItems)) return [];
 
     const itemsToDisplay = isEditMode ? editableItems : (jmcEntry.items || []);
-    const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
-
+    
     return itemsToDisplay.map((item: any) => {
-      const itemScope1 = getScope1(item);
-      const itemScope2 = getScope2(item);
-      const itemSlNo = getBoqSlNo(item);
-
-      const boqItem = boqItems.find(
-        (b: any) =>
-          getScope1(b) === itemScope1 &&
-          getScope2(b) === itemScope2 &&
-          getBoqSlNo(b) === itemSlNo
-      );
+      const boqItem = boqItems.find(b => getBoqSlNo(b) === getBoqSlNo(item));
 
       const boqQty = boqItem
         ? Number(
@@ -201,32 +159,13 @@ export default function ViewJmcEntryDialog({
           )
         : 0;
 
-      const previousCertifiedQty = projectJmcEntries
-        .filter((e) => {
-          const eDate = toDateSafe(e.jmcDate);
-          return (
-            e.id !== jmcEntry.id &&
-            eDate &&
-            currentEntryDate &&
-            eDate < currentEntryDate
-          );
-        })
-        .flatMap((e) => (e.items || []) as any[])
-        .filter(
-          (i) =>
-            getScope1(i) === itemScope1 &&
-            getScope2(i) === itemScope2 &&
-            getBoqSlNo(i) === itemSlNo
-        )
-        .reduce((sum, i: any) => sum + (Number(i.certifiedQty) || 0), 0);
-        
       return {
         ...(item as JmcItem),
         boqQty,
-        previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
+        previousCertifiedQty: Number(item.totalCertifiedQty || 0), // Use the pre-calculated value
       };
     });
-}, [jmcEntry, boqItems, isEditMode, editableItems, projectJmcEntries]);
+}, [jmcEntry, boqItems, isEditMode, editableItems]);
 
 
   /* ---------- editing ---------- */
@@ -316,7 +255,6 @@ export default function ViewJmcEntryDialog({
             <TableCell className="text-center font-medium truncate">
               {item.boqSlNo ?? '-'}
             </TableCell>
-
             {/* Description: max 4 lines */}
             <TableCell className="align-top">
               <div
