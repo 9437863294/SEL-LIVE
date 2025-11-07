@@ -6,12 +6,12 @@ import { useState, useEffect } from 'react';
 import { useParams, notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { MvacEntry, MvacItem, Project, Signature } from '@/lib/types';
+import type { MvacEntry, MvacItem, Project, Signature, BoqItem } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, getDocs, where } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function toDateSafe(value: any): Date | null {
@@ -104,11 +104,32 @@ export default function PrintMvacPage() {
                 const entry = { id: mvacDocSnap.id, ...mvacDocSnap.data() } as MvacEntry;
                 setMvacEntry(entry);
                 
-                const enriched = (entry.items || []).map(item => ({
-                    ...item,
-                    boqQty: 0, // Placeholder
-                    previousCertifiedQty: 0, // Placeholder
-                }));
+                const allMvacsSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'mvacEntries')));
+                const allMvacEntries = allMvacsSnap.docs.map(d => d.data() as MvacEntry);
+                
+                const boqSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
+                const boqItemsMap = new Map(boqSnap.docs.map(d => [(d.data() as BoqItem)['BOQ SL No'], d.data() as BoqItem]));
+
+                const currentEntryDate = toDateSafe(entry.mvacDate);
+                
+                const enriched = (entry.items || []).map(item => {
+                    const boqItem = boqItemsMap.get(item.boqSlNo);
+                    
+                    const previousCertifiedQty = allMvacEntries
+                        .filter(e => {
+                            const eDate = toDateSafe(e.mvacDate);
+                            return eDate && currentEntryDate && eDate < currentEntryDate;
+                        })
+                        .flatMap(e => e.items)
+                        .filter(i => i.boqSlNo === item.boqSlNo)
+                        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
+                        
+                    return {
+                        ...item,
+                        boqQty: boqItem ? Number(boqItem.QTY) : 0,
+                        previousCertifiedQty: previousCertifiedQty,
+                    };
+                });
                 setEnrichedItems(enriched);
             } catch(e) {
                 console.error(e);

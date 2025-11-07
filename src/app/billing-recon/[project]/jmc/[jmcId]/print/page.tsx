@@ -6,12 +6,12 @@ import { useState, useEffect } from 'react';
 import { useParams, notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { JmcEntry, JmcItem, Project, Signature } from '@/lib/types';
+import type { JmcEntry, JmcItem, Project, Signature, BoqItem } from '@/lib/types';
 import { format } from 'date-fns';
 import { Printer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, getDocs, where } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function toDateSafe(value: any): Date | null {
@@ -104,13 +104,34 @@ export default function PrintJmcPage() {
                 const entry = { id: jmcDocSnap.id, ...jmcDocSnap.data() } as JmcEntry;
                 setJmcEntry(entry);
                 
-                // You will need to pass BOQ Items and other context if needed for enrichment
-                // For now, let's assume enrichment happens on the client from basic data
-                const enriched = (entry.items || []).map(item => ({
-                    ...item,
-                    boqQty: 0, // Placeholder
-                    previousCertifiedQty: 0, // Placeholder
-                }));
+                // Fetch all JMCs for this project to calculate previous quantities
+                const allJmcsSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries')));
+                const allJmcEntries = allJmcsSnap.docs.map(d => d.data() as JmcEntry);
+                
+                // Fetch all BOQ items for this project
+                const boqSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
+                const boqItemsMap = new Map(boqSnap.docs.map(d => [(d.data() as BoqItem)['BOQ SL No'], d.data() as BoqItem]));
+
+                const currentEntryDate = toDateSafe(entry.jmcDate);
+                
+                const enriched = (entry.items || []).map(item => {
+                    const boqItem = boqItemsMap.get(item.boqSlNo);
+                    
+                    const previousCertifiedQty = allJmcEntries
+                        .filter(e => {
+                            const eDate = toDateSafe(e.jmcDate);
+                            return eDate && currentEntryDate && eDate < currentEntryDate;
+                        })
+                        .flatMap(e => e.items)
+                        .filter(i => i.boqSlNo === item.boqSlNo)
+                        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
+                        
+                    return {
+                        ...item,
+                        boqQty: boqItem ? Number(boqItem.QTY) : 0,
+                        previousCertifiedQty: previousCertifiedQty,
+                    };
+                });
                 setEnrichedItems(enriched);
             } catch(e) {
                 console.error(e);
@@ -163,7 +184,7 @@ export default function PrintJmcPage() {
                     </div>
 
                     <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">
-                      JOINT MEASUREMENT CERTIFICATE FOR
+                      JOINT MEASUREMENT CERTIFICATE
                     </p>
 
                     <div className="text-[9pt] space-y-1 mb-2 border border-black p-2">
@@ -223,4 +244,3 @@ export default function PrintJmcPage() {
         </>
     );
 }
-
