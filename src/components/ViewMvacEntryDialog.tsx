@@ -83,6 +83,9 @@ const getBoqSlNo = (item: any): string =>
       ''
   ).trim();
 
+const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
 type EnrichedMvacItem = MvacItem & {
   boqQty: number;
   previousCertifiedQty: number;
@@ -187,14 +190,16 @@ export default function ViewMvacEntryDialog({
     if (!MvacEntry || !Array.isArray(boqItems)) return [];
   
     const itemsToDisplay = isEditMode ? editableItems : MvacEntry.items || [];
+    
+    const boqItemsMap = new Map<string, BoqItem>();
+    boqItems.forEach(b => {
+        const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
+        boqItemsMap.set(key, b);
+    });
   
     return itemsToDisplay.map((item: any) => {
-      const boqItem = boqItems.find(
-        (b: any) =>
-          getScope1(b) === getScope1(item) &&
-          getScope2(b) === getScope2(item) &&
-          getBoqSlNo(b) === getBoqSlNo(item)
-      );
+      const itemKey = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+      const boqItem = boqItemsMap.get(itemKey);
   
       const boqQty = boqItem
         ? Number(
@@ -471,37 +476,37 @@ export default function ViewMvacEntryDialog({
 
                 <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                   <TableRow>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       BOQ Sl. No.
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Description
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Unit
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       BOQ Qty
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Rate
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Prev. Certified
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Executed in this MVAC
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Certified in this MVAC
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Up to Date Certified Qty
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Amount Executed
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
                       Amount Certified
                     </TableHead>
                   </TableRow>

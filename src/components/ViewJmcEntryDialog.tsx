@@ -49,6 +49,17 @@ function formatCurrency(amount: number | string) {
   }
 }
 
+const getScope1 = (item: any): string => {
+  if (!item) return '';
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+  return key ? String(item[key] || '') : '';
+}
+const getScope2 = (item: any): string => {
+  if (!item) return '';
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  return key ? String(item[key] || '') : '';
+}
+
 const getBoqSlNo = (item: any): string =>
   String(
     item?.['BOQ SL No'] ??
@@ -59,6 +70,9 @@ const getBoqSlNo = (item: any): string =>
       item?.boqSlNo ??
       ''
   ).trim();
+  
+const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -147,8 +161,15 @@ export default function ViewJmcEntryDialog({
 
     const itemsToDisplay = isEditMode ? editableItems : (jmcEntry.items || []);
     
+    const boqItemsMap = new Map<string, BoqItem>();
+    boqItems.forEach(b => {
+        const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
+        boqItemsMap.set(key, b);
+    });
+
     return itemsToDisplay.map((item: any) => {
-      const boqItem = boqItems.find(b => getBoqSlNo(b) === getBoqSlNo(item));
+      const itemKey = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+      const boqItem = boqItemsMap.get(itemKey);
 
       const boqQty = boqItem
         ? Number(
@@ -158,7 +179,7 @@ export default function ViewJmcEntryDialog({
               0
           )
         : 0;
-
+  
       return {
         ...(item as JmcItem),
         boqQty,
