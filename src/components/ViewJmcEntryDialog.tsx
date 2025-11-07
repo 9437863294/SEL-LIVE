@@ -159,16 +159,30 @@ export default function ViewJmcEntryDialog({
       const scope2 = getScope2(item) ?? getScope2(boqItem);
       const key = compositeKey(scope2, sl);
       let previousCertifiedQty = Number((item as any).totalCertifiedQty);
-      if (!Number.isFinite(previousCertifiedQty)) {
-        previousCertifiedQty = totalCertifiedQtyMap[key] || 0;
+      
+      const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
+      if (currentEntryDate) {
+        previousCertifiedQty = projectJmcEntries
+          .filter(e => {
+            const eDate = toDateSafe(e.jmcDate);
+            return eDate && eDate < currentEntryDate;
+          })
+          .flatMap(e => e.items)
+          .filter(i => {
+              const iScope2 = getScope2(i) || getScope2(boqItems.find(b => b.id === (i as any).boqItemId));
+              return i.boqSlNo === sl && iScope2 === scope2;
+          })
+          .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
       }
+
+
       return {
         ...(item as any),
         boqQty,
         previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
       } as EnrichedJmcItem;
     });
-  }, [jmcEntry, boqItems, isEditMode, editableItems, totalCertifiedQtyMap]);
+  }, [jmcEntry, boqItems, isEditMode, editableItems, projectJmcEntries]);
 
   const handleItemChange = (
     index: number,
@@ -319,6 +333,8 @@ export default function ViewJmcEntryDialog({
       return 'xl';
     });
   };
+
+  const slugify = (text: string | undefined) => text?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') || '';
 
   return (
     <>

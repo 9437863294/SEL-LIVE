@@ -44,6 +44,12 @@ type EnrichedMvacItem = MvacItem & {
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
+const getScope2 = (item: any): string | undefined => {
+  if (!item) return undefined;
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+/g, '') === 'scope2');
+  return key ? String(item[key] || '') : undefined;
+}
+
 const PrintableMvacStyles = () => (
   <style>{`
     @media print {
@@ -114,6 +120,7 @@ export default function PrintMvacPage() {
                 
                 const enriched = (entry.items || []).map(item => {
                     const boqItem = boqItemsMap.get(item.boqSlNo);
+                    const itemScope2 = getScope2(item) || getScope2(boqItem);
                     
                     const previousCertifiedQty = allMvacEntries
                         .filter(e => {
@@ -121,7 +128,10 @@ export default function PrintMvacPage() {
                             return eDate && currentEntryDate && eDate < currentEntryDate;
                         })
                         .flatMap(e => e.items)
-                        .filter(i => i.boqSlNo === item.boqSlNo)
+                        .filter(i => {
+                             const iScope2 = getScope2(i) || getScope2(boqItemsMap.get(i.boqSlNo));
+                             return i.boqSlNo === item.boqSlNo && iScope2 === itemScope2;
+                        })
                         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
                         
                     return {
