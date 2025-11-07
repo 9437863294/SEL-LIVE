@@ -44,11 +44,20 @@ type EnrichedMvacItem = MvacItem & {
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
+const getScope1 = (item: any): string | undefined => {
+  if (!item) return undefined;
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+  return key ? String(item[key] || '') : undefined;
+}
 const getScope2 = (item: any): string | undefined => {
   if (!item) return undefined;
   const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+/g, '') === 'scope2');
   return key ? String(item[key] || '') : undefined;
 }
+const getBoqSlNo = (item: any): string => String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
+const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
 
 const PrintableMvacStyles = () => (
   <style>{`
@@ -114,13 +123,24 @@ export default function PrintMvacPage() {
                 const allMvacEntries = allMvacsSnap.docs.map(d => d.data() as MvacEntry);
                 
                 const boqSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
-                const boqItemsMap = new Map(boqSnap.docs.map(d => [(d.data() as BoqItem)['BOQ SL No'], d.data() as BoqItem]));
+                const boqItemsMap = new Map<string, BoqItem>();
+                boqSnap.docs.forEach(doc => {
+                    const item = doc.data() as BoqItem;
+                    const key = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+                    if (key) {
+                        boqItemsMap.set(key, item);
+                    }
+                });
 
                 const currentEntryDate = toDateSafe(entry.mvacDate);
                 
                 const enriched = (entry.items || []).map(item => {
-                    const boqItem = boqItemsMap.get(item.boqSlNo);
-                    const itemScope2 = getScope2(item) || getScope2(boqItem);
+                    const itemScope1 = getScope1(item);
+                    const itemScope2 = getScope2(item);
+                    const itemSlNo = getBoqSlNo(item);
+
+                    const itemKey = compositeKey(itemScope1, itemScope2, itemSlNo);
+                    const boqItem = boqItemsMap.get(itemKey);
                     
                     const previousCertifiedQty = allMvacEntries
                         .filter(e => {
@@ -129,14 +149,14 @@ export default function PrintMvacPage() {
                         })
                         .flatMap(e => e.items)
                         .filter(i => {
-                             const iScope2 = getScope2(i) || getScope2(boqItemsMap.get(i.boqSlNo));
-                             return i.boqSlNo === item.boqSlNo && iScope2 === itemScope2;
+                             const iKey = compositeKey(getScope1(i), getScope2(i), getBoqSlNo(i));
+                             return iKey === itemKey;
                         })
                         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
                         
                     return {
                         ...item,
-                        boqQty: boqItem ? Number(boqItem.QTY) : 0,
+                        boqQty: boqItem ? Number((boqItem as any).QTY || (boqItem as any)['Total Qty'] || 0) : 0,
                         previousCertifiedQty: previousCertifiedQty,
                     };
                 });
