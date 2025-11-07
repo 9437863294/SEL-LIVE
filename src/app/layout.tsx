@@ -1,9 +1,13 @@
+
+'use client';
+
 import './globals.css';
 import { ModuleProvider } from '@/context/ModuleContext';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from "@/components/ui/toaster";
 import { Inter, Roboto } from 'next/font/google';
 import AppShell from '@/components/AppShell';
+import { usePathname } from 'next/navigation';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -18,6 +22,17 @@ const roboto = Roboto({
   display: 'swap',
 })
 
+function AppContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isPrintPage = pathname.includes('/print');
+
+  if (isPrintPage) {
+    return <>{children}</>;
+  }
+
+  return <AppShell>{children}</AppShell>;
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,9 +43,9 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <ModuleProvider>
-            <AppShell>
+            <AppContent>
               {children}
-            </AppShell>
+            </AppContent>
           </ModuleProvider>
         </AuthProvider>
         <Toaster />
