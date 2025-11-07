@@ -44,20 +44,17 @@ type EnrichedJmcItem = JmcItem & {
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
-const getScope1 = (item: any): string | undefined => {
-  if (!item) return undefined;
+const getScope1 = (item: any): string => {
+  if (!item) return '';
   const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
-  return key ? String(item[key] || '') : undefined;
+  return key ? String(item[key] || '') : '';
 }
-const getScope2 = (item: any): string | undefined => {
-  if (!item) return undefined;
-  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+/g, '') === 'scope2');
-  return key ? String(item[key] || '') : undefined;
+const getScope2 = (item: any): string => {
+  if (!item) return '';
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  return key ? String(item[key] || '') : '';
 }
 const getBoqSlNo = (item: any): string => String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
-const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
-  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
-
 
 const PrintableJmcStyles = () => (
   <style>{`
@@ -126,7 +123,7 @@ export default function PrintJmcPage() {
                 const boqItemsMap = new Map<string, BoqItem>();
                 boqSnap.docs.forEach(doc => {
                     const item = doc.data() as BoqItem;
-                    const key = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+                    const key = `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
                     if (key) {
                         boqItemsMap.set(key, item);
                     }
@@ -139,7 +136,7 @@ export default function PrintJmcPage() {
                     const itemScope2 = getScope2(item);
                     const itemSlNo = getBoqSlNo(item);
                     
-                    const itemKey = compositeKey(itemScope1, itemScope2, itemSlNo);
+                    const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`;
                     const boqItem = boqItemsMap.get(itemKey);
                     
                     const previousCertifiedQty = allJmcEntries
@@ -149,8 +146,8 @@ export default function PrintJmcPage() {
                         })
                         .flatMap(e => e.items)
                         .filter(i => {
-                            const iKey = compositeKey(getScope1(i), getScope2(i), getBoqSlNo(i));
-                            return iKey === itemKey;
+                             const iKey = `${getScope1(i)}_${getScope2(i)}_${getBoqSlNo(i)}`;
+                             return iKey === itemKey;
                         })
                         .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
                         

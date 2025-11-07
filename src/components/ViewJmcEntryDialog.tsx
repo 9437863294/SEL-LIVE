@@ -49,15 +49,17 @@ function formatCurrency(amount: number | string) {
   }
 }
 
-function getScope2(x: any): string | undefined {
-  if (!x) return undefined;
-  const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
-  const v = k ? x[k] : undefined;
-  return typeof v === 'string' ? v.trim() : undefined;
+const getScope1 = (item: any): string => {
+  if (!item) return '';
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+  return key ? String(item[key] || '') : '';
 }
-
-const compositeKey = (scope2: unknown, slNo: unknown) =>
-  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+const getScope2 = (item: any): string => {
+  if (!item) return '';
+  const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  return key ? String(item[key] || '') : '';
+}
+const getBoqSlNo = (item: any): string => String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
 
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
@@ -134,53 +136,37 @@ export default function ViewJmcEntryDialog({
     }
   }, [jmcEntry, isOpen]);
 
-  const totalCertifiedQtyMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    projectJmcEntries.forEach((entry) => {
-      (entry.items ?? []).forEach((it: any) => {
-        const key = compositeKey(it?.scope2, it?.boqSlNo);
-        if (!String(it?.boqSlNo || '').trim()) return;
-        map[key] = (map[key] || 0) + (Number(it?.certifiedQty) || 0);
-      });
-    });
-    return map;
-  }, [projectJmcEntries]);
-
   const enrichedItems: EnrichedJmcItem[] = useMemo(() => {
     if (!jmcEntry || !Array.isArray(boqItems)) return [];
     const itemsToDisplay = isEditMode ? editableItems : jmcEntry.items;
+    
     return itemsToDisplay.map((item) => {
-      const sl = String(item.boqSlNo ?? '').trim();
-      const boqItem = boqItems.find((b: any) => {
-        const bSl = String(b['BOQ SL No'] ?? b['SL. No.'] ?? b['SL No'] ?? b['SL'] ?? '').trim();
-        return bSl === sl;
-      });
-      const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
-      const scope2 = getScope2(item) ?? getScope2(boqItem);
-      const key = compositeKey(scope2, sl);
-      let previousCertifiedQty = Number((item as any).totalCertifiedQty);
-      
-      const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
-      if (currentEntryDate) {
-        previousCertifiedQty = projectJmcEntries
-          .filter(e => {
-            const eDate = toDateSafe(e.jmcDate);
-            return eDate && eDate < currentEntryDate;
-          })
-          .flatMap(e => e.items)
-          .filter(i => {
-              const iScope2 = getScope2(i) || getScope2(boqItems.find(b => b.id === (i as any).boqItemId));
-              return i.boqSlNo === sl && iScope2 === scope2;
-          })
-          .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
-      }
+        const itemScope1 = getScope1(item);
+        const itemScope2 = getScope2(item);
+        const itemSlNo = getBoqSlNo(item);
 
+        const boqItem = boqItems.find((b) => {
+            return getScope1(b) === itemScope1 && getScope2(b) === itemScope2 && getBoqSlNo(b) === itemSlNo;
+        });
 
-      return {
-        ...(item as any),
-        boqQty,
-        previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
-      } as EnrichedJmcItem;
+        const boqQty = boqItem ? Number((boqItem as any).QTY || (boqItem as any)['Total Qty'] || 0) : 0;
+        
+        const currentEntryDate = toDateSafe(jmcEntry.jmcDate);
+        
+        const previousCertifiedQty = projectJmcEntries
+            .filter(e => {
+                const eDate = toDateSafe(e.jmcDate);
+                return eDate && currentEntryDate && eDate < currentEntryDate;
+            })
+            .flatMap(e => e.items)
+            .filter(i => getScope1(i) === itemScope1 && getScope2(i) === itemScope2 && getBoqSlNo(i) === itemSlNo)
+            .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
+
+        return {
+            ...(item as any),
+            boqQty,
+            previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
+        } as EnrichedJmcItem;
     });
   }, [jmcEntry, boqItems, isEditMode, editableItems, projectJmcEntries]);
 
