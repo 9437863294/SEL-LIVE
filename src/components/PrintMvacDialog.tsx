@@ -1,23 +1,27 @@
 
 'use client';
 
-import * as React from 'react';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { MvacEntry, MvacItem, Project, Signature } from '@/lib/types';
+import { Separator } from '@/components/ui/separator';
+import type { MvacEntry, BoqItem, Bill, MvacItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
-import { Printer, Maximize, Minimize, FileDown } from 'lucide-react';
-import Image from 'next/image';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
-import { cn } from '@/lib/utils';
-import * as XLSX from 'xlsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { Input } from '@/components/ui/input';
+import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, doc, updateDoc, writeBatch, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
+import Link from 'next/link';
 
-
-/* ---------- Helpers ---------- */
+/* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
   if (typeof value?.toDate === 'function') return value.toDate();
@@ -31,232 +35,176 @@ function toDateSafe(value: any): Date | null {
   return null;
 }
 
-const formatDateSafe = (dateInput: any) => {
-  const d = toDateSafe(dateInput);
-  if (!d) return 'N/A';
+function formatCurrency(amount: number | string) {
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return String(amount ?? '');
   try {
-    return format(d, 'dd.MM.yyyy');
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(num);
   } catch {
-    return 'Invalid Date';
+    return `₹${num.toFixed(2)}`;
   }
-};
+}
 
-/** Must match the enriched shape you pass from ViewMvacEntryDialog */
+function getScope2(x: any): string | undefined {
+  if (!x) return undefined;
+  const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  const v = k ? x[k] : undefined;
+  return typeof v === 'string' ? v.trim() : undefined;
+}
+
+const compositeKey = (scope2: unknown, slNo: unknown) =>
+  `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
 type EnrichedMvacItem = MvacItem & {
   boqQty: number;
   previousCertifiedQty: number;
 };
 
-type ProjectWithExtras = Project & {
-  woNo?: string;
-  projectName?: string;
-  'BID DOCUMENT No'?: string;
-  projectSite?: string;
-  signatures?: Signature[];
-  projectDescription?: string;
-};
-
-interface PrintMvacDialogProps {
+interface ViewMvacEntryDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  mvacEntry: MvacEntry | null;
-  project?: ProjectWithExtras | null;
-  enrichedItems: EnrichedMvacItem[];
+  MvacEntry: MvacEntry | null;
+  boqItems: BoqItem[];
+  bills: Bill[];
+  isEditMode?: boolean;
+  onVerify?: (
+    taskId: string,
+    action: string,
+    comment: string,
+    updatedItems: MvacItem[]
+  ) => Promise<void>;
+  isLoading?: boolean;
 }
 
-/* ---------- Auto-Fit Print Styles ---------- */
-const PrintableMvacStyles = ({ orientation }: { orientation: 'portrait' | 'landscape' }) => (
-  <style>{`
-    @media print {
-      @page {
-        size: A4 ${orientation};
-        margin: 0; /* remove browser margins completely */
-      }
-
-      html, body {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-        margin: 0;
-        padding: 0;
-        background: #fff !important;
-        width: 100%;
-        height: 100%;
-      }
-
-      /* Center printable area and auto-scale to fit */
-      #printable-mvac-sheet {
-        transform-origin: top left;
-        background: #fff;
-        margin: auto;
-        padding: 10mm;                    /* 1 cm visual padding inside */
-        width: 210mm;
-        height: 297mm;
-        overflow: hidden;
-        box-sizing: border-box;
-      }
-      #printable-mvac-sheet.print-landscape {
-        width: 297mm;
-        height: 210mm;
-      }
-
-      /* Auto-fit scaling */
-      body {
-        zoom: 0.95;                        /* fine-tuned for Chrome/PDF printers */
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        border: 1px solid #000;
-        page-break-inside: auto;
-      }
-       tr {
-        page-break-inside: avoid;
-        page-break-after: auto;
-      }
-      thead {
-        display: table-header-group;
-      }
-      th, td {
-        border: 1px solid #000;
-        padding: 2px 4px;
-        vertical-align: top;
-        font-size: 9pt;
-      }
-      th {
-        font-weight: bold;
-        text-align: center;
-      }
-
-      /* Limit “Description of Items” to 3 lines */
-      .desc-cell {
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: normal;
-      }
-
-      .no-print { display: none !important; }
-      .signatures { page-break-inside: avoid; }
-
-      /* Print only the sheet */
-      body * { visibility: hidden; }
-      #printable-mvac-sheet, #printable-mvac-sheet * { visibility: visible; }
-    }
-  `}</style>
-);
-
-export default function PrintMvacDialog({
+export default function ViewMvacEntryDialog({
   isOpen,
   onOpenChange,
-  mvacEntry,
-  project,
-  enrichedItems,
-}: PrintMvacDialogProps) {
-  const [orientation, setOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
-  const [dialogSize, setDialogSize] = React.useState<'xl' | '2xl' | 'full'>('2xl');
+  MvacEntry,
+  boqItems,
+  bills, // eslint-disable-line @typescript-eslint/no-unused-vars
+  isEditMode = false,
+  onVerify,
+  isLoading = false,
+}: ViewMvacEntryDialogProps) {
+  const [editableItems, setEditableItems] = useState<MvacItem[]>([]);
+  const [projectMvacEntries, setProjectMvacEntries] = useState<MvacEntry[]>([]);
+  const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
+  const [currentProject, setCurrentProject] = useState<(Project & {signatures?: any[]}) | null>(null);
 
-  const handlePrint = () => window.print();
-  const toggleDialogSize = () =>
-    setDialogSize(c => (c === 'xl' ? '2xl' : c === '2xl' ? 'full' : 'xl'));
+  // refs for split-axis scrolling
+  const xScrollRef = useRef<HTMLDivElement | null>(null);     // inner container that actually scrolls horizontally (contains table)
+  const hBarRef = useRef<HTMLDivElement | null>(null);        // fixed bottom horizontal scrollbar
+  const hBarInnerRef = useRef<HTMLDivElement | null>(null);   // spacer that mirrors content scrollWidth
 
-  if (!mvacEntry) return null;
+  useEffect(() => {
+    setEditableItems(MvacEntry?.items ? (JSON.parse(JSON.stringify(MvacEntry.items)) as MvacItem[]) : []);
+  }, [MvacEntry, isOpen]);
 
-  const calculateUpToDateQty = (item: EnrichedMvacItem) =>
-    (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
+  useEffect(() => {
+    const fetchProjectData = async () => {
+      const projectId = (MvacEntry as any)?.projectId || undefined;
+      if (!projectId) {
+        setProjectMvacEntries([]);
+        setCurrentProject(null);
+        return;
+      }
+      try {
+        const [projectSnap, MvacSnap] = await Promise.all([
+            getDoc(doc(db, 'projects', projectId)),
+            getDocs(collection(db, 'projects', projectId, 'MvacEntries'))
+        ]);
+        
+        if (projectSnap.exists()) {
+            setCurrentProject({ id: projectSnap.id, ...projectSnap.data() } as Project);
+        }
 
-  const title = `MATERIAL VERIFICATION AND ACCEPTANCE CERTIFICATE`.toUpperCase();
-
-  const workDetails = {
-    orderNo: project?.woNo || 'N/A',
-    bidNo: project?.['BID DOCUMENT No'] || 'N/A',
-    projectName: project?.projectDescription || project?.projectName || 'N/A',
-    projectSite: project?.projectSite || 'N/A',
-    mvacDate: formatDateSafe((mvacEntry as any).mvacDate),
-    mvacNo: mvacEntry.mvacNo,
-  };
-  const getDisplayValue = (v: number | undefined) => (v === 0 ? 0 : v ?? '');
-
-  const handleExport = () => {
-    const header = [
-        ['', 'SIDDHARTHA ENGINEERING LIMITED', ''],
-        ['', 'ELECTRICAL ENGINEERS, CONTRACTORS (EHV) & CONSULTANTS', ''],
-        ['', 'PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)', ''],
-        ['', 'Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915', ''],
-        ['', 'E-mail: sel.techhead@gmail.com', ''],
-    ];
-    
-    const titleRow = [title];
-    const detailsRows = [
-        [`MVAC No.: ${workDetails.mvacNo}`, `DATE: ${workDetails.mvacDate}`],
-        [`Order No. ${workDetails.orderNo}`],
-        [`Name of the project:- ${workDetails.projectName}`],
-        [`Project Site : ${workDetails.projectSite}`],
-    ];
-
-    const tableHeader = [
-        'SL. NO.', 
-        'Description of Items', 
-        'Unit', 
-        'BOQ Qty',
-        'Up to Previous',
-        'In this MVAC',
-        'Up to date'
-    ];
-    
-    const tableData = enrichedItems.map(item => [
-        item.boqSlNo ?? '-',
-        item.description ?? '-',
-        item.unit ?? '-',
-        getDisplayValue(item.boqQty),
-        getDisplayValue(item.previousCertifiedQty),
-        getDisplayValue(item.executedQty),
-        getDisplayValue(calculateUpToDateQty(item)),
-    ]);
-
-    const signatureRow = (project?.signatures || []).map(sig => `${sig.designation}\n${sig.name}`);
-
-    const ws_data = [
-        ...header,
-        [], // Empty row
-        titleRow,
-        [],
-        ...detailsRows,
-        [],
-        tableHeader,
-        ...tableData,
-        [], [], [], // spacing for signatures
-        signatureRow
-    ];
-
-    const ws = XLSX.utils.aoa_to_sheet(ws_data);
-
-    // Merging cells for headers
-    ws['!merges'] = [
-      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
-      { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
-      { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
-      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } },
-      { s: { r: 4, c: 1 }, e: { r: 4, c: 2 } },
-      { s: { r: 6, c: 0 }, e: { r: 6, c: 6 } }, // Title
-      { s: { r: 8, c: 0 }, e: { r: 8, c: 3 } }, // MVAC No & Date
-      { s: { r: 9, c: 0 }, e: { r: 9, c: 6 } }, // Order No
-      { s: { r: 10, c: 0 }, e: { r: 10, c: 6 } }, // Project Name
-      { s: { r: 11, c: 0 }, e: { r: 11, c: 6 } }, // Project Site
-    ];
-    
-    // Add password protection
-    ws['!protect'] = {
-        password: 'Sel@123',
-        formatColumns: true,
-        formatRows: true,
+        const all = MvacSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry));
+        setProjectMvacEntries(all);
+      } catch (e) {
+        console.error('Failed to load project MVACs:', e);
+        setProjectMvacEntries([]);
+      }
     };
+    if (isOpen && MvacEntry) {
+      fetchProjectData();
+    }
+  }, [MvacEntry, isOpen]);
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'MVAC Report');
-    XLSX.writeFile(wb, `MVAC_${workDetails.mvacNo}.xlsx`);
+  const totalCertifiedQtyMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    projectMvacEntries.forEach((entry) => {
+      (entry.items ?? []).forEach((it: any) => {
+        const key = compositeKey(it?.scope2, it?.boqSlNo);
+        if (!String(it?.boqSlNo || '').trim()) return;
+        map[key] = (map[key] || 0) + (Number(it?.certifiedQty) || 0);
+      });
+    });
+    return map;
+  }, [projectMvacEntries]);
+
+  const enrichedItems: EnrichedMvacItem[] = useMemo(() => {
+    if (!MvacEntry || !Array.isArray(boqItems)) return [];
+    const itemsToDisplay = isEditMode ? editableItems : MvacEntry.items;
+    return itemsToDisplay.map((item) => {
+      const sl = String(item.boqSlNo ?? '').trim();
+      const boqItem = boqItems.find((b: any) => {
+        const bSl = String(b['BOQ SL No'] ?? b['SL. No.'] ?? b['SL No'] ?? b['SL'] ?? '').trim();
+        return bSl === sl;
+      });
+      const boqQty = boqItem ? Number((boqItem as any).QTY ?? (boqItem as any)['Total Qty'] ?? 0) : 0;
+      const scope2 = getScope2(item) ?? getScope2(boqItem);
+      const key = compositeKey(scope2, sl);
+      let previousCertifiedQty = Number((item as any).totalCertifiedQty);
+      if (!Number.isFinite(previousCertifiedQty)) {
+        previousCertifiedQty = totalCertifiedQtyMap[key] || 0;
+      }
+      return {
+        ...(item as any),
+        boqQty,
+        previousCertifiedQty: Number.isFinite(previousCertifiedQty) ? previousCertifiedQty : 0,
+      } as EnrichedMvacItem;
+    });
+  }, [MvacEntry, boqItems, isEditMode, editableItems, totalCertifiedQtyMap]);
+
+  const handleItemChange = (
+    index: number,
+    field: 'executedQty' | 'certifiedQty',
+    value: string
+  ) => {
+    setEditableItems((prev) => {
+      const next = [...prev];
+      const item = { ...(next[index] as any) };
+      const numValue = value === '' ? '' : Number(value);
+
+      if (value === '') item[field] = '';
+      else if (Number.isFinite(numValue)) item[field] = Number(numValue);
+
+      const rate = Number(item.rate) || 0;
+      const executedQty = Number(item.executedQty) || 0;
+      item.totalAmount = executedQty * rate;
+
+      next[index] = item;
+      return next;
+    });
+  };
+
+  const handleSaveChanges = async () => {
+    if (!onVerify || !MvacEntry) return;
+    await onVerify(MvacEntry.id, 'Verified', 'Verified with edits', editableItems);
+  };
+
+  const formatDateSafe = (dateInput: any) => {
+    const d = toDateSafe(dateInput);
+    if (!d) return 'N/A';
+    try {
+      return format(d, 'dd MMM, yyyy');
+    } catch {
+      return 'Invalid Date';
+    }
   };
 
   const dialogWidthClass =
@@ -266,122 +214,218 @@ export default function PrintMvacDialog({
       ? 'sm:max-w-[80rem]'
       : 'sm:max-w-4xl';
 
+  // columns and min table width (to force horizontal overflow when needed)
+  const COLS = {
+    sl: '6rem',
+    desc: '22rem',
+    unit: '4rem',
+    boq: '6rem',
+    rate: '6rem',
+    prev: '6rem',
+    exec: '8rem',
+    cert: '6rem',
+    upToDate: '6rem',
+    execAmt: '8rem',
+    certAmt: '8rem',
+  } as const;
+  const tableMinWidthRem = 88;
+
+  // rows
+  const rows = useMemo(() => {
+    return enrichedItems.map((item, index) => {
+      const rate = Number((item as any).rate) || 0;
+      const execQty = Number((item as any).executedQty) || 0;
+      const certQty = Number((item as any).certifiedQty) || 0;
+      const prevCert = Number((item as any).previousCertifiedQty) || 0;
+      const upToDateCertifiedQty = prevCert + certQty;
+      const executedAmount = rate * execQty;
+      const certifiedAmount = rate * certQty;
+
+      return (
+        <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
+          <TableCell className="text-center font-medium truncate">{item.boqSlNo ?? '-'}</TableCell>
+          {/* Description clamped to 4 lines */}
+          <TableCell className="align-top">
+            <div className="line-clamp-4 break-words whitespace-pre-line" title={item.description ?? ''}>
+              {item.description ?? '-'}
+            </div>
+          </TableCell>
+          <TableCell className="whitespace-nowrap align-top">{item.unit ?? '-'}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">{Number(item.boqQty) || 0}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(rate)}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">{prevCert}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">
+            {isEditMode ? (
+              <Input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={(item as any).executedQty ?? ''}
+                onChange={(e) => handleItemChange(index, 'executedQty', e.target.value)}
+                className="h-8"
+              />
+            ) : (
+              execQty || '-'
+            )}
+          </TableCell>
+          {/* Certified in this MVAC (non-editable) */}
+          <TableCell className="text-right whitespace-nowrap align-top">{certQty || '-'}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top font-semibold">{upToDateCertifiedQty || 0}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(executedAmount)}</TableCell>
+          <TableCell className="text-right whitespace-nowrap align-top">{formatCurrency(certifiedAmount)}</TableCell>
+        </TableRow>
+      );
+    });
+  }, [enrichedItems, isEditMode]);
+
+  const hasMvac = !!MvacEntry;
+
+  /* ---------- split-axis scroll sync ---------- */
+  useEffect(() => {
+    const x = xScrollRef.current;
+    const bar = hBarRef.current;
+    const inner = hBarInnerRef.current;
+    if (!x || !bar || !inner) return;
+
+    const syncFromBar = () => { x.scrollLeft = bar.scrollLeft; };
+    const syncFromX = () => { bar.scrollLeft = x.scrollLeft; };
+
+    // set width of fake inner to match content scroll width
+    const setWidths = () => {
+      inner.style.width = `${x.scrollWidth}px`;
+    };
+    setWidths();
+
+    // observe size changes
+    const ro = new ResizeObserver(setWidths);
+    ro.observe(x);
+
+    bar.addEventListener('scroll', syncFromBar, { passive: true });
+    x.addEventListener('scroll', syncFromX, { passive: true });
+    window.addEventListener('resize', setWidths);
+
+    return () => {
+      ro.disconnect();
+      bar.removeEventListener('scroll', syncFromBar);
+      x.removeEventListener('scroll', syncFromX);
+      window.removeEventListener('resize', setWidths);
+    };
+  }, [rows.length, dialogSize, hasMvac]);
+  
+  const toggleDialogSize = () => {
+    setDialogSize(current => {
+      if (current === 'xl') return '2xl';
+      if (current === '2xl') return 'full';
+      return 'xl';
+    });
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('max-h-[90vh] flex flex-col min-h-0', dialogWidthClass)}>
-        <DialogHeader className="no-print">
-          <DialogTitle>Print MVAC: {mvacEntry.mvacNo}</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+        {/* height constrained; inner owns scroll */}
+        <DialogContent className={`${dialogWidthClass} max-h-[90vh] flex flex-col min-h-0`}>
+          {/* HEADER */}
+          <div className="pb-2">
+            <DialogHeader>
+              <DialogTitle className="text-center">
+                {isEditMode ? 'Verify & Edit' : 'MVAC Details'}: {MvacEntry?.mvacNo ?? '-'}
+              </DialogTitle>
+            </DialogHeader>
+          </div>
 
-        <PrintableMvacStyles orientation={orientation} />
-
-        <div
-          id="printable-mvac-sheet"
-          className={cn(
-            'flex-1 min-h-0 overflow-auto mx-auto',
-            orientation === 'landscape' ? 'print-landscape' : 'print-portrait'
-          )}
-        >
-          <div id="printable-mvac-content" className="px-4 py-2">
-            {/* Header */}
-            <div className="text-center">
-                <p className="text-lg font-extrabold">SIDDHARTHA ENGINEERING LIMITED</p>
-                <p className="text-[7pt] font-semibold">ELECTRICAL ENGINEERS, CONTRACTORS (EHV) & CONSULTANTS</p>
-                <p className="text-[7pt]">PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)</p>
-                <p className="text-[7pt]">Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915</p>
-                <p className="text-[7pt]">E-mail: sel.techhead@gmail.com</p>
-            </div>
-
-            <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">
-              {title}
-            </p>
-
-            {/* Work details */}
-            <div className="text-[9pt] space-y-1 mb-2 border border-black p-2">
-              <div className="flex justify-between">
-                <span><strong>MVAC No.:</strong> {workDetails.mvacNo}</span>
-                <span><strong>DATE:</strong> {workDetails.mvacDate}</span>
+          {/* BODY: vertical scroller (Y) + hidden X; inside it we keep a real X scroller */}
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-md border">
+            {!hasMvac ? (
+              <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+                No MVAC selected.
               </div>
-              <p><strong>Order No.</strong> {workDetails.orderNo}</p>
-              <p><strong>Name of the project:-</strong> {workDetails.projectName}</p>
-              <p><strong>Project Site :</strong> {workDetails.projectSite}</p>
-            </div>
+            ) : (
+              // This element actually scrolls horizontally.
+              <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
+                <Table className="w-full table-fixed" style={{ minWidth: `${tableMinWidthRem}rem` }}>
+                  <colgroup>
+                    <col style={{ width: COLS.sl }} />
+                    <col style={{ width: COLS.desc }} />
+                    <col style={{ width: COLS.unit }} />
+                    <col style={{ width: COLS.boq }} />
+                    <col style={{ width: COLS.rate }} />
+                    <col style={{ width: COLS.prev }} />
+                    <col style={{ width: COLS.exec }} />
+                    <col style={{ width: COLS.cert }} />
+                    <col style={{ width: COLS.upToDate }} />
+                    <col style={{ width: COLS.execAmt }} />
+                    <col style={{ width: COLS.certAmt }} />
+                  </colgroup>
 
-            {/* Table */}
-            <div className="overflow-x-auto border border-black">
-              <Table className="w-full table-auto text-[8pt]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead rowSpan={2} className="w-[4%] border-black text-center align-middle">SL. NO.</TableHead>
-                    <TableHead rowSpan={2} className="w-[28%] border-black text-center align-middle">Description of Items</TableHead>
-                    <TableHead rowSpan={2} className="w-[6%] border-black text-center align-middle">Unit</TableHead>
-                    <TableHead rowSpan={2} className="w-[8%] border-black text-center align-middle">BOQ Qty</TableHead>
-                    <TableHead colSpan={3} className="border-black text-center font-bold">QNTY EXECUTED</TableHead>
-                  </TableRow>
-                  <TableRow>
-                    <TableHead className="w-[8%] border-black text-center">Up to Previous</TableHead>
-                    <TableHead className="w-[8%] border-black text-center">In this MVAC</TableHead>
-                    <TableHead className="w-[8%] border-black text-center">Up to date</TableHead>
-                  </TableRow>
-                </TableHeader>
+                  {/* Sticky header */}
+                  <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+                    <TableRow>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Sl. No.</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Description</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Unit</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">BOQ Qty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Rate</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Prev. Certified</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Executed in this MVAC</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Certified in this MVAC</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Up to Date Certified Qty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Executed</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">Amount Certified</TableHead>
+                    </TableRow>
+                  </TableHeader>
 
-                <TableBody>
-                  {enrichedItems.map((item, index) => {
-                    const upToDateQty = calculateUpToDateQty(item);
-                    return (
-                      <TableRow key={`${item.boqSlNo ?? 'NA'}-${index}`}>
-                        <TableCell className="text-center border-black">{item.boqSlNo ?? '-'}</TableCell>
-                        <TableCell className="border-black">
-                          <div className="desc-cell">{item.description ?? '-'}</div>
-                        </TableCell>
-                        <TableCell className="text-center border-black">{item.unit ?? '-'}</TableCell>
-                        <TableCell className="text-right border-black">{getDisplayValue(item.boqQty)}</TableCell>
-                        <TableCell className="text-right border-black">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
-                        <TableCell className="text-right border-black">{getDisplayValue(item.executedQty)}</TableCell>
-                        <TableCell className="text-right border-black">{getDisplayValue(upToDateQty)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Signatures */}
-            <div className="signatures flex justify-between mt-16 text-[9pt] px-4">
-              <div className="w-1/3 text-center">
-                  <p className="border-t border-black pt-1 mt-8">Site In charge</p>
-                  <p className="font-bold">M/RAMPUR</p>
+                  <TableBody>{rows}</TableBody>
+                </Table>
               </div>
-            </div>
+            )}
           </div>
-        </div>
 
-        {/* Footer Controls */}
-        <DialogFooter className="mt-4 pr-4 no-print flex justify-between w-full">
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="orientation-switch"
-              checked={orientation === 'landscape'}
-              onCheckedChange={(checked) => setOrientation(checked ? 'landscape' : 'portrait')}
-            />
-            <Label htmlFor="orientation-switch">Landscape Mode</Label>
-            <Button variant="outline" size="icon" onClick={toggleDialogSize} className="ml-4">
-              {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-            </Button>
+          {/* Dedicated horizontal scrollbar, docked at dialog bottom */}
+          <div
+            ref={hBarRef}
+            className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
+            style={{ scrollbarGutter: 'stable both-edges' }}
+            aria-hidden
+          >
+            <div ref={hBarInnerRef} className="h-4" />
           </div>
-          <div>
-            <Button variant="secondary" onClick={handleExport} className="ml-2">
-                <FileDown className="mr-2 h-4 w-4" /> Export to Excel
-            </Button>
-            <DialogClose asChild>
-              <Button variant="outline">Close</Button>
-            </DialogClose>
-            <Button onClick={handlePrint} className="ml-2">
-              <Printer className="mr-2 h-4 w-4" /> Print Document
-            </Button>
+
+          {/* FOOTER */}
+          <div className="pt-4">
+            <Separator />
+            <DialogFooter className="pt-3 sm:justify-between">
+              <div className="flex gap-2">
+                <Link href={`/billing-recon/${currentProject ? slugify(currentProject.projectName) : ''}/mvac/${MvacEntry?.id}/print`} target="_blank">
+                    <Button variant="outline" disabled={!hasMvac}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print
+                    </Button>
+                </Link>
+                 <Button variant="outline" size="icon" onClick={toggleDialogSize}>
+                    {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+                {isEditMode && (
+                  <Button onClick={handleSaveChanges} disabled={isLoading || !hasMvac}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save & Verify
+                  </Button>
+                )}
+              </div>
+            </DialogFooter>
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
+```</content>
+  </change>
+  <change>
+    <file>/home/user/studio/src/components/PrintMvacDialog.tsx</file>
+    <content><

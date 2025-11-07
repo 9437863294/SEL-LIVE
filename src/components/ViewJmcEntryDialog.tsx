@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, writeBatch, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
-import PrintJmcDialog from '@/components/PrintJmcDialog';
+import Link from 'next/link';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -92,7 +92,6 @@ export default function ViewJmcEntryDialog({
 }: ViewJmcEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<JmcItem[]>([]);
   const [projectJmcEntries, setProjectJmcEntries] = useState<JmcEntry[]>([]);
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
   const [currentProject, setCurrentProject] = useState<(Project & {signatures?: any[]}) | null>(null);
 
@@ -397,10 +396,12 @@ export default function ViewJmcEntryDialog({
             <Separator />
             <DialogFooter className="pt-3 sm:justify-between">
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)} disabled={!hasJmc}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
+                 <Link href={`/billing-recon/${projectSlug}/jmc/${jmcEntry?.id}/print`} target="_blank">
+                    <Button variant="outline" disabled={!hasJmc}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print
+                    </Button>
+                </Link>
                  <Button variant="outline" size="icon" onClick={toggleDialogSize}>
                     {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </Button>
@@ -420,14 +421,10 @@ export default function ViewJmcEntryDialog({
           </div>
         </DialogContent>
       </Dialog>
-
-      <PrintJmcDialog
-        isOpen={isPrintDialogOpen}
-        onOpenChange={setIsPrintDialogOpen}
-        jmcEntry={jmcEntry}
-        project={currentProject}
-        enrichedItems={enrichedItems}
-      />
     </>
   );
 }
+```</content>
+  </change>
+  <change>
+    

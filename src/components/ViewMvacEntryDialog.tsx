@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, writeBatch, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
-import PrintMvacDialog from '@/components/PrintMvacDialog';
+import Link from 'next/link';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -92,7 +92,6 @@ export default function ViewMvacEntryDialog({
 }: ViewMvacEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<MvacItem[]>([]);
   const [projectMvacEntries, setProjectMvacEntries] = useState<MvacEntry[]>([]);
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
   const [currentProject, setCurrentProject] = useState<(Project & {signatures?: any[]}) | null>(null);
 
@@ -397,10 +396,12 @@ export default function ViewMvacEntryDialog({
             <Separator />
             <DialogFooter className="pt-3 sm:justify-between">
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)} disabled={!hasMvac}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
+                <Link href={`/billing-recon/${currentProject ? slugify(currentProject.projectName) : ''}/mvac/${MvacEntry?.id}/print`} target="_blank">
+                    <Button variant="outline" disabled={!hasMvac}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print
+                    </Button>
+                </Link>
                  <Button variant="outline" size="icon" onClick={toggleDialogSize}>
                     {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </Button>
@@ -420,16 +421,11 @@ export default function ViewMvacEntryDialog({
           </div>
         </DialogContent>
       </Dialog>
-
-      <PrintMvacDialog
-        isOpen={isPrintDialogOpen}
-        onOpenChange={setIsPrintDialogOpen}
-        mvacEntry={MvacEntry}
-        project={currentProject}
-        enrichedItems={enrichedItems}
-      />
     </>
   );
 }
-
-
+```</content>
+  </change>
+  <change>
+    <file>/home/user/studio/src/components/PrintMvacDialog.tsx</file>
+    <content><![CDATA[
