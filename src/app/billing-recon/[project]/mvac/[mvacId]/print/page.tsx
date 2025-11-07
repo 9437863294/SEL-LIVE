@@ -214,3 +214,6 @@ export default function PrintMvacPage() {
                     </div>
                 </div>
             </div>
+        </>
+    );
+}
