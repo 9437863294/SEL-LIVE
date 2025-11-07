@@ -125,8 +125,6 @@ export default function PrintJmcPage() {
                         boqItemsMap.set(key, item);
                     }
                 });
-
-                const currentEntryDate = toDateSafe(entry.jmcDate);
                 
                 const enriched = (entry.items || []).map(item => {
                     const itemScope1 = getScope1(item);
@@ -136,13 +134,10 @@ export default function PrintJmcPage() {
                     const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`;
                     const boqItem = boqItemsMap.get(itemKey);
                     
-                    // Directly use totalCertifiedQty as the previous certified quantity
-                    const previousCertifiedQty = (item as any).totalCertifiedQty || 0;
-                        
                     return {
                         ...item,
                         boqQty: boqItem ? Number((boqItem as any).QTY || (boqItem as any)['Total Qty'] || 0) : 0,
-                        previousCertifiedQty: previousCertifiedQty,
+                        previousCertifiedQty: (item as any).totalCertifiedQty || 0,
                     };
                 });
                 setEnrichedItems(enriched);
@@ -235,7 +230,7 @@ export default function PrintJmcPage() {
                                 <TableCell className="border-black"><div className="desc-cell">{item.description ?? '-'}</div></TableCell>
                                 <TableCell className="text-center border-black">{item.unit ?? '-'}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.boqQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
+                                <TableCell className="text-right border-black">{getDisplayValue((item as any).totalCertifiedQty)}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.executedQty)}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(upToDateQty)}</TableCell>
                               </TableRow>
@@ -246,10 +241,12 @@ export default function PrintJmcPage() {
                     </div>
 
                     <div className="signatures flex justify-between mt-16 text-[9pt] px-4">
-                      <div className="w-1/3 text-center">
-                          <p className="border-t border-black pt-1 mt-8">Site In charge</p>
-                          <p className="font-bold">{project?.projectSite}</p>
-                      </div>
+                      {(project?.signatures || []).map((sig, index) => (
+                          <div key={sig.id || index} className="w-1/3 text-center">
+                              <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
+                              <p className="font-bold">{sig.name}</p>
+                          </div>
+                      ))}
                     </div>
                 </div>
             </div>

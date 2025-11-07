@@ -228,7 +228,7 @@ export default function PrintMvacPage() {
                                 <TableCell className="border-black"><div className="desc-cell">{item.description ?? '-'}</div></TableCell>
                                 <TableCell className="text-center border-black">{item.unit ?? '-'}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.boqQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
+                                <TableCell className="text-right border-black">{getDisplayValue((item as any).totalCertifiedQty)}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.executedQty)}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(upToDateQty)}</TableCell>
                               </TableRow>
@@ -238,10 +238,12 @@ export default function PrintMvacPage() {
                       </Table>
                     </div>
                     <div className="signatures flex justify-between mt-16 text-[9pt] px-4">
-                      <div className="w-1/3 text-center">
-                          <p className="border-t border-black pt-1 mt-8">Site In charge</p>
-                          <p className="font-bold">{project?.projectSite}</p>
-                      </div>
+                      {(project?.signatures || []).map((sig, index) => (
+                          <div key={sig.id || index} className="w-1/3 text-center">
+                              <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
+                              <p className="font-bold">{sig.name}</p>
+                          </div>
+                      ))}
                     </div>
                 </div>
             </div>
