@@ -122,7 +122,7 @@ export default function PrintJmcPage() {
                     const item = doc.data() as BoqItem;
                     const key = `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
                     if (key) {
-                        boqItemsMap.set(key, item);
+                        boqItemsMap.set(key.toLowerCase(), item);
                     }
                 });
                 
@@ -131,7 +131,7 @@ export default function PrintJmcPage() {
                     const itemScope2 = getScope2(item);
                     const itemSlNo = getBoqSlNo(item);
                     
-                    const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`;
+                    const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`.toLowerCase();
                     const boqItem = boqItemsMap.get(itemKey);
                     
                     return {
@@ -157,7 +157,11 @@ export default function PrintJmcPage() {
       }
     }, [isLoading, jmcEntry]);
 
-    const calculateUpToDateQty = (item: EnrichedJmcItem) => (Number(item.previousCertifiedQty) || 0) + (Number(item.certifiedQty) || 0);
+    const calculateUpToDateQty = (item: EnrichedJmcItem) => {
+        const prevCertified = Number(item.previousCertifiedQty) || 0;
+        const currentCertified = Number(item.certifiedQty) || 0;
+        return prevCertified + currentCertified;
+    };
 
     if (isLoading) {
         return <div className="p-8"><Skeleton className="h-[80vh]" /></div>;
@@ -213,7 +217,7 @@ export default function PrintJmcPage() {
                             <TableHead rowSpan={2} className="w-[28%] border-black text-center align-middle">Description of Items</TableHead>
                             <TableHead rowSpan={2} className="w-[6%] border-black text-center align-middle">Unit</TableHead>
                             <TableHead rowSpan={2} className="w-[8%] border-black text-center align-middle">BOQ Qty</TableHead>
-                            <TableHead colSpan={3} className="border-black text-center font-bold">QNTY EXECUTED</TableHead>
+                            <TableHead colSpan={3} className="border-black text-center font-bold">QTY. CERTIFIED</TableHead>
                           </TableRow>
                           <TableRow>
                             <TableHead className="w-[8%] border-black text-center">Up to Previous</TableHead>
@@ -230,8 +234,8 @@ export default function PrintJmcPage() {
                                 <TableCell className="border-black"><div className="desc-cell">{item.description ?? '-'}</div></TableCell>
                                 <TableCell className="text-center border-black">{item.unit ?? '-'}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.boqQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue((item as any).totalCertifiedQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue(item.executedQty)}</TableCell>
+                                <TableCell className="text-right border-black">{getDisplayValue(item.previousCertifiedQty)}</TableCell>
+                                <TableCell className="text-right border-black">{getDisplayValue(item.certifiedQty)}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(upToDateQty)}</TableCell>
                               </TableRow>
                             );
