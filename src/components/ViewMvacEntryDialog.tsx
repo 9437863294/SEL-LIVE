@@ -320,6 +320,8 @@ export default function ViewMvacEntryDialog({
     });
   };
 
+  const slugify = (text: string | undefined) => text?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') || '';
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -396,7 +398,7 @@ export default function ViewMvacEntryDialog({
             <Separator />
             <DialogFooter className="pt-3 sm:justify-between">
               <div className="flex gap-2">
-                <Link href={`/billing-recon/${currentProject ? slugify(currentProject.projectName) : ''}/mvac/${MvacEntry?.id}/print`} target="_blank">
+                 <Link href={`/billing-recon/${MvacEntry?.projectSlug}/mvac/${MvacEntry?.id}/print`} target="_blank">
                     <Button variant="outline" disabled={!hasMvac}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
@@ -424,8 +426,3 @@ export default function ViewMvacEntryDialog({
     </>
   );
 }
-```</content>
-  </change>
-  <change>
-    <file>/home/user/studio/src/components/PrintMvacDialog.tsx</file>
-    <content><![CDATA[
