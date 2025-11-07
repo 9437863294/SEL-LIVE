@@ -108,6 +108,14 @@ const PrintableMvacStyles = ({ orientation }: { orientation: 'portrait' | 'lands
         width: 100%;
         border-collapse: collapse;
         border: 1px solid #000;
+        page-break-inside: auto;
+      }
+       tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+      }
+      thead {
+        display: table-header-group;
       }
       th, td {
         border: 1px solid #000;
@@ -140,7 +148,7 @@ const PrintableMvacStyles = ({ orientation }: { orientation: 'portrait' | 'lands
   `}</style>
 );
 
-export default function PrintmvacDialog({
+export default function PrintMvacDialog({
   isOpen,
   onOpenChange,
   mvacEntry,
@@ -276,33 +284,12 @@ export default function PrintmvacDialog({
         >
           <div id="printable-mvac-content" className="px-4 py-2">
             {/* Header */}
-            <div className="flex justify-between items-start mb-2">
-              <div className="w-1/4">
-                <Image
-                  src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fsel_logo.png?alt=media&token=1612743a-1423-441f-bd8a-73330687114b"
-                  alt="SEL Logo"
-                  width={80}
-                  height={40}
-                />
-              </div>
-              <div className="w-1/2 text-center">
+            <div className="text-center">
                 <p className="text-lg font-extrabold">SIDDHARTHA ENGINEERING LIMITED</p>
                 <p className="text-[7pt] font-semibold">ELECTRICAL ENGINEERS, CONTRACTORS (EHV) & CONSULTANTS</p>
                 <p className="text-[7pt]">PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)</p>
                 <p className="text-[7pt]">Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915</p>
                 <p className="text-[7pt]">E-mail: sel.techhead@gmail.com</p>
-              </div>
-              <div className="w-1/4 text-right">
-                <Image
-                  src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fjas-anz_logo.png?alt=media&token=904e5399-528b-49c7-8763-718335017056"
-                  alt="JAS-ANZ Logo"
-                  width={80}
-                  height={50}
-                  className="ml-auto"
-                />
-                <p className="text-[6pt]">ISO 9001:2008 Registered Company</p>
-                <p className="text-[6pt]">Certificate No: BCI/Q/J/2330</p>
-              </div>
             </div>
 
             <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">
@@ -310,7 +297,7 @@ export default function PrintmvacDialog({
             </p>
 
             {/* Work details */}
-            <div className="text-[9pt] space-y-1 mb-2">
+            <div className="text-[9pt] space-y-1 mb-2 border border-black p-2">
               <div className="flex justify-between">
                 <span><strong>MVAC No.:</strong> {workDetails.mvacNo}</span>
                 <span><strong>DATE:</strong> {workDetails.mvacDate}</span>
@@ -361,12 +348,10 @@ export default function PrintmvacDialog({
 
             {/* Signatures */}
             <div className="signatures flex justify-between mt-16 text-[9pt] px-4">
-              {(project?.signatures || []).map((sig, index) => (
-                <div key={`${sig.designation}-${index}`} className="w-1/3 text-center">
-                  <p className="border-t border-black pt-1 mt-8">{sig.designation}</p>
-                  <p className="font-bold">{sig.name}</p>
-                </div>
-              ))}
+              <div className="w-1/3 text-center">
+                  <p className="border-t border-black pt-1 mt-8">Site In charge</p>
+                  <p className="font-bold">M/RAMPUR</p>
+              </div>
             </div>
           </div>
         </div>
