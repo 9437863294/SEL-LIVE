@@ -101,6 +101,9 @@ const baseTableHeaders = [
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
+const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
 export default function ViewBoqPage() {
   const { toast } = useToast();
   const { project: projectSlug } = useParams() as { project: string };
@@ -176,6 +179,19 @@ export default function ViewBoqPage() {
     const needle = targetKey.toLowerCase().replace(/\s+/g, '');
     return Object.keys(obj).find((k) => k.toLowerCase().replace(/\s+/g, '') === needle);
   };
+  const getBoqSlNo = (item: any): string => String(item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? item?.boqSlNo ?? '').trim();
+  const getScope1 = (x: any): string => {
+    if (!x) return '';
+    const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+    const v = k ? (x as any)[k] : undefined;
+    return typeof v === 'string' ? v.trim() : '';
+  };
+  const getScope2 = (x: any): string => {
+    if (!x) return '';
+    const k = Object.keys(x).find((kk) => kk.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+    const v = k ? (x as any)[k] : undefined;
+    return typeof v === 'string' ? v.trim() : '';
+  };
 
   /** FETCH DATA **/
   const fetchProjectAndBoq = useCallback(async () => {
@@ -249,7 +265,7 @@ export default function ViewBoqPage() {
     for (const entry of jmcEntries) {
       const items = Array.isArray(entry.items) ? entry.items : [];
       for (const it of items) {
-        const key = String(it.boqSlNo ?? '').trim();
+        const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
         if (!key) continue;
         const prev = map.get(key) ?? { executed: 0, certified: 0 };
         prev.executed += Number(it.executedQty || 0);
@@ -265,7 +281,7 @@ export default function ViewBoqPage() {
     for (const entry of mvacEntries) {
       const items = Array.isArray(entry.items) ? entry.items : [];
       for (const it of items) {
-        const key = String(it.boqSlNo ?? '').trim();
+        const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
         if (!key) continue;
         const prev = map.get(key) ?? { executed: 0, certified: 0 };
         prev.executed += Number(it.executedQty || 0);
@@ -275,17 +291,16 @@ export default function ViewBoqPage() {
     }
     return map;
   }, [mvacEntries]);
-
+  
   const getQuantities = useCallback(
-    (scope2: string, boqSlNo: string) => {
-      if (!boqSlNo) return { executed: 0, certified: 0 };
-      const key = boqSlNo.trim();
-      const scope2Lower = scope2?.toLowerCase();
-      if (scope2Lower === 'civil') return jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      if (scope2Lower === 'supply') return mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      const a = jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      const b = mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      return { executed: a.executed + b.executed, certified: a.certified + b.certified };
+    (scope1: string, scope2: string, boqSlNo: string) => {
+      const key = compositeKey(scope1, scope2, boqSlNo);
+      if (!boqSlNo.trim()) return { executed: 0, certified: 0 };
+
+      const jmc = jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
+      const mvac = mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
+
+      return { executed: jmc.executed + mvac.executed, certified: jmc.certified + mvac.certified };
     },
     [jmcAggBySlNo, mvacAggBySlNo]
   );
@@ -377,9 +392,10 @@ export default function ViewBoqPage() {
     const sorted = [...filteredBoqItems];
 
     const getComparableValue = (item: BoqItem, key: string): unknown => {
-      const scope2 = String(item['Scope 2'] || '').trim();
-      const boqSlNo = String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').trim();
-      const { executed, certified } = getQuantities(scope2, boqSlNo);
+      const scope1 = getScope1(item);
+      const scope2 = getScope2(item);
+      const boqSlNo = getBoqSlNo(item);
+      const { executed, certified } = getQuantities(scope1, scope2, boqSlNo);
 
       if (key === 'JMC/MVAC Executed Qty') return executed;
       if (key === 'JMC/MVAC Certified Qty') return certified;
@@ -735,8 +751,9 @@ export default function ViewBoqPage() {
                       sortedBoqItems.map((item) => {
                         const isExpanded = expandedRows.has(item.id);
                         const hasBom = !!(item.bom && item.bom.length > 0);
-                        const scope2 = String(item['Scope 2'] || '').trim();
-                        const boqSlNo = String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').trim();
+                        const scope1 = getScope1(item);
+                        const scope2 = getScope2(item);
+                        const boqSlNo = getBoqSlNo(item);
 
                         return (
                           <Fragment key={item.id}>
@@ -783,7 +800,7 @@ export default function ViewBoqPage() {
                                   header === 'JMC/MVAC Certified Qty' ||
                                   header === 'JMC/MVAC Amount'
                                 ) {
-                                  const { executed, certified } = getQuantities(scope2, boqSlNo);
+                                  const { executed, certified } = getQuantities(scope1, scope2, boqSlNo);
                                   if (header === 'JMC/MVAC Executed Qty') {
                                     display = fmtNum(executed);
                                   } else if (header === 'JMC/MVAC Certified Qty') {

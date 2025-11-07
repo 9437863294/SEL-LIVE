@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -79,8 +80,8 @@ const slugify = (text: string) =>
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 
-const compositeKey = (scope1: unknown, slNo: unknown) =>
-  `${String(scope1 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 /* ---------- field extractors ---------- */
 const extractSlNo = (boqItem: BoqItem): string => {
@@ -261,9 +262,10 @@ export default function JmcEntryPage() {
       const arr: any[] = Array.isArray((entry as any).items) ? (entry as any).items : [];
       arr.forEach((it) => {
         const s1 = it?.scope1 ?? it?.['Scope 1'] ?? '';
+        const s2 = it?.scope2 ?? it?.['Scope 2'] ?? '';
         const sl = it?.boqSlNo ?? it?.['BOQ SL No'] ?? it?.['BOQ SL NO'] ?? it?.['SL No'] ?? it?.['SL'] ?? '';
         if (!String(sl || '').trim()) return;
-        const key = compositeKey(s1, sl);
+        const key = compositeKey(s1, s2, sl);
         map[key] = (map[key] || 0) + num0(it?.certifiedQty ?? it?.['Certified Qty']);
       });
     });
@@ -297,7 +299,7 @@ export default function JmcEntryPage() {
       it.rate = rate;
       it.boqQty = num0(valueOf(boqItem, ['QTY', 'Qty', 'Quantity']));
 
-      const key = compositeKey(s1, sl);
+      const key = compositeKey(s1, s2, sl);
       it.totalCertifiedQty = totalCertifiedQtyMap[key] || 0;
 
       const qty = num0(it.executedQty);
@@ -320,7 +322,7 @@ export default function JmcEntryPage() {
         const s2 = extractScope2(boqItem);
         const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
         if (!String(sl).trim()) return null; // skip bad rows
-        const key = compositeKey(s1, sl);
+        const key = compositeKey(s1, s2, sl);
 
         return {
           ...initialItem,
@@ -658,3 +660,4 @@ export default function JmcEntryPage() {
     </>
   );
 }
+
