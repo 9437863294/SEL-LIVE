@@ -242,7 +242,6 @@ export default function JmcEntryPage() {
       }
     };
     generateJmcNo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id]);
 
   const handleProjectChange = (projectId: string) => {
@@ -655,9 +654,8 @@ export default function JmcEntryPage() {
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
-        projectId={selectedProjectId}
+        alreadyAddedItems={[]}
       />
     </>
   );
 }
-
