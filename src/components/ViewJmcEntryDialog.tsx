@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -19,7 +18,6 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import Link from 'next/link';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -53,12 +51,13 @@ const getScope1 = (item: any): string => {
   if (!item) return '';
   const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
   return key ? String(item[key] || '') : '';
-}
+};
+
 const getScope2 = (item: any): string => {
   if (!item) return '';
   const key = Object.keys(item).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
   return key ? String(item[key] || '') : '';
-}
+};
 
 const getBoqSlNo = (item: any): string =>
   String(
@@ -70,7 +69,7 @@ const getBoqSlNo = (item: any): string =>
       item?.boqSlNo ??
       ''
   ).trim();
-  
+
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
@@ -160,11 +159,11 @@ export default function ViewJmcEntryDialog({
     if (!jmcEntry || !Array.isArray(boqItems)) return [];
 
     const itemsToDisplay = isEditMode ? editableItems : (jmcEntry.items || []);
-    
+
     const boqItemsMap = new Map<string, BoqItem>();
     boqItems.forEach(b => {
-        const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
-        boqItemsMap.set(key, b);
+      const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
+      boqItemsMap.set(key, b);
     });
 
     return itemsToDisplay.map((item: any) => {
@@ -179,15 +178,14 @@ export default function ViewJmcEntryDialog({
               0
           )
         : 0;
-  
+
       return {
         ...(item as JmcItem),
         boqQty,
-        previousCertifiedQty: Number(item.totalCertifiedQty || 0), // Use the pre-calculated value
+        previousCertifiedQty: Number(item.totalCertifiedQty || 0),
       };
     });
-}, [jmcEntry, boqItems, isEditMode, editableItems]);
-
+  }, [jmcEntry, boqItems, isEditMode, editableItems]);
 
   /* ---------- editing ---------- */
   const handleItemChange = (
@@ -276,7 +274,6 @@ export default function ViewJmcEntryDialog({
             <TableCell className="text-center font-medium truncate">
               {item.boqSlNo ?? '-'}
             </TableCell>
-            {/* Description: max 4 lines */}
             <TableCell className="align-top">
               <div
                 className="line-clamp-4 break-words whitespace-pre-line"
@@ -285,23 +282,18 @@ export default function ViewJmcEntryDialog({
                 {item.description ?? '-'}
               </div>
             </TableCell>
-
             <TableCell className="whitespace-nowrap align-top">
               {item.unit ?? '-'}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {Number(item.boqQty) || 0}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(rate)}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {prevCert}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {isEditMode ? (
                 <Input
@@ -318,20 +310,15 @@ export default function ViewJmcEntryDialog({
                 execQty || '-'
               )}
             </TableCell>
-
-            {/* Certified in this JMC (display only here; edit via workflow if needed) */}
             <TableCell className="text-right whitespace-nowrap align-top">
               {certQty || '-'}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top font-semibold">
               {upToDateCertifiedQty || 0}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(executedAmount)}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(certifiedAmount)}
             </TableCell>
@@ -394,10 +381,22 @@ export default function ViewJmcEntryDialog({
           .replace(/[^\w-]+/g, '')
       : '';
 
-  // Resolve project slug safely (TS-safe even if JmcEntry type has no projectSlug)
   const resolvedProjectSlug =
     (jmcEntry as any)?.projectSlug ||
     (currentProject?.projectName ? slugify(currentProject.projectName as any) : '');
+
+  /* ---------- PRINT URL + HANDLER ---------- */
+  const printUrl =
+    hasJmc && resolvedProjectSlug && jmcEntry?.id
+      ? `/billing-recon/${resolvedProjectSlug}/jmc/${jmcEntry.id}/print`
+      : '';
+
+  const handlePrintClick = () => {
+    if (!printUrl) return;
+    window.open(printUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  /* ---------- RENDER ---------- */
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -447,37 +446,37 @@ export default function ViewJmcEntryDialog({
 
                 <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                   <TableRow>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       BOQ Sl. No.
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Description
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Unit
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       BOQ Qty
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Rate
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Prev. Certified
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Executed in this JMC
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Certified in this JMC
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Up to Date Certified Qty
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Amount Executed
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Amount Certified
                     </TableHead>
                   </TableRow>
@@ -504,19 +503,14 @@ export default function ViewJmcEntryDialog({
           <Separator />
           <DialogFooter className="pt-3 sm:justify-between">
             <div className="flex gap-2">
-              <Link
-                href={
-                  hasJmc && resolvedProjectSlug && jmcEntry?.id
-                    ? `/billing-recon/${resolvedProjectSlug}/jmc/${jmcEntry.id}/print`
-                    : '#'
-                }
-                target="_blank"
+              <Button
+                variant="outline"
+                onClick={handlePrintClick}
+                disabled={!printUrl}
               >
-                <Button variant="outline" disabled={!hasJmc || !resolvedProjectSlug}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
-              </Link>
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+              </Button>
 
               <Button variant="outline" size="icon" onClick={toggleDialogSize}>
                 {dialogSize === 'full' ? (

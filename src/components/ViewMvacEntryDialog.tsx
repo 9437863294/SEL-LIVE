@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -26,7 +25,6 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import Link from 'next/link';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -84,7 +82,9 @@ const getBoqSlNo = (item: any): string =>
   ).trim();
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
-  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+  `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '')
+    .trim()
+    .toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 type EnrichedMvacItem = MvacItem & {
   boqQty: number;
@@ -188,19 +188,23 @@ export default function ViewMvacEntryDialog({
   /* ---------- enriched items: BOQ qty + previous certified qty ---------- */
   const enrichedItems: EnrichedMvacItem[] = useMemo(() => {
     if (!MvacEntry || !Array.isArray(boqItems)) return [];
-  
+
     const itemsToDisplay = isEditMode ? editableItems : MvacEntry.items || [];
-    
+
     const boqItemsMap = new Map<string, BoqItem>();
-    boqItems.forEach(b => {
-        const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
-        boqItemsMap.set(key, b);
+    boqItems.forEach((b) => {
+      const key = compositeKey(getScope1(b), getScope2(b), getBoqSlNo(b));
+      boqItemsMap.set(key, b);
     });
-  
+
     return itemsToDisplay.map((item: any) => {
-      const itemKey = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+      const itemKey = compositeKey(
+        getScope1(item),
+        getScope2(item),
+        getBoqSlNo(item)
+      );
       const boqItem = boqItemsMap.get(itemKey);
-  
+
       const boqQty = boqItem
         ? Number(
             (boqItem as any).QTY ??
@@ -209,11 +213,11 @@ export default function ViewMvacEntryDialog({
               0
           )
         : 0;
-  
+
       return {
         ...(item as MvacItem),
         boqQty,
-        previousCertifiedQty: Number(item.totalCertifiedQty || 0), // Directly use the stored value
+        previousCertifiedQty: Number(item.totalCertifiedQty || 0),
       };
     });
   }, [MvacEntry, boqItems, isEditMode, editableItems]);
@@ -305,7 +309,6 @@ export default function ViewMvacEntryDialog({
             <TableCell className="text-center font-medium truncate">
               {item.boqSlNo ?? '-'}
             </TableCell>
-            {/* Description: max 4 lines */}
             <TableCell className="align-top">
               <div
                 className="line-clamp-4 break-words whitespace-pre-line"
@@ -314,23 +317,18 @@ export default function ViewMvacEntryDialog({
                 {item.description ?? '-'}
               </div>
             </TableCell>
-
             <TableCell className="whitespace-nowrap align-top">
               {item.unit ?? '-'}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {Number(item.boqQty) || 0}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(rate)}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {prevCert}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {isEditMode ? (
                 <Input
@@ -347,19 +345,15 @@ export default function ViewMvacEntryDialog({
                 execQty || '-'
               )}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {certQty || '-'}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top font-semibold">
               {upToDateCertifiedQty || 0}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(executedAmount)}
             </TableCell>
-
             <TableCell className="text-right whitespace-nowrap align-top">
               {formatCurrency(certifiedAmount)}
             </TableCell>
@@ -428,6 +422,16 @@ export default function ViewMvacEntryDialog({
       ? slugify(currentProject.projectName as any)
       : '');
 
+  const printUrl =
+    hasMvac && resolvedProjectSlug && MvacEntry?.id
+      ? `/billing-recon/${resolvedProjectSlug}/mvac/${MvacEntry.id}/print`
+      : '';
+
+  const handlePrintClick = () => {
+    if (!printUrl) return;
+    window.open(printUrl, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
@@ -455,7 +459,10 @@ export default function ViewMvacEntryDialog({
               No MVAC selected.
             </div>
           ) : (
-            <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
+            <div
+              ref={xScrollRef}
+              className="w-full overflow-x-auto no-scrollbar"
+            >
               <Table
                 className="w-full table-fixed"
                 style={{ minWidth: `${tableMinWidthRem}rem` }}
@@ -476,37 +483,37 @@ export default function ViewMvacEntryDialog({
 
                 <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                   <TableRow>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       BOQ Sl. No.
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Description
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Unit
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       BOQ Qty
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Rate
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Prev. Certified
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Executed in this MVAC
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Certified in this MVAC
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Up to Date Certified Qty
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Amount Executed
                     </TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-background text-center text-[11px] px-2">
+                    <TableHead className="text-center text-[11px] px-2">
                       Amount Certified
                     </TableHead>
                   </TableRow>
@@ -533,24 +540,14 @@ export default function ViewMvacEntryDialog({
           <Separator />
           <DialogFooter className="pt-3 sm:justify-between">
             <div className="flex gap-2">
-              <Link
-                href={
-                  hasMvac &&
-                  resolvedProjectSlug &&
-                  MvacEntry?.id
-                    ? `/billing-recon/${resolvedProjectSlug}/mvac/${MvacEntry.id}/print`
-                    : '#'
-                }
-                target="_blank"
+              <Button
+                variant="outline"
+                onClick={handlePrintClick}
+                disabled={!printUrl}
               >
-                <Button
-                  variant="outline"
-                  disabled={!hasMvac || !resolvedProjectSlug}
-                >
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
-              </Link>
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+              </Button>
 
               <Button
                 variant="outline"

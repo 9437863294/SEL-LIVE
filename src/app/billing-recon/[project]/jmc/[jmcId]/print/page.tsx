@@ -3,12 +3,25 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import type { JmcEntry, JmcItem, Project, BoqItem } from '@/lib/types';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  getDocs,
+} from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /* ---------- Helpers ---------- */
@@ -39,6 +52,7 @@ const formatDateSafe = (dateInput: any) => {
 type EnrichedJmcItem = JmcItem & {
   boqQty: number;
   previousCertifiedQty: number;
+  boqSlNo?: string; // ensure we always have a value to show
 };
 
 const slugify = (text: string) =>
@@ -92,7 +106,7 @@ const PrintableJmcStyles = () => (
       }
 
       #printable-jmc-sheet {
-        padding: 10mm; /* 1cm margin equivalent inside page */
+        padding: 10mm;
         width: 210mm;
         height: 297mm;
         box-sizing: border-box;
@@ -133,7 +147,7 @@ const PrintableJmcStyles = () => (
 
       .desc-cell {
         display: -webkit-box;
-        -webkit-line-clamp: 4; /* max 4 lines */
+        -webkit-line-clamp: 4;
         -webkit-box-orient: vertical;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -163,7 +177,8 @@ export default function PrintJmcPage() {
   };
 
   const [jmcEntry, setJmcEntry] = useState<JmcEntry | null>(null);
-  const [project, setProject] = useState<(Project & { signatures?: any[] }) | null>(null);
+  const [project, setProject] =
+    useState<(Project & { signatures?: any[] }) | null>(null);
   const [enrichedItems, setEnrichedItems] = useState<EnrichedJmcItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -174,8 +189,10 @@ export default function PrintJmcPage() {
 
       setIsLoading(true);
       try {
-        // Load projects and match by slugified projectName
-        const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
+        // 1. Find project by slug
+        const projectsSnapshot = await getDocs(
+          query(collection(db, 'projects'))
+        );
         const projectData = projectsSnapshot.docs
           .map(
             (d) =>
@@ -184,15 +201,25 @@ export default function PrintJmcPage() {
                 ...d.data(),
               } as Project)
           )
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .find(
+            (p) =>
+              p.projectName &&
+              slugify(p.projectName) === projectSlug
+          );
 
         if (!projectData) {
           throw new Error('Project not found.');
         }
         setProject(projectData);
 
-        // Load JMC entry
-        const jmcDocRef = doc(db, 'projects', projectData.id, 'jmcEntries', jmcId);
+        // 2. Load JMC entry
+        const jmcDocRef = doc(
+          db,
+          'projects',
+          projectData.id,
+          'jmcEntries',
+          jmcId
+        );
         const jmcDocSnap = await getDoc(jmcDocRef);
         if (!jmcDocSnap.exists()) {
           throw new Error('JMC not found.');
@@ -203,21 +230,30 @@ export default function PrintJmcPage() {
         } as JmcEntry;
         setJmcEntry(entry);
 
-        // Load BOQ items and map by composite key
+        // 3. Load BOQ items map by composite key
         const boqSnap = await getDocs(
-          query(collection(db, 'projects', projectData.id, 'boqItems'))
+          query(
+            collection(
+              db,
+              'projects',
+              projectData.id,
+              'boqItems'
+            )
+          )
         );
         const boqItemsMap = new Map<string, BoqItem>();
 
         boqSnap.docs.forEach((docSnap) => {
           const item = docSnap.data() as BoqItem;
-          const key = `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
+          const key = `${getScope1(item)}_${getScope2(
+            item
+          )}_${getBoqSlNo(item)}`;
           if (key) {
             boqItemsMap.set(key, item);
           }
         });
 
-        // Enrich JMC items
+        // 4. Enrich JMC items
         const enriched = (entry.items || []).map((item) => {
           const itemScope1 = getScope1(item);
           const itemScope2 = getScope2(item);
@@ -226,16 +262,20 @@ export default function PrintJmcPage() {
           const boqItem = boqItemsMap.get(itemKey);
 
           return {
-            ...item,
+            ...(item as JmcItem),
+            boqSlNo: itemSlNo || (item as any).boqSlNo,
             boqQty: boqItem
               ? Number(
-                  (boqItem as any).QTY ||
-                    (boqItem as any)['Total Qty'] ||
+                  (boqItem as any).QTY ??
+                    (boqItem as any)['Total Qty'] ??
                     0
                 )
               : 0,
-            previousCertifiedQty: (item as any).totalCertifiedQty || 0,
-          };
+            previousCertifiedQty:
+              Number(
+                (item as any).totalCertifiedQty
+              ) || 0,
+          } as EnrichedJmcItem;
         });
 
         setEnrichedItems(enriched);
@@ -257,18 +297,20 @@ export default function PrintJmcPage() {
   /* ----- Auto-print when ready ----- */
   useEffect(() => {
     if (!isLoading && jmcEntry) {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         if (typeof window !== 'undefined') {
           window.print();
         }
       }, 500);
+      return () => clearTimeout(id);
     }
   }, [isLoading, jmcEntry]);
 
   /* ----- Utils ----- */
 
   const calculateUpToDateQty = (item: EnrichedJmcItem) =>
-    (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
+    (Number(item.previousCertifiedQty) || 0) +
+    (Number(item.executedQty) || 0);
 
   const getDisplayValue = (v: number | undefined) =>
     v === 0 ? 0 : v ?? '';
@@ -282,7 +324,11 @@ export default function PrintJmcPage() {
   }
 
   if (!jmcEntry) {
-    return <div className="p-8">JMC Entry not found.</div>;
+    return (
+      <div className="p-8">
+        JMC Entry not found.
+      </div>
+    );
   }
 
   const workDetails = {
@@ -309,14 +355,16 @@ export default function PrintJmcPage() {
               SIDDHARTHA ENGINEERING LIMITED
             </p>
             <p className="text-[7pt] font-semibold">
-              ELECTRICAL ENGINEERS, CONTRACTORS (EHV) &amp; CONSULTANTS
+              ELECTRICAL ENGINEERS, CONTRACTORS (EHV) &amp;
+              CONSULTANTS
             </p>
             <p className="text-[7pt]">
-              PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012
-              (ODISHA)
+              PLOT NO.1015, NAYAPALLI, N.H.5,
+              BHUBANESWAR - 751012 (ODISHA)
             </p>
             <p className="text-[7pt]">
-              Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915
+              Phone: 0674-2561911-914, 3291287, Fax:
+              0674-2561915
             </p>
             <p className="text-[7pt]">
               E-mail: sel.techhead@gmail.com
@@ -331,14 +379,17 @@ export default function PrintJmcPage() {
           <div className="text-[9pt] space-y-1 mb-2 border border-black p-2">
             <div className="flex justify-between">
               <span>
-                <strong>JMC No.:</strong> {workDetails.jmcNo}
+                <strong>JMC No.:</strong>{' '}
+                {workDetails.jmcNo}
               </span>
               <span>
-                <strong>DATE:</strong> {workDetails.jmcDate}
+                <strong>DATE:</strong>{' '}
+                {workDetails.jmcDate}
               </span>
             </div>
             <p>
-              <strong>Order No.</strong> {workDetails.orderNo}
+              <strong>Order No.</strong>{' '}
+              {workDetails.orderNo}
             </p>
             <p>
               <strong>Name of the project:-</strong>{' '}
@@ -401,37 +452,41 @@ export default function PrintJmcPage() {
 
               <TableBody>
                 {enrichedItems.map((item, index) => {
-                  const upToDateQty = calculateUpToDateQty(item);
+                  const upToDateQty =
+                    calculateUpToDateQty(item);
                   return (
                     <TableRow
-                      key={`${(item as any).boqSlNo ?? 'NA'}-${index}`}
+                      key={`${item.boqSlNo ?? 'NA'}-${index}`}
                     >
                       <TableCell className="text-center border-black">
-                        {(item as any).boqSlNo ?? '-'}
+                        {item.boqSlNo ?? '-'}
                       </TableCell>
                       <TableCell className="border-black">
                         <div className="desc-cell">
-                          {(item as any).description ?? '-'}
+                          {item.description ?? '-'}
                         </div>
                       </TableCell>
                       <TableCell className="text-center border-black">
-                        {(item as any).unit ?? '-'}
+                        {item.unit ?? '-'}
                       </TableCell>
                       <TableCell className="text-right border-black">
                         {getDisplayValue(item.boqQty)}
                       </TableCell>
                       <TableCell className="text-right border-black">
                         {getDisplayValue(
-                          (item as any).totalCertifiedQty
+                          (item as any)
+                            .totalCertifiedQty
                         )}
                       </TableCell>
                       <TableCell className="text-right border-black">
                         {getDisplayValue(
-                          (item as any).executedQty
+                          item.executedQty
                         )}
                       </TableCell>
                       <TableCell className="text-right border-black">
-                        {getDisplayValue(upToDateQty)}
+                        {getDisplayValue(
+                          upToDateQty
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -442,17 +497,21 @@ export default function PrintJmcPage() {
 
           {/* Signatures */}
           <div className="signatures flex justify-between mt-16 text-[9pt] px-4">
-            {(project?.signatures || []).map((sig: any, index: number) => (
-              <div
-                key={sig.id || index}
-                className="w-1/3 text-center"
-              >
-                <p className="border-t border-black pt-1 mt-8">
-                  {sig.designation}
-                </p>
-                <p className="font-bold">{sig.name}</p>
-              </div>
-            ))}
+            {(project?.signatures || []).map(
+              (sig: any, index: number) => (
+                <div
+                  key={sig.id || index}
+                  className="w-1/3 text-center"
+                >
+                  <p className="border-t border-black pt-1 mt-8">
+                    {sig.designation}
+                  </p>
+                  <p className="font-bold">
+                    {sig.name}
+                  </p>
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>
