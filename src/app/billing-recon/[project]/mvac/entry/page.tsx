@@ -41,7 +41,7 @@ const initialMvacDetails = {
 };
 
 const initialItem = {
-  erpSlNo: '',         // ✅ store ERP SL NO on each Mvac item
+  erpSlNo: '',
   boqSlNo: '',
   description: '',
   unit: '',
@@ -290,7 +290,7 @@ export default function MvacEntryPage() {
       const sl = extractSlNo(boqItem);
       const s1 = extractScope1(boqItem);
       const s2 = extractScope2(boqItem);
-      const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
+      const erp = extractErpSlNo(boqItem);
 
       it.erpSlNo = erp;
       it.boqSlNo = sl;
@@ -311,7 +311,7 @@ export default function MvacEntryPage() {
     }
 
     newItems[index] = it;
-    setItems(sortItemsByErp(newItems)); // keep ERP order
+    setItems(sortItemsByErp(newItems));
   };
 
   const handleMultiBoqSelect = (selected: BoqItem[]) => {
@@ -322,8 +322,8 @@ export default function MvacEntryPage() {
         const sl = extractSlNo(boqItem);
         const s1 = extractScope1(boqItem);
         const s2 = extractScope2(boqItem);
-        const erp = extractErpSlNo(boqItem); // ✅ capture ERP SL NO
-        if (!String(sl).trim()) return null; // skip bad rows
+        const erp = extractErpSlNo(boqItem);
+        if (!String(sl).trim()) return null;
         const key = compositeKey(s1, s2, sl);
 
         return {
@@ -344,7 +344,7 @@ export default function MvacEntryPage() {
     const existing = items.length === 1 && items[0].boqSlNo === '' && items[0].erpSlNo === '' ? [] : items;
 
     const merged = [...existing, ...newMvacItems];
-    setItems(sortItemsByErp(merged)); // ✅ ensure ERP order
+    setItems(sortItemsByErp(merged));
   };
 
   const handleItemChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,7 +362,7 @@ export default function MvacEntryPage() {
     it.totalAmount = qty * rate;
 
     newItems[index] = it;
-    setItems(sortItemsByErp(newItems)); // keep ERP order on edits too
+    setItems(sortItemsByErp(newItems));
   };
 
   const addItem = () => setItems((prev) => sortItemsByErp([...prev, { ...initialItem }]));
@@ -657,3 +657,4 @@ export default function MvacEntryPage() {
     </>
   );
 }
+
