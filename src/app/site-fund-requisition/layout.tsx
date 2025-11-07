@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -8,6 +7,7 @@ import { Settings, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { usePathname } from 'next/navigation';
 
 const navItems = [
     { href: '/site-fund-requisition/reports', icon: FileText, label: 'Reports' },
@@ -20,6 +20,12 @@ export default function SiteFundRequisitionLayout({
   children: React.ReactNode;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const pathname = usePathname();
+
+  const isPrintPage = pathname.includes('/print');
+  if (isPrintPage) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="flex w-full h-full">
@@ -83,7 +89,7 @@ export default function SiteFundRequisitionLayout({
         </div>
 
       </aside>
-      <div className={cn("flex-1 flex flex-col transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
+      <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-48" : "ml-16")}>
         <main className="flex-1">
           {children}
         </main>

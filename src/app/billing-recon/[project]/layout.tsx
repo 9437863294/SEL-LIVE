@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
+  History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -64,6 +65,7 @@ export default function ProjectLayout({
     { href: `/billing-recon/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ', permission: can('View', 'Billing Recon.BOQ') },
     { href: `/billing-recon/${projectSlug}/mvac`, icon: Truck, label: 'MVAC', permission: can('View', 'Billing Recon.MVAC') },
     { href: `/billing-recon/${projectSlug}/jmc`, icon: HardHat, label: 'JMC', permission: can('View', 'Billing Recon.JMC') },
+    { href: `/billing-recon/${projectSlug}/combined-log`, icon: History, label: 'Combined Log', permission: can('View', 'Billing Recon.Combined Log') },
     { href: `/billing-recon/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Billing Recon.Billing') },
     { href: '#', icon: FileEdit, label: 'Amendment Entry', permission: false }, // Disabled for now
     { href: '#', icon: BarChart3, label: 'Reports', permission: false }, // Disabled for now
@@ -73,6 +75,12 @@ export default function ProjectLayout({
   const settingsItem = { href: '/billing-recon/settings', icon: Settings, label: 'Settings', permission: can('View Module', 'Billing Recon') };
   
   const visibleNavItems = navItems.filter(item => item.permission);
+  
+  const isPrintPage = pathname.includes('/print');
+  if (isPrintPage) {
+    return <>{children}</>;
+  }
+
 
   return (
     <div className="flex w-full h-full">

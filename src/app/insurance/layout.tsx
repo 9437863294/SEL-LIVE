@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from "react";
@@ -71,6 +72,12 @@ export default function InsuranceLayout({
   const visibleNavItems = navItems.filter(item => item.permission);
   const visiblePersonalSubItems = personalInsuranceSubItems.filter(item => item.permission);
   const visibleProjectSubItems = projectInsuranceSubItems.filter(item => item.permission);
+  
+  const isPrintPage = pathname.includes('/print');
+  if (isPrintPage) {
+    return <>{children}</>;
+  }
+
 
   return (
     <div className="flex w-full h-full">

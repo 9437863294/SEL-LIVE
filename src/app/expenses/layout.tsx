@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState } from 'react';
@@ -9,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePathname } from 'next/navigation';
 
 export default function ExpensesLayout({
   children,
@@ -17,6 +17,7 @@ export default function ExpensesLayout({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const { can } = useAuthorization();
+  const pathname = usePathname();
 
   const navItems = [
     { href: '/expenses/all', icon: Layers, label: 'Consolidated View', permission: can('View All', 'Expenses.Expense Requests') },
@@ -25,6 +26,12 @@ export default function ExpensesLayout({
   ];
 
   const visibleNavItems = navItems.filter(item => item.permission);
+  
+  const isPrintPage = pathname.includes('/print');
+  if (isPrintPage) {
+    return <>{children}</>;
+  }
+
 
   return (
     <div className="flex w-full h-full">

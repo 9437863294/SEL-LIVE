@@ -5,18 +5,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
-  LayoutDashboard,
-  Warehouse,
-  ArrowRightLeft,
-  GitCommit,
-  Component,
-  BarChart3,
-  BrainCircuit,
-  ClipboardList,
-  ChevronLeft,
-  ChevronRight,
-  Package,
-  Settings,
+  ArrowLeft,
+  Users,
+  FileText,
+  Calculator,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,10 +20,9 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
-
 
 export default function ProjectLayout({
   children,
@@ -59,15 +51,10 @@ export default function ProjectLayout({
   const projectId = currentProject?.id || '';
 
   const navItems = [
-    { href: `/store-stock-management/${projectSlug}`, icon: LayoutDashboard, label: 'Dashboard', permission: can('View Dashboard', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/inventory`, icon: Warehouse, label: 'Inventory', permission: can('View Inventory', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/transactions`, icon: ArrowRightLeft, label: 'Transactions', permission: can('View Transactions', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/conversions`, icon: GitCommit, label: 'Conversions', permission: can('View Conversions', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/assembly`, icon: Component, label: 'BOM Management', permission: can('View BOM', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/boq`, icon: ClipboardList, label: 'BOQ', permission: can('View BOQ', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View Reports', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/${projectSlug}/ai-forecast`, icon: BrainCircuit, label: 'AI Forecast', permission: can('View AI Forecast', `Store & Stock Management.Projects`, projectId) },
-    { href: `/store-stock-management/settings`, icon: Settings, label: 'Settings', permission: can('View', 'Store & Stock Management.Settings') },
+    { href: `/subcontractors-management`, icon: FolderOpen, label: 'Projects', permission: can('View Module', 'Subcontractors Management')},
+    { href: `/subcontractors-management/${projectSlug}/manage`, icon: Users, label: 'Manage', permission: can('View', 'Subcontractors Management.Manage Subcontractors') },
+    { href: `/subcontractors-management/${projectSlug}/work-order`, icon: FileText, label: 'Work Order', permission: can('View', 'Subcontractors Management.Work Order') },
+    { href: `/subcontractors-management/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Subcontractors Management.Billing') },
   ];
   
   const visibleNavItems = navItems.filter(item => item.permission);
@@ -93,24 +80,15 @@ export default function ProjectLayout({
                     <TooltipTrigger asChild>
                        <Link href={item.href}>
                          <Button
-                            variant={pathname.startsWith(item.href) && (item.href !== `/store-stock-management/${projectSlug}` || pathname === item.href) ? 'secondary' : 'ghost'}
+                            variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
                             className={cn(
                                 "w-full justify-start",
                                 !isExpanded && "h-10 w-10 p-0"
                             )}
                          >
-                            <div
-                              className={cn(
-                                'flex items-center',
-                                isExpanded ? '' : 'w-full justify-center'
-                              )}
-                            >
-                              <item.icon
-                                className={cn('h-5 w-5', isExpanded && 'mr-3')}
-                              />
-                              <span className={cn(!isExpanded && 'sr-only')}>
-                                {item.label}
-                              </span>
+                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
+                                <item.icon className={cn('h-5 w-5', isExpanded && 'mr-3')} />
+                                <span className={cn(!isExpanded && 'sr-only')}>{item.label}</span>
                             </div>
                          </Button>
                        </Link>
@@ -124,13 +102,11 @@ export default function ProjectLayout({
               ))}
             </nav>
           </div>
-        </TooltipProvider>
-
-        <div className="mt-auto p-2 border-t">
-             <Button
+          <div className="mt-auto p-2 border-t">
+            <Button
                 variant="ghost"
                 className={cn(
-                    "w-full justify-start",
+                    "w-full justify-start mt-1",
                     !isExpanded && "h-10 w-10 p-0 justify-center"
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -145,8 +121,8 @@ export default function ProjectLayout({
                 )}
                 <span className="sr-only">Toggle Sidebar</span>
             </Button>
-        </div>
-
+          </div>
+        </TooltipProvider>
       </aside>
       <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
