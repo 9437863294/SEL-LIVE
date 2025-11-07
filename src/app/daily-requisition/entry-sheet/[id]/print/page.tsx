@@ -2,11 +2,11 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, documentId } from 'firebase/firestore';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
-const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry | null, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
+const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
 
@@ -105,52 +105,58 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
-export default function PrintChecklistPage() {
-    const params = useParams();
-    const id = params.id as string;
+export default function PrintChecklistPage({ params }: { params: { id: string } }) {
+    const { id } = params;
     const router = useRouter();
+    const searchParams = useSearchParams();
     const componentRef = useRef<HTMLDivElement>(null);
-    const [entry, setEntry] = useState<DailyRequisitionEntry | null>(null);
-    const [project, setProject] = useState<Project | null>(null);
-    const [expenseRequest, setExpenseRequest] = useState<ExpenseRequest | null>(null);
+    const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
-        documentTitle: `Checklist-${entry?.receptionNo || 'entry'}`,
+        documentTitle: `Checklist-${id}`,
     });
     
     useEffect(() => {
-        if (!id) return;
+        const ids = searchParams.get('ids')?.split(',');
+        if (!ids || ids.length === 0) {
+            if (id) {
+                ids?.push(id);
+            } else {
+                router.push('/daily-requisition/entry-sheet');
+                return;
+            }
+        }
 
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const entryDocRef = doc(db, 'dailyRequisitions', id);
-                const entryDocSnap = await getDoc(entryDocRef);
+                const entryQuery = query(collection(db, 'dailyRequisitions'), where(documentId(), 'in', ids));
+                const entrySnap = await getDocs(entryQuery);
 
-                if (!entryDocSnap.exists()) {
+                if (entrySnap.empty) {
                     router.push('/daily-requisition/entry-sheet');
                     return;
                 }
                 
-                const entryData = entryDocSnap.data() as DailyRequisitionEntry;
-                setEntry(entryData);
-
-                if (entryData.projectId) {
-                    const projectDocRef = doc(db, 'projects', entryData.projectId);
-                    const projectDocSnap = await getDoc(projectDocRef);
-                    if (projectDocSnap.exists()) {
-                        setProject(projectDocSnap.data() as Project);
-                    }
-                }
+                const entriesData = entrySnap.docs.map(doc => doc.data() as DailyRequisitionEntry);
+                setEntries(entriesData);
                 
-                if(entryData.depNo) {
-                    const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entryData.depNo));
+                const projectIds = [...new Set(entriesData.map(e => e.projectId).filter(Boolean))];
+                if(projectIds.length > 0) {
+                    const projectQuery = query(collection(db, 'projects'), where(documentId(), 'in', projectIds));
+                    const projectSnap = await getDocs(projectQuery);
+                    setProjects(projectSnap.docs.map(doc => doc.data() as Project));
+                }
+
+                const depNos = [...new Set(entriesData.map(e => e.depNo).filter(Boolean))];
+                if(depNos.length > 0) {
+                    const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', 'in', depNos));
                     const expenseSnap = await getDocs(expenseQuery);
-                    if (!expenseSnap.empty) {
-                        setExpenseRequest(expenseSnap.docs[0].data() as ExpenseRequest);
-                    }
+                    setExpenseRequests(expenseSnap.docs.map(doc => doc.data() as ExpenseRequest));
                 }
 
             } catch (error) {
@@ -161,30 +167,60 @@ export default function PrintChecklistPage() {
         };
 
         fetchData();
-    }, [id, router]);
-
+    }, [id, searchParams, router]);
 
     return (
-        <div className="p-4 md:p-8">
+        <div className="p-4 md:p-8 bg-gray-100">
             <div className="flex justify-end gap-2 mb-4 no-print">
                  <button
                     onClick={handlePrint}
-                    disabled={isLoading || !entry}
+                    disabled={isLoading || entries.length === 0}
                     className={cn(buttonVariants({ variant: 'outline' }))}
                 >
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                     Print / Download PDF
                 </button>
             </div>
-            <div className="bg-white border rounded-lg max-w-4xl mx-auto">
-                 {isLoading ? (
-                    <div className="p-8">
+             <div ref={componentRef} className="print-container">
+                {isLoading ? (
+                    <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
                         <Skeleton className="h-96 w-full" />
                     </div>
                 ) : (
-                    <PrintableContent ref={componentRef} entry={entry} project={project} expenseRequest={expenseRequest} />
+                    entries.map((entry, index) => (
+                        <div key={entry.receptionNo} className="bg-white border rounded-lg max-w-4xl mx-auto page-break">
+                            <PrintableContent 
+                                entry={entry} 
+                                project={projects.find(p => p.id === entry.projectId)} 
+                                expenseRequest={expenseRequests.find(er => er.requestNo === entry.depNo)} 
+                            />
+                        </div>
+                    ))
                 )}
             </div>
+            <style jsx global>{`
+                .print-container > div {
+                    margin-bottom: 2rem;
+                }
+                @media print {
+                    .no-print {
+                        display: none;
+                    }
+                    body {
+                        background-color: #fff;
+                    }
+                    .page-break {
+                        page-break-after: always;
+                        margin: 0;
+                        border: none;
+                        border-radius: 0;
+                        box-shadow: none;
+                    }
+                    .page-break:last-child {
+                        page-break-after: auto;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

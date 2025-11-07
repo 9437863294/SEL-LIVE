@@ -157,7 +157,7 @@ export default function PrintMvacPage() {
       }
     }, [isLoading, mvacEntry]);
 
-    const calculateUpToDateQty = (item: EnrichedMvacItem) => (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
+    const calculateUpToDateQty = (item: EnrichedMvacItem) => (Number(item.previousCertifiedQty) || 0) + (Number(item.certifiedQty) || 0);
 
     if (isLoading) {
         return <div className="p-8"><Skeleton className="h-[80vh]" /></div>;
@@ -215,7 +215,7 @@ export default function PrintMvacPage() {
                           </TableRow>
                           <TableRow>
                             <TableHead className="w-[8%] border-black text-center">Up to Previous</TableHead>
-                            <TableHead className="w-[8%] border-black text-center">In this MVAC</TableHead>
+                            <TableHead className="w-[8%] border-black text-center">Certified in this MVAC</TableHead>
                             <TableHead className="w-[8%] border-black text-center">Up to date</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -228,9 +228,15 @@ export default function PrintMvacPage() {
                                 <TableCell className="border-black"><div className="desc-cell">{item.description ?? '-'}</div></TableCell>
                                 <TableCell className="text-center border-black">{item.unit ?? '-'}</TableCell>
                                 <TableCell className="text-right border-black">{getDisplayValue(item.boqQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue((item as any).totalCertifiedQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue(item.executedQty)}</TableCell>
-                                <TableCell className="text-right border-black">{getDisplayValue(upToDateQty)}</TableCell>
+                                <TableCell className="text-right border-black">
+                                    {getDisplayValue((item as any).totalCertifiedQty)}
+                                </TableCell>
+                                <TableCell className="text-right border-black">
+                                    {getDisplayValue((item as any).certifiedQty)}
+                                </TableCell>
+                                <TableCell className="text-right border-black">
+                                    {getDisplayValue(upToDateQty)}
+                                </TableCell>
                               </TableRow>
                             );
                           })}
