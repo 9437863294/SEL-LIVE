@@ -116,9 +116,6 @@ export default function PrintJmcPage() {
                 const entry = { id: jmcDocSnap.id, ...jmcDocSnap.data() } as JmcEntry;
                 setJmcEntry(entry);
                 
-                const allJmcsSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries')));
-                const allJmcEntries = allJmcsSnap.docs.map(d => d.data() as JmcEntry);
-                
                 const boqSnap = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
                 const boqItemsMap = new Map<string, BoqItem>();
                 boqSnap.docs.forEach(doc => {
@@ -139,17 +136,8 @@ export default function PrintJmcPage() {
                     const itemKey = `${itemScope1}_${itemScope2}_${itemSlNo}`;
                     const boqItem = boqItemsMap.get(itemKey);
                     
-                    const previousCertifiedQty = allJmcEntries
-                        .filter(e => {
-                            const eDate = toDateSafe(e.jmcDate);
-                            return eDate && currentEntryDate && eDate < currentEntryDate;
-                        })
-                        .flatMap(e => e.items)
-                        .filter(i => {
-                             const iKey = `${getScope1(i)}_${getScope2(i)}_${getBoqSlNo(i)}`;
-                             return iKey === itemKey;
-                        })
-                        .reduce((sum, i) => sum + (i.certifiedQty || 0), 0);
+                    // Directly use totalCertifiedQty as the previous certified quantity
+                    const previousCertifiedQty = (item as any).totalCertifiedQty || 0;
                         
                     return {
                         ...item,
@@ -174,7 +162,7 @@ export default function PrintJmcPage() {
       }
     }, [isLoading, jmcEntry]);
 
-    const calculateUpToDateQty = (item: EnrichedJmcItem) => (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
+    const calculateUpToDateQty = (item: EnrichedJmcItem) => (Number(item.previousCertifiedQty) || 0) + (Number(item.certifiedQty) || 0);
 
     if (isLoading) {
         return <div className="p-8"><Skeleton className="h-[80vh]" /></div>;
