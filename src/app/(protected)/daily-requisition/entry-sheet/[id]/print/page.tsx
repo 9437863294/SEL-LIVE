@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, query, where, documentId } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, documentId, Timestamp } from 'firebase/firestore';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { Printer } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -21,9 +21,18 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
     const { user } = useAuth();
     if (!entry) return null;
 
-    const entryDate = entry.date && (entry.date as any).toDate 
-        ? format((entry.date as any).toDate(), 'MMMM do, yyyy')
-        : String(entry.date);
+    const toDateSafe = (value: any): Date | null => {
+        if (!value) return null;
+        if (value instanceof Date) return value;
+        if (value instanceof Timestamp) return value.toDate();
+        if (typeof value === 'string' || typeof value === 'number') {
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? null : d;
+        }
+        return null;
+    };
+
+    const entryDate = toDateSafe(entry.date);
 
     return (
         <div ref={ref} className="p-8 bg-white text-black font-sans">
@@ -40,7 +49,7 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
                 </div>
                  <div className="flex">
                     <span className="font-medium w-32 shrink-0">Reception Date:</span>
-                    <span>{entry.date ? format(new Date(entry.date as string), 'MMMM do, yyyy') : 'N/A'}</span>
+                    <span>{entryDate ? format(entryDate, 'MMMM do, yyyy') : 'N/A'}</span>
                 </div>
                 <div className="flex">
                     <span className="font-medium w-32 shrink-0">DEP No:</span>
@@ -143,7 +152,7 @@ export default function PrintChecklistPage() {
                     return;
                 }
                 
-                const entriesData = entrySnap.docs.map(doc => doc.data() as DailyRequisitionEntry);
+                const entriesData = entrySnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyRequisitionEntry));
                 setEntries(entriesData);
                 
                 const projectIds = [...new Set(entriesData.map(e => e.projectId).filter(Boolean))];
