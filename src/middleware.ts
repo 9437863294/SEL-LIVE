@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -28,9 +29,22 @@ export function middleware(req: NextRequest) {
   ) {
     return NextResponse.next();
   }
+  
+  if (pathname === '/print-auth') {
+    return NextResponse.next();
+  }
+
 
   // If trying to access a public route, let them through
   if (isPublicRoute(pathname)) {
+    if (pathname.startsWith('/billing-recon') || pathname.startsWith('/daily-requisition')) {
+        const printAuth = req.cookies.get('print_auth');
+        if (printAuth?.value !== 'ok') {
+            const authUrl = new URL('/print-auth', req.url);
+            authUrl.searchParams.set('next', pathname);
+            return NextResponse.redirect(authUrl);
+        }
+    }
     return NextResponse.next();
   }
 

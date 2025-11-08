@@ -1,9 +1,11 @@
+
 // src/app/layout.tsx
 import './globals.css';
 import { Inter, Roboto } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from '@/components/ui/toaster';
+import { ModuleProvider } from '@/context/ModuleContext';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -27,8 +29,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body>
         <AuthProvider>
-          {children}
-          <Toaster />
+          <ModuleProvider>
+            {children}
+            <Toaster />
+          </ModuleProvider>
         </AuthProvider>
       </body>
     </html>

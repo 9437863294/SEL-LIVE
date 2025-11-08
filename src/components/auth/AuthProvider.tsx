@@ -52,7 +52,7 @@ const AuthContext = createContext<AuthContextType>({
   loadSavedUsers: () => {},
 });
 
-const publicRoutes = ['/login'];
+const publicRoutes = ['/login', '/print-auth'];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -160,7 +160,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPermissions({});
       setOriginalUser(null);
       setIsImpersonating(false);
-      setLoading(false);
       return null;
     }
 
@@ -271,8 +270,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       return null;
-    } finally {
-      setLoading(false);
     }
   }, [handleSignOut, shouldRemember, extendSession, toast]);
 
@@ -284,19 +281,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true); // Set loading to true at the start of auth state change
       if (firebaseUser) {
         await fetchUserData(firebaseUser);
+        // After fetching, if we're on login, we should redirect
+        if (pathname === '/login') {
+            router.replace('/');
+        }
       } else {
         setUser(null);
         setPermissions({});
         setOriginalUser(null);
         setIsImpersonating(false);
-        setLoading(false);
-        
-        if (!publicRoutes.includes(pathname)) {
+        if (!publicRoutes.includes(pathname) && !pathname.startsWith('/billing-recon/')) {
           router.push('/login');
         }
       }
+      setLoading(false); // Set loading to false after all operations
     });
 
     return () => unsubscribeAuth();

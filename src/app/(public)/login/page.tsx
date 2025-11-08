@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +25,11 @@ import type { SavedUser, User } from "@/lib/types";
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const {
     user: authenticatedUser,
-    setShouldRemember, // still used if your provider stores non-sensitive profile prefs
+    setShouldRemember, 
     savedUsers,
     loadSavedUsers,
     loading: authLoading,
@@ -48,12 +50,14 @@ export default function LoginPage() {
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
-  // Redirect if already authenticated.
+  // This effect is now primarily for users who are already logged in
+  // and manually navigate to /login. The main post-login redirect is in AuthProvider.
   useEffect(() => {
     if (!authLoading && authenticatedUser) {
-      router.replace("/");
+      const redirectUrl = searchParams.get('redirect') || '/';
+      router.replace(redirectUrl);
     }
-  }, [authenticatedUser, authLoading, router]);
+  }, [authenticatedUser, authLoading, router, searchParams]);
 
   // If no saved users, default to password form.
   useEffect(() => {
@@ -99,7 +103,7 @@ export default function LoginPage() {
         auth,
         rememberMe ? browserLocalPersistence : browserSessionPersistence
       );
-
+      
       // Let AuthProvider’s onAuthStateChanged handle nav after success
       await signInWithEmailAndPassword(auth, finalEmail, password);
 
@@ -400,7 +404,7 @@ export default function LoginPage() {
         className="relative flex min-h-screen items-center justify-center bg-cover bg-center p-4"
         style={{
           backgroundImage:
-            "url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2F1744115358081.jpg?alt=media&token=3352f270-d899-4d18-bd83-b40a052e3061')",
+            "url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Frm378-062.jpg?alt=media&token=91cf2e4f-e362-4a09-a283-a6ae2d64b55f')",
         }}
       >
         <div className="absolute inset-0 bg-black/30" />
