@@ -1,18 +1,7 @@
 'use client';
 
-import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import ModuleDashboard from '@/components/ModuleDashboard';
 
-function NotFoundInner() {
-  const searchParams = useSearchParams();
-  // ...
-  return <div>Page not found</div>;
-}
-
-export default function NotFoundPage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <NotFoundInner />
-    </Suspense>
-  );
+export default function DashboardPage() {
+  return <ModuleDashboard />;
 }
