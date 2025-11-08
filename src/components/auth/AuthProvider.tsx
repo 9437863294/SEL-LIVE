@@ -1,20 +1,31 @@
-
 'use client';
 
 import * as React from 'react';
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+} from 'firebase/firestore';
 import type { User, Role, SavedUser } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
-import { SessionExpiryDialog } from './SessionExpiryDialog';
 
-// Session configuration
-const SESSION_CHECK_INTERVAL = 60000; // Check every minute
+/* ---------------- types ---------------- */
 
 interface AuthContextType {
   user: User | null;
@@ -52,7 +63,23 @@ const AuthContext = createContext<AuthContextType>({
   loadSavedUsers: () => {},
 });
 
-const publicRoutes = ['/login', '/print-auth'];
+/* ---------------- route helpers ---------------- */
+
+// Public pages
+const PUBLIC_ROUTES = ['/login', '/print-auth'];
+
+// Public print routes: no auth, no redirect
+const PUBLIC_PRINT_ROUTE_REGEX =
+  /^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/;
+
+function isPublicRoute(pathname: string) {
+  if (PUBLIC_ROUTES.includes(pathname)) return true;
+  if (pathname.startsWith('/print-auth')) return true;
+  if (PUBLIC_PRINT_ROUTE_REGEX.test(pathname)) return true;
+  return false;
+}
+
+/* ---------------- provider ---------------- */
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -62,51 +89,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
-  const { toast } = useToast();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  // PIN login state
   const [savedUsers, setSavedUsers] = useState<SavedUser[]>([]);
   const [shouldRemember, setShouldRemember] = useState(false);
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
-  // Refs for managing timeouts and avoiding stale closures
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const handleSignOut = useCallback(async (isExpired = false) => {
-    try {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
-      
-      await signOut(auth);
-      
-      if (!isExpired) {
-        sessionStorage.clear();
-      }
-      
-      if (isExpired) {
+
+  const { toast } = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  /* ---------- sign out ---------- */
+
+  const handleSignOut = useCallback(
+    async (isExpired = false) => {
+      try {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+
+        await signOut(auth);
+
+        if (!isExpired) {
+          sessionStorage.clear();
+        }
+
+        if (isExpired) {
+          toast({
+            title: 'Session Expired',
+            description: 'Your session has expired. Please log in again.',
+            variant: 'destructive',
+          });
+        }
+
+        router.push('/login');
+      } catch (error) {
+        console.error('Error signing out:', error);
         toast({
-          title: 'Session Expired',
-          description: 'Your session has expired. Please log in again.',
+          title: 'Error',
+          description: 'Failed to sign out. Please try again.',
           variant: 'destructive',
         });
       }
-      
-      router.push('/login');
-    } catch (error) {
-      console.error('Error signing out:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to sign out. Please try again.',
-        variant: 'destructive',
-      });
-    }
-  }, [router, toast]);
+    },
+    [router, toast]
+  );
 
+  /* ---------- session timers ---------- */
 
   const resetTimeouts = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -114,16 +146,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const sessionDurationMinutes = user?.theme?.sessionDuration || 60;
     const SESSION_TIMEOUT = sessionDurationMinutes * 60 * 1000;
-    const WARNING_TIME = 1 * 60 * 1000; 
-    
-    // Set a timeout to show the warning dialog
+    const WARNING_TIME = 1 * 60 * 1000;
+
     warningTimeoutRef.current = setTimeout(() => {
-        setIsSessionExpired(true);
+      setIsSessionExpired(true);
     }, SESSION_TIMEOUT - WARNING_TIME);
-    
-    // Set a timeout to log the user out
+
     timeoutRef.current = setTimeout(() => {
-        handleSignOut(true);
+      handleSignOut(true);
     }, SESSION_TIMEOUT);
   }, [user, handleSignOut]);
 
@@ -132,16 +162,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsSessionExpired(false);
     resetTimeouts();
   }, [resetTimeouts]);
-  
+
+  /* ---------- saved users helpers ---------- */
+
   const loadSavedUsers = useCallback(() => {
     try {
-      const storedUsers = localStorage.getItem('savedUsers');
-      if (storedUsers) {
-        const parsed = JSON.parse(storedUsers);
-        setSavedUsers(Array.isArray(parsed) ? parsed : []);
+      const stored = localStorage.getItem('savedUsers');
+      if (!stored) {
+        setSavedUsers([]);
+        return;
       }
-    } catch (error) {
-      console.error('Failed to load saved users from localStorage', error);
+      const parsed = JSON.parse(stored);
+      setSavedUsers(Array.isArray(parsed) ? parsed : []);
+    } catch (err) {
+      console.error('Failed to load saved users', err);
       setSavedUsers([]);
     }
   }, []);
@@ -150,173 +184,198 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.removeItem('savedUsers');
       setSavedUsers([]);
-    } catch (error) {
-      console.error('Failed to clear saved users', error);
+    } catch (err) {
+      console.error('Failed to clear saved users', err);
     }
   }, []);
-  
-  const fetchUserData = useCallback(async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
-    if (!firebaseUser) {
-      setUser(null);
-      setPermissions({});
-      setOriginalUser(null);
-      setIsImpersonating(false);
-      return null;
-    }
 
-    try {
-      // Fetch all users for impersonation dropdown
-      const allUsersSnap = await getDocs(collection(db, 'users'));
-      const allUsersData = allUsersSnap.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as User));
-      setUsers(allUsersData);
-      
-      // Check for impersonation session
-      const impersonationUserId = sessionStorage.getItem('impersonationUserId');
-      const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
+  /* ---------- fetch user + permissions ---------- */
 
-      let userToLoadId = firebaseUser.uid;
-      let isImpersonationSession = false;
-
-      if (impersonationUserId && storedOriginalUser) {
-        try {
-          const originalAdminData = JSON.parse(storedOriginalUser) as User;
-          if (firebaseUser.uid === originalAdminData.id) {
-            userToLoadId = impersonationUserId;
-            setOriginalUser(originalAdminData);
-            isImpersonationSession = true;
-          } else {
-            // Clear invalid impersonation data
-            sessionStorage.removeItem('impersonationUserId');
-            sessionStorage.removeItem('originalAdminUser');
-          }
-        } catch (parseError) {
-          console.error('Error parsing stored original user', parseError);
-          sessionStorage.removeItem('impersonationUserId');
-          sessionStorage.removeItem('originalAdminUser');
-        }
-      }
-      
-      setIsImpersonating(isImpersonationSession);
-
-      // Fetch user document
-      const userDocRef = doc(db, 'users', userToLoadId);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (!userDocSnap.exists()) {
-        console.error('User document not found for UID:', userToLoadId);
-        await handleSignOut();
+  const fetchUserData = useCallback(
+    async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
+      if (!firebaseUser) {
+        setUser(null);
+        setPermissions({});
+        setOriginalUser(null);
+        setIsImpersonating(false);
         return null;
       }
 
-      const userData = { id: userDocSnap.id, ...userDocSnap.data() } as User;
-      setUser(userData);
-      
-      // Initialize session timestamp if not exists
-      if (!sessionStorage.getItem('lastActivity')) {
-        extendSession();
-      }
-      
-      // Handle PIN setup for remembered users
-      if (shouldRemember && !isImpersonationSession) {
-        try {
-          const currentSavedUsers: SavedUser[] = JSON.parse(
-            localStorage.getItem('savedUsers') || '[]'
-          );
-          const userIsSaved = currentSavedUsers.some(u => u.id === userData.id);
-          
-          if (!userIsSaved) {
-            setUserForPinSetup(userData);
-            setIsPinSetupOpen(true);
-          }
-        } catch (error) {
-          console.error('Error checking saved users', error);
-        }
-        
-        setShouldRemember(false);
-      }
-
-      // Fetch user role and permissions
-      if (userData.role) {
-        const rolesQuery = query(
-          collection(db, 'roles'), 
-          where('name', '==', userData.role)
+      try {
+        // All users list
+        const allUsersSnap = await getDocs(collection(db, 'users'));
+        const allUsers = allUsersSnap.docs.map(
+          (d) =>
+            ({
+              id: d.id,
+              ...d.data(),
+            } as User)
         );
-        const roleSnap = await getDocs(rolesQuery);
-        
-        if (!roleSnap.empty) {
-          const roleData = roleSnap.docs[0].data() as Role;
-          setPermissions(roleData.permissions || {});
+        setUsers(allUsers);
+
+        // Impersonation
+        const impersonationUserId = sessionStorage.getItem('impersonationUserId');
+        const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
+
+        let userToLoadId = firebaseUser.uid;
+        let impersonating = false;
+
+        if (impersonationUserId && storedOriginalUser) {
+          try {
+            const original = JSON.parse(storedOriginalUser) as User;
+            if (firebaseUser.uid === original.id) {
+              userToLoadId = impersonationUserId;
+              setOriginalUser(original);
+              impersonating = true;
+            } else {
+              sessionStorage.removeItem('impersonationUserId');
+              sessionStorage.removeItem('originalAdminUser');
+            }
+          } catch (err) {
+            console.error('Error parsing original user', err);
+            sessionStorage.removeItem('impersonationUserId');
+            sessionStorage.removeItem('originalAdminUser');
+          }
+        }
+
+        setIsImpersonating(impersonating);
+
+        // User doc
+        const userDocRef = doc(db, 'users', userToLoadId);
+        const snap = await getDoc(userDocRef);
+        if (!snap.exists()) {
+          console.error('User doc not found for UID:', userToLoadId);
+          await handleSignOut();
+          return null;
+        }
+
+        const userData = {
+          id: snap.id,
+          ...snap.data(),
+        } as User;
+
+        setUser(userData);
+
+        if (!sessionStorage.getItem('lastActivity')) {
+          extendSession();
+        }
+
+        // Remember-me → PIN setup
+        if (shouldRemember && !impersonating) {
+          try {
+            const currentSaved: SavedUser[] = JSON.parse(
+              localStorage.getItem('savedUsers') || '[]'
+            );
+            const exists = currentSaved.some((u) => u.id === userData.id);
+            if (!exists) {
+              setUserForPinSetup(userData);
+              setIsPinSetupOpen(true);
+            }
+          } catch (err) {
+            console.error('Error checking saved users', err);
+          }
+          setShouldRemember(false);
+        }
+
+        // Role & permissions
+        if (userData.role) {
+          const rolesQuery = query(
+            collection(db, 'roles'),
+            where('name', '==', userData.role)
+          );
+          const roleSnap = await getDocs(rolesQuery);
+          if (!roleSnap.empty) {
+            const roleData = roleSnap.docs[0].data() as Role;
+            setPermissions(roleData.permissions || {});
+          } else {
+            console.warn(`Role '${userData.role}' not found`);
+            setPermissions({});
+          }
         } else {
-          console.warn(`Role '${userData.role}' not found.`);
+          console.warn('User has no role');
           setPermissions({});
         }
-      } else {
-        console.warn('User has no role assigned.');
-        setPermissions({});
-      }
-      
-      return userData;
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-      setUser(null);
-      setPermissions({});
-      
-      toast({
-        title: 'Error',
-        description: 'Failed to load user data. Please try logging in again.',
-        variant: 'destructive',
-      });
-      
-      return null;
-    }
-  }, [handleSignOut, shouldRemember, extendSession, toast]);
 
-  
+        return userData;
+      } catch (err) {
+        console.error('Error fetching user data:', err);
+        setUser(null);
+        setPermissions({});
+        toast({
+          title: 'Error',
+          description: 'Failed to load user data. Please try logging in again.',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    },
+    [extendSession, handleSignOut, shouldRemember, toast]
+  );
+
   const refreshUserData = useCallback(async () => {
     const firebaseUser = auth.currentUser;
     await fetchUserData(firebaseUser);
   }, [fetchUserData]);
 
+  /* ---------- subscribe to Firebase auth ---------- */
+
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      const fetchedUser = await fetchUserData(firebaseUser);
-      if (fetchedUser) {
-        // After user data is successfully fetched, handle redirects
-        const isPublic = publicRoutes.includes(pathname);
-        if (isPublic) {
-          const redirectParam = searchParams.get('redirect');
-          router.replace(redirectParam || '/');
-        }
-      }
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      await fetchUserData(firebaseUser);
       setLoading(false);
     });
-    return () => unsubscribeAuth();
-  }, [fetchUserData, pathname, router, searchParams]);
-  
+    return () => unsubscribe();
+  }, [fetchUserData]);
 
+  /* ---------- central routing logic (no loops) ---------- */
 
-  // Activity listener to extend session
+  useEffect(() => {
+    if (loading) return;
+
+    const publicRoute = isPublicRoute(pathname);
+    const redirectParam = searchParams.get('redirect') || undefined;
+
+    // Not logged in
+    if (!user) {
+      // Allow all public (incl. print) anonymously
+      if (!publicRoute && pathname !== '/login') {
+        router.replace(
+          `/login?redirect=${encodeURIComponent(pathname)}`
+        );
+      }
+      return;
+    }
+
+    // Logged in
+    if (publicRoute && !PUBLIC_PRINT_ROUTE_REGEX.test(pathname)) {
+      // On /login or other public non-print while authenticated → bounce to redirect or home
+      router.replace(redirectParam || '/');
+    }
+    // Logged-in + print route → allowed, do nothing
+  }, [user, loading, pathname, router, searchParams]);
+
+  /* ---------- session activity ---------- */
+
   useEffect(() => {
     if (!user) return;
-    
-    // Immediately reset timers when the user object (and their settings) becomes available
+
     resetTimeouts();
 
-    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
-    activityEvents.forEach(event => window.addEventListener(event, extendSession));
+    const events = ['mousemove', 'keydown', 'click', 'scroll'];
+    events.forEach((e) => window.addEventListener(e, extendSession));
 
     return () => {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
-        activityEvents.forEach(event => window.removeEventListener(event, extendSession));
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+      events.forEach((e) =>
+        window.removeEventListener(e, extendSession)
+      );
     };
   }, [user, extendSession, resetTimeouts]);
 
+  /* ---------- context value ---------- */
 
-  const contextValue: AuthContextType = {
+  const value: AuthContextType = {
     user,
     users,
     permissions,
@@ -335,7 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
       {userForPinSetup && (
         <PinSetupDialog
@@ -349,10 +408,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/* ---------- hook ---------- */
+
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
+  const ctx = useContext(AuthContext);
+  if (ctx === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-  return context;
+  return ctx;
 };

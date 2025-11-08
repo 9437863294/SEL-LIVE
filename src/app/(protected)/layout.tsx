@@ -4,7 +4,6 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import AppShell from '@/components/AppShell';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 // ✅ This layout wraps all protected routes and ensures authentication
@@ -19,11 +18,11 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     }
   }, [loading, user, pathname, router]);
 
-  if (loading) {
+  if (loading || !user) {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
-
-  if (!user) return null; // Prevent flicker while redirecting
-
-  return <AppShell>{children}</AppShell>;
+  
+  // The AppShell is already in the root layout, so we don't need it here.
+  // This layout's only job is to protect the routes.
+  return <>{children}</>;
 }
