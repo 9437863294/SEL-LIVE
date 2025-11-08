@@ -98,7 +98,7 @@ const baseTableHeaders = [
     'JMC/MVAC Amount',
 ] as const;
 
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '$');
+const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
@@ -191,6 +191,7 @@ export default function ViewBoqPage() {
     const v = k ? (x as any)[k] : undefined;
     return typeof v === 'string' ? v.trim() : '';
   };
+  const getErpSlNo = (item: any): string => String(item?.['ERP SL NO'] ?? '').trim();
 
   /** FETCH DATA **/
   const fetchProjectAndBoq = useCallback(async () => {
@@ -305,30 +306,6 @@ export default function ViewBoqPage() {
   );
 
   /** FILTERS **/
-  const filteredBoqItems = useMemo(() => {
-    const search = filters.search.toLowerCase();
-    const s1 = filters['Scope 1'];
-    const s2 = filters['Scope 2'];
-    const c1 = filters['Category 1'];
-
-    return boqItems.filter((item) => {
-      const searchMatch =
-        filters.search === '' ||
-        String(item['ERP SL NO'] ?? '').toLowerCase().includes(search) ||
-        String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').toLowerCase().includes(search) ||
-        String(item['Description'] ?? '').toLowerCase().includes(search) ||
-        String(item['Category 1'] ?? '').toLowerCase().includes(search) ||
-        String(item['Category 2'] ?? '').toLowerCase().includes(search) ||
-        String(item['Category 3'] ?? '').toLowerCase().includes(search);
-
-      const scope1Match = s1 === 'all' || item['Scope 1'] === s1;
-      const scope2Match = s2 === 'all' || item['Scope 2'] === s2;
-      const category1Match = c1 === 'all' || item['Category 1'] === c1;
-
-      return searchMatch && scope1Match && scope2Match && category1Match;
-    });
-  }, [boqItems, filters]);
-
   const filterOptions = useMemo(() => {
     let base = boqItems;
 
@@ -347,6 +324,27 @@ export default function ViewBoqPage() {
     const c1Options = [...new Set(base.map((i) => i['Category 1']).filter(Boolean))] as string[];
 
     return { 'Scope 1': s1Options, 'Scope 2': s2Options, 'Category 1': c1Options };
+  }, [boqItems, filters]);
+  
+  const filteredBoqItems = useMemo(() => {
+    const search = filters.search.toLowerCase();
+    
+    return boqItems.filter((item) => {
+      const searchMatch =
+        search === '' ||
+        String(item['ERP SL NO'] ?? '').toLowerCase().includes(search) ||
+        String(item['BOQ SL No'] ?? item['SL. No.'] ?? '').toLowerCase().includes(search) ||
+        String(item['Description'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 1'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 2'] ?? '').toLowerCase().includes(search) ||
+        String(item['Category 3'] ?? '').toLowerCase().includes(search);
+
+      const scope1Match = filters['Scope 1'] === 'all' || item['Scope 1'] === filters['Scope 1'];
+      const scope2Match = filters['Scope 2'] === 'all' || item['Scope 2'] === filters['Scope 2'];
+      const category1Match = filters['Category 1'] === 'all' || item['Category 1'] === filters['Category 1'];
+
+      return searchMatch && scope1Match && scope2Match && category1Match;
+    });
   }, [boqItems, filters]);
 
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
@@ -493,10 +491,7 @@ export default function ViewBoqPage() {
 
   const allSelected = visibleRowIds.length > 0 && visibleRowIds.every((id) => selectedItemIds.includes(id));
   const someSelected = visibleRowIds.some((id) => selectedItemIds.includes(id)) && !allSelected;
-
-  // Moving selectAllState calculation before its usage to fix ReferenceError
   const selectAllState: CheckedState = allSelected ? true : someSelected ? 'indeterminate' : false;
-
 
   const handleSelectAll = (checked: CheckedState) => {
     if (checked === true) {
@@ -559,9 +554,7 @@ export default function ViewBoqPage() {
     'Unit Rate',
     'Total Amount',
   ];
-  
-  const getErpSlNo = (item: any): string => String(item?.['ERP SL NO'] ?? '').trim();
-  
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
@@ -909,10 +902,11 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
-        jmcEntries={[]}
-        bills={[]}
+        jmcEntries={jmcEntries}
+        mvacEntries={mvacEntries}
+        bills={bills}
       />
-      
+
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
@@ -942,5 +936,3 @@ export default function ViewBoqPage() {
     </div>
   );
 }
-
-    
