@@ -341,7 +341,7 @@ function NewExpenseRequestForm() {
                                         variant="outline"
                                         role="combobox"
                                         className={cn(
-                                            "w-full justify-between",
+                                            "w-full justify-between font-normal",
                                             !field.value && "text-muted-foreground"
                                         )}
                                     >
@@ -377,12 +377,7 @@ function NewExpenseRequestForm() {
                                                         setPartyPopoverOpen(false);
                                                     }}
                                                 >
-                                                    <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            name === field.value ? "opacity-100" : "opacity-0"
-                                                        )}
-                                                    />
+                                                    <Check className={cn("mr-2 h-4 w-4", name === field.value ? "opacity-100" : "opacity-0")} />
                                                     {name}
                                                 </CommandItem>
                                             ))}
