@@ -1,6 +1,6 @@
 
-
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { Suspense } from 'react';
 import Link from 'next/link';
@@ -340,10 +340,7 @@ function NewExpenseRequestForm() {
                                     <Button
                                         variant="outline"
                                         role="combobox"
-                                        className={cn(
-                                            "w-full justify-between font-normal",
-                                            !field.value && "text-muted-foreground"
-                                        )}
+                                        className={cn("w-full justify-between font-normal", !field.value && "text-muted-foreground")}
                                     >
                                         {field.value || "Select or type a party name"}
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
