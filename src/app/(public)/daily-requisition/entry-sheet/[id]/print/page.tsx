@@ -28,16 +28,15 @@ const toDateSafe = (value: any): Date | null => {
     return null;
 };
 
-// A new simple component to render the printable content.
-// It doesn't need a forwardRef.
-const PrintableContent = ({ entry, expenseRequest, project }: { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }) => {
+// Use React.forwardRef to correctly handle the ref for react-to-print
+const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
     const { user } = useAuth();
     if (!entry) return null;
 
     const entryDate = toDateSafe(entry.date);
 
     return (
-        <div className="p-8 bg-white text-black font-sans">
+        <div ref={ref} className="p-8 bg-white text-black font-sans">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -113,7 +112,8 @@ const PrintableContent = ({ entry, expenseRequest, project }: { entry: DailyRequ
             </div>
         </div>
     );
-};
+});
+PrintableContent.displayName = 'PrintableContent';
 
 
 export default function PrintChecklistPage() {
@@ -124,7 +124,6 @@ export default function PrintChecklistPage() {
     const id = params.id as string;
     const idsFromQuery = searchParams.get('ids')?.split(',');
     
-    // The ref is now on a simple div that will wrap our printable content.
     const componentToPrintRef = useRef<HTMLDivElement>(null);
     const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -193,15 +192,14 @@ export default function PrintChecklistPage() {
 
     return (
         <div className="p-4 md:p-8 bg-gray-100">
-            <div className="hidden">
-                 {/* This div is what react-to-print will capture. */}
+             <div className="hidden">
                  <div ref={componentToPrintRef}>
                     {isLoading ? (
                         <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
                             <Skeleton className="h-96 w-full" />
                         </div>
                     ) : (
-                        entries.map((entry, index) => (
+                        entries.map((entry) => (
                             <div key={entry.receptionNo} className="page-break">
                                 <PrintableContent 
                                     entry={entry} 
