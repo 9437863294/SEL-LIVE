@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
@@ -17,25 +16,27 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
-const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }>(({ entry, expenseRequest, project }, ref) => {
+const toDateSafe = (value: any): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (value instanceof Timestamp) return value.toDate();
+    if (typeof value === 'string' || typeof value === 'number') {
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+};
+
+// A new simple component to render the printable content.
+// It doesn't need a forwardRef.
+const PrintableContent = ({ entry, expenseRequest, project }: { entry: DailyRequisitionEntry, expenseRequest?: ExpenseRequest | null, project?: Project | null }) => {
     const { user } = useAuth();
     if (!entry) return null;
-
-    const toDateSafe = (value: any): Date | null => {
-        if (!value) return null;
-        if (value instanceof Date) return value;
-        if (value instanceof Timestamp) return value.toDate();
-        if (typeof value === 'string' || typeof value === 'number') {
-            const d = new Date(value);
-            return isNaN(d.getTime()) ? null : d;
-        }
-        return null;
-    };
 
     const entryDate = toDateSafe(entry.date);
 
     return (
-        <div ref={ref} className="p-8 bg-white text-black font-sans">
+        <div className="p-8 bg-white text-black font-sans">
             <div className="text-center mb-4">
                 <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
                 <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
@@ -111,8 +112,8 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
             </div>
         </div>
     );
-});
-PrintableContent.displayName = 'PrintableContent';
+};
+
 
 export default function PrintChecklistPage() {
     const params = useParams();
@@ -122,14 +123,15 @@ export default function PrintChecklistPage() {
     const id = params.id as string;
     const idsFromQuery = searchParams.get('ids')?.split(',');
     
-    const componentRef = useRef<HTMLDivElement>(null);
+    // The ref is now on a simple div that will wrap our printable content.
+    const componentToPrintRef = useRef<HTMLDivElement>(null);
     const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
-        content: () => componentRef.current,
+        content: () => componentToPrintRef.current,
         documentTitle: `Checklist-${id || 'batch'}`,
         onAfterPrint: () => router.back(),
     });
@@ -191,14 +193,15 @@ export default function PrintChecklistPage() {
     return (
         <div className="p-4 md:p-8 bg-gray-100">
             <div className="hidden">
-                 <div ref={componentRef} className="print-container">
+                 {/* This div is what react-to-print will capture. */}
+                 <div ref={componentToPrintRef}>
                     {isLoading ? (
                         <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
                             <Skeleton className="h-96 w-full" />
                         </div>
                     ) : (
                         entries.map((entry, index) => (
-                            <div key={entry.receptionNo} className="bg-white border rounded-lg max-w-4xl mx-auto page-break">
+                            <div key={entry.receptionNo} className="page-break">
                                 <PrintableContent 
                                     entry={entry} 
                                     project={projects.find(p => p.id === entry.projectId)} 
