@@ -1,26 +1,25 @@
-// src/app/(protected)/layout.tsx
+
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-// ✅ This layout wraps all protected routes and ensures authentication
+// This layout now ONLY protects routes, redirects are handled by ClientSessionHandler
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+      router.replace(`/login`);
     }
-  }, [loading, user, pathname, router]);
+  }, [loading, user, router]);
 
+  // While loading or if no user, render nothing to avoid flashes of content
   if (loading || !user) {
-    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+    return null;
   }
   
-  // The AppShell is now in the root layout, so this just renders children.
   return <>{children}</>;
 }

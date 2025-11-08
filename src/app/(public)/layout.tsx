@@ -1,10 +1,7 @@
-// src/app/(public)/layout.tsx
-import type { ReactNode } from 'react';
 
-export default function PublicLayout({ children }: { children: ReactNode }) {
-  // Important:
-  // - no auth checks
-  // - no redirects
-  // - no html/body tags (those stay in root layout)
+// This layout is intentionally empty.
+// The root layout handles the base HTML structure, and this route group
+// ensures public pages do not inherit the protected layout's auth checks.
+export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

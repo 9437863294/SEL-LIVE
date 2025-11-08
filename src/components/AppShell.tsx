@@ -1,9 +1,11 @@
 
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import { SessionExpiryDialog } from './auth/SessionExpiryDialog';
 import { useAuth } from './auth/AuthProvider';
+import { ClientSessionHandler } from './auth/ClientSessionHandler';
 
 export default function AppShell({
     children,
@@ -12,15 +14,23 @@ export default function AppShell({
 }) {
     const { user, loading, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     
-    // If there's no user, we don't render the shell.
-    // The protected layout will handle redirects.
-    // This prevents the shell from appearing on the login page.
-    if (loading || !user) {
+    // If there's no user and we are not loading, it's a public view (e.g. login page)
+    // We don't render the main app shell for these cases.
+    if (!loading && !user) {
         return <>{children}</>;
+    }
+
+    // While loading, we can show a skeleton or nothing.
+    // This avoids showing the app shell layout on the login page briefly.
+    if (loading) {
+        return <div className="flex justify-center items-center h-screen">Loading application...</div>;
     }
 
     return (
         <div className="flex flex-col min-h-screen">
+            <Suspense fallback={null}>
+                <ClientSessionHandler />
+            </Suspense>
             <Header />
             <div className="flex-1">
                 {children}

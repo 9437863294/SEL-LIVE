@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -12,7 +13,6 @@ import {
 } from 'react';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   doc,
   getDoc,
@@ -63,22 +63,6 @@ const AuthContext = createContext<AuthContextType>({
   loadSavedUsers: () => {},
 });
 
-/* ---------------- route helpers ---------------- */
-
-// Public pages
-const PUBLIC_ROUTES = ['/login', '/print-auth'];
-
-// Public print routes: no auth, no redirect
-const PUBLIC_PRINT_ROUTE_REGEX =
-  /^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/;
-
-function isPublicRoute(pathname: string) {
-  if (PUBLIC_ROUTES.includes(pathname)) return true;
-  if (pathname.startsWith('/print-auth')) return true;
-  if (PUBLIC_PRINT_ROUTE_REGEX.test(pathname)) return true;
-  return false;
-}
-
 /* ---------------- provider ---------------- */
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -99,9 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { toast } = useToast();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   /* ---------- sign out ---------- */
 
@@ -112,10 +93,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
 
         await signOut(auth);
-
-        if (!isExpired) {
-          sessionStorage.clear();
-        }
+        
+        sessionStorage.clear();
 
         if (isExpired) {
           toast({
@@ -124,8 +103,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             variant: 'destructive',
           });
         }
+        
+        // Let ClientSessionHandler component handle redirect
+        setUser(null);
+        setPermissions({});
 
-        router.push('/login');
       } catch (error) {
         console.error('Error signing out:', error);
         toast({
@@ -135,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [router, toast]
+    [toast]
   );
 
   /* ---------- session timers ---------- */
@@ -326,33 +308,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => unsubscribe();
   }, [fetchUserData]);
-
-  /* ---------- central routing logic (no loops) ---------- */
-
-  useEffect(() => {
-    if (loading) return;
-
-    const publicRoute = isPublicRoute(pathname);
-    const redirectParam = searchParams.get('redirect') || undefined;
-
-    // Not logged in
-    if (!user) {
-      // Allow all public (incl. print) anonymously
-      if (!publicRoute && pathname !== '/login') {
-        router.replace(
-          `/login?redirect=${encodeURIComponent(pathname)}`
-        );
-      }
-      return;
-    }
-
-    // Logged in
-    if (publicRoute && !PUBLIC_PRINT_ROUTE_REGEX.test(pathname)) {
-      // On /login or other public non-print while authenticated → bounce to redirect or home
-      router.replace(redirectParam || '/');
-    }
-    // Logged-in + print route → allowed, do nothing
-  }, [user, loading, pathname, router, searchParams]);
 
   /* ---------- session activity ---------- */
 

@@ -1,7 +1,6 @@
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-
-const PUBLIC_ROUTES = ['/login', '/print-auth'];
 
 function isPublicPrintRoute(pathname: string) {
   return (
@@ -22,11 +21,6 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Public auth pages
-  if (PUBLIC_ROUTES.includes(pathname)) {
-    return NextResponse.next();
-  }
-
   // Print routes: require print_auth, but NO normal login
   if (isPublicPrintRoute(pathname)) {
     const printAuth = req.cookies.get('print_auth');
@@ -38,7 +32,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Everything else: let client-side AuthProvider handle protection
+  // All other routes are handled by client-side logic now.
   return NextResponse.next();
 }
 
