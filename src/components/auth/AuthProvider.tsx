@@ -282,27 +282,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true); 
-      if (firebaseUser) {
-        await fetchUserData(firebaseUser);
-        const redirectPath = searchParams.get('redirect') || '/';
-        if (pathname === '/login') {
-            router.replace(redirectPath);
-        }
-      } else {
-        setUser(null);
-        setPermissions({});
-        setOriginalUser(null);
-        setIsImpersonating(false);
-        const isPublic = publicRoutes.includes(pathname) || pathname.startsWith('/billing-recon/') || pathname.startsWith('/daily-requisition/');
-        if (!isPublic) {
-          router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-        }
-      }
+      await fetchUserData(firebaseUser);
       setLoading(false);
     });
     return () => unsubscribeAuth();
-  }, [fetchUserData, pathname, router, searchParams]);
+  }, [fetchUserData]);
+  
+  // This is the main redirect logic
+  useEffect(() => {
+    if (loading) return;
+
+    const isPublic = publicRoutes.includes(pathname);
+    const redirectParam = searchParams.get('redirect');
+
+    if (user && isPublic) {
+      // User is logged in but on a public page, redirect them away.
+      router.replace(redirectParam || '/');
+    } else if (!user && !isPublic) {
+      // User is not logged in and on a protected page, redirect to login.
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+
+  }, [user, loading, pathname, router, searchParams]);
+
 
   // Activity listener to extend session
   useEffect(() => {

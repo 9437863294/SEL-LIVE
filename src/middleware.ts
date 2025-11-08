@@ -43,7 +43,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
   
-  // Let the client-side handle redirecting authenticated users from /login
+  // Let the client-side AuthProvider handle redirecting authenticated users away from /login
   if (token && pathname === '/login') {
     return NextResponse.next();
   }
