@@ -1,5 +1,6 @@
 
 'use client';
+export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { BarChart3, Clock, ShieldAlert } from 'lucide-react';
@@ -46,7 +47,7 @@ function ReportCard({ item }: ReportCardProps) {
             )}
             >
             <CardHeader className="items-center text-center p-4">
-                <div className="bg-primary/10 p-3 rounded-full mb-2">
+                <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <CardTitle className="text-base font-semibold">{item.title}</CardTitle>

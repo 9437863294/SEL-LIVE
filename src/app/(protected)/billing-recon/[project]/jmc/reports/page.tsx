@@ -1,5 +1,6 @@
 
 'use client';
+export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import {
@@ -80,7 +81,7 @@ export default function JmcReportsPage() {
     
     if (isLoading) {
         return (
-             <div className="w-full max-w-4xl">
+             <div className="w-full max-w-4xl pr-4">
                 <Skeleton className="h-10 w-64 mb-6" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <Skeleton className="h-48" />
