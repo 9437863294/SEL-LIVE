@@ -291,18 +291,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // This is the main redirect logic
   useEffect(() => {
     if (loading) return;
-
-    const isPublic = publicRoutes.includes(pathname);
+  
+    const isPublic = publicRoutes.includes(pathname) || pathname.startsWith('/print-auth');
     const redirectParam = searchParams.get('redirect');
-
+  
     if (user && isPublic) {
-      // User is logged in but on a public page, redirect them away.
+      // User is logged in and trying to access a public route, redirect them.
       router.replace(redirectParam || '/');
     } else if (!user && !isPublic) {
-      // User is not logged in and on a protected page, redirect to login.
+      // User is not logged in and on a protected route, redirect to login.
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     }
-
+  
   }, [user, loading, pathname, router, searchParams]);
 
 
