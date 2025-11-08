@@ -13,7 +13,7 @@ function isPublicPrintRoute(pathname: string) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1️⃣ Allow static & API
+  // Allow Next internals, APIs, favicon
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/') ||
@@ -22,12 +22,12 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2️⃣ Public routes: /login, /print-auth
+  // Public auth pages
   if (PUBLIC_ROUTES.includes(pathname)) {
     return NextResponse.next();
   }
 
-  // 3️⃣ Public print routes with passcode gate
+  // Print routes: require print_auth, but NO normal login
   if (isPublicPrintRoute(pathname)) {
     const printAuth = req.cookies.get('print_auth');
     if (printAuth?.value !== 'ok') {
@@ -38,9 +38,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4️⃣ Everything else:
-  // ✅ DO NOT check firebase-auth-token here
-  // Let the client-side AuthProvider decide redirects.
+  // Everything else: let client-side AuthProvider handle protection
   return NextResponse.next();
 }
 
