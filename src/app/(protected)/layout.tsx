@@ -22,7 +22,6 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
   
-  // The AppShell is already in the root layout, so we don't need it here.
-  // This layout's only job is to protect the routes.
+  // The AppShell is now in the root layout, so this just renders children.
   return <>{children}</>;
 }

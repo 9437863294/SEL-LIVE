@@ -10,8 +10,15 @@ export default function AppShell({
 }: {
     children: React.ReactNode;
 }) {
-    const { isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
+    const { user, loading, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
     
+    // If there's no user, we don't render the shell.
+    // The protected layout will handle redirects.
+    // This prevents the shell from appearing on the login page.
+    if (loading || !user) {
+        return <>{children}</>;
+    }
+
     return (
         <div className="flex flex-col min-h-screen">
             <Header />
