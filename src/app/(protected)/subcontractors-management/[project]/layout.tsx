@@ -10,6 +10,8 @@ import {
   FileText,
   Calculator,
   FolderOpen,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -58,7 +60,7 @@ export default function ProjectLayout({
   ];
   
   const visibleNavItems = navItems.filter(item => item.permission);
-
+  
   const isPrintPage = pathname.includes('/print');
   if (isPrintPage) {
     return <>{children}</>;
