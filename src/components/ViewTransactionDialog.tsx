@@ -17,7 +17,7 @@ import { Separator } from '@/components/ui/separator';
 import type { InventoryLog, EnrichedLogItem } from '@/lib/types';
 import { format } from 'date-fns';
 import DocumentLink from './DocumentLink';
-import type { TransactionSummary } from '@/app/store-stock-management/[project]/transactions/page';
+import type { TransactionSummary } from '@/app/(protected)/store-stock-management/[project]/transactions/page';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';

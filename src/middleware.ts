@@ -1,20 +1,26 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// ✅ Allow these print routes
-const PRINT_PUBLIC_PATHS = [
+const PUBLIC_ROUTES = ['/login'];
+const PUBLIC_PRINT_ROUTES = [
   /^\/billing-recon\/[^/]+\/jmc\/[^/]+\/print$/,
   /^\/billing-recon\/[^/]+\/mvac\/[^/]+\/print$/,
+  /^\/daily-requisition\/entry-sheet\/print$/,
+  /^\/daily-requisition\/entry-sheet\/[^/]+\/print$/,
 ];
 
-function isPrintPath(pathname: string) {
-  return PRINT_PUBLIC_PATHS.some((re) => re.test(pathname));
+function isPublicRoute(pathname: string) {
+  if (PUBLIC_ROUTES.includes(pathname)) {
+    return true;
+  }
+  return PUBLIC_PRINT_ROUTES.some((re) => re.test(pathname));
 }
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const token = req.cookies.get('firebase-auth-token');
 
-  // Skip system routes
+  // Allow static files and API routes to pass through
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/') ||
@@ -23,20 +29,23 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // ✅ Passcode logic for print routes
-  if (isPrintPath(pathname)) {
-    const hasCookie = req.cookies.get('print_auth')?.value === 'ok';
-    if (hasCookie) return NextResponse.next();
-
-    // redirect to /print-auth
-    const redirectUrl = req.nextUrl.clone();
-    redirectUrl.pathname = '/print-auth';
-    redirectUrl.searchParams.set('next', pathname);
-    return NextResponse.redirect(redirectUrl);
+  // If trying to access a public route, let them through
+  if (isPublicRoute(pathname)) {
+    return NextResponse.next();
   }
 
-  // 🔒 (optional) Normal login logic for other routes can go here
+  // If no token and trying to access a protected route, redirect to login
+  if (!token) {
+    const loginUrl = new URL('/login', req.url);
+    loginUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
+  // If token exists and trying to access login, redirect to home
+  if (token && pathname === '/login') {
+    return NextResponse.redirect(new URL('/', req.url));
+  }
+  
   return NextResponse.next();
 }
 

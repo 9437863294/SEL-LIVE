@@ -1,54 +1,35 @@
-
-'use client';
-
+// src/app/layout.tsx
 import './globals.css';
-import { ModuleProvider } from '@/context/ModuleContext';
-import { AuthProvider } from '@/components/auth/AuthProvider';
-import { Toaster } from "@/components/ui/toaster";
 import { Inter, Roboto } from 'next/font/google';
-import AppShell from '@/components/AppShell';
-import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
+import { AuthProvider } from '@/components/auth/AuthProvider';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
   display: 'swap',
-})
+});
 
 const roboto = Roboto({
   subsets: ['latin'],
   weight: ['400', '500', '700'],
   variable: '--font-roboto',
   display: 'swap',
-})
+});
 
-function AppContent({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isPrintPage = pathname.includes('/print');
-
-  if (isPrintPage) {
-    return <>{children}</>;
-  }
-
-  return <AppShell>{children}</AppShell>;
-}
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${roboto.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${roboto.variable}`}
+      suppressHydrationWarning
+    >
       <body>
         <AuthProvider>
-          <ModuleProvider>
-            <AppContent>
-              {children}
-            </AppContent>
-          </ModuleProvider>
+          {children}
+          <Toaster />
         </AuthProvider>
-        <Toaster />
       </body>
     </html>
   );
