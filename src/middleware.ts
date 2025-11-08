@@ -2,19 +2,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC_ROUTES = ['/login'];
-const PUBLIC_PRINT_ROUTES = [
-  /^\/billing-recon\/[^/]+\/jmc\/[^/]+\/print$/,
-  /^\/billing-recon\/[^/]+\/mvac\/[^/]+\/print$/,
-  /^\/daily-requisition\/entry-sheet\/print$/,
-  /^\/daily-requisition\/entry-sheet\/[^/]+\/print$/,
-];
+const PUBLIC_ROUTES = ['/login', '/print-auth'];
 
-function isPublicRoute(pathname: string) {
-  if (PUBLIC_ROUTES.includes(pathname)) {
-    return true;
-  }
-  return PUBLIC_PRINT_ROUTES.some((re) => re.test(pathname));
+function isPublicPrintRoute(pathname: string) {
+  return /^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/.test(pathname) ||
+         /^\/daily-requisition\/entry-sheet(\/[^/]+)?\/print$/.test(pathname);
 }
 
 export function middleware(req: NextRequest) {
@@ -30,22 +22,18 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
   
-  if (pathname === '/print-auth') {
+  if (PUBLIC_ROUTES.includes(pathname)) {
     return NextResponse.next();
   }
 
-
-  // If trying to access a public route, let them through
-  if (isPublicRoute(pathname)) {
-    if (pathname.startsWith('/billing-recon') || pathname.startsWith('/daily-requisition')) {
-        const printAuth = req.cookies.get('print_auth');
-        if (printAuth?.value !== 'ok') {
-            const authUrl = new URL('/print-auth', req.url);
-            authUrl.searchParams.set('next', pathname);
-            return NextResponse.redirect(authUrl);
-        }
-    }
-    return NextResponse.next();
+  if (isPublicPrintRoute(pathname)) {
+      const printAuth = req.cookies.get('print_auth');
+      if (printAuth?.value !== 'ok') {
+          const authUrl = new URL('/print-auth', req.url);
+          authUrl.searchParams.set('next', pathname);
+          return NextResponse.redirect(authUrl);
+      }
+      return NextResponse.next();
   }
 
   // If no token and trying to access a protected route, redirect to login
@@ -54,10 +42,10 @@ export function middleware(req: NextRequest) {
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
-
-  // If token exists and trying to access login, redirect to home
+  
+  // Let the client-side handle redirecting authenticated users from /login
   if (token && pathname === '/login') {
-    return NextResponse.redirect(new URL('/', req.url));
+    return NextResponse.next();
   }
   
   return NextResponse.next();

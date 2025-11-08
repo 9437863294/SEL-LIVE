@@ -5,7 +5,7 @@ import * as React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { User, Role, SavedUser } from '@/lib/types';
@@ -65,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // PIN login state
   const [savedUsers, setSavedUsers] = useState<SavedUser[]>([]);
@@ -281,27 +282,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true); // Set loading to true at the start of auth state change
+      setLoading(true); 
       if (firebaseUser) {
         await fetchUserData(firebaseUser);
-        // After fetching, if we're on login, we should redirect
+        const redirectPath = searchParams.get('redirect') || '/';
         if (pathname === '/login') {
-            router.replace('/');
+            router.replace(redirectPath);
         }
       } else {
         setUser(null);
         setPermissions({});
         setOriginalUser(null);
         setIsImpersonating(false);
-        if (!publicRoutes.includes(pathname) && !pathname.startsWith('/billing-recon/')) {
-          router.push('/login');
+        const isPublic = publicRoutes.includes(pathname) || pathname.startsWith('/billing-recon/') || pathname.startsWith('/daily-requisition/');
+        if (!isPublic) {
+          router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
         }
       }
-      setLoading(false); // Set loading to false after all operations
+      setLoading(false);
     });
-
     return () => unsubscribeAuth();
-  }, [fetchUserData, pathname, router]);
+  }, [fetchUserData, pathname, router, searchParams]);
 
   // Activity listener to extend session
   useEffect(() => {
