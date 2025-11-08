@@ -1,4 +1,6 @@
+
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { Fragment } from 'react';
 import Link from 'next/link';
@@ -86,7 +88,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Separator } from '@/components/ui/separator';
-import ChecklistDialog from '@/components/ChecklistDialog';
+import { FormControl } from '@/components/ui/form';
 
 /* ---------- Helpers ---------- */
 const toDate = (v: any): Date | undefined =>
@@ -155,8 +157,7 @@ export default function EntrySheetPage() {
 
   const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
-  const [isChecklistOpen, setIsChecklistOpen] = React.useState(false);
-
+  
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = React.useState(false);
 
@@ -510,10 +511,9 @@ export default function EntrySheetPage() {
     setSelectedEntry(entry);
     setIsViewDialogOpen(true);
   };
-
+  
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
-    setSelectedEntry(entry);
-    setIsChecklistOpen(true);
+    window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   };
 
   const handlePrintSelected = () => {
@@ -636,27 +636,24 @@ export default function EntrySheetPage() {
       {!isEdit && (
         <div className="md:col-span-3 space-y-2">
           <Label htmlFor="attachments">Attachments</Label>
-          <Input id="attachments" type="file" multiple onChange={handleFileChange} />
-          {selectedFiles.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {selectedFiles.map((file, i) => (
-                <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                  <div className="flex items-center gap-2">
-                    <FileIcon className="w-4 h-4" />
-                    <span className="text-sm">{file.name}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+          <FormControl>
+              <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+          </FormControl>
+           {selectedFiles.length > 0 && (
+                <div className="mt-2 space-y-2">
+                    {selectedFiles.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                            <div className="flex items-center gap-2">
+                                <FileIcon className="w-4 h-4" />
+                                <span className="text-sm">{file.name}</span>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    ))}
                 </div>
-              ))}
-            </div>
-          )}
+            )}
         </div>
       )}
     </>
@@ -1059,20 +1056,10 @@ export default function EntrySheetPage() {
           isOpen={isViewDialogOpen}
           onOpenChange={setIsViewDialogOpen}
           entry={selectedEntry}
-          project={projects.find((p) => p.id === selectedEntry.projectId)}
-          department={departments.find((d) => d.id === selectedEntry.departmentId)}
+          projects={projects}
+          departments={departments}
           expenseRequest={expenseRequests.find((req) => req.requestNo === selectedEntry.depNo)}
           onActionComplete={fetchAllData}
-        />
-      )}
-
-      {selectedEntry && isChecklistOpen && (
-        <ChecklistDialog
-          isOpen={isChecklistOpen}
-          onOpenChange={setIsChecklistOpen}
-          entry={selectedEntry}
-          project={projects.find((p) => p.id === selectedEntry.projectId)}
-          expenseRequest={expenseRequests.find((req) => req.requestNo === selectedEntry.depNo)}
         />
       )}
     </>

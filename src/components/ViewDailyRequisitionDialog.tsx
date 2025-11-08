@@ -35,8 +35,8 @@ interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   entry: DailyRequisitionEntry | null;
-  project?: Project;
-  department?: Department;
+  projects: Project[];
+  departments: Department[];
   expenseRequest?: ExpenseRequest | null;
   onActionComplete?: () => void;
 }
@@ -60,14 +60,15 @@ const formatDateSafe = (date: any) => {
     return String(date);
 };
 
-export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, project, department, expenseRequest, onActionComplete }: ViewDailyRequisitionDialogProps) {
+export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry, projects, departments, expenseRequest, onActionComplete }: ViewDailyRequisitionDialogProps) {
   const { can } = useAuthorization();
   const { user } = useAuth();
   const { toast } = useToast();
   const [isActionLoading, setIsActionLoading] = React.useState(false);
 
   const handlePrint = () => {
-    window.print();
+    if (!entry) return;
+    window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   };
 
   const handleStatusUpdate = async (newStatus: 'Pending' | 'Received' | 'Cancelled') => {
@@ -132,6 +133,9 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
   const canMarkMissing = can('Mark as Missing', 'Daily Requisition.Manage Documents');
   const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
 
+  const projectName = projects.find(p => p.id === entry.projectId)?.projectName || 'N/A';
+  const departmentName = departments.find(d => d.id === entry.departmentId)?.name || 'N/A';
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -148,8 +152,8 @@ export default function ViewDailyRequisitionDialog({ isOpen, onOpenChange, entry
                 <div><Label className="text-xs">Reception No.</Label><p className="font-medium">{entry.receptionNo}</p></div>
                 <div><Label className="text-xs">Date</Label><p className="font-medium">{formatDateSafe(entry.date)}</p></div>
                 <div><Label className="text-xs">Created At</Label><p className="font-medium">{formatDateSafe(entry.createdAt)}</p></div>
-                <div><Label className="text-xs">Project</Label><p className="font-medium">{project?.projectName || 'N/A'}</p></div>
-                <div><Label className="text-xs">Department</Label><p className="font-medium">{department?.name || 'N/A'}</p></div>
+                <div><Label className="text-xs">Project</Label><p className="font-medium">{projectName}</p></div>
+                <div><Label className="text-xs">Department</Label><p className="font-medium">{departmentName}</p></div>
                 <div><Label className="text-xs">DEP No.</Label><p className="font-medium">{entry.depNo || 'N/A'}</p></div>
               </div>
 

@@ -105,10 +105,14 @@ const PrintableContent = React.forwardRef<HTMLDivElement, { entry: DailyRequisit
 });
 PrintableContent.displayName = 'PrintableContent';
 
-export default function PrintChecklistPage({ params }: { params: { id: string } }) {
-    const { id } = params;
+export default function PrintChecklistPage() {
+    const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
+
+    const id = params.id as string;
+    const idsFromQuery = searchParams.get('ids')?.split(',');
+    
     const componentRef = useRef<HTMLDivElement>(null);
     const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -117,24 +121,21 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
 
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
-        documentTitle: `Checklist-${id}`,
+        documentTitle: `Checklist-${id || 'batch'}`,
+        onAfterPrint: () => router.back(),
     });
     
     useEffect(() => {
-        const ids = searchParams.get('ids')?.split(',');
-        if (!ids || ids.length === 0) {
-            if (id) {
-                ids?.push(id);
-            } else {
-                router.push('/daily-requisition/entry-sheet');
-                return;
-            }
+        const idsToFetch = idsFromQuery || (id ? [id] : []);
+        if (idsToFetch.length === 0) {
+            router.push('/daily-requisition/entry-sheet');
+            return;
         }
 
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const entryQuery = query(collection(db, 'dailyRequisitions'), where(documentId(), 'in', ids));
+                const entryQuery = query(collection(db, 'dailyRequisitions'), where(documentId(), 'in', idsToFetch));
                 const entrySnap = await getDocs(entryQuery);
 
                 if (entrySnap.empty) {
@@ -149,7 +150,7 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
                 if(projectIds.length > 0) {
                     const projectQuery = query(collection(db, 'projects'), where(documentId(), 'in', projectIds));
                     const projectSnap = await getDocs(projectQuery);
-                    setProjects(projectSnap.docs.map(doc => doc.data() as Project));
+                    setProjects(projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
                 }
 
                 const depNos = [...new Set(entriesData.map(e => e.depNo).filter(Boolean))];
@@ -167,54 +168,54 @@ export default function PrintChecklistPage({ params }: { params: { id: string } 
         };
 
         fetchData();
-    }, [id, searchParams, router]);
+    }, [id, idsFromQuery, router]);
+    
+     useEffect(() => {
+        if (!isLoading && entries.length > 0) {
+            const timer = setTimeout(() => {
+                handlePrint();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [isLoading, entries, handlePrint]);
 
     return (
         <div className="p-4 md:p-8 bg-gray-100">
-            <div className="flex justify-end gap-2 mb-4 no-print">
-                 <button
-                    onClick={handlePrint}
-                    disabled={isLoading || entries.length === 0}
-                    className={cn(buttonVariants({ variant: 'outline' }))}
-                >
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                    Print / Download PDF
-                </button>
-            </div>
-             <div ref={componentRef} className="print-container">
-                {isLoading ? (
-                    <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
-                        <Skeleton className="h-96 w-full" />
-                    </div>
-                ) : (
-                    entries.map((entry, index) => (
-                        <div key={entry.receptionNo} className="bg-white border rounded-lg max-w-4xl mx-auto page-break">
-                            <PrintableContent 
-                                entry={entry} 
-                                project={projects.find(p => p.id === entry.projectId)} 
-                                expenseRequest={expenseRequests.find(er => er.requestNo === entry.depNo)} 
-                            />
+            <div className="hidden">
+                 <div ref={componentRef} className="print-container">
+                    {isLoading ? (
+                        <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
+                            <Skeleton className="h-96 w-full" />
                         </div>
-                    ))
-                )}
+                    ) : (
+                        entries.map((entry, index) => (
+                            <div key={entry.receptionNo} className="bg-white border rounded-lg max-w-4xl mx-auto page-break">
+                                <PrintableContent 
+                                    entry={entry} 
+                                    project={projects.find(p => p.id === entry.projectId)} 
+                                    expenseRequest={expenseRequests.find(er => er.requestNo === entry.depNo)} 
+                                />
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
+             <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
+                <Loader2 className="h-16 w-16 animate-spin text-primary" />
+                <p className="mt-4 text-muted-foreground">Preparing your document for printing...</p>
+            </div>
+
             <style jsx global>{`
-                .print-container > div {
-                    margin-bottom: 2rem;
-                }
                 @media print {
                     .no-print {
-                        display: none;
+                        display: none !important;
                     }
                     body {
                         background-color: #fff;
+                        margin: 0;
                     }
                     .page-break {
                         page-break-after: always;
-                        margin: 0;
-                        border: none;
-                        border-radius: 0;
-                        box-shadow: none;
                     }
                     .page-break:last-child {
                         page-break-after: auto;
