@@ -50,15 +50,6 @@ export default function LoginPage() {
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
 
-  // This effect is now primarily for users who are already logged in
-  // and manually navigate to /login. The main post-login redirect is in AuthProvider.
-  useEffect(() => {
-    if (!authLoading && authenticatedUser) {
-      const redirectUrl = searchParams.get('redirect') || '/';
-      router.replace(redirectUrl);
-    }
-  }, [authenticatedUser, authLoading, router, searchParams]);
-
   // If no saved users, default to password form.
   useEffect(() => {
     if (!authLoading && savedUsers.length === 0 && !showPasswordForm) {
