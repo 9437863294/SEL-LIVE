@@ -84,7 +84,7 @@ export interface Project {
   woNo?: string;
   signatures?: Signature[];
   projectDescription?: string;
-}
+};
 
 export interface Site {
   id: string;
@@ -124,7 +124,7 @@ export const permissionModules = {
     'Combined Log': ['View'],
   },
   'Subcontractors Management': {
-    'View Module': true,
+    'View Module': [],
     'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
     'Work Order': ['View', 'Create', 'Edit', 'Delete'],
     'Billing': ['View', 'Create', 'Edit', 'Delete'],
