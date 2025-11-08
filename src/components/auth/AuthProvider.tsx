@@ -282,28 +282,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      await fetchUserData(firebaseUser);
+      const fetchedUser = await fetchUserData(firebaseUser);
+      if (fetchedUser) {
+        // After user data is successfully fetched, handle redirects
+        const isPublic = publicRoutes.includes(pathname);
+        if (isPublic) {
+          const redirectParam = searchParams.get('redirect');
+          router.replace(redirectParam || '/');
+        }
+      }
       setLoading(false);
     });
     return () => unsubscribeAuth();
-  }, [fetchUserData]);
+  }, [fetchUserData, pathname, router, searchParams]);
   
-  // This is the main redirect logic
-  useEffect(() => {
-    if (loading) return;
-  
-    const isPublic = publicRoutes.includes(pathname) || pathname.startsWith('/print-auth');
-    const redirectParam = searchParams.get('redirect');
-  
-    if (user && isPublic) {
-      // User is logged in and trying to access a public route, redirect them.
-      router.replace(redirectParam || '/');
-    } else if (!user && !isPublic) {
-      // User is not logged in and on a protected route, redirect to login.
-      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-    }
-  
-  }, [user, loading, pathname, router, searchParams]);
 
 
   // Activity listener to extend session
