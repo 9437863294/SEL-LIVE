@@ -1,4 +1,3 @@
-
 // src/app/(protected)/layout.tsx
 'use client';
 
