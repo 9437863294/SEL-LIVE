@@ -88,7 +88,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Separator } from '@/components/ui/separator';
-import { FormControl } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
 /* ---------- Helpers ---------- */
 const toDate = (v: any): Date | undefined =>
@@ -555,6 +555,52 @@ export default function EntrySheetPage() {
     setSelectedIds(newSelectedIds);
   };
 
+  if (isAuthLoading || isLoading) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-10 w-10" />
+            <Skeleton className="h-8 w-48" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-10 w-36" />
+            <Skeleton className="h-10 w-36" />
+          </div>
+        </div>
+        <Card>
+          <CardContent>
+            <Skeleton className="h-96 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!canViewPage) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-2">
+          <Link href="/daily-requisition">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <h1 className="text-xl font-bold">Entry Sheet</h1>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view this page.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   const renderFormFields = (isEdit = false) => (
     <>
       <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -659,51 +705,6 @@ export default function EntrySheetPage() {
     </>
   );
 
-  if (isAuthLoading || isLoading) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-10 w-10" />
-            <Skeleton className="h-8 w-48" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-10 w-36" />
-            <Skeleton className="h-10 w-36" />
-          </div>
-        </div>
-        <Card>
-          <CardContent>
-            <Skeleton className="h-96 w-full" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!canViewPage) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/daily-requisition">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Entry Sheet</h1>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this page.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -935,67 +936,61 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Add New Entry</DialogTitleShad>
             <DialogDescriptionShad>Fill in the details for the new requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-          {isLoading ? (
-            <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="reception-no">Reception No.</Label>
-                  <Input id="reception-no" value={formState.receptionNo} readOnly />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                  <Select value={formState.depNo} onValueChange={handleDepNoSelect}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an expense request" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {unassignedExpenseRequests.map((req) => (
-                        <SelectItem key={req.id} value={req.requestNo}>
-                          {req.requestNo}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="date">Reception Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={'outline'}
-                        className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
-                      <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                {renderFormFields()}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="reception-no">Reception No.</Label>
+                <Input id="reception-no" value={formState.receptionNo} readOnly />
               </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedFiles([]);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </DialogClose>
-                <Button onClick={handleAddEntry} disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Entry
+              <div className="space-y-2">
+                <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
+                <Select value={formState.depNo} onValueChange={handleDepNoSelect}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an expense request" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unassignedExpenseRequests.map((req) => (
+                      <SelectItem key={req.id} value={req.requestNo}>
+                        {req.requestNo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date">Reception Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={'outline'}
+                      className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
+                    <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {renderFormFields()}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedFiles([]);
+                  }}
+                >
+                  Cancel
                 </Button>
-              </DialogFooter>
-            </>
-          )}
+              </DialogClose>
+              <Button onClick={handleAddEntry} disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Add Entry
+              </Button>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1005,49 +1000,43 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-          {isLoading ? (
-            <Loader2 className="mx-auto my-12 h-8 w-8 animate-spin" />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                <div className="space-y-2">
-                  <Label>Reception No.</Label>
-                  <Input value={formState.receptionNo} readOnly />
-                </div>
-                <div className="space-y-2">
-                  <Label>DEP No.</Label>
-                  <Input value={formState.depNo} readOnly />
-                </div>
-                <div className="space-y-2">
-                  <Label>Reception Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={'outline'}
-                        className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
-                      <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                {renderFormFields(true)}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleUpdateEntry} disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save Changes
-                </Button>
-              </DialogFooter>
-            </>
-          )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+            <div className="space-y-2">
+              <Label>Reception No.</Label>
+              <Input value={formState.receptionNo} readOnly />
+            </div>
+            <div className="space-y-2">
+              <Label>DEP No.</Label>
+              <Input value={formState.depNo} readOnly />
+            </div>
+            <div className="space-y-2">
+              <Label>Reception Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={'outline'}
+                    className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
+                  <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
+                </PopoverContent>
+              </Popover>
+            </div>
+            {renderFormFields(true)}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={handleUpdateEntry} disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
