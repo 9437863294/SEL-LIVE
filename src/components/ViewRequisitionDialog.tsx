@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { Fragment, useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import {
   arrayUnion,
   getDocs,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type {
   Requisition,
   Project,
@@ -43,7 +44,7 @@ import type {
 import { format } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Loader2, Printer, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
+import { Loader2, Printer, Paperclip, Download, Eye, FilePlus, ChevronDown } from 'lucide-react';
 import { Separator } from './ui/separator';
 import {
   Collapsible,
@@ -69,7 +70,7 @@ import {
 } from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { ScrollArea } from './ui/scroll-area';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
@@ -623,6 +624,7 @@ export default function ViewRequisitionDialog({
 
   const isActionable =
     user &&
+    requisition &&
     requisition.assignees?.includes(user.id) &&
     requisition.status !== 'Completed' &&
     requisition.status !== 'Rejected';
@@ -636,6 +638,10 @@ export default function ViewRequisitionDialog({
     }
     const url = `/public/site-fund-requisition/${requisition.id}/print`;
     window.open(url, '_blank');
+  }
+
+  if (!requisition) {
+    return null;
   }
 
   return (
