@@ -2,7 +2,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { Fragment } from 'react';
+import React, { Fragment, Suspense } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -88,9 +88,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Separator } from '@/components/ui/separator';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
-/* ---------- Helpers ---------- */
 const toDate = (v: any): Date | undefined =>
   v?.toDate?.() instanceof Date
     ? v.toDate()
@@ -102,8 +104,6 @@ const toDate = (v: any): Date | undefined =>
 
 const fmt = (d?: Date, f = 'dd MMM, yyyy') => (d ? format(d, f) : '');
 
-/* ---------- Types ---------- */
-// Keep Firestore types intact; add display-only fields for UI
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
   originalDate: string;
@@ -115,21 +115,21 @@ type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   documentStatusUpdatedAtText?: string;
 };
 
-const initialFormState = {
-  receptionNo: '',
-  depNo: '',
-  date: new Date(),
-  description: '',
-  partyName: '',
-  projectId: '',
-  departmentId: '',
-  grossAmount: '',
-  netAmount: '',
-};
+const formSchema = z.object({
+  receptionNo: z.string(),
+  depNo: z.string(),
+  date: z.date(),
+  description: z.string(),
+  partyName: z.string(),
+  projectId: z.string(),
+  departmentId: z.string(),
+  grossAmount: z.string(),
+  netAmount: z.string(),
+});
 
 type SortKey = keyof DailyRequisitionEntry | '';
 
-export default function EntrySheetPage() {
+function EntrySheetPageComponent() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -144,7 +144,6 @@ export default function EntrySheetPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [editingEntry, setEditingEntry] = React.useState<EnrichedDailyRequisitionEntry | null>(null);
 
-  const [formState, setFormState] = React.useState(initialFormState);
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [departments, setDepartments] = React.useState<Department[]>([]);
   const [expenseRequests, setExpenseRequests] = React.useState<ExpenseRequest[]>([]);
@@ -166,6 +165,36 @@ export default function EntrySheetPage() {
   const canEdit = can('Edit', 'Daily Requisition.Entry Sheet');
   const canDelete = can('Delete', 'Daily Requisition.Entry Sheet');
   const canViewChecklist = can('View Checklist', 'Daily Requisition.Entry Sheet');
+  
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      receptionNo: '',
+      depNo: '',
+      date: new Date(),
+      description: '',
+      partyName: '',
+      projectId: '',
+      departmentId: '',
+      grossAmount: '',
+      netAmount: '',
+    },
+  });
+  
+  const editForm = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      receptionNo: '',
+      depNo: '',
+      date: new Date(),
+      description: '',
+      partyName: '',
+      projectId: '',
+      departmentId: '',
+      grossAmount: '',
+      netAmount: '',
+    },
+  });
 
   const fetchAllData = React.useCallback(async () => {
     setIsLoading(true);
@@ -199,7 +228,7 @@ export default function EntrySheetPage() {
           const updAtD = toDate((data as any).documentStatusUpdatedAt);
 
           return {
-            ...(data as DailyRequisitionEntry), // keep raw Firestore types
+            ...(data as DailyRequisitionEntry),
             id: docSnap.id,
             originalDate: dateD ? dateD.toISOString() : '',
             createdAtText: fmt(crAtD, 'dd MMM, yyyy HH:mm'),
@@ -216,16 +245,16 @@ export default function EntrySheetPage() {
         const config = configSnap.data() as SerialNumberConfig;
         const formattedIndex = String(config.startingIndex).padStart(4, '0');
         const receptionNo = `${config.prefix}${config.format}${formattedIndex}${config.suffix}`;
-        setFormState((prev) => ({ ...prev, receptionNo }));
+        form.setValue('receptionNo', receptionNo);
       } else {
-        setFormState((prev) => ({ ...prev, receptionNo: 'SEL\\REC\\2025-26\\7340' })); // Fallback
+        form.setValue('receptionNo', 'SEL\\REC\\2025-26\\7340'); // Fallback
       }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({ title: 'Error', description: 'Failed to load necessary data.', variant: 'destructive' });
     }
     setIsLoading(false);
-  }, [toast]);
+  }, [toast, form]);
 
   React.useEffect(() => {
     if (!isAuthLoading) {
@@ -240,16 +269,12 @@ export default function EntrySheetPage() {
   const unassignedExpenseRequests = React.useMemo(() => {
     return expenseRequests.filter((req) => !req.receptionNo);
   }, [expenseRequests]);
-
-  const handleFormChange = (field: keyof typeof formState, value: any) => {
-    setFormState((prev) => ({ ...prev, [field]: value }));
-  };
-
+  
   const handleDepNoSelect = (value: string) => {
     const selectedRequest = unassignedExpenseRequests.find((req) => req.requestNo === value);
     if (selectedRequest) {
-      setFormState((prev) => ({
-        ...prev,
+      form.reset({
+        ...form.getValues(),
         depNo: selectedRequest.requestNo,
         description: selectedRequest.description || '',
         partyName: selectedRequest.partyName || '',
@@ -257,14 +282,12 @@ export default function EntrySheetPage() {
         departmentId: selectedRequest.departmentId || '',
         grossAmount: String(selectedRequest.amount || ''),
         netAmount: String(selectedRequest.amount || ''),
-      }));
+      });
     } else {
-      setFormState((prev) => ({
-        ...prev,
-        depNo: value,
-      }));
+      form.setValue('depNo', value);
     }
   };
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -272,14 +295,14 @@ export default function EntrySheetPage() {
     }
   };
 
-  const handleAddEntry = async () => {
+  const handleAddEntry = async (data: z.infer<typeof formSchema>) => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'User not found.', variant: 'destructive' });
       return;
     }
     setIsSaving(true);
     const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
-    const selectedExpenseRequest = expenseRequests.find((req) => req.requestNo === formState.depNo);
+    const selectedExpenseRequest = expenseRequests.find((req) => req.requestNo === data.depNo);
 
     try {
       let generatedReceptionNo = '';
@@ -305,14 +328,14 @@ export default function EntrySheetPage() {
 
       const newEntryData = {
         receptionNo: generatedReceptionNo,
-        depNo: formState.depNo,
-        date: Timestamp.fromDate(formState.date),
-        projectId: formState.projectId,
-        departmentId: formState.departmentId,
-        description: formState.description,
-        partyName: formState.partyName,
-        grossAmount: parseFloat(formState.grossAmount) || 0,
-        netAmount: parseFloat(formState.netAmount) || 0,
+        depNo: data.depNo,
+        date: Timestamp.fromDate(data.date),
+        projectId: data.projectId,
+        departmentId: data.departmentId,
+        description: data.description,
+        partyName: data.partyName,
+        grossAmount: parseFloat(data.grossAmount) || 0,
+        netAmount: parseFloat(data.netAmount) || 0,
         createdAt: Timestamp.now(),
         status: 'Pending' as const,
         attachments: attachmentUrls,
@@ -326,7 +349,7 @@ export default function EntrySheetPage() {
         const expenseRef = doc(db, 'expenseRequests', selectedExpenseRequest.id);
         batch.update(expenseRef, {
           receptionNo: generatedReceptionNo,
-          receptionDate: format(formState.date, 'yyyy-MM-dd'),
+          receptionDate: format(data.date, 'yyyy-MM-dd'),
         });
       }
 
@@ -337,15 +360,14 @@ export default function EntrySheetPage() {
         action: 'Create Daily Requisition',
         details: {
           receptionNo: generatedReceptionNo,
-          partyName: formState.partyName,
-          amount: formState.netAmount,
+          partyName: data.partyName,
+          amount: data.netAmount,
         },
       });
 
       toast({ title: 'Success', description: 'New entry added to the database.' });
       setIsAddDialogOpen(false);
-
-      setFormState(initialFormState);
+      form.reset();
       setSelectedFiles([]);
       fetchAllData();
     } catch (error: any) {
@@ -363,7 +385,7 @@ export default function EntrySheetPage() {
   const handleOpenEditDialog = (entry: EnrichedDailyRequisitionEntry) => {
     setEditingEntry(entry);
     const entryDate = parseISO(entry.originalDate || '');
-    setFormState({
+    editForm.reset({
       receptionNo: entry.receptionNo,
       depNo: entry.depNo,
       date: entryDate,
@@ -377,19 +399,19 @@ export default function EntrySheetPage() {
     setIsEditDialogOpen(true);
   };
 
-  const handleUpdateEntry = async () => {
+  const handleUpdateEntry = async (data: z.infer<typeof formSchema>) => {
     if (!editingEntry) return;
     setIsSaving(true);
     try {
       const entryRef = doc(db, 'dailyRequisitions', editingEntry.id);
       const updatedData = {
-        date: Timestamp.fromDate(formState.date),
-        projectId: formState.projectId,
-        departmentId: formState.departmentId,
-        description: formState.description,
-        partyName: formState.partyName,
-        grossAmount: parseFloat(formState.grossAmount) || 0,
-        netAmount: parseFloat(formState.netAmount) || 0,
+        date: Timestamp.fromDate(data.date),
+        projectId: data.projectId,
+        departmentId: data.departmentId,
+        description: data.description,
+        partyName: data.partyName,
+        grossAmount: parseFloat(data.grossAmount) || 0,
+        netAmount: parseFloat(data.netAmount) || 0,
       };
       await updateDoc(entryRef, updatedData);
       toast({ title: 'Success', description: 'Entry updated successfully.' });
@@ -412,7 +434,6 @@ export default function EntrySheetPage() {
     try {
       const batch = writeBatch(db);
 
-      // Find and update the associated expense request
       if (entry.depNo) {
         const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entry.depNo));
         const expenseSnap = await getDocs(expenseQuery);
@@ -425,7 +446,6 @@ export default function EntrySheetPage() {
         }
       }
 
-      // Delete the daily requisition entry
       const entryRef = doc(db, 'dailyRequisitions', entry.id);
       batch.delete(entryRef);
 
@@ -453,7 +473,6 @@ export default function EntrySheetPage() {
         if (valA === undefined || valA === null) return 1;
         if (valB === undefined || valB === null) return -1;
 
-        // Support Timestamp or string for date-ish keys
         if (sortKey === 'createdAt' || sortKey === 'date') {
           const dateA =
             typeof valA?.toMillis === 'function'
@@ -601,111 +620,6 @@ export default function EntrySheetPage() {
     );
   }
   
-  const renderFormFields = (isEdit = false) => (
-    <>
-      <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <Label htmlFor="partyName">Party Name</Label>
-          <Input
-            id="partyName"
-            placeholder="Enter party name..."
-            value={formState.partyName}
-            onChange={(e) => handleFormChange('partyName', e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="project">Project Name</Label>
-          <Select
-            value={formState.projectId}
-            onValueChange={(value) => handleFormChange('projectId', value)}
-            disabled={!!formState.depNo && !isEdit}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a project" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="col-span-1 md:col-span-3 space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          placeholder="Short description"
-          value={formState.description}
-          onChange={(e) => handleFormChange('description', e.target.value)}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="department">Department</Label>
-        <Select
-          value={formState.departmentId}
-          onValueChange={(value) => handleFormChange('departmentId', value)}
-          disabled={!!formState.depNo && !isEdit}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a department" />
-          </SelectTrigger>
-          <SelectContent>
-            {departments.map((d) => (
-              <SelectItem key={d.id} value={d.id}>
-                {d.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="grossAmount">Gross Amount</Label>
-        <Input
-          id="grossAmount"
-          type="number"
-          value={formState.grossAmount}
-          onChange={(e) => handleFormChange('grossAmount', e.target.value)}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="netAmount">Net Amount</Label>
-        <Input
-          id="netAmount"
-          type="number"
-          value={formState.netAmount}
-          onChange={(e) => handleFormChange('netAmount', e.target.value)}
-        />
-      </div>
-      {!isEdit && (
-        <div className="md:col-span-3 space-y-2">
-          <Label htmlFor="attachments">Attachments</Label>
-          <FormControl>
-              <Input id="attachments" type="file" multiple onChange={handleFileChange} />
-          </FormControl>
-           {selectedFiles.length > 0 && (
-                <div className="mt-2 space-y-2">
-                    {selectedFiles.map((file, i) => (
-                        <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                            <div className="flex items-center gap-2">
-                                <FileIcon className="w-4 h-4" />
-                                <span className="text-sm">{file.name}</span>
-                            </div>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
-                                <X className="w-4 h-4" />
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-      )}
-    </>
-  );
-
-
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8 no-print">
@@ -936,61 +850,65 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Add New Entry</DialogTitleShad>
             <DialogDescriptionShad>Fill in the details for the new requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="reception-no">Reception No.</Label>
-                <Input id="reception-no" value={formState.receptionNo} readOnly />
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleAddEntry)}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                  <FormField control={form.control} name="receptionNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Reception No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
+                  <div className="space-y-2">
+                    <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
+                    <Select value={form.getValues('depNo')} onValueChange={handleDepNoSelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an expense request" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {unassignedExpenseRequests.map((req) => (
+                          <SelectItem key={req.id} value={req.requestNo}>
+                            {req.requestNo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                   <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
+                   <FormField control={form.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Department"/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                  <div className="md:col-span-3 space-y-2">
+                    <Label htmlFor="attachments">Attachments</Label>
+                    <FormControl>
+                        <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+                    </FormControl>
+                     {selectedFiles.length > 0 && (
+                          <div className="mt-2 space-y-2">
+                              {selectedFiles.map((file, i) => (
+                                  <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                                      <div className="flex items-center gap-2">
+                                          <FileIcon className="w-4 h-4" />
+                                          <span className="text-sm">{file.name}</span>
+                                      </div>
+                                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                                          <X className="w-4 h-4" />
+                                      </Button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                <Select value={formState.depNo} onValueChange={handleDepNoSelect}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select an expense request" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unassignedExpenseRequests.map((req) => (
-                      <SelectItem key={req.id} value={req.requestNo}>
-                        {req.requestNo}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="date">Reception Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={'outline'}
-                      className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
-                    <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              {renderFormFields()}
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedFiles([]);
-                  }}
-                >
-                  Cancel
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" onClick={() => { setSelectedFiles([]); }}>Cancel</Button>
+                </DialogClose>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Entry
                 </Button>
-              </DialogClose>
-              <Button onClick={handleAddEntry} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Add Entry
-              </Button>
-            </DialogFooter>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
@@ -1000,43 +918,30 @@ export default function EntrySheetPage() {
             <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-            <div className="space-y-2">
-              <Label>Reception No.</Label>
-              <Input value={formState.receptionNo} readOnly />
-            </div>
-            <div className="space-y-2">
-              <Label>DEP No.</Label>
-              <Input value={formState.depNo} readOnly />
-            </div>
-            <div className="space-y-2">
-              <Label>Reception Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={'outline'}
-                    className={cn('w-full justify-start text-left font-normal', !formState.date && 'text-muted-foreground')}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formState.date ? format(formState.date, 'PPP') : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start" onPointerDownOutside={(e) => e.preventDefault()}>
-                  <Calendar mode="single" selected={formState.date} onSelect={(date) => date && handleFormChange('date', date)} initialFocus />
-                </PopoverContent>
-              </Popover>
-            </div>
-            {renderFormFields(true)}
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button onClick={handleUpdateEntry} disabled={isSaving}>
-              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Changes
-            </Button>
-          </DialogFooter>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(handleUpdateEntry)}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                 <FormField control={editForm.control} name="receptionNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Reception No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="depNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>DEP No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
+                 <FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
@@ -1054,3 +959,12 @@ export default function EntrySheetPage() {
     </>
   );
 }
+
+export default function EntrySheetPage() {
+    return (
+        <Suspense fallback={<div className="w-full px-4 sm:px-6 lg:px-8"><Skeleton className="h-[80vh] w-full"/></div>}>
+            <EntrySheetPageComponent />
+        </Suspense>
+    )
+}
+```
