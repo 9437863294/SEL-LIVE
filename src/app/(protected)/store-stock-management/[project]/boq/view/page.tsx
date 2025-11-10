@@ -254,7 +254,7 @@ export default function ViewBoqPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [projectSlug, toast]);
+  }, [projectSlug]);
 
   useEffect(() => {
     if (isClient) fetchProjectAndBoq();
@@ -559,7 +559,7 @@ export default function ViewBoqPage() {
     'Unit Rate',
     'Total Amount',
   ];
-
+  
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
@@ -938,3 +938,4 @@ export default function ViewBoqPage() {
     </div>
   );
 }
+
