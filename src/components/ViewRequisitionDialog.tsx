@@ -1036,4 +1036,3 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
-```
