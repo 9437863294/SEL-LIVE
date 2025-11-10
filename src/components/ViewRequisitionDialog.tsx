@@ -2,15 +2,6 @@
 'use client';
 
 import React, { Fragment, useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +11,7 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
@@ -32,11 +24,9 @@ import {
   getDoc,
   collection,
   query,
-  where,
   arrayUnion,
   getDocs,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type {
   Requisition,
   Project,
@@ -53,15 +43,7 @@ import type {
 import { format } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import {
-  Loader2,
-  ChevronDown,
-  Paperclip,
-  Download,
-  Eye,
-  FilePlus,
-  Printer,
-} from 'lucide-react';
+import { Loader2, Printer, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
 import { Separator } from './ui/separator';
 import {
   Collapsible,
@@ -87,6 +69,7 @@ import {
 } from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { ScrollArea } from './ui/scroll-area';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
@@ -140,10 +123,9 @@ export default function ViewRequisitionDialog({
   departments,
   onRequisitionUpdate,
 }: ViewRequisitionDialogProps) {
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const { toast } = useToast();
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
   const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
@@ -154,7 +136,9 @@ export default function ViewRequisitionDialog({
   const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
-  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>(
+    []
+  );
 
   const currentStep = useMemo(() => {
     if (!requisition || !workflow) return null;
@@ -166,13 +150,11 @@ export default function ViewRequisitionDialog({
       if (!requisition) return;
       setIsLoading(true);
       try {
-        const [workflowSnap, usersSnap, headsSnap, subHeadsSnap] =
-          await Promise.all([
-            getDoc(doc(db, 'workflows', 'site-fund-requisition')),
-            getDocs(collection(db, 'users')),
-            getDocs(collection(db, 'accountHeads')),
-            getDocs(collection(db, 'subAccountHeads')),
-          ]);
+        const [workflowSnap, headsSnap, subHeadsSnap] = await Promise.all([
+          getDoc(doc(db, 'workflows', 'site-fund-requisition')),
+          getDocs(collection(db, 'accountHeads')),
+          getDocs(collection(db, 'subAccountHeads')),
+        ]);
 
         if (workflowSnap.exists()) {
           const steps = (workflowSnap.data()?.steps || []) as WorkflowStep[];
@@ -185,12 +167,6 @@ export default function ViewRequisitionDialog({
           });
           setWorkflow([]);
         }
-
-        const usersData =
-          usersSnap.docs.map(
-            (d) => ({ id: d.id, ...(d.data() as any) } as User)
-          ) || [];
-        setUsers(usersData);
 
         setAccountHeads(
           headsSnap.docs.map(
@@ -234,7 +210,7 @@ export default function ViewRequisitionDialog({
       );
 
       const allStepsWithDetails = workflow.map((wfStep, index) => {
-        const wfStepLabel = stepDisplay(wfStep);
+        const wfStepLabel = stepDisplay(wfStep as any);
         const historyEntries = history.filter(
           (h) => h.stepName === wfStepLabel
         );
@@ -645,25 +621,29 @@ export default function ViewRequisitionDialog({
     }).format(value);
   };
 
-  const getProjectName = (id: string) =>
-    projects.find((p) => p.id === id)?.projectName || 'N/A';
-  const getDepartmentName = (id: string) =>
-    departments.find((d) => d.id === id)?.name || 'N/A';
-
   const isActionable =
     user &&
-    requisition?.assignees?.includes(user.id) &&
+    requisition.assignees?.includes(user.id) &&
     requisition.status !== 'Completed' &&
     requisition.status !== 'Rejected';
-
-  if (!requisition) return null;
+    
+  const handlePrint = () => {
+    if (!requisition) return;
+    const projectSlug = projects.find(p => p.id === requisition.projectId)?.projectName.toLowerCase().replace(/\s+/g, '-');
+    if (!projectSlug) {
+      toast({title: 'Error', description: 'Cannot determine project for printing.', variant: 'destructive'});
+      return;
+    }
+    const url = `/public/site-fund-requisition/${requisition.id}/print`;
+    window.open(url, '_blank');
+  }
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
+            <DialogTitle>Details for {requisition.requisitionId}</DialogTitle>
           </DialogHeader>
 
           <ScrollArea className="max-h-[70vh] p-1 pr-4">
@@ -672,13 +652,15 @@ export default function ViewRequisitionDialog({
                 <div>
                   <Label>Project</Label>
                   <p className="font-medium">
-                    {getProjectName(requisition.projectId)}
+                    {projects.find((p) => p.id === requisition.projectId)
+                      ?.projectName || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Department</Label>
                   <p className="font-medium">
-                    {getDepartmentName(requisition.departmentId)}
+                    {departments.find((d) => d.id === requisition.departmentId)
+                      ?.name || 'N/A'}
                   </p>
                 </div>
                 <div>
@@ -700,6 +682,12 @@ export default function ViewRequisitionDialog({
                 <div>
                   <Label>Party Name</Label>
                   <p className="font-medium">{requisition.partyName}</p>
+                </div>
+                <div className="col-span-2">
+                  <Label>Created At</Label>
+                  <p className="font-medium">
+                    {formatDateSafe(requisition.createdAt)}
+                  </p>
                 </div>
               </div>
 
@@ -726,12 +714,7 @@ export default function ViewRequisitionDialog({
                           </span>
                         </div>
                         <div className="flex items-center shrink-0">
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="sm"
-                            className="mr-2 h-7"
-                          >
+                          <Button asChild variant="outline" size="sm" className="mr-2 h-7">
                             <a
                               href={file.url}
                               target="_blank"
@@ -740,12 +723,7 @@ export default function ViewRequisitionDialog({
                               <Eye className="mr-2 h-3 w-3" /> View
                             </a>
                           </Button>
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="sm"
-                            className="h-7"
-                          >
+                          <Button asChild variant="outline" size="sm" className="h-7">
                             <a href={file.url} download={file.name}>
                               <Download className="mr-2 h-3 w-3" /> Download
                             </a>
@@ -830,7 +808,10 @@ export default function ViewRequisitionDialog({
                 </div>
               )}
 
-              <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen}>
+              <Collapsible
+                open={isWorkflowOpen}
+                onOpenChange={setIsWorkflowOpen}
+              >
                 <CollapsibleTrigger asChild>
                   <Button
                     variant="ghost"
@@ -884,8 +865,13 @@ export default function ViewRequisitionDialog({
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center h-24">
-                              {isLoading ? 'Loading workflow...' : 'No workflow data.'}
+                            <TableCell
+                              colSpan={5}
+                              className="text-center h-24"
+                            >
+                              {isLoading
+                                ? 'Loading workflow...'
+                                : 'No workflow data.'}
                             </TableCell>
                           </TableRow>
                         )}
@@ -898,15 +884,11 @@ export default function ViewRequisitionDialog({
           </ScrollArea>
 
           <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const url =
-                  `/public/site-fund-requisition/${requisition.id}/print`;
-                window.open(url, '_blank');
-              }}
+             <Button
+                variant="outline"
+                onClick={handlePrint}
             >
-              <Printer className="mr-2 h-4 w-4" /> Print
+                <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
@@ -914,9 +896,11 @@ export default function ViewRequisitionDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {expenseToCreate && (
-        <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
+        <Dialog
+          open={isConfirmExpenseOpen}
+          onOpenChange={setIsConfirmExpenseOpen}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Confirm Expense Creation</DialogTitle>
@@ -942,7 +926,6 @@ export default function ViewRequisitionDialog({
                   />
                 </div>
               </div>
-
               <div className="space-y-1">
                 <Label>Party Name</Label>
                 <Input
@@ -955,7 +938,6 @@ export default function ViewRequisitionDialog({
                   }
                 />
               </div>
-
               <div className="space-y-1">
                 <Label>Amount</Label>
                 <Input
@@ -969,14 +951,10 @@ export default function ViewRequisitionDialog({
                     const numericValue = Number(
                       e.target.value.replace(/[^0-9.-]+/g, '')
                     );
-                    setExpenseToCreate({
-                      ...expenseToCreate,
-                      amount: numericValue,
-                    });
+                    setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
                   }}
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label>Head of A/c</Label>
@@ -1002,7 +980,6 @@ export default function ViewRequisitionDialog({
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-1">
                   <Label>Sub-Head of A/c</Label>
                   <Select
@@ -1022,7 +999,6 @@ export default function ViewRequisitionDialog({
                   </Select>
                 </div>
               </div>
-
               <div className="space-y-1">
                 <Label>Description:</Label>
                 <Textarea
@@ -1035,18 +1011,9 @@ export default function ViewRequisitionDialog({
                   }
                 />
               </div>
-
-              <div className="space-y-1">
-                <Label>Remarks:</Label>
-                <Textarea
-                  value={expenseToCreate.remarks || ''}
-                  onChange={(e) =>
-                    setExpenseToCreate({
-                      ...expenseToCreate,
-                      remarks: e.target.value,
-                    })
-                  }
-                />
+               <div className="space-y-1">
+                  <Label>Remarks:</Label>
+                  <Textarea value={expenseToCreate.remarks || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, remarks: e.target.value})} />
               </div>
             </div>
             <DialogFooter>
@@ -1069,59 +1036,4 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
-```
-- src/hooks/use-local-storage.ts:
-```ts
-
-'use client';
-
-import { useState, useEffect, useCallback } from 'react';
-
-export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    // This function is only executed on the initial render on the client side.
-    if (typeof window === 'undefined') {
-      return initialValue;
-    }
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.log(error);
-      return initialValue;
-    }
-  });
-
-  const setValue = useCallback(
-    (value: T | ((val: T) => T)) => {
-      try {
-        const valueToStore =
-          value instanceof Function ? value(storedValue) : value;
-        setStoredValue(valueToStore);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(key, JSON.stringify(valueToStore));
-        }
-      } catch (error) {
-        console.log(error);
-      }
-    },
-    [key, storedValue]
-  );
-  
-  // This effect will run once on the client after hydration to sync the state.
-  useEffect(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item !== JSON.stringify(storedValue)) {
-         setStoredValue(item ? JSON.parse(item) : initialValue);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]); // Depend only on key, as we only need to read this once initially.
-
-  return [storedValue, setValue];
-}
-
 ```
