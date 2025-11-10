@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { Fragment, useRef, useState, useEffect, useMemo, useCallback } from 'react';
@@ -22,10 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, Timestamp, arrayUnion, runTransaction, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import type { Requisition, Project, Department, WorkflowStep, ActionLog, Attachment, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
@@ -229,6 +228,15 @@ export default function ViewRequisitionDialog({
     if (!user || !requisition || !workflow || !currentStep) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
+    
+    if (currentStep.upload === 'Required' && !file) {
+      toast({
+        title: 'Upload Required',
+        description: `You must upload a document to perform the "${actionName}" action.`,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (actionName === 'Create Expense Request') {
       const targetDepartmentId = typeof action !== 'string' && hasDeptId(action)
@@ -526,7 +534,7 @@ export default function ViewRequisitionDialog({
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Requisition Details: {requisition.requisitionId}</DialogTitle>
+            <DialogTitle>Details for {requisition.requisitionId}</DialogTitle>
           </DialogHeader>
 
           <ScrollArea className="max-h-[70vh] p-1 pr-4">
@@ -566,7 +574,7 @@ export default function ViewRequisitionDialog({
                   {requisition.description || 'No description provided.'}
                 </p>
               </div>
-
+              
               {!!requisition.attachments?.length && (
                 <div>
                   <Label>Attachments</Label>
@@ -576,22 +584,22 @@ export default function ViewRequisitionDialog({
                         key={index}
                         className="flex items-center justify-between p-2 bg-muted rounded-md"
                       >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <Paperclip className="h-4 w-4 shrink-0" />
-                          <span className="text-sm font-medium truncate">{file.name}</span>
-                        </div>
-                        <div className="flex items-center shrink-0">
-                          <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                            <a href={file.url} target="_blank" rel="noopener noreferrer">
-                              <Eye className="mr-2 h-3 w-3" /> View
-                            </a>
-                          </Button>
-                          <Button asChild variant="outline" size="sm" className="h-7">
-                            <a href={file.url} download={file.name}>
-                              <Download className="mr-2 h-3 w-3" /> Download
-                            </a>
-                          </Button>
-                        </div>
+                         <div className="flex items-center gap-2 overflow-hidden">
+                           <Paperclip className="h-4 w-4 shrink-0" />
+                           <span className="text-sm font-medium truncate">{file.name}</span>
+                         </div>
+                         <div className="flex items-center shrink-0">
+                             <Button asChild variant="outline" size="sm" className="mr-2 h-7">
+                               <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                  <Eye className="mr-2 h-3 w-3" /> View
+                               </a>
+                             </Button>
+                             <Button asChild variant="outline" size="sm" className="h-7">
+                               <a href={file.url} download={file.name}>
+                                  <Download className="mr-2 h-3 w-3" /> Download
+                               </a>
+                             </Button>
+                         </div>
                       </div>
                     ))}
                   </div>
@@ -605,12 +613,7 @@ export default function ViewRequisitionDialog({
                       <Label htmlFor="file-upload" className="font-semibold text-destructive">
                         Upload Required Document
                       </Label>
-                      <Input
-                        id="file-upload"
-                        type="file"
-                        className="mt-1"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      />
+                      <Input id="file-upload" type="file" className="mt-1" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                     </div>
                   )}
 
@@ -729,122 +732,196 @@ export default function ViewRequisitionDialog({
       {expenseToCreate && (
         <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Expense Creation</DialogTitle>
-              <DialogDescription>
-                Review and edit the details below before creating the expense request.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label>Request No.</Label>
-                  <Input value={expenseToCreate.requestNo || ''} disabled />
-                </div>
-                <div className="space-y-1">
-                  <Label>Project</Label>
-                  <Input value={projects.find(p => p.id === expenseToCreate.projectId)?.projectName || ''} disabled />
-                </div>
+              <DialogHeader>
+                  <DialogTitle>Confirm Expense Creation</DialogTitle>
+                  <DialogDescription>
+                    Review and edit the details below before creating the expense request.
+                  </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Request No.</Label>
+                        <Input value={expenseToCreate.requestNo || ''} disabled />
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Project</Label>
+                        <Input value={getProjectName(expenseToCreate.projectId || '')} disabled />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                      <Label>Party Name</Label>
+                      <Input
+                        value={expenseToCreate.partyName || ''}
+                        onChange={(e) =>
+                          setExpenseToCreate({ ...expenseToCreate, partyName: e.target.value })
+                        }
+                      />
+                  </div>
+
+                  <div className="space-y-1">
+                      <Label>Amount</Label>
+                      <Input
+                        type="text"
+                        value={formatAsCurrency(expenseToCreate.amount || 0)}
+                        onChange={(e) => {
+                          const numericValue = Number(e.target.value.replace(/[^0-9.-]+/g, ''));
+                          setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
+                        }}
+                      />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Head of A/c</Label>
+                         <Select
+                          value={expenseToCreate.headOfAccount || ''}
+                          onValueChange={(value) =>
+                            setExpenseToCreate({ ...expenseToCreate, headOfAccount: value })
+                          }
+                          disabled
+                        >
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {accountHeads.map(h => (
+                                <SelectItem key={h.id} value={h.name}>
+                                    {h.name}
+                                </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <Label>Sub-Head of A/c</Label>
+                         <Select value={expenseToCreate.subHeadOfAccount || ''} onValueChange={handleSubHeadChange}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select Sub-Head" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {subAccountHeads.map(s => (
+                                <SelectItem key={s.id} value={s.name}>
+                                    {s.name}
+                                </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                      <Label>Description:</Label>
+                      <Textarea
+                        value={expenseToCreate.description || ''}
+                        onChange={(e) =>
+                          setExpenseToCreate({ ...expenseToCreate, description: e.target.value })
+                        }
+                      />
+                  </div>
+
+                  <div className="space-y-1">
+                      <Label>Remarks:</Label>
+                      <Textarea
+                        value={expenseToCreate.remarks || ''}
+                        onChange={(e) =>
+                          setExpenseToCreate({ ...expenseToCreate, remarks: e.target.value })
+                        }
+                      />
+                  </div>
               </div>
-
-              <div className="space-y-1">
-                <Label>Party Name</Label>
-                <Input
-                  value={expenseToCreate.partyName || ''}
-                  onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, partyName: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label>Amount</Label>
-                <Input
-                  type="text"
-                  value={formatAsCurrency(expenseToCreate.amount || 0)}
-                  onChange={(e) => {
-                    const numericValue = Number(e.target.value.replace(/[^0-9.-]+/g, ''));
-                    setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
-                  }}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label>Head of A/c</Label>
-                  <Select
-                    value={expenseToCreate.headOfAccount || ''}
-                    onValueChange={(value) =>
-                      setExpenseToCreate({ ...expenseToCreate, headOfAccount: value })
-                    }
-                    disabled
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accountHeads.map((h) => (
-                        <SelectItem key={h.id} value={h.name}>
-                          {h.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label>Sub-Head of A/c</Label>
-                  <Select
-                    value={expenseToCreate.subHeadOfAccount || ''}
-                    onValueChange={handleSubHeadChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Sub-Head" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subAccountHeads.map((s) => (
-                        <SelectItem key={s.id} value={s.name}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label>Description:</Label>
-                <Textarea
-                  value={expenseToCreate.description || ''}
-                  onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, description: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label>Remarks:</Label>
-                <Textarea
-                  value={expenseToCreate.remarks || ''}
-                  onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, remarks: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
-                {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Confirm & Create
-              </Button>
-            </DialogFooter>
+              <DialogFooter>
+                  <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
+                      {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Confirm & Create
+                  </Button>
+              </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
     </>
   );
 }
+
+```
+- src/hooks/use-local-storage.ts:
+```ts
+
+'use client';
+
+import * as React from 'react';
+
+/**
+ * Persists state to localStorage.
+ */
+export function useLocalStorage<T>(key: string, defaultValue: T) {
+  const [value, setValue] = React.useState<T>(() => {
+    try {
+      const storedValue = localStorage.getItem(key);
+      if (storedValue) return JSON.parse(storedValue) as T;
+    } catch {
+      // ignore
+    }
+    return defaultValue;
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // ignore
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+```
+- tsconfig.json:
+```json
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+```

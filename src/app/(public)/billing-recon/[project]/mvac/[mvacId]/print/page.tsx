@@ -268,7 +268,7 @@ export default function PrintMvacPage() {
   /* ----- Utils ----- */
 
   const calculateUpToDateQty = (item: EnrichedMvacItem) =>
-    (Number(item.previousCertifiedQty) || 0) + (Number(item.certifiedQty) || 0);
+    (Number(item.previousCertifiedQty) || 0) + (Number(item.executedQty) || 0);
 
   const getDisplayValue = (v: number | undefined) =>
     v === 0 ? 0 : v ?? '';
@@ -388,7 +388,7 @@ export default function PrintMvacPage() {
                     Up to Previous
                   </TableHead>
                   <TableHead className="w-[8%] border-black text-center">
-                    Certified in this MVAC
+                    in this MVAC
                   </TableHead>
                   <TableHead className="w-[8%] border-black text-center">
                     Up to date
@@ -424,7 +424,7 @@ export default function PrintMvacPage() {
                       </TableCell>
                       <TableCell className="text-right border-black">
                         {getDisplayValue(
-                          (item as any).certifiedQty
+                          (item as any).executedQty
                         )}
                       </TableCell>
                       <TableCell className="text-right border-black">
