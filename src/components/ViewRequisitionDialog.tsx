@@ -23,24 +23,70 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
-import { doc, updateDoc, Timestamp, writeBatch, runTransaction, getDoc, collection, query, where, arrayUnion, getDocs } from 'firebase/firestore';
+import {
+  doc,
+  updateDoc,
+  Timestamp,
+  writeBatch,
+  runTransaction,
+  getDoc,
+  collection,
+  query,
+  where,
+  arrayUnion,
+  getDocs,
+} from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { Requisition, Project, Department, WorkflowStep, ActionLog, Attachment, User, ActionConfig, AccountHead, SubAccountHead, ExpenseRequest } from '@/lib/types';
-import { format, parseISO } from 'date-fns';
+import type {
+  Requisition,
+  Project,
+  Department,
+  WorkflowStep,
+  ActionLog,
+  Attachment,
+  User,
+  ActionConfig,
+  AccountHead,
+  SubAccountHead,
+  ExpenseRequest,
+} from '@/lib/types';
+import { format } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Loader2, ChevronDown, Paperclip, Download, Eye, FilePlus } from 'lucide-react';
+import {
+  Loader2,
+  ChevronDown,
+  Paperclip,
+  Download,
+  Eye,
+  FilePlus,
+  Printer,
+} from 'lucide-react';
 import { Separator } from './ui/separator';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from './ui/collapsible';
 import { createExpenseRequest } from '@/ai';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Badge } from './ui/badge';
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipProvider,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { ScrollArea } from './ui/scroll-area';
-
 
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
@@ -59,7 +105,9 @@ function formatDateSafe(v: unknown, fmt = 'dd MMM, yy HH:mm'): string {
   return d ? format(d, fmt) : '—';
 }
 
-function stepDisplay(step: Partial<WorkflowStep> & { id: string } | any): string {
+function stepDisplay(
+  step: Partial<WorkflowStep> & { id: string } | any
+): string {
   return step?.name ?? step?.label ?? step?.title ?? step?.id ?? '—';
 }
 
@@ -118,12 +166,13 @@ export default function ViewRequisitionDialog({
       if (!requisition) return;
       setIsLoading(true);
       try {
-        const [workflowSnap, usersSnap, headsSnap, subHeadsSnap] = await Promise.all([
-          getDoc(doc(db, 'workflows', 'site-fund-requisition')),
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'accountHeads')),
-          getDocs(collection(db, 'subAccountHeads')),
-        ]);
+        const [workflowSnap, usersSnap, headsSnap, subHeadsSnap] =
+          await Promise.all([
+            getDoc(doc(db, 'workflows', 'site-fund-requisition')),
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'accountHeads')),
+            getDocs(collection(db, 'subAccountHeads')),
+          ]);
 
         if (workflowSnap.exists()) {
           const steps = (workflowSnap.data()?.steps || []) as WorkflowStep[];
@@ -138,14 +187,20 @@ export default function ViewRequisitionDialog({
         }
 
         const usersData =
-          usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User)) || [];
+          usersSnap.docs.map(
+            (d) => ({ id: d.id, ...(d.data() as any) } as User)
+          ) || [];
         setUsers(usersData);
 
         setAccountHeads(
-          headsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as AccountHead)),
+          headsSnap.docs.map(
+            (d) => ({ id: d.id, ...(d.data() as any) } as AccountHead)
+          )
         );
         setSubAccountHeads(
-          subHeadsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as SubAccountHead)),
+          subHeadsSnap.docs.map(
+            (d) => ({ id: d.id, ...(d.data() as any) } as SubAccountHead)
+          )
         );
       } catch (error) {
         console.error('Error fetching workflow/users:', error);
@@ -174,25 +229,42 @@ export default function ViewRequisitionDialog({
   useEffect(() => {
     if (requisition && workflow && users.length > 0) {
       const history = requisition.history || [];
-      const currentStepIndex = workflow.findIndex((s) => s.id === requisition.currentStepId);
+      const currentStepIndex = workflow.findIndex(
+        (s) => s.id === requisition.currentStepId
+      );
 
       const allStepsWithDetails = workflow.map((wfStep, index) => {
         const wfStepLabel = stepDisplay(wfStep);
-        const historyEntries = history.filter((h) => h.stepName === wfStepLabel);
+        const historyEntries = history.filter(
+          (h) => h.stepName === wfStepLabel
+        );
         const completionEntry = historyEntries.find((h) =>
-          ['Complete', 'Approve', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(
-            h.action,
-          ),
+          [
+            'Complete',
+            'Approve',
+            'Verified',
+            'Update Approved Amount',
+            'Create Expense Request',
+          ].includes(h.action)
         );
 
         let status: EnrichedStep['status'] = 'Pending';
-        if (requisition.status === 'Completed' || requisition.status === 'Rejected') {
-          if (historyEntries.length > 0 || (index <= currentStepIndex && currentStepIndex !== -1)) {
+        if (
+          requisition.status === 'Completed' ||
+          requisition.status === 'Rejected'
+        ) {
+          if (
+            historyEntries.length > 0 ||
+            (index <= currentStepIndex && currentStepIndex !== -1)
+          ) {
             status = 'Completed';
           }
         } else if (wfStep.id === requisition.currentStepId) {
           status = 'Current';
-        } else if (completionEntry || (currentStepIndex > -1 && index < currentStepIndex)) {
+        } else if (
+          completionEntry ||
+          (currentStepIndex > -1 && index < currentStepIndex)
+        ) {
           status = 'Completed';
         }
 
@@ -212,7 +284,9 @@ export default function ViewRequisitionDialog({
         return {
           ...wfStep,
           assignedUserName,
-          completionDate: completionEntry ? formatDateSafe(completionEntry.timestamp) : '-',
+          completionDate: completionEntry
+            ? formatDateSafe(completionEntry.timestamp)
+            : '-',
           deadline:
             status === 'Current' && requisition.deadline
               ? formatDateSafe(requisition.deadline)
@@ -231,10 +305,20 @@ export default function ViewRequisitionDialog({
 
     const actionName = typeof action === 'string' ? action : action.name;
 
+    if (currentStep.upload === 'Required' && !file) {
+      toast({
+        title: 'Upload Required',
+        description: `Please upload a document to complete the "${actionName}" action.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (actionName === 'Create Expense Request') {
-      const targetDepartmentId = typeof action !== 'string' && hasDeptId(action)
-        ? action.departmentId
-        : undefined;
+      const targetDepartmentId =
+        typeof action !== 'string' && hasDeptId(action)
+          ? action.departmentId
+          : undefined;
 
       if (!targetDepartmentId) {
         toast({
@@ -246,7 +330,7 @@ export default function ViewRequisitionDialog({
       }
 
       const unsecuredLoanSubHead = subAccountHeads.find(
-        (sh) => sh.name?.toLowerCase() === 'unsecured loan',
+        (sh) => sh.name?.toLowerCase() === 'unsecured loan'
       );
       const defaultHead = unsecuredLoanSubHead
         ? accountHeads.find((h) => h.id === unsecuredLoanSubHead.headId)?.name
@@ -260,9 +344,9 @@ export default function ViewRequisitionDialog({
           const configData = configDoc.data() as any;
           const newIndex = configData.startingIndex;
           const formattedIndex = String(newIndex).padStart(4, '0');
-          previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${
-            configData.suffix || ''
-          }`;
+          previewRequestNo = `${configData.prefix || ''}${
+            configData.format || ''
+          }${formattedIndex}${configData.suffix || ''}`;
         } else {
           previewRequestNo = 'Config not found';
         }
@@ -288,7 +372,7 @@ export default function ViewRequisitionDialog({
     setIsLoading(true);
     try {
       const requisitionRef = doc(db, 'requisitions', requisition.id);
-      
+
       let attachmentData: Attachment | undefined = undefined;
       if (file) {
         const currStepName = stepDisplay(currentStep as any);
@@ -303,20 +387,23 @@ export default function ViewRequisitionDialog({
         const reqDoc = await transaction.get(requisitionRef);
         if (!reqDoc.exists()) throw new Error('Requisition document not found!');
 
-        const currentRequisitionData = { ...reqDoc.data(), id: reqDoc.id } as Requisition;
-        
+        const currentRequisitionData = {
+          ...reqDoc.data(),
+          id: reqDoc.id,
+        } as Requisition;
+
         const newActionLog: Partial<ActionLog> = {
-            action: actionName,
-            comment: actionComment,
-            userId: user.id,
-            userName: user.name,
-            timestamp: Timestamp.now(),
-            stepName: stepDisplay(currentStep as any),
+          action: actionName,
+          comment: actionComment,
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: stepDisplay(currentStep as any),
         };
         if (attachmentData) {
-            newActionLog.attachment = attachmentData;
+          newActionLog.attachment = attachmentData;
         }
-        
+
         const date = toDateSafe((currentRequisitionData as any).date);
         const createdAt = toDateSafe((currentRequisitionData as any).createdAt);
         const deadline = toDateSafe((currentRequisitionData as any).deadline);
@@ -327,37 +414,60 @@ export default function ViewRequisitionDialog({
           createdAt: createdAt ? format(createdAt, 'yyyy-MM-dd') : undefined,
           deadline: deadline ? format(deadline, 'yyyy-MM-dd') : undefined,
           // Convert history timestamps to strings to make it serializable
-          history: (currentRequisitionData.history || []).map(h => ({
+          history: (currentRequisitionData.history || []).map((h) => ({
             ...h,
-            timestamp: toDateSafe(h.timestamp)?.toISOString() || new Date().toISOString(),
+            timestamp:
+              toDateSafe(h.timestamp)?.toISOString() || new Date().toISOString(),
           })),
         };
-        
+
         let nextStep: WorkflowStep | undefined;
         let newStatus: Requisition['status'] = currentRequisitionData.status;
         let newStage = currentRequisitionData.stage;
-        let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
+        let newCurrentStepId: string | null =
+          currentRequisitionData.currentStepId || null;
         let newAssignees: string[] = [];
         let newDeadline: Timestamp | null = null;
 
-        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(actionName);
+        const isCompletionAction = [
+          'Approve',
+          'Complete',
+          'Verified',
+          'Update Approved Amount',
+          'Create Expense Request',
+        ].includes(actionName);
 
         if (isCompletionAction) {
-          const currentStepIndexTx = (workflow || []).findIndex((s) => s.id === currentStep.id);
-          nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
+          const currentStepIndexTx = (workflow || []).findIndex(
+            (s) => s.id === currentStep.id
+          );
+          nextStep =
+            currentStepIndexTx >= 0
+              ? workflow?.[currentStepIndexTx + 1]
+              : undefined;
 
           if (nextStep) {
             newStage = stepDisplay(nextStep as any);
             newStatus = 'In Progress';
             newCurrentStepId = nextStep.id;
 
-            const assignees = await getAssigneeForStep(nextStep, tempReqForAssignment as any);
+            const assignees = await getAssigneeForStep(
+              nextStep,
+              tempReqForAssignment as any
+            );
             if (!Array.isArray(assignees) || assignees.length === 0) {
-              throw new Error(`Could not determine assignee for step: ${stepDisplay(nextStep as any)}`);
+              throw new Error(
+                `Could not determine assignee for step: ${stepDisplay(
+                  nextStep as any
+                )}`
+              );
             }
             newAssignees = assignees;
 
-            const deadlineDate = await calculateDeadline(new Date(), (nextStep as any).tat);
+            const deadlineDate = await calculateDeadline(
+              new Date(),
+              (nextStep as any).tat
+            );
             newDeadline = Timestamp.fromDate(deadlineDate);
           } else {
             newStage = 'Completed';
@@ -385,7 +495,7 @@ export default function ViewRequisitionDialog({
           deadline: newDeadline,
           history: arrayUnion(newActionLog),
         };
-        
+
         transaction.update(requisitionRef, updatedData);
       });
 
@@ -397,14 +507,19 @@ export default function ViewRequisitionDialog({
       onOpenChange(false);
     } catch (error: any) {
       console.error('Error processing action:', error);
-      toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Action Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleConfirmCreateExpense = async () => {
-    if (!expenseToCreate || !requisition || !user || !workflow || !currentStep) return;
+    if (!expenseToCreate || !requisition || !user || !workflow || !currentStep)
+      return;
     setIsCreatingExpense(true);
     try {
       const { requestNo, ...dataToSave } = expenseToCreate;
@@ -429,8 +544,13 @@ export default function ViewRequisitionDialog({
           stepName: stepDisplay(currentStep as any),
         };
 
-        const currentStepIndexTx = (workflow || []).findIndex((s) => s.id === currentStep.id);
-        const nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
+        const currentStepIndexTx = (workflow || []).findIndex(
+          (s) => s.id === currentStep.id
+        );
+        const nextStep =
+          currentStepIndexTx >= 0
+            ? workflow?.[currentStepIndexTx + 1]
+            : undefined;
 
         let newStatus: Requisition['status'];
         let newStage: string;
@@ -443,13 +563,21 @@ export default function ViewRequisitionDialog({
           newStatus = 'In Progress';
           newCurrentStepId = nextStep.id;
 
-          const assignees = await getAssigneeForStep(nextStep, { ...requisition, ...dataToSave });
+          const assignees = await getAssigneeForStep(nextStep, {
+            ...requisition,
+            ...dataToSave,
+          });
           if (!Array.isArray(assignees) || assignees.length === 0) {
-            throw new Error(`No assignee for step: ${stepDisplay(nextStep as any)}`);
+            throw new Error(
+              `No assignee for step: ${stepDisplay(nextStep as any)}`
+            );
           }
           newAssignees = assignees;
 
-          const deadlineDate = await calculateDeadline(new Date(), (nextStep as any).tat);
+          const deadlineDate = await calculateDeadline(
+            new Date(),
+            (nextStep as any).tat
+          );
           newDeadline = Timestamp.fromDate(deadlineDate);
         } else {
           newStage = 'Completed';
@@ -493,8 +621,12 @@ export default function ViewRequisitionDialog({
 
   const handleSubHeadChange = (subHeadName: string) => {
     if (!expenseToCreate) return;
-    const selectedSubHead = subAccountHeads.find((sh) => sh.name === subHeadName);
-    const parentHead = accountHeads.find((h) => h.id === selectedSubHead?.headId);
+    const selectedSubHead = subAccountHeads.find(
+      (sh) => sh.name === subHeadName
+    );
+    const parentHead = accountHeads.find(
+      (h) => h.id === selectedSubHead?.headId
+    );
 
     setExpenseToCreate({
       ...expenseToCreate,
@@ -517,8 +649,12 @@ export default function ViewRequisitionDialog({
     projects.find((p) => p.id === id)?.projectName || 'N/A';
   const getDepartmentName = (id: string) =>
     departments.find((d) => d.id === id)?.name || 'N/A';
-    
-  const isActionable = user && requisition?.assignees?.includes(user.id) && requisition.status !== 'Completed' && requisition.status !== 'Rejected';
+
+  const isActionable =
+    user &&
+    requisition?.assignees?.includes(user.id) &&
+    requisition.status !== 'Completed' &&
+    requisition.status !== 'Rejected';
 
   if (!requisition) return null;
 
@@ -535,15 +671,21 @@ export default function ViewRequisitionDialog({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <Label>Project</Label>
-                  <p className="font-medium">{getProjectName(requisition.projectId)}</p>
+                  <p className="font-medium">
+                    {getProjectName(requisition.projectId)}
+                  </p>
                 </div>
                 <div>
                   <Label>Department</Label>
-                  <p className="font-medium">{getDepartmentName(requisition.departmentId)}</p>
+                  <p className="font-medium">
+                    {getDepartmentName(requisition.departmentId)}
+                  </p>
                 </div>
                 <div>
                   <Label>Amount</Label>
-                  <p className="font-medium">₹ {requisition.amount.toLocaleString()}</p>
+                  <p className="font-medium">
+                    ₹ {requisition.amount.toLocaleString()}
+                  </p>
                 </div>
                 <div>
                   <Label>Date</Label>
@@ -579,15 +721,31 @@ export default function ViewRequisitionDialog({
                       >
                         <div className="flex items-center gap-2 overflow-hidden">
                           <Paperclip className="h-4 w-4 shrink-0" />
-                          <span className="text-sm font-medium truncate">{file.name}</span>
+                          <span className="text-sm font-medium truncate">
+                            {file.name}
+                          </span>
                         </div>
                         <div className="flex items-center shrink-0">
-                          <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                            <a href={file.url} target="_blank" rel="noopener noreferrer">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="mr-2 h-7"
+                          >
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
                               <Eye className="mr-2 h-3 w-3" /> View
                             </a>
                           </Button>
-                          <Button asChild variant="outline" size="sm" className="h-7">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-7"
+                          >
                             <a href={file.url} download={file.name}>
                               <Download className="mr-2 h-3 w-3" /> Download
                             </a>
@@ -598,12 +756,15 @@ export default function ViewRequisitionDialog({
                   </div>
                 </div>
               )}
-              
+
               {isActionable && (
                 <div className="space-y-4 pt-4 border-t">
-                  {(currentStep?.upload === 'Required') && (
+                  {currentStep?.upload === 'Required' && (
                     <div>
-                      <Label htmlFor="file-upload" className="font-semibold text-destructive">
+                      <Label
+                        htmlFor="file-upload"
+                        className="font-semibold text-destructive"
+                      >
                         Upload Required Document
                       </Label>
                       <Input
@@ -626,32 +787,44 @@ export default function ViewRequisitionDialog({
 
                   <div className="flex flex-wrap gap-2">
                     <TooltipProvider>
-                      {(currentStep?.actions || []).map((action: string | ActionConfig) => {
-                        const actionName = typeof action === 'string' ? action : action.name;
-                        const isCreateExpenseAction = actionName === 'Create Expense Request';
-                        const isDisabled =
-                          isLoading || (isCreateExpenseAction && !!requisition.expenseRequestNo);
+                      {(currentStep?.actions || []).map(
+                        (action: string | ActionConfig) => {
+                          const actionName =
+                            typeof action === 'string' ? action : action.name;
+                          const isCreateExpenseAction =
+                            actionName === 'Create Expense Request';
+                          const isDisabled =
+                            isLoading ||
+                            (isCreateExpenseAction &&
+                              !!requisition.expenseRequestNo);
 
-                        return (
-                          <Tooltip key={actionName}>
-                            <TooltipTrigger asChild>
-                              <div className="inline-block">
-                                <Button onClick={() => handleAction(action)} disabled={isDisabled}>
-                                  {isLoading && (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  )}
-                                  {actionName}
-                                </Button>
-                              </div>
-                            </TooltipTrigger>
-                            {isDisabled && isCreateExpenseAction && (
-                              <TooltipContent>
-                                <p>An expense request has already been created for this item.</p>
-                              </TooltipContent>
-                            )}
-                          </Tooltip>
-                        );
-                      })}
+                          return (
+                            <Tooltip key={actionName}>
+                              <TooltipTrigger asChild>
+                                <div className="inline-block">
+                                  <Button
+                                    onClick={() => handleAction(action)}
+                                    disabled={isDisabled}
+                                  >
+                                    {isLoading && (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    {actionName}
+                                  </Button>
+                                </div>
+                              </TooltipTrigger>
+                              {isDisabled && isCreateExpenseAction && (
+                                <TooltipContent>
+                                  <p>
+                                    An expense request has already been created for
+                                    this item.
+                                  </p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          );
+                        }
+                      )}
                     </TooltipProvider>
                   </div>
                 </div>
@@ -659,7 +832,10 @@ export default function ViewRequisitionDialog({
 
               <Collapsible open={isWorkflowOpen} onOpenChange={setIsWorkflowOpen}>
                 <CollapsibleTrigger asChild>
-                  <Button variant="ghost" className="w-full justify-between px-2">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-between px-2"
+                  >
                     Workflow Status
                     <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
                   </Button>
@@ -680,7 +856,9 @@ export default function ViewRequisitionDialog({
                         {enrichedSteps.length > 0 ? (
                           enrichedSteps.map((step, index) => (
                             <TableRow key={index}>
-                              <TableCell className="font-medium">{stepDisplay(step)}</TableCell>
+                              <TableCell className="font-medium">
+                                {stepDisplay(step)}
+                              </TableCell>
                               <TableCell>{step.assignedUserName}</TableCell>
                               <TableCell>{step.deadline}</TableCell>
                               <TableCell>{step.completionDate}</TableCell>
@@ -720,20 +898,31 @@ export default function ViewRequisitionDialog({
           </ScrollArea>
 
           <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const url =
+                  `/public/site-fund-requisition/${requisition.id}/print`;
+                window.open(url, '_blank');
+              }}
+            >
+              <Printer className="mr-2 h-4 w-4" /> Print
+            </Button>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
             </DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {expenseToCreate && (
         <Dialog open={isConfirmExpenseOpen} onOpenChange={setIsConfirmExpenseOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Confirm Expense Creation</DialogTitle>
               <DialogDescription>
-                Review and edit the details below before creating the expense request.
+                Review and edit the details below before creating the expense
+                request.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -744,7 +933,13 @@ export default function ViewRequisitionDialog({
                 </div>
                 <div className="space-y-1">
                   <Label>Project</Label>
-                  <Input value={projects.find(p => p.id === expenseToCreate.projectId)?.projectName || ''} disabled />
+                  <Input
+                    value={
+                      projects.find((p) => p.id === expenseToCreate.projectId)
+                        ?.projectName || ''
+                    }
+                    disabled
+                  />
                 </div>
               </div>
 
@@ -753,7 +948,10 @@ export default function ViewRequisitionDialog({
                 <Input
                   value={expenseToCreate.partyName || ''}
                   onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, partyName: e.target.value })
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      partyName: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -762,10 +960,19 @@ export default function ViewRequisitionDialog({
                 <Label>Amount</Label>
                 <Input
                   type="text"
-                  value={formatAsCurrency(expenseToCreate.amount || 0)}
+                  value={
+                    expenseToCreate.amount
+                      ? formatAsCurrency(expenseToCreate.amount)
+                      : ''
+                  }
                   onChange={(e) => {
-                    const numericValue = Number(e.target.value.replace(/[^0-9.-]+/g, ''));
-                    setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
+                    const numericValue = Number(
+                      e.target.value.replace(/[^0-9.-]+/g, '')
+                    );
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      amount: numericValue,
+                    });
                   }}
                 />
               </div>
@@ -776,7 +983,10 @@ export default function ViewRequisitionDialog({
                   <Select
                     value={expenseToCreate.headOfAccount || ''}
                     onValueChange={(value) =>
-                      setExpenseToCreate({ ...expenseToCreate, headOfAccount: value })
+                      setExpenseToCreate({
+                        ...expenseToCreate,
+                        headOfAccount: value,
+                      })
                     }
                     disabled
                   >
@@ -818,7 +1028,10 @@ export default function ViewRequisitionDialog({
                 <Textarea
                   value={expenseToCreate.description || ''}
                   onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, description: e.target.value })
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      description: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -828,18 +1041,25 @@ export default function ViewRequisitionDialog({
                 <Textarea
                   value={expenseToCreate.remarks || ''}
                   onChange={(e) =>
-                    setExpenseToCreate({ ...expenseToCreate, remarks: e.target.value })
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      remarks: e.target.value,
+                    })
                   }
                 />
               </div>
             </div>
-
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
-              <Button onClick={handleConfirmCreateExpense} disabled={isCreatingExpense}>
-                {isCreatingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button
+                onClick={handleConfirmCreateExpense}
+                disabled={isCreatingExpense}
+              >
+                {isCreatingExpense && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 Confirm & Create
               </Button>
             </DialogFooter>
@@ -849,3 +1069,59 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
+```
+- src/hooks/use-local-storage.ts:
+```ts
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+
+export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    // This function is only executed on the initial render on the client side.
+    if (typeof window === 'undefined') {
+      return initialValue;
+    }
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+
+  const setValue = useCallback(
+    (value: T | ((val: T) => T)) => {
+      try {
+        const valueToStore =
+          value instanceof Function ? value(storedValue) : value;
+        setStoredValue(valueToStore);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    [key, storedValue]
+  );
+  
+  // This effect will run once on the client after hydration to sync the state.
+  useEffect(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      if (item !== JSON.stringify(storedValue)) {
+         setStoredValue(item ? JSON.parse(item) : initialValue);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]); // Depend only on key, as we only need to read this once initially.
+
+  return [storedValue, setValue];
+}
+
+```
