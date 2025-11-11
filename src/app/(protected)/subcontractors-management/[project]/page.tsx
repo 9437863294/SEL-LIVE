@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -12,6 +13,7 @@ import {
   ShieldAlert,
   BarChart3,
   Home,
+  ArrowLeft,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +27,13 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface SubcontractorCardProps {
-  item: { icon: LucideIcon; text: string; href: string; description: string; disabled?: boolean; };
+  item: {
+    icon: LucideIcon;
+    text: string;
+    href: string;
+    description: string;
+    disabled?: boolean;
+  };
 }
 
 const slugify = (text: string) => {
