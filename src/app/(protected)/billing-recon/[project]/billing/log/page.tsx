@@ -104,7 +104,7 @@ export default function BillLogPage() {
                     <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
-                      <TableCell>{bill.woNo}</TableCell>
+                      <TableCell>{bill.workOrderNo}</TableCell>
                       <TableCell>{bill.items.length}</TableCell>
                       <TableCell>{formatCurrency(bill.totalAmount || 0)}</TableCell>
                       <TableCell className="text-right">
