@@ -21,7 +21,13 @@ type EnrichedWorkOrderItem = WorkOrderItem & {
     boqRate: string;
     totalJmcCertifiedQty: number;
     totalBilledQty: number;
+    scope1?: string;
+    scope2?: string;
 };
+
+const getScope1 = (item: any): string => item?.scope1 || item?.['Scope 1'] || '';
+const getScope2 = (item: any): string => item?.scope2 || item?.['Scope 2'] || '';
+
 
 export default function WorkOrderDetailsPage() {
     const params = useParams();
@@ -104,9 +110,16 @@ export default function WorkOrderDetailsPage() {
                         const boqItem = boqItemsMap.get(item.boqItemId);
                         const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                         
+                        const itemScope1 = getScope1(item);
+                        const itemScope2 = getScope2(item);
+                        
                         const totalJmcCertifiedQty = jmcEntries
                             .flatMap(entry => entry.items)
-                            .filter(jmcItem => jmcItem.boqSlNo === item.boqSlNo)
+                            .filter(jmcItem => 
+                                jmcItem.boqSlNo === item.boqSlNo &&
+                                getScope1(jmcItem) === itemScope1 &&
+                                getScope2(jmcItem) === itemScope2
+                            )
                             .reduce((sum, jmcItem) => sum + (jmcItem.certifiedQty || 0), 0);
 
                         const totalBilledQty = billedQtyMap.get(item.id) || 0;
@@ -117,6 +130,8 @@ export default function WorkOrderDetailsPage() {
                             boqRate: boqItem && rateKey ? String((boqItem as any)[rateKey] || '0') : 'N/A',
                             totalJmcCertifiedQty,
                             totalBilledQty,
+                            scope1: itemScope1,
+                            scope2: itemScope2,
                         };
                     });
                     setEnrichedItems(enriched);
@@ -172,6 +187,7 @@ export default function WorkOrderDetailsPage() {
                     <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
                     <CardContent className="space-y-3 text-sm">
                         <div className="flex justify-between"><span>Work Order Value</span><span className="font-semibold">{formatCurrency(workOrder.totalAmount)}</span></div>
+                         <div className="flex justify-between"><span>Total Billed Amount</span><span className="font-semibold">{formatCurrency(financials.totalBilled)}</span></div>
                         <div className="flex justify-between"><span>Total Advance Taken</span><span className="font-semibold">{formatCurrency(financials.totalAdvanceTaken)}</span></div>
                         <div className="flex justify-between"><span>Total Advance Deducted</span><span className="font-semibold text-destructive">-{formatCurrency(financials.totalAdvanceDeducted)}</span></div>
                         <div className="flex justify-between font-bold border-t pt-2"><span>Net Advance Balance</span><span>{formatCurrency(netAdvanceBalance)}</span></div>
