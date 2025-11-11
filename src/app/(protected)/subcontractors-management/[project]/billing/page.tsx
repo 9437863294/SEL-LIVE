@@ -8,6 +8,7 @@ import {
   FilePlus,
   History,
   ShieldAlert,
+  FileClock,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,7 @@ export default function BillingDashboardPage() {
   
   const billingItems = [
     { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') },
+    { icon: FileClock, text: 'Proforma/Advance Bill', href: `#`, description: 'Create proforma or advance bills.', disabled: true },
     { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
   ];
   
