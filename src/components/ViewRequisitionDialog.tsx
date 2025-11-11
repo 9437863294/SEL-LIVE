@@ -37,14 +37,22 @@ import type {
   Attachment,
   User,
   ActionConfig,
+  ExpenseRequest,
   AccountHead,
   SubAccountHead,
-  ExpenseRequest,
 } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuth } from './auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Loader2, Printer, Paperclip, Download, Eye, FilePlus, ChevronDown } from 'lucide-react';
+import {
+  Loader2,
+  Printer,
+  Paperclip,
+  Download,
+  Eye,
+  FilePlus,
+  ChevronDown,
+} from 'lucide-react';
 import { Separator } from './ui/separator';
 import {
   Collapsible,
@@ -70,7 +78,14 @@ import {
 } from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { ScrollArea } from './ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table';
 
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
@@ -390,7 +405,6 @@ export default function ViewRequisitionDialog({
           date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
           createdAt: createdAt ? format(createdAt, 'yyyy-MM-dd') : undefined,
           deadline: deadline ? format(deadline, 'yyyy-MM-dd') : undefined,
-          // Convert history timestamps to strings to make it serializable
           history: (currentRequisitionData.history || []).map((h) => ({
             ...h,
             timestamp:
@@ -622,6 +636,12 @@ export default function ViewRequisitionDialog({
     }).format(value);
   };
 
+  const handlePrint = () => {
+    if (!requisition) return;
+    const projectSlug = projects.find(p => p.id === requisition.projectId)?.projectName || 'unknown';
+    window.open(`/site-fund-requisition/print/${slugify(projectSlug)}/${requisition.id}`, '_blank');
+  };
+
   const isActionable =
     user &&
     requisition &&
@@ -629,70 +649,56 @@ export default function ViewRequisitionDialog({
     requisition.status !== 'Completed' &&
     requisition.status !== 'Rejected';
     
-  const handlePrint = () => {
-    if (!requisition) return;
-    const projectSlug = projects.find(p => p.id === requisition.projectId)?.projectName.toLowerCase().replace(/\s+/g, '-');
-    if (!projectSlug) {
-      toast({title: 'Error', description: 'Cannot determine project for printing.', variant: 'destructive'});
-      return;
-    }
-    const url = `/public/site-fund-requisition/${requisition.id}/print`;
-    window.open(url, '_blank');
-  }
-
-  if (!requisition) {
-    return null;
-  }
-
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Details for {requisition.requisitionId}</DialogTitle>
+            <DialogTitle>Details for {requisition?.requisitionId}</DialogTitle>
           </DialogHeader>
 
           <ScrollArea className="max-h-[70vh] p-1 pr-4">
             <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Main details */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <Label>Project</Label>
                   <p className="font-medium">
-                    {projects.find((p) => p.id === requisition.projectId)
+                    {projects.find((p) => p.id === requisition?.projectId)
                       ?.projectName || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Department</Label>
                   <p className="font-medium">
-                    {departments.find((d) => d.id === requisition.departmentId)
+                    {departments.find((d) => d.id === requisition?.departmentId)
                       ?.name || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Amount</Label>
                   <p className="font-medium">
-                    ₹ {requisition.amount.toLocaleString()}
+                    ₹ {requisition?.amount.toLocaleString() || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Date</Label>
                   <p className="font-medium">
-                    {formatDateSafe(requisition.date, 'dd MMM, yyyy')}
+                    {formatDateSafe(requisition?.date)}
                   </p>
                 </div>
                 <div>
                   <Label>Raised By</Label>
-                  <p className="font-medium">{requisition.raisedBy}</p>
+                  <p className="font-medium">{requisition?.raisedBy || 'N/A'}</p>
                 </div>
                 <div>
                   <Label>Party Name</Label>
-                  <p className="font-medium">{requisition.partyName}</p>
+                  <p className="font-medium">{requisition?.partyName || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
                   <Label>Created At</Label>
                   <p className="font-medium">
-                    {formatDateSafe(requisition.createdAt)}
+                    {formatDateSafe(requisition?.createdAt)}
                   </p>
                 </div>
               </div>
@@ -700,41 +706,32 @@ export default function ViewRequisitionDialog({
               <div>
                 <Label>Description</Label>
                 <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">
-                  {requisition.description || 'No description provided.'}
+                  {requisition?.description || 'No description provided.'}
                 </p>
               </div>
-
-              {!!requisition.attachments?.length && (
+              
+              {!!requisition?.attachments?.length && (
                 <div>
                   <Label>Attachments</Label>
-                  <div className="mt-2 space-y-2">
+                   <div className="mt-1 space-y-2">
                     {requisition.attachments.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-2 bg-muted rounded-md"
-                      >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <Paperclip className="h-4 w-4 shrink-0" />
-                          <span className="text-sm font-medium truncate">
-                            {file.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center shrink-0">
-                          <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                            <a
-                              href={file.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <Eye className="mr-2 h-3 w-3" /> View
-                            </a>
-                          </Button>
-                          <Button asChild variant="outline" size="sm" className="h-7">
-                            <a href={file.url} download={file.name}>
-                              <Download className="mr-2 h-3 w-3" /> Download
-                            </a>
-                          </Button>
-                        </div>
+                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                         <div className="flex items-center gap-2 overflow-hidden">
+                           <Paperclip className="h-4 w-4 shrink-0" />
+                           <span className="text-sm font-medium truncate">{file.name}</span>
+                         </div>
+                         <div className="flex items-center shrink-0">
+                             <Button asChild variant="outline" size="sm" className="mr-2 h-7">
+                               <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                  <Eye className="mr-2 h-3 w-3" /> View
+                               </a>
+                             </Button>
+                             <Button asChild variant="outline" size="sm" className="h-7">
+                               <a href={file.url} download={file.name}>
+                                  <Download className="mr-2 h-3 w-3" /> Download
+                               </a>
+                             </Button>
+                         </div>
                       </div>
                     ))}
                   </div>
@@ -889,10 +886,11 @@ export default function ViewRequisitionDialog({
             </div>
           </ScrollArea>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 pr-4">
              <Button
                 variant="outline"
                 onClick={handlePrint}
+                disabled={!requisition}
             >
                 <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
@@ -1017,7 +1015,7 @@ export default function ViewRequisitionDialog({
                   }
                 />
               </div>
-               <div className="space-y-1">
+              <div className="space-y-1">
                   <Label>Remarks:</Label>
                   <Textarea value={expenseToCreate.remarks || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, remarks: e.target.value})} />
               </div>
@@ -1042,3 +1040,175 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
+
+```
+- src/hooks/useAuthorization.ts:
+```ts
+
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useCallback } from 'react';
+
+export const useAuthorization = () => {
+  const { permissions, loading } = useAuth();
+
+  const can = useCallback((action: string, module: string, scope?: string): boolean => {
+    if (loading) {
+      return false; 
+    }
+    
+    // Direct check for simple modules or top-level module actions
+    if (permissions[module]?.includes(action)) {
+      return true;
+    }
+
+    // Check for nested "View Module" permission, e.g., permissions['Expenses']['View Module']
+    if (action === 'View Module' && permissions[module] && typeof permissions[module] === 'object' && !Array.isArray(permissions[module])) {
+      const nestedPermissions = permissions[module] as Record<string, string[]>;
+      if (nestedPermissions['View Module']) {
+        return true;
+      }
+    }
+    
+    // Check for scoped permissions, e.g., Expenses.Departments.dept_id_123
+    const scopedPermissionKey = scope ? `${module}.${scope}` : module;
+    if (scope && permissions[scopedPermissionKey]?.includes(action)) {
+      return true;
+    }
+
+    // Fallback for sub-module actions without a scope, e.g., can('View', 'Expenses.Reports')
+    if (module.includes('.') && permissions[module]?.includes(action)) {
+        return true;
+    }
+
+    // Special check for 'View All' which grants 'View' on all scopes within that module
+    if (action === 'View' && scope) {
+      const viewAllModule = module.split('.')[0]; // e.g., 'Expenses' from 'Expenses.Departments'
+      if (permissions[viewAllModule]?.includes('View All')) {
+        return true;
+      }
+    }
+    
+    return false;
+  }, [permissions, loading]);
+
+  return { can, isLoading: loading };
+};
+
+```
+- src/lib/permission-utils.ts:
+```ts
+
+import type { Role, Department } from '@/lib/types';
+import { permissionModules } from '@/lib/types';
+
+
+// This function should ideally fetch departments from Firestore if they are dynamic.
+// For now, if you have a static or smaller list, you can pass them in.
+// If departments are managed in Firestore, this would need to be async.
+export const getTotalPermissionsForModule = (moduleName: string, departments: Department[] = [], projects: any[] = []): number => {
+    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+    if (!moduleConfig) return 0;
+    
+    if (Array.isArray(moduleConfig)) {
+      return moduleConfig.length;
+    }
+    
+    let total = 0;
+    for (const key in moduleConfig) {
+      const perms = moduleConfig[key as keyof typeof moduleConfig];
+       if (key === 'View Module') {
+        total += 1;
+        continue;
+      }
+      if (Array.isArray(perms)) {
+        if(key === 'Departments' && departments.length > 0) {
+          total += perms.length * departments.length;
+        } else if (key === 'Projects' && projects.length > 0) {
+            total += perms.length * projects.length;
+        } else {
+          total += perms.length;
+        }
+      }
+    }
+    return total;
+  };
+  
+export const getGrantedPermissionsForModule = (permissions: Record<string, string[]> | undefined, moduleName: string): number => {
+    if (!permissions) return 0;
+    let count = 0;
+
+    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
+
+    if (Array.isArray(moduleConfig)) {
+        // Simple module structure
+        if (permissions[moduleName] && Array.isArray(permissions[moduleName])) {
+            count += permissions[moduleName].length;
+        }
+    } else {
+        // Complex module structure
+        // Count 'View Module' permission if it exists
+        if (permissions[moduleName]?.includes('View Module')) {
+             count++;
+        }
+        
+        // Count permissions for sub-modules
+        Object.keys(moduleConfig).forEach(subModuleKey => {
+            if (subModuleKey === 'View Module') return;
+            
+            const fullKey = `${moduleName}.${subModuleKey}`;
+            
+            if (subModuleKey === 'Departments' || subModuleKey === 'Projects') {
+                // Special handling for dynamic department/project keys
+                Object.keys(permissions).forEach(permissionKey => {
+                    if (permissionKey.startsWith(fullKey)) { // e.g., 'Expenses.Departments.dept_id_123'
+                        if (Array.isArray(permissions[permissionKey])) {
+                            count += permissions[permissionKey].length;
+                        }
+                    }
+                });
+            } else {
+                 if (permissions[fullKey] && Array.isArray(permissions[fullKey])) {
+                    count += permissions[fullKey].length;
+                }
+            }
+        });
+    }
+
+    return count;
+};
+
+```
+- src/middleware/withPrintAuth.ts:
+```ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+function isPublicPrintRoute(pathname: string) {
+  // Matches /billing-recon/<slug>/<type>/<id>/print
+  if (/^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/.test(pathname)) {
+    return true;
+  }
+  // Matches /daily-requisition/entry-sheet/print or /daily-requisition/entry-sheet/<id>/print
+  if (/^\/daily-requisition\/entry-sheet(\/print|\/[^/]+\/print)$/.test(pathname)) {
+    return true;
+  }
+  return false;
+}
+
+
+export function withPrintAuth(req: NextRequest) {
+  const printAuth = req.cookies.get('print_auth');
+  const { pathname } = req.nextUrl;
+
+  if (isPublicPrintRoute(pathname)) {
+    if (printAuth?.value !== 'ok') {
+      const authUrl = new URL('/print-auth', req.url);
+      authUrl.searchParams.set('next', pathname);
+      return NextResponse.redirect(authUrl);
+    }
+  }
+
+  return NextResponse.next();
+}
+
+```
