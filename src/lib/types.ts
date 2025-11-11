@@ -483,6 +483,7 @@ export interface BillItem {
 }
 
 export interface Bill {
+  projectName(projectName: any): unknown;
   id: string;
   billNo: string;
   billDate: string;

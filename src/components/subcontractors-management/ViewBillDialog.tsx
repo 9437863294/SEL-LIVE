@@ -1,14 +1,29 @@
 
 'use client';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { Bill } from '@/lib/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table';
 import { ScrollArea } from '../ui/scroll-area';
 import { Printer } from 'lucide-react';
+import { useParams } from 'next/navigation';
 
 interface ViewBillDialogProps {
   isOpen: boolean;
@@ -16,32 +31,37 @@ interface ViewBillDialogProps {
   bill: Bill | null;
 }
 
-const slugify = (text: string | undefined) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
+export default function ViewBillDialog({
+  isOpen,
+  onOpenChange,
+  bill,
+}: ViewBillDialogProps) {
+  const params = useParams();
+  const projectSlug = params.project as string;
 
-export default function ViewBillDialog({ isOpen, onOpenChange, bill }: ViewBillDialogProps) {
   if (!bill) return null;
-  
+
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
-  }
-
-  const grandTotal = bill.items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
-  
-  const handlePrint = () => {
-    if (!bill) return;
-    const projectSlug = slugify(bill.projectName);
-    window.open(`/billing-recon/${projectSlug}/bill/${bill.id}/print`, '_blank');
+    if (isNaN(num)) return amount;
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+    }).format(num);
   };
+
+  const handlePrint = () => {
+    if (!bill || !projectSlug) return;
+    window.open(
+      `/billing-recon/${projectSlug}/bill/${bill.id}/print`,
+      '_blank'
+    );
+  };
+
+  const grandTotal = bill.items.reduce(
+    (sum, item) => sum + parseFloat(item.totalAmount || '0'),
+    0
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -65,54 +85,54 @@ export default function ViewBillDialog({ isOpen, onOpenChange, bill }: ViewBillD
                 <p className="font-medium">{bill.billDate}</p>
               </div>
             </div>
-            
+
             <Separator />
 
             <div>
               <h3 className="text-lg font-semibold mb-2">Billed Items</h3>
               <div className="border rounded-md">
                 <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>JMC No.</TableHead>
-                            <TableHead>BOQ Sl.No.</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Unit</TableHead>
-                            <TableHead>Rate</TableHead>
-                            <TableHead>Billed Qty</TableHead>
-                            <TableHead>Total</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {bill.items.map((item) => (
-                            <TableRow key={item.jmcItemId}>
-                                <TableCell>{item.jmcNo}</TableCell>
-                                <TableCell>{item.boqSlNo}</TableCell>
-                                <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.unit}</TableCell>
-                                <TableCell>{formatCurrency(item.rate)}</TableCell>
-                                <TableCell>{item.billedQty}</TableCell>
-                                <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>JMC No.</TableHead>
+                      <TableHead>BOQ Sl.No.</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead>Rate</TableHead>
+                      <TableHead>Billed Qty</TableHead>
+                      <TableHead>Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bill.items.map((item) => (
+                      <TableRow key={item.jmcItemId}>
+                        <TableCell>{item.jmcNo}</TableCell>
+                        <TableCell>{item.boqSlNo}</TableCell>
+                        <TableCell>{item.description}</TableCell>
+                        <TableCell>{item.unit}</TableCell>
+                        <TableCell>{formatCurrency(item.rate)}</TableCell>
+                        <TableCell>{item.billedQty}</TableCell>
+                        <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
                 </Table>
               </div>
               <div className="flex justify-end mt-4">
-                  <div className="w-full max-w-xs space-y-2">
-                    <div className="flex justify-between font-bold text-lg">
-                        <span>Grand Total</span>
-                        <span>{formatCurrency(grandTotal)}</span>
-                    </div>
+                <div className="w-full max-w-xs space-y-2">
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Grand Total</span>
+                    <span>{formatCurrency(grandTotal)}</span>
                   </div>
+                </div>
               </div>
             </div>
           </div>
         </ScrollArea>
         <DialogFooter className="mt-4 pr-4 sm:justify-between">
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> Print
-          </Button>
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" /> Print
+            </Button>
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
