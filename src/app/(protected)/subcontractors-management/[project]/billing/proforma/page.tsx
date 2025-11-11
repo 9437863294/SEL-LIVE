@@ -117,7 +117,7 @@ export default function CreateProformaPage() {
       const item = newItems[index];
       const billedQty = parseFloat(value);
       
-      const availableForBilling = item.boqQty - item.alreadyBilledQty;
+      const availableForBilling = item.orderQty - item.alreadyBilledQty;
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
@@ -158,7 +158,7 @@ export default function CreateProformaPage() {
             .filter(billItem => billItem.jmcItemId === woItem.id)
             .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
 
-        const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+        const availableForBilling = woItem.orderQty - alreadyBilledForWoItem;
         
         const boqItem = boqItems.find(b => b.id === woItem.boqItemId);
         const boqQty = boqItem ? Number((boqItem as any).QTY || 0) : 0;
@@ -325,14 +325,14 @@ export default function CreateProformaPage() {
                                   <TableCell>{item.orderQty}</TableCell>
                                   <TableCell>{item.jmcCertifiedQty}</TableCell>
                                   <TableCell>{item.alreadyBilledQty}</TableCell>
-                                  <TableCell className="font-semibold">{item.boqQty - item.alreadyBilledQty}</TableCell>
+                                  <TableCell className="font-semibold">{item.orderQty - item.alreadyBilledQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
                                   <TableCell>
                                       <Input 
                                         type="number" 
                                         value={item.billedQty}
                                         onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                        max={item.boqQty - item.alreadyBilledQty}
+                                        max={item.orderQty - item.alreadyBilledQty}
                                       />
                                   </TableCell>
                                   <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
