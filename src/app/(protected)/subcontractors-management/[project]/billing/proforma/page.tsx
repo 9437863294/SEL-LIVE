@@ -116,18 +116,19 @@ export default function CreateProformaPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const orderQty = item.orderQty;
+      
+      const availableForBilling = item.boqQty - item.alreadyBilledQty;
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
         item.totalAmount = '';
-      } else if (billedQty > orderQty) {
+      } else if (billedQty > availableForBilling) {
           toast({
               title: 'Quantity Exceeded',
-              description: `Billed quantity cannot be more than the work order quantity (${orderQty}).`,
+              description: `Billed quantity cannot be more than the available quantity (${availableForBilling}).`,
               variant: 'destructive',
           });
-          item.billedQty = orderQty.toString();
+          item.billedQty = availableForBilling.toString();
       } else {
           item.billedQty = value;
       }
@@ -185,7 +186,7 @@ export default function CreateProformaPage() {
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
-  
+
   const financials = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
     const payableAmount = subtotal * (payablePercentage / 100);
@@ -324,14 +325,14 @@ export default function CreateProformaPage() {
                                   <TableCell>{item.orderQty}</TableCell>
                                   <TableCell>{item.jmcCertifiedQty}</TableCell>
                                   <TableCell>{item.alreadyBilledQty}</TableCell>
-                                  <TableCell className="font-semibold">{item.executedQty}</TableCell>
+                                  <TableCell className="font-semibold">{item.boqQty - item.alreadyBilledQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
                                   <TableCell>
                                       <Input 
                                         type="number" 
                                         value={item.billedQty}
                                         onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                        max={item.orderQty}
+                                        max={item.boqQty - item.alreadyBilledQty}
                                       />
                                   </TableCell>
                                   <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
