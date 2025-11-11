@@ -148,8 +148,8 @@ export default function ProjectLayout({
         </div>
 
       </aside>
-      <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+      <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+        <main className="flex-grow p-4 sm:p-6 lg:p-8">
             {children}
         </main>
         <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-sm py-4 px-6">

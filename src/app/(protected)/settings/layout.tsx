@@ -102,8 +102,8 @@ export default function SettingsLayout({
         </div>
 
       </aside>
-      <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
-        <main className="flex-1">
+      <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+        <main className="flex-grow">
           {children}
         </main>
         <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-sm py-4 px-6">

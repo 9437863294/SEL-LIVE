@@ -238,11 +238,9 @@ export default function InsuranceLayout({
           </div>
         </TooltipProvider>
       </aside>
-       <div className={cn("flex-1 flex flex-col transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+       <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
         <main
-          className={cn(
-            'flex-1 p-4 sm:p-6 lg:p-8',
-          )}
+          className="flex-grow p-4 sm:p-6 lg:p-8"
         >
           {children}
         </main>

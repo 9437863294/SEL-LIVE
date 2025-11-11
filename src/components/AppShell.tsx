@@ -17,7 +17,7 @@ export default function AppShell({
     // If there's no user and we are not loading, it's a public view (e.g. login page)
     // We don't render the main app shell for these cases.
     if (!loading && !user) {
-        return <>{children}</>;
+        return <div className="min-h-screen">{children}</div>;
     }
 
     // While loading, we can show a skeleton or nothing.
@@ -32,7 +32,7 @@ export default function AppShell({
                 <ClientSessionHandler />
             </Suspense>
             <Header />
-            <div className="flex-1">
+            <div className="flex-grow">
                 {children}
             </div>
             <SessionExpiryDialog
