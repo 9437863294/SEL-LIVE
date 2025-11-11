@@ -135,7 +135,9 @@ export default function CreateBillPage() {
         });
     });
 
-    return proformaBills
+    const workOrderProformas = proformaBills.filter(proforma => proforma.workOrderId === details.workOrderId);
+
+    return workOrderProformas
         .map(proforma => {
             const totalDeducted = deductedAmounts[proforma.id] || 0;
             const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
@@ -146,7 +148,7 @@ export default function CreateBillPage() {
             };
         })
         .filter(proforma => proforma.remainingBalance > 0);
-  }, [proformaBills, bills]);
+  }, [proformaBills, bills, details.workOrderId]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -602,4 +604,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
