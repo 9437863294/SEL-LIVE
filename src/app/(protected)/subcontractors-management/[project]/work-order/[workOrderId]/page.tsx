@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, JmcItem } from '@/lib/types';
+import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -19,6 +19,7 @@ type EnrichedWorkOrderItem = WorkOrderItem & {
     boqQty: string;
     boqRate: string;
     totalJmcCertifiedQty: number;
+    totalBilledQty: number;
 };
 
 export default function WorkOrderDetailsPage() {
@@ -49,10 +50,12 @@ export default function WorkOrderDetailsPage() {
                 
                 const woDocRef = doc(db, 'projects', projectData.id, 'workOrders', workOrderId);
                 const jmcQuery = query(collection(db, 'projects', projectData.id, 'jmcEntries'));
+                const billsQuery = query(collection(db, 'projects', projectData.id, 'bills'));
 
-                const [woDocSnap, jmcSnap] = await Promise.all([
+                const [woDocSnap, jmcSnap, billsSnap] = await Promise.all([
                     getDoc(woDocRef),
-                    getDocs(jmcQuery)
+                    getDocs(jmcQuery),
+                    getDocs(billsSnap)
                 ]);
 
 
@@ -73,6 +76,16 @@ export default function WorkOrderDetailsPage() {
                         certifiedQtyMap.set(item.boqSlNo, currentQty + (item.certifiedQty || 0));
                     });
                 });
+
+                const bills = billsSnap.docs.map(doc => doc.data() as Bill);
+                const billedQtyMap = new Map<string, number>();
+                bills.forEach(bill => {
+                    bill.items.forEach(item => {
+                        // Assuming jmcItemId holds the work order item id
+                        const currentQty = billedQtyMap.get(item.jmcItemId) || 0;
+                        billedQtyMap.set(item.jmcItemId, currentQty + (parseFloat(item.billedQty) || 0));
+                    });
+                });
                 
                 const boqItemIds = woData.items.map(item => item.boqItemId);
                 if (boqItemIds.length > 0) {
@@ -84,12 +97,14 @@ export default function WorkOrderDetailsPage() {
                         const boqItem = boqItemsMap.get(item.boqItemId);
                         const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                         const totalJmcCertifiedQty = certifiedQtyMap.get(item.boqSlNo || '') || 0;
+                        const totalBilledQty = billedQtyMap.get(item.id) || 0;
                         
                         return {
                             ...item,
                             boqQty: boqItem ? String(boqItem['QTY'] || '0') : 'N/A',
                             boqRate: boqItem && rateKey ? String((boqItem as any)[rateKey] || '0') : 'N/A',
                             totalJmcCertifiedQty,
+                            totalBilledQty,
                         };
                     });
                     setEnrichedItems(enriched);
@@ -172,6 +187,7 @@ export default function WorkOrderDetailsPage() {
                                     <TableHead>BOQ Rate</TableHead>
                                     <TableHead>Order Qty</TableHead>
                                     <TableHead>JMC Certified Qty</TableHead>
+                                    <TableHead>Billed Qty</TableHead>
                                     <TableHead>Order Rate</TableHead>
                                     <TableHead>Total Amount</TableHead>
                                 </TableRow>
@@ -186,6 +202,7 @@ export default function WorkOrderDetailsPage() {
                                         <TableCell>{formatCurrency(parseFloat(item.boqRate))}</TableCell>
                                         <TableCell>{item.orderQty}</TableCell>
                                         <TableCell className="font-medium text-blue-600">{item.totalJmcCertifiedQty}</TableCell>
+                                        <TableCell className="font-medium text-green-600">{item.totalBilledQty}</TableCell>
                                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                                         <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
                                     </TableRow>
