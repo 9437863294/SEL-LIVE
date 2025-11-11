@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -328,7 +327,7 @@ export default function CreateBillPage() {
 
         const billData: Omit<Bill, 'id'> = {
             ...details,
-            woNo: selectedWorkOrder.workOrderNo,
+            workOrderNo: selectedWorkOrder.workOrderNo,
             items: itemsToSave,
             subtotal: financials.subtotal,
             gstType,
@@ -343,7 +342,7 @@ export default function CreateBillPage() {
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
-            createdAt: serverTimestamp(),
+            createdAt: serverTimestamp() as Timestamp,
             projectId: currentProject?.id || '',
             status: 'Pending',
             stage: firstStep.name,
@@ -674,3 +673,4 @@ export default function CreateBillPage() {
   );
 }
 
+    
