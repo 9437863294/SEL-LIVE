@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -127,6 +128,7 @@ export const permissionModules = {
     'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
     'Work Order': ['View', 'Create', 'Edit', 'Delete'],
     'Billing': ['View', 'Create', 'Edit', 'Delete'],
+    'Reports': ['View'],
   },
   'Bank Balance': {
     'View Module': [],

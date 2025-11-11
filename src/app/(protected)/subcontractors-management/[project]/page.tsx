@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -10,6 +11,7 @@ import {
   Calculator,
   FolderOpen,
   ShieldAlert,
+  BarChart3,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +37,7 @@ const slugify = (text: string) =>
 
 function SubcontractorCard({ item }: SubcontractorCardProps) {
   const isDisabled = item.href === '#' || item.disabled;
-  const body = (
+  const cardContent = (
     <Card className={cn(
       'flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50',
       isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
@@ -51,7 +53,11 @@ function SubcontractorCard({ item }: SubcontractorCardProps) {
       </CardHeader>
     </Card>
   );
-  return isDisabled ? <div className="h-full">{body}</div> : <Link href={item.href} className="no-underline h-full">{body}</Link>;
+  if (isDisabled) return <div className="h-full">{cardContent}</div>;
+
+  return (
+    <Link href={item.href} className="no-underline h-full">{cardContent}</Link>
+  );
 }
 
 export default function SubcontractorsProjectDashboard() {
@@ -87,16 +93,13 @@ export default function SubcontractorsProjectDashboard() {
     router.push(`/subcontractors-management/${slug}`);
   };
 
-  // Compute the currently selected slug (from URL param)
   const currentProjectName = useMemo(() => {
     const project = projects.find(p => slugify(p.projectName) === selectedSlug);
     return project ? project.projectName : selectedSlug;
   }, [projects, selectedSlug]);
 
-  // Base path for card links (requires project to be selected)
   const basePath = selectedSlug ? `/subcontractors-management/${selectedSlug}` : undefined;
 
-  // Cards (disabled until a project is selected)
   const items = useMemo(() => ([
     {
       icon: Users,
@@ -120,6 +123,13 @@ export default function SubcontractorsProjectDashboard() {
       description: 'Create and manage subcontractor bills.',
       disabled:
           !selectedSlug || !can('View', 'Subcontractors Management.Billing'),
+    },
+    {
+        icon: BarChart3,
+        text: 'Reports',
+        href: basePath ? `${basePath}/reports` : '#',
+        description: 'View reports related to subcontractors.',
+        disabled: !selectedSlug || !can('View', 'Subcontractors Management.Reports'),
     },
   ]), [basePath, can, selectedSlug]);
   
@@ -147,7 +157,7 @@ export default function SubcontractorsProjectDashboard() {
             </SelectTrigger>
             <SelectContent>
               {projects.map((p) => {
-                const value = slugify(p.projectName);
+                const value = slugify((p as any).slug ?? p.projectName);
                 return <SelectItem key={p.id} value={value}>{p.projectName}</SelectItem>;
               })}
             </SelectContent>
