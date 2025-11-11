@@ -1,7 +1,13 @@
-
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  Fragment,
+} from 'react';
 import {
   Dialog,
   DialogContent,
@@ -87,6 +93,8 @@ import {
   TableRow,
 } from './ui/table';
 
+/* -------- Helpers -------- */
+
 function isFsTimestamp(v: unknown): v is Timestamp {
   return !!v && typeof v === 'object' && typeof (v as any).toDate === 'function';
 }
@@ -113,6 +121,14 @@ function stepDisplay(
 function hasDeptId(a: unknown): a is ActionConfig & { departmentId?: string } {
   return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
 }
+
+const slugify = (value: string): string =>
+  value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 type EnrichedStep = WorkflowStep & {
   assignedUserName?: string;
@@ -141,6 +157,8 @@ export default function ViewRequisitionDialog({
 }: ViewRequisitionDialogProps) {
   const { user, users } = useAuth();
   const { toast } = useToast();
+  const { can } = useAuthorization();
+
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
   const [enrichedSteps, setEnrichedSteps] = useState<EnrichedStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -152,9 +170,7 @@ export default function ViewRequisitionDialog({
   const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
-  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>(
-    []
-  );
+  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
 
   const currentStep = useMemo(() => {
     if (!requisition || !workflow) return null;
@@ -241,13 +257,14 @@ export default function ViewRequisitionDialog({
         );
 
         let status: EnrichedStep['status'] = 'Pending';
+
         if (
           requisition.status === 'Completed' ||
           requisition.status === 'Rejected'
         ) {
           if (
             historyEntries.length > 0 ||
-            (index <= currentStepIndex && currentStepIndex !== -1)
+            (currentStepIndex !== -1 && index <= currentStepIndex)
           ) {
             status = 'Completed';
           }
@@ -261,7 +278,8 @@ export default function ViewRequisitionDialog({
         }
 
         let assignedUserName = 'N/A';
-        const completionUser = completionEntry ? completionEntry.userName : null;
+        const completionUser = completionEntry?.userName;
+
         if (completionUser) {
           assignedUserName = completionUser;
         } else if (status === 'Current' && Array.isArray(requisition.assignees)) {
@@ -365,7 +383,7 @@ export default function ViewRequisitionDialog({
     try {
       const requisitionRef = doc(db, 'requisitions', requisition.id);
 
-      let attachmentData: Attachment | undefined = undefined;
+      let attachmentData: Attachment | undefined;
       if (file) {
         const currStepName = stepDisplay(currentStep as any);
         const storagePath = `requisition-actions/${requisition.id}/${currStepName}/${file.name}`;
@@ -377,7 +395,8 @@ export default function ViewRequisitionDialog({
 
       await runTransaction(db, async (transaction) => {
         const reqDoc = await transaction.get(requisitionRef);
-        if (!reqDoc.exists()) throw new Error('Requisition document not found!');
+        if (!reqDoc.exists())
+          throw new Error('Requisition document not found!');
 
         const currentRequisitionData = {
           ...reqDoc.data(),
@@ -397,23 +416,33 @@ export default function ViewRequisitionDialog({
         }
 
         const date = toDateSafe((currentRequisitionData as any).date);
-        const createdAt = toDateSafe((currentRequisitionData as any).createdAt);
-        const deadline = toDateSafe((currentRequisitionData as any).deadline);
+        const createdAt = toDateSafe(
+          (currentRequisitionData as any).createdAt
+        );
+        const deadline = toDateSafe(
+          (currentRequisitionData as any).deadline
+        );
 
         const tempReqForAssignment = {
           ...currentRequisitionData,
-          date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-          createdAt: createdAt ? format(createdAt, 'yyyy-MM-dd') : undefined,
+          date: date
+            ? format(date, 'yyyy-MM-dd')
+            : format(new Date(), 'yyyy-MM-dd'),
+          createdAt: createdAt
+            ? format(createdAt, 'yyyy-MM-dd')
+            : undefined,
           deadline: deadline ? format(deadline, 'yyyy-MM-dd') : undefined,
           history: (currentRequisitionData.history || []).map((h) => ({
             ...h,
             timestamp:
-              toDateSafe(h.timestamp)?.toISOString() || new Date().toISOString(),
+              toDateSafe(h.timestamp)?.toISOString() ||
+              new Date().toISOString(),
           })),
         };
 
         let nextStep: WorkflowStep | undefined;
-        let newStatus: Requisition['status'] = currentRequisitionData.status;
+        let newStatus: Requisition['status'] =
+          currentRequisitionData.status;
         let newStage = currentRequisitionData.stage;
         let newCurrentStepId: string | null =
           currentRequisitionData.currentStepId || null;
@@ -524,7 +553,8 @@ export default function ViewRequisitionDialog({
 
       await runTransaction(db, async (transaction) => {
         const reqDoc = await transaction.get(requisitionRef);
-        if (!reqDoc.exists()) throw new Error('Requisition document not found!');
+        if (!reqDoc.exists())
+          throw new Error('Requisition document not found!');
 
         const newActionLog: ActionLog = {
           action: 'Create Expense Request',
@@ -638,23 +668,31 @@ export default function ViewRequisitionDialog({
 
   const handlePrint = () => {
     if (!requisition) return;
-    const projectSlug = projects.find(p => p.id === requisition.projectId)?.projectName || 'unknown';
-    window.open(`/site-fund-requisition/print/${slugify(projectSlug)}/${requisition.id}`, '_blank');
+    const projectName =
+      projects.find((p) => p.id === requisition.projectId)?.projectName ||
+      'unknown';
+    const projectSlug = slugify(projectName);
+    window.open(
+      `/site-fund-requisition/print/${projectSlug}/${requisition.id}`,
+      '_blank'
+    );
   };
 
   const isActionable =
-    user &&
-    requisition &&
+    !!user &&
+    !!requisition &&
     requisition.assignees?.includes(user.id) &&
     requisition.status !== 'Completed' &&
     requisition.status !== 'Rejected';
-    
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Details for {requisition?.requisitionId}</DialogTitle>
+            <DialogTitle>
+              Details for {requisition?.requisitionId}
+            </DialogTitle>
           </DialogHeader>
 
           <ScrollArea className="max-h-[70vh] p-1 pr-4">
@@ -664,21 +702,25 @@ export default function ViewRequisitionDialog({
                 <div>
                   <Label>Project</Label>
                   <p className="font-medium">
-                    {projects.find((p) => p.id === requisition?.projectId)
-                      ?.projectName || 'N/A'}
+                    {projects.find(
+                      (p) => p.id === requisition?.projectId
+                    )?.projectName || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Department</Label>
                   <p className="font-medium">
-                    {departments.find((d) => d.id === requisition?.departmentId)
-                      ?.name || 'N/A'}
+                    {departments.find(
+                      (d) => d.id === requisition?.departmentId
+                    )?.name || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label>Amount</Label>
                   <p className="font-medium">
-                    ₹ {requisition?.amount.toLocaleString() || 'N/A'}
+                    {requisition?.amount != null
+                      ? `₹ ${requisition.amount.toLocaleString('en-IN')}`
+                      : 'N/A'}
                   </p>
                 </div>
                 <div>
@@ -689,11 +731,15 @@ export default function ViewRequisitionDialog({
                 </div>
                 <div>
                   <Label>Raised By</Label>
-                  <p className="font-medium">{requisition?.raisedBy || 'N/A'}</p>
+                  <p className="font-medium">
+                    {requisition?.raisedBy || 'N/A'}
+                  </p>
                 </div>
                 <div>
                   <Label>Party Name</Label>
-                  <p className="font-medium">{requisition?.partyName || 'N/A'}</p>
+                  <p className="font-medium">
+                    {requisition?.partyName || 'N/A'}
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <Label>Created At</Label>
@@ -706,32 +752,55 @@ export default function ViewRequisitionDialog({
               <div>
                 <Label>Description</Label>
                 <p className="text-sm p-2 bg-muted rounded-md min-h-[60px]">
-                  {requisition?.description || 'No description provided.'}
+                  {requisition?.description ||
+                    'No description provided.'}
                 </p>
               </div>
-              
+
               {!!requisition?.attachments?.length && (
                 <div>
                   <Label>Attachments</Label>
-                   <div className="mt-1 space-y-2">
+                  <div className="mt-1 space-y-2">
                     {requisition.attachments.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                         <div className="flex items-center gap-2 overflow-hidden">
-                           <Paperclip className="h-4 w-4 shrink-0" />
-                           <span className="text-sm font-medium truncate">{file.name}</span>
-                         </div>
-                         <div className="flex items-center shrink-0">
-                             <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                               <a href={file.url} target="_blank" rel="noopener noreferrer">
-                                  <Eye className="mr-2 h-3 w-3" /> View
-                               </a>
-                             </Button>
-                             <Button asChild variant="outline" size="sm" className="h-7">
-                               <a href={file.url} download={file.name}>
-                                  <Download className="mr-2 h-3 w-3" /> Download
-                               </a>
-                             </Button>
-                         </div>
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-muted rounded-md"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <Paperclip className="h-4 w-4 shrink-0" />
+                          <span className="text-sm font-medium truncate">
+                            {file.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center shrink-0">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="mr-2 h-7"
+                          >
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Eye className="mr-2 h-3 w-3" /> View
+                            </a>
+                          </Button>
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-7"
+                          >
+                            <a
+                              href={file.url}
+                              download={file.name}
+                            >
+                              <Download className="mr-2 h-3 w-3" /> Download
+                            </a>
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -752,7 +821,11 @@ export default function ViewRequisitionDialog({
                         id="file-upload"
                         type="file"
                         className="mt-1"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        onChange={(e) =>
+                          setFile(
+                            e.target.files?.[0] || null
+                          )
+                        }
                       />
                     </div>
                   )}
@@ -762,7 +835,9 @@ export default function ViewRequisitionDialog({
                     <Textarea
                       placeholder="Add a comment for your action (optional)"
                       value={actionComment}
-                      onChange={(e) => setActionComment(e.target.value)}
+                      onChange={(e) =>
+                        setActionComment(e.target.value)
+                      }
                     />
                   </div>
 
@@ -771,21 +846,32 @@ export default function ViewRequisitionDialog({
                       {(currentStep?.actions || []).map(
                         (action: string | ActionConfig) => {
                           const actionName =
-                            typeof action === 'string' ? action : action.name;
+                            typeof action === 'string'
+                              ? action
+                              : action.name;
                           const isCreateExpenseAction =
-                            actionName === 'Create Expense Request';
+                            actionName ===
+                            'Create Expense Request';
                           const isDisabled =
                             isLoading ||
                             (isCreateExpenseAction &&
-                              !!requisition.expenseRequestNo);
+                              !!requisition?.expenseRequestNo);
 
                           return (
-                            <Tooltip key={actionName}>
+                            <Tooltip
+                              key={actionName}
+                            >
                               <TooltipTrigger asChild>
                                 <div className="inline-block">
                                   <Button
-                                    onClick={() => handleAction(action)}
-                                    disabled={isDisabled}
+                                    onClick={() =>
+                                      handleAction(
+                                        action
+                                      )
+                                    }
+                                    disabled={
+                                      isDisabled
+                                    }
                                   >
                                     {isLoading && (
                                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -794,14 +880,18 @@ export default function ViewRequisitionDialog({
                                   </Button>
                                 </div>
                               </TooltipTrigger>
-                              {isDisabled && isCreateExpenseAction && (
-                                <TooltipContent>
-                                  <p>
-                                    An expense request has already been created for
-                                    this item.
-                                  </p>
-                                </TooltipContent>
-                              )}
+                              {isDisabled &&
+                                isCreateExpenseAction && (
+                                  <TooltipContent>
+                                    <p>
+                                      An expense
+                                      request has
+                                      already been
+                                      created for
+                                      this item.
+                                    </p>
+                                  </TooltipContent>
+                                )}
                             </Tooltip>
                           );
                         }
@@ -832,44 +922,77 @@ export default function ViewRequisitionDialog({
                           <TableHead>Stage</TableHead>
                           <TableHead>User</TableHead>
                           <TableHead>Deadline</TableHead>
-                          <TableHead>Completed</TableHead>
+                          <TableHead>
+                            Completed
+                          </TableHead>
                           <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {enrichedSteps.length > 0 ? (
-                          enrichedSteps.map((step, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-medium">
-                                {stepDisplay(step)}
-                              </TableCell>
-                              <TableCell>{step.assignedUserName}</TableCell>
-                              <TableCell>{step.deadline}</TableCell>
-                              <TableCell>{step.completionDate}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    step.status === 'Completed'
-                                      ? 'default'
-                                      : step.status === 'Current'
-                                      ? 'secondary'
-                                      : 'outline'
+                        {enrichedSteps.length >
+                        0 ? (
+                          enrichedSteps.map(
+                            (
+                              step,
+                              index
+                            ) => (
+                              <TableRow
+                                key={
+                                  index
+                                }
+                              >
+                                <TableCell className="font-medium">
+                                  {stepDisplay(
+                                    step
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {
+                                    step.assignedUserName
                                   }
-                                  className={
-                                    step.status === 'Completed'
-                                      ? 'bg-green-500 hover:bg-green-600'
-                                      : ''
+                                </TableCell>
+                                <TableCell>
+                                  {
+                                    step.deadline
                                   }
-                                >
-                                  {step.status}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))
+                                </TableCell>
+                                <TableCell>
+                                  {
+                                    step.completionDate
+                                  }
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      step.status ===
+                                      'Completed'
+                                        ? 'default'
+                                        : step.status ===
+                                          'Current'
+                                        ? 'secondary'
+                                        : 'outline'
+                                    }
+                                    className={
+                                      step.status ===
+                                      'Completed'
+                                        ? 'bg-green-500 hover:bg-green-600'
+                                        : ''
+                                    }
+                                  >
+                                    {
+                                      step.status
+                                    }
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          )
                         ) : (
                           <TableRow>
                             <TableCell
-                              colSpan={5}
+                              colSpan={
+                                5
+                              }
                               className="text-center h-24"
                             >
                               {isLoading
@@ -887,12 +1010,12 @@ export default function ViewRequisitionDialog({
           </ScrollArea>
 
           <DialogFooter className="mt-4 pr-4">
-             <Button
-                variant="outline"
-                onClick={handlePrint}
-                disabled={!requisition}
+            <Button
+              variant="outline"
+              onClick={handlePrint}
+              disabled={!requisition}
             >
-                <Printer className="mr-2 h-4 w-4" /> Print
+              <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
@@ -900,6 +1023,7 @@ export default function ViewRequisitionDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       {expenseToCreate && (
         <Dialog
           open={isConfirmExpenseOpen}
@@ -907,9 +1031,12 @@ export default function ViewRequisitionDialog({
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Confirm Expense Creation</DialogTitle>
+              <DialogTitle>
+                Confirm Expense Creation
+              </DialogTitle>
               <DialogDescription>
-                Review and edit the details below before creating the expense
+                Review and edit the details below
+                before creating the expense
                 request.
               </DialogDescription>
             </DialogHeader>
@@ -917,14 +1044,23 @@ export default function ViewRequisitionDialog({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label>Request No.</Label>
-                  <Input value={expenseToCreate.requestNo || ''} disabled />
+                  <Input
+                    value={
+                      expenseToCreate.requestNo ||
+                      ''
+                    }
+                    disabled
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Project</Label>
                   <Input
                     value={
-                      projects.find((p) => p.id === expenseToCreate.projectId)
-                        ?.projectName || ''
+                      projects.find(
+                        (p) =>
+                          p.id ===
+                          expenseToCreate.projectId
+                      )?.projectName || ''
                     }
                     disabled
                   />
@@ -933,11 +1069,15 @@ export default function ViewRequisitionDialog({
               <div className="space-y-1">
                 <Label>Party Name</Label>
                 <Input
-                  value={expenseToCreate.partyName || ''}
+                  value={
+                    expenseToCreate.partyName ||
+                    ''
+                  }
                   onChange={(e) =>
                     setExpenseToCreate({
                       ...expenseToCreate,
-                      partyName: e.target.value,
+                      partyName:
+                        e.target.value,
                     })
                   }
                 />
@@ -948,14 +1088,24 @@ export default function ViewRequisitionDialog({
                   type="text"
                   value={
                     expenseToCreate.amount
-                      ? formatAsCurrency(expenseToCreate.amount)
+                      ? formatAsCurrency(
+                          expenseToCreate.amount
+                        )
                       : ''
                   }
                   onChange={(e) => {
-                    const numericValue = Number(
-                      e.target.value.replace(/[^0-9.-]+/g, '')
-                    );
-                    setExpenseToCreate({ ...expenseToCreate, amount: numericValue });
+                    const numericValue =
+                      Number(
+                        e.target.value.replace(
+                          /[^0-9.-]+/g,
+                          ''
+                        )
+                      );
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      amount:
+                        numericValue,
+                    });
                   }}
                 />
               </div>
@@ -963,11 +1113,15 @@ export default function ViewRequisitionDialog({
                 <div className="space-y-1">
                   <Label>Head of A/c</Label>
                   <Select
-                    value={expenseToCreate.headOfAccount || ''}
+                    value={
+                      expenseToCreate.headOfAccount ||
+                      ''
+                    }
                     onValueChange={(value) =>
                       setExpenseToCreate({
                         ...expenseToCreate,
-                        headOfAccount: value,
+                        headOfAccount:
+                          value,
                       })
                     }
                     disabled
@@ -976,29 +1130,56 @@ export default function ViewRequisitionDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {accountHeads.map((h) => (
-                        <SelectItem key={h.id} value={h.name}>
-                          {h.name}
-                        </SelectItem>
-                      ))}
+                      {accountHeads.map(
+                        (h) => (
+                          <SelectItem
+                            key={
+                              h.id
+                            }
+                            value={
+                              h.name
+                            }
+                          >
+                            {
+                              h.name
+                            }
+                          </SelectItem>
+                        )
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Sub-Head of A/c</Label>
                   <Select
-                    value={expenseToCreate.subHeadOfAccount || ''}
-                    onValueChange={handleSubHeadChange}
+                    value={
+                      expenseToCreate.subHeadOfAccount ||
+                      ''
+                    }
+                    onValueChange={
+                      handleSubHeadChange
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Sub-Head" />
                     </SelectTrigger>
                     <SelectContent>
-                      {subAccountHeads.map((s) => (
-                        <SelectItem key={s.id} value={s.name}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
+                      {subAccountHeads.map(
+                        (s) => (
+                          <SelectItem
+                            key={
+                              s.id
+                            }
+                            value={
+                              s.name
+                            }
+                          >
+                            {
+                              s.name
+                            }
+                          </SelectItem>
+                        )
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1006,26 +1187,46 @@ export default function ViewRequisitionDialog({
               <div className="space-y-1">
                 <Label>Description:</Label>
                 <Textarea
-                  value={expenseToCreate.description || ''}
+                  value={
+                    expenseToCreate.description ||
+                    ''
+                  }
                   onChange={(e) =>
                     setExpenseToCreate({
                       ...expenseToCreate,
-                      description: e.target.value,
+                      description:
+                        e.target.value,
                     })
                   }
                 />
               </div>
               <div className="space-y-1">
-                  <Label>Remarks:</Label>
-                  <Textarea value={expenseToCreate.remarks || ''} onChange={(e) => setExpenseToCreate({...expenseToCreate, remarks: e.target.value})} />
+                <Label>Remarks:</Label>
+                <Textarea
+                  value={
+                    expenseToCreate.remarks ||
+                    ''
+                  }
+                  onChange={(e) =>
+                    setExpenseToCreate({
+                      ...expenseToCreate,
+                      remarks:
+                        e.target.value,
+                    })
+                  }
+                />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
+                <Button variant="outline">
+                  Cancel
+                </Button>
               </DialogClose>
               <Button
-                onClick={handleConfirmCreateExpense}
+                onClick={
+                  handleConfirmCreateExpense
+                }
                 disabled={isCreatingExpense}
               >
                 {isCreatingExpense && (
@@ -1040,175 +1241,3 @@ export default function ViewRequisitionDialog({
     </>
   );
 }
-
-```
-- src/hooks/useAuthorization.ts:
-```ts
-
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useCallback } from 'react';
-
-export const useAuthorization = () => {
-  const { permissions, loading } = useAuth();
-
-  const can = useCallback((action: string, module: string, scope?: string): boolean => {
-    if (loading) {
-      return false; 
-    }
-    
-    // Direct check for simple modules or top-level module actions
-    if (permissions[module]?.includes(action)) {
-      return true;
-    }
-
-    // Check for nested "View Module" permission, e.g., permissions['Expenses']['View Module']
-    if (action === 'View Module' && permissions[module] && typeof permissions[module] === 'object' && !Array.isArray(permissions[module])) {
-      const nestedPermissions = permissions[module] as Record<string, string[]>;
-      if (nestedPermissions['View Module']) {
-        return true;
-      }
-    }
-    
-    // Check for scoped permissions, e.g., Expenses.Departments.dept_id_123
-    const scopedPermissionKey = scope ? `${module}.${scope}` : module;
-    if (scope && permissions[scopedPermissionKey]?.includes(action)) {
-      return true;
-    }
-
-    // Fallback for sub-module actions without a scope, e.g., can('View', 'Expenses.Reports')
-    if (module.includes('.') && permissions[module]?.includes(action)) {
-        return true;
-    }
-
-    // Special check for 'View All' which grants 'View' on all scopes within that module
-    if (action === 'View' && scope) {
-      const viewAllModule = module.split('.')[0]; // e.g., 'Expenses' from 'Expenses.Departments'
-      if (permissions[viewAllModule]?.includes('View All')) {
-        return true;
-      }
-    }
-    
-    return false;
-  }, [permissions, loading]);
-
-  return { can, isLoading: loading };
-};
-
-```
-- src/lib/permission-utils.ts:
-```ts
-
-import type { Role, Department } from '@/lib/types';
-import { permissionModules } from '@/lib/types';
-
-
-// This function should ideally fetch departments from Firestore if they are dynamic.
-// For now, if you have a static or smaller list, you can pass them in.
-// If departments are managed in Firestore, this would need to be async.
-export const getTotalPermissionsForModule = (moduleName: string, departments: Department[] = [], projects: any[] = []): number => {
-    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
-    if (!moduleConfig) return 0;
-    
-    if (Array.isArray(moduleConfig)) {
-      return moduleConfig.length;
-    }
-    
-    let total = 0;
-    for (const key in moduleConfig) {
-      const perms = moduleConfig[key as keyof typeof moduleConfig];
-       if (key === 'View Module') {
-        total += 1;
-        continue;
-      }
-      if (Array.isArray(perms)) {
-        if(key === 'Departments' && departments.length > 0) {
-          total += perms.length * departments.length;
-        } else if (key === 'Projects' && projects.length > 0) {
-            total += perms.length * projects.length;
-        } else {
-          total += perms.length;
-        }
-      }
-    }
-    return total;
-  };
-  
-export const getGrantedPermissionsForModule = (permissions: Record<string, string[]> | undefined, moduleName: string): number => {
-    if (!permissions) return 0;
-    let count = 0;
-
-    const moduleConfig = permissionModules[moduleName as keyof typeof permissionModules];
-
-    if (Array.isArray(moduleConfig)) {
-        // Simple module structure
-        if (permissions[moduleName] && Array.isArray(permissions[moduleName])) {
-            count += permissions[moduleName].length;
-        }
-    } else {
-        // Complex module structure
-        // Count 'View Module' permission if it exists
-        if (permissions[moduleName]?.includes('View Module')) {
-             count++;
-        }
-        
-        // Count permissions for sub-modules
-        Object.keys(moduleConfig).forEach(subModuleKey => {
-            if (subModuleKey === 'View Module') return;
-            
-            const fullKey = `${moduleName}.${subModuleKey}`;
-            
-            if (subModuleKey === 'Departments' || subModuleKey === 'Projects') {
-                // Special handling for dynamic department/project keys
-                Object.keys(permissions).forEach(permissionKey => {
-                    if (permissionKey.startsWith(fullKey)) { // e.g., 'Expenses.Departments.dept_id_123'
-                        if (Array.isArray(permissions[permissionKey])) {
-                            count += permissions[permissionKey].length;
-                        }
-                    }
-                });
-            } else {
-                 if (permissions[fullKey] && Array.isArray(permissions[fullKey])) {
-                    count += permissions[fullKey].length;
-                }
-            }
-        });
-    }
-
-    return count;
-};
-
-```
-- src/middleware/withPrintAuth.ts:
-```ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
-function isPublicPrintRoute(pathname: string) {
-  // Matches /billing-recon/<slug>/<type>/<id>/print
-  if (/^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/.test(pathname)) {
-    return true;
-  }
-  // Matches /daily-requisition/entry-sheet/print or /daily-requisition/entry-sheet/<id>/print
-  if (/^\/daily-requisition\/entry-sheet(\/print|\/[^/]+\/print)$/.test(pathname)) {
-    return true;
-  }
-  return false;
-}
-
-
-export function withPrintAuth(req: NextRequest) {
-  const printAuth = req.cookies.get('print_auth');
-  const { pathname } = req.nextUrl;
-
-  if (isPublicPrintRoute(pathname)) {
-    if (printAuth?.value !== 'ok') {
-      const authUrl = new URL('/print-auth', req.url);
-      authUrl.searchParams.set('next', pathname);
-      return NextResponse.redirect(authUrl);
-    }
-  }
-
-  return NextResponse.next();
-}
-
-```

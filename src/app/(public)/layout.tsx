@@ -1,7 +1,20 @@
+'use client';
 
-// This layout is intentionally empty.
-// The root layout handles the base HTML structure, and this route group
-// ensures public pages do not inherit the protected layout's auth checks.
-export default function PublicLayout({ children }: { children: React.ReactNode }) {
+import { usePathname } from 'next/navigation';
+
+export default function PublicLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+
+  // ✅ Skip any redirect logic for /print-auth
+  // Example: if you normally redirect unauthenticated users, disable it here
+  const isPrintAuth = pathname === '/print-auth';
+
+  // Example:
+  // if (!isPrintAuth && !user) router.push('/login');
+
   return <>{children}</>;
 }
