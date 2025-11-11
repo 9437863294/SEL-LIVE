@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 function isPublicPrintRoute(pathname: string) {
   // /billing-recon/<slug>/<jmc|mvac>/<id>/print
-  if (/^\/billing-recon\/[^/]+\/(jmc|mvac)\/[^/]+\/print$/.test(pathname)) {
+  if (/^\/billing-recon\/[^/]+\/(jmc|mvac|proforma-bill)\/[^/]+\/print$/.test(pathname)) {
     return true;
   }
 

@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -23,6 +22,7 @@ import {
 } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { useMemo } from 'react';
+import { Printer } from 'lucide-react';
 
 interface ViewProformaBillDialogProps {
   isOpen: boolean;
@@ -30,21 +30,29 @@ interface ViewProformaBillDialogProps {
   bill: ProformaBill | null;
 }
 
+const slugify = (text: string | undefined) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+};
+
+
 export default function ViewProformaBillDialog({
   isOpen,
   onOpenChange,
   bill,
 }: ViewProformaBillDialogProps) {
   if (!bill) return null;
-
+  
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if (isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(num);
-  };
+    if(isNaN(num)) return amount;
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  }
   
   const financials = useMemo(() => {
     const subtotal = bill.items.reduce((sum, item) => sum + parseFloat(String(item.totalAmount || '0')), 0);
@@ -52,6 +60,10 @@ export default function ViewProformaBillDialog({
     return { subtotal, payableAmount };
   }, [bill]);
 
+  const handlePrint = () => {
+    const projectSlug = slugify(bill.projectName);
+    window.open(`/billing-recon/${projectSlug}/proforma-bill/${bill.id}/print`, '_blank');
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -130,10 +142,13 @@ export default function ViewProformaBillDialog({
             </div>
           </div>
         </ScrollArea>
-        <DialogFooter className="mt-4 pr-4">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
+        <DialogFooter className="mt-4 pr-4 sm:justify-between">
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" /> Print
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
