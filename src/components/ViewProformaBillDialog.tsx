@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -61,6 +62,7 @@ export default function ViewProformaBillDialog({
   }, [bill]);
 
   const handlePrint = () => {
+    if (!bill) return;
     const projectSlug = slugify(bill.projectName);
     window.open(`/billing-recon/${projectSlug}/proforma-bill/${bill.id}/print`, '_blank');
   };
