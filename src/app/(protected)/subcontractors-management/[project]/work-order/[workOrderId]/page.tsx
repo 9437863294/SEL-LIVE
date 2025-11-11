@@ -71,16 +71,7 @@ export default function WorkOrderDetailsPage() {
                 setWorkOrder(woData);
 
                 const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
-                const certifiedQtyMap = new Map<string, number>();
-                jmcEntries.forEach(entry => {
-                    entry.items.forEach(item => {
-                        // Use a more specific key if available, like a direct reference to BOQ item ID if stored on JMC item
-                        const key = item.boqSlNo;
-                        const currentQty = certifiedQtyMap.get(key) || 0;
-                        certifiedQtyMap.set(key, currentQty + (item.certifiedQty || 0));
-                    });
-                });
-
+                
                 const bills = billsSnap.docs.map(doc => doc.data() as Bill);
                 const billedQtyMap = new Map<string, number>();
                 let totalBilledAmount = 0;
@@ -113,7 +104,6 @@ export default function WorkOrderDetailsPage() {
                         const boqItem = boqItemsMap.get(item.boqItemId);
                         const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                         
-                        // Correctly sum certified quantities by matching the BOQ Serial Number of the Work Order item
                         const totalJmcCertifiedQty = jmcEntries
                             .flatMap(entry => entry.items)
                             .filter(jmcItem => jmcItem.boqSlNo === item.boqSlNo)
@@ -188,12 +178,12 @@ export default function WorkOrderDetailsPage() {
                     </CardContent>
                 </Card>
                  <Card>
-                    <CardHeader><CardTitle>Physical/Financial Progress</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
+                    <CardHeader><CardTitle>Billing & Progress</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
                          <div className="flex justify-between text-sm"><span>Total Billed Amount</span><span className="font-semibold">{formatCurrency(financials.totalBilled)}</span></div>
                          <div>
                             <div className="flex justify-between items-center mb-1">
-                               <p className="text-sm font-medium">Total Progress</p>
+                               <p className="text-sm font-medium">Financial Progress</p>
                                <p className="text-sm font-semibold">{progressPercentage.toFixed(2)}%</p>
                             </div>
                             <Progress value={progressPercentage} />
