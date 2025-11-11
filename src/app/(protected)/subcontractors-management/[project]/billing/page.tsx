@@ -102,7 +102,7 @@ export default function BillingDashboardPage() {
         { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
         { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
         { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
-        { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !can('View', 'Subcontractors Management.Billing') || isAllProjectsView },
+        { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !can('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
       ];
 
       const workflowItems = workflowSteps.map(step => ({

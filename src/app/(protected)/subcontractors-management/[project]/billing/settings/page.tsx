@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -77,7 +78,7 @@ export default function BillingSettingsPage() {
   const projectSlug = params.project as string;
   const { can, isLoading } = useAuthorization();
   
-  const canViewPage = can('View', 'Subcontractors Management.Billing');
+  const canViewPage = can('View Settings', 'Subcontractors Management.Billing');
 
   const settingsItems = settingsItemsBase.map((item) => {
     return {
