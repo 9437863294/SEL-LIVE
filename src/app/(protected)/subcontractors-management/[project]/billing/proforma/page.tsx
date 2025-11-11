@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Library, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -38,6 +38,7 @@ const slugify = (text: string) => {
 
 type EnrichedBillItem = BillItem & {
     orderQty: number;
+    boqQty: number;
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
 };
@@ -55,7 +56,8 @@ export default function CreateProformaPage() {
   
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
-
+  
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -82,16 +84,19 @@ export default function CreateProformaPage() {
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
 
-        const [woSnap, jmcSnap, billsSnap] = await Promise.all([
+        const [woSnap, jmcSnap, billsSnap, boqSnap] = await Promise.all([
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsQuery)
+          getDocs(billsQuery),
+          getDocs(boqQuery)
         ]);
 
         setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
         setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
     };
     fetchProjectAndWorkOrders();
   }, [projectSlug, toast]);
@@ -153,6 +158,9 @@ export default function CreateProformaPage() {
             .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
 
         const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+        
+        const boqItem = boqItems.find(b => b.id === woItem.boqItemId);
+        const boqQty = boqItem ? Number((boqItem as any).QTY || 0) : 0;
 
         return {
             jmcItemId: woItem.id,
@@ -163,6 +171,7 @@ export default function CreateProformaPage() {
             unit: woItem.unit,
             rate: String(woItem.rate),
             orderQty: woItem.orderQty,
+            boqQty: boqQty,
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
             executedQty: String(Math.max(0, availableForBilling)),
@@ -192,7 +201,7 @@ export default function CreateProformaPage() {
     setIsSaving(true);
     
     try {
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
+        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, boqQty, ...rest }) => ({
             ...rest,
             billedQty: parseFloat(rest.billedQty) || 0,
         }));
@@ -281,7 +290,7 @@ export default function CreateProformaPage() {
                       <CardTitle>Items</CardTitle>
                       <CardDescription>Add items from the selected Work Order.</CardDescription>
                   </div>
-                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                  <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                       <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
                   </Button>
               </div>
@@ -293,6 +302,11 @@ export default function CreateProformaPage() {
                           <TableRow>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
+                              <TableHead>Unit</TableHead>
+                              <TableHead>BOQ Qty</TableHead>
+                              <TableHead>Order Qty</TableHead>
+                              <TableHead>JMC Certified Qty</TableHead>
+                              <TableHead>Already Billed Qty</TableHead>
                               <TableHead>Available for Billing</TableHead>
                               <TableHead>Rate</TableHead>
                               <TableHead>Billed Qty</TableHead>
@@ -305,6 +319,11 @@ export default function CreateProformaPage() {
                               <TableRow key={item.jmcItemId}>
                                   <TableCell>{item.boqSlNo}</TableCell>
                                   <TableCell>{item.description}</TableCell>
+                                  <TableCell>{item.unit}</TableCell>
+                                  <TableCell>{item.boqQty}</TableCell>
+                                  <TableCell>{item.orderQty}</TableCell>
+                                  <TableCell>{item.jmcCertifiedQty}</TableCell>
+                                  <TableCell>{item.alreadyBilledQty}</TableCell>
                                   <TableCell className="font-semibold">{item.executedQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
                                   <TableCell>
