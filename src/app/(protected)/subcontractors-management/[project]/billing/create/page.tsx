@@ -165,7 +165,7 @@ export default function CreateBillPage() {
             billedQty: '',
             totalAmount: '',
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
-            alreadyBilledQty,
+            alreadyBilledQty: alreadyBilledForWoItem,
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
