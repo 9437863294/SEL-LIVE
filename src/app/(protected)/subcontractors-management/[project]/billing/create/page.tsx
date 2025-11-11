@@ -392,6 +392,11 @@ export default function CreateBillPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
+  const selectedAdvanceReferences = useMemo(() => 
+    new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
+    [advanceDeductions]
+  );
+
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -561,13 +566,18 @@ export default function CreateBillPage() {
                                 <Card key={adv.id} className="p-4 space-y-3">
                                     <div className="flex items-start gap-2">
                                         <div className="flex-grow space-y-2">
-                                            <Select value={adv.reference} onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}>
-                                                <SelectTrigger><SelectValue placeholder="Select Proforma/Advance" /></SelectTrigger>
+                                            <Select
+                                                value={adv.reference}
+                                                onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select Proforma/Advance" />
+                                                </SelectTrigger>
                                                 <SelectContent>
                                                     {availableProformaBills.map(proforma => (
-                                                    <SelectItem key={proforma.id} value={proforma.id}>
-                                                        {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
-                                                    </SelectItem>
+                                                        <SelectItem key={proforma.id} value={proforma.id} disabled={selectedAdvanceReferences.has(proforma.id) && proforma.id !== adv.reference}>
+                                                            {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                                        </SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -662,3 +672,6 @@ export default function CreateBillPage() {
 
 
 
+
+
+    
