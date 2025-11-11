@@ -74,8 +74,10 @@ export default function WorkOrderDetailsPage() {
                 const certifiedQtyMap = new Map<string, number>();
                 jmcEntries.forEach(entry => {
                     entry.items.forEach(item => {
-                        const currentQty = certifiedQtyMap.get(item.boqSlNo) || 0;
-                        certifiedQtyMap.set(item.boqSlNo, currentQty + (item.certifiedQty || 0));
+                        // Use a more specific key if available, like a direct reference to BOQ item ID if stored on JMC item
+                        const key = item.boqSlNo;
+                        const currentQty = certifiedQtyMap.get(key) || 0;
+                        certifiedQtyMap.set(key, currentQty + (item.certifiedQty || 0));
                     });
                 });
 
@@ -90,6 +92,7 @@ export default function WorkOrderDetailsPage() {
                         totalAdvanceDeducted += deduction.amount;
                     });
                     bill.items.forEach(item => {
+                        // Match on jmcItemId which refers to the WorkOrderItem ID
                         const currentQty = billedQtyMap.get(item.jmcItemId) || 0;
                         billedQtyMap.set(item.jmcItemId, currentQty + (parseFloat(item.billedQty) || 0));
                     });
@@ -109,7 +112,13 @@ export default function WorkOrderDetailsPage() {
                     const enriched = woData.items.map(item => {
                         const boqItem = boqItemsMap.get(item.boqItemId);
                         const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
-                        const totalJmcCertifiedQty = certifiedQtyMap.get(item.boqSlNo || '') || 0;
+                        
+                        // Correctly sum certified quantities by matching the BOQ Serial Number of the Work Order item
+                        const totalJmcCertifiedQty = jmcEntries
+                            .flatMap(entry => entry.items)
+                            .filter(jmcItem => jmcItem.boqSlNo === item.boqSlNo)
+                            .reduce((sum, jmcItem) => sum + (jmcItem.certifiedQty || 0), 0);
+
                         const totalBilledQty = billedQtyMap.get(item.id) || 0;
                         
                         return {
