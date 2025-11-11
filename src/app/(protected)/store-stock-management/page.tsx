@@ -1,9 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Folder,
   Settings,
@@ -14,84 +14,41 @@ import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Project } from '@/lib/types';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
-
-interface ProjectCardProps {
-  item: {
-    icon: LucideIcon;
-    text: string;
-    href: string;
-    description: string;
-    disabled?: boolean;
-    isSettings?: boolean;
-  };
-}
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const slugify = (text: string) => {
     if (!text) return '';
     return text.toString().toLowerCase()
       .replace(/\s+/g, '-')
-      .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-')
+      .replace(/[^\w-]+/g, '')
+      .replace(/--+/g, '-')
       .replace(/^-+/, '')
       .replace(/-+$/, '');
 }
-
-function ProjectCard({ item }: ProjectCardProps) {
-    const cardContent = (
-         <Card
-            className={cn(
-                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-            )}
-            >
-            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
-                <div className="bg-primary/10 p-3 rounded-lg">
-                <item.icon className="w-6 h-6 text-primary" />
-                </div>
-                <div className="flex-1 flex justify-between items-center">
-                    <div>
-                        <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                        <CardDescription className="text-xs">{item.description}</CardDescription>
-                    </div>
-                    {item.isSettings && <Settings className="w-5 h-5 text-muted-foreground" />}
-                </div>
-            </CardHeader>
-        </Card>
-    )
-
-    if (item.href === '#' || item.disabled) {
-        return <div className="h-full">{cardContent}</div>;
-    }
-    
-    return (
-       <Link href={item.href} className="no-underline h-full">
-            {cardContent}
-        </Link>
-    )
-}
-
 
 export default function StoreStockDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canViewModule = can('View Module', 'Store & Stock Management');
+  const router = useRouter();
 
   useEffect(() => {
-    if(isAuthLoading) return;
-    if(!canViewModule) {
-        setIsLoading(false);
-        return;
+    if (isAuthLoading) return;
+    if (!canViewModule) {
+      setIsLoading(false);
+      return;
     }
 
     const fetchProjects = async () => {
         setIsLoading(true);
         try {
-            const querySnapshot = await getDocs(collection(db, 'projects'));
+            const q = query(collection(db, 'projects'), where('stockManagementRequired', '==', true));
+            const querySnapshot = await getDocs(q);
             const projectsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
             setProjects(projectsData);
         } catch (error) {
@@ -102,30 +59,24 @@ export default function StoreStockDashboard() {
     fetchProjects();
   }, [isAuthLoading, canViewModule]);
 
-  const projectItems = useMemo(() => {
-    return projects
-      .filter(project => {
-        const hasStockManagement = project.stockManagementRequired === true;
-        const hasProjectViewPermission = can('View Dashboard', `Store & Stock Management.Projects`, project.id);
-        return hasStockManagement && hasProjectViewPermission;
-      })
-      .map(project => ({
-        icon: Folder,
-        text: project.projectName,
-        href: `/store-stock-management/${slugify(project.projectName)}`,
-        description: `Manage stock for ${project.projectName}.`
-      }));
-  }, [projects, can]);
+  const handleProjectChange = (slug: string) => {
+    if (!slug) return;
+    router.push(`/store-stock-management/${slug}`);
+  };
   
   if (isAuthLoading || (isLoading && canViewModule)) {
       return (
         <div className="w-full p-6">
           <Skeleton className="h-8 w-64 mb-6" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {Array.from({ length: 4 }).map((_, i) => (
-                  <Card key={i} className="h-28"><CardHeader><Skeleton className="h-5 w-3/4" /><Skeleton className="h-4 w-1/2 mt-1" /></CardHeader></Card>
-              ))}
-          </div>
+          <Card>
+            <CardHeader>
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-4 w-3/4" />
+            </CardHeader>
+            <CardContent>
+                <Skeleton className="h-10 w-full" />
+            </CardContent>
+          </Card>
         </div>
       );
   }
@@ -133,7 +84,7 @@ export default function StoreStockDashboard() {
   if (!canViewModule) {
       return (
         <div className="w-full p-6">
-             <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
+             <h1 className="text-3xl font-bold mb-6">Store & Stock Management</h1>
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
@@ -149,13 +100,30 @@ export default function StoreStockDashboard() {
 
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-6">Select a Project</h1>
-       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {projectItems.map((item) => (
-            <ProjectCard key={item.text} item={item} />
-          ))}
-      </div>
+    <div className="flex justify-center items-center h-full p-6">
+      <Card className="w-full max-w-lg">
+          <CardHeader className="text-center">
+              <div className="mx-auto bg-primary/10 p-4 rounded-full w-fit mb-4">
+                <Folder className="w-8 h-8 text-primary" />
+              </div>
+              <CardTitle className="text-2xl">Select a Project</CardTitle>
+              <CardDescription>Choose a project to manage its store and stock.</CardDescription>
+          </CardHeader>
+          <CardContent>
+              <Select onValueChange={handleProjectChange} disabled={isLoading || projects.length === 0}>
+                  <SelectTrigger className="w-full h-12 text-base">
+                      <SelectValue placeholder="Select a project..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                      {projects.map((p) => (
+                          <SelectItem key={p.id} value={slugify(p.projectName)}>
+                              {p.projectName}
+                          </SelectItem>
+                      ))}
+                  </SelectContent>
+              </Select>
+          </CardContent>
+      </Card>
     </div>
   );
 }
