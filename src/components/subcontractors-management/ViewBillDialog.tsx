@@ -8,12 +8,23 @@ import { Separator } from '@/components/ui/separator';
 import type { Bill } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { ScrollArea } from '../ui/scroll-area';
+import { Printer } from 'lucide-react';
 
 interface ViewBillDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   bill: Bill | null;
 }
+
+const slugify = (text: string | undefined) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+};
 
 export default function ViewBillDialog({ isOpen, onOpenChange, bill }: ViewBillDialogProps) {
   if (!bill) return null;
@@ -25,6 +36,12 @@ export default function ViewBillDialog({ isOpen, onOpenChange, bill }: ViewBillD
   }
 
   const grandTotal = bill.items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+  
+  const handlePrint = () => {
+    if (!bill) return;
+    const projectSlug = slugify(bill.projectName);
+    window.open(`/billing-recon/${projectSlug}/bill/${bill.id}/print`, '_blank');
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -92,7 +109,10 @@ export default function ViewBillDialog({ isOpen, onOpenChange, bill }: ViewBillD
             </div>
           </div>
         </ScrollArea>
-        <DialogFooter className="mt-4 pr-4">
+        <DialogFooter className="mt-4 pr-4 sm:justify-between">
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" /> Print
+          </Button>
           <DialogClose asChild>
             <Button variant="outline">Close</Button>
           </DialogClose>
