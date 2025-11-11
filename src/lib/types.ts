@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -480,7 +479,34 @@ export interface Bill {
   woNo: string;
   items: BillItem[];
   createdAt: any;
+  subtotal: number;
+  gstType: 'percentage' | 'manual';
+  gstPercentage: number | null;
+  gstAmount: number;
+  grossAmount: number;
+  retentionType: 'percentage' | 'manual';
+  retentionPercentage: number | null;
+  retentionAmount: number;
+  advanceDeductions: { id: string; reference: string; amount: number; }[];
+  totalDeductions: number;
+  netPayable: number;
   totalAmount?: number;
+}
+
+export interface ProformaBill {
+    id: string;
+    proformaNo: string;
+    date: string;
+    workOrderId: string;
+    workOrderNo: string;
+    subcontractorId: string;
+    subcontractorName: string;
+    items: (Omit<BillItem, 'billedQty'> & { billedQty: number })[];
+    subtotal: number;
+    payablePercentage: number;
+    payableAmount: number;
+    createdAt: any;
+    projectId: string;
 }
 
 /** ---------- Insurance ---------- **/

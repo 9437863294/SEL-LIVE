@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -67,8 +66,9 @@ export default function BillingDashboardPage() {
   
   const billingItems = [
     { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') },
-    { icon: FileClock, text: 'Proforma/Advance Bill', href: `#`, description: 'Create proforma or advance bills.', disabled: true },
+    { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') },
     { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
+    { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
   ];
   
   const canViewModule = can('View', 'Subcontractors Management.Billing');
@@ -78,6 +78,8 @@ export default function BillingDashboardPage() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-64 mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <Skeleton className="h-28" />
+                <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
             </div>
