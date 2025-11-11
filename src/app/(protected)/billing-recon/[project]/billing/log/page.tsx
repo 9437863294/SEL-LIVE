@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { Bill } from '@/lib/types';
-import ViewBillDialog from '@/components/ViewBillDialog';
+import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams } from 'next/navigation';
 
 

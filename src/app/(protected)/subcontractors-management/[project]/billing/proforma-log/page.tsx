@@ -6,16 +6,32 @@ import Link from 'next/link';
 import { ArrowLeft, View, ChevronDown, ChevronRight, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, where, collectionGroup, deleteDoc, doc } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  where,
+  collectionGroup,
+  deleteDoc,
+  doc,
+} from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { Bill, Project, ProformaBill } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
-import ViewProformaBillDialog from '@/components/ViewProformaBillDialog';
+import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,22 +45,23 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
-
 const slugify = (text: string) => {
   if (!text) return '';
-  return text.toString().toLowerCase()
+  return text
+    .toString()
+    .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
-}
+};
 
 interface EnrichedProformaBill extends ProformaBill {
-    deductedAmount: number;
-    availableForDeduction: number;
-    deductingBills: { billNo: string; billDate: string; amount: number }[];
-    projectName?: string;
+  deductedAmount: number;
+  availableForDeduction: number;
+  deductingBills: { billNo: string; billDate: string; amount: number }[];
+  projectName?: string;
 }
 
 export default function ProformaBillLogPage() {
@@ -95,7 +112,7 @@ export default function ProformaBillLogPage() {
       const allBills = billsSnapshot.docs.map(doc => doc.data() as Bill);
 
       const entries = proformaSnapshot.docs.map(doc => {
-        const data = doc.data() as ProformaBill;
+        const { id, ...data } = doc.data() as ProformaBill;
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
 

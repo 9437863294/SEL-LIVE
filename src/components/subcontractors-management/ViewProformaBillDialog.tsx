@@ -20,8 +20,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from './ui/table';
-import { ScrollArea } from './ui/scroll-area';
+} from '../ui/table';
+import { ScrollArea } from '../ui/scroll-area';
 import { useMemo } from 'react';
 import { Printer } from 'lucide-react';
 

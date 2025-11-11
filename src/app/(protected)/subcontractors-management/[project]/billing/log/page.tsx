@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { Bill, Project } from '@/lib/types';
-import ViewBillDialog from '@/components/ViewBillDialog';
+import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import {
