@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -434,6 +435,7 @@ export interface Subcontractor {
   contacts: ContactPerson[];
 }
 
+
 export interface BoqItem {
   id: string;
   [key: string]: any;
@@ -515,9 +517,9 @@ export interface Bill {
   billNo: string;
   billDate: string;
   workOrderId: string;
-  woNo: string;
+  workOrderNo: string;
+  subcontractorId: string;
   items: BillItem[];
-  createdAt: Timestamp;
   subtotal: number;
   gstType: 'percentage' | 'manual';
   gstPercentage: number | null;
@@ -527,10 +529,11 @@ export interface Bill {
   retentionPercentage: number | null;
   retentionAmount: number;
   otherDeduction: number;
-  advanceDeductions: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage', deductionValue: number }[];
+  advanceDeductions: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number }[];
   totalDeductions: number;
   netPayable: number;
-  totalAmount?: number;
+  totalAmount: number;
+  createdAt: any;
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
   stage: string;
   currentStepId: string | null;
@@ -538,6 +541,7 @@ export interface Bill {
   history: ActionLog[];
   deadline?: Timestamp | null;
 }
+
 
 export interface ProformaBill {
     id: string;
@@ -1029,3 +1033,5 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
+
+    
