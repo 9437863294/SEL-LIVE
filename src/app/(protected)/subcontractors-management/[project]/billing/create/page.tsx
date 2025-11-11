@@ -139,6 +139,7 @@ export default function CreateBillPage() {
             const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
             return {
                 ...proforma,
+                totalDeducted,
                 remainingBalance,
             };
         })
@@ -507,39 +508,44 @@ export default function CreateBillPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label>Advance Deductions</Label>
-                                {advanceDeductions.map((adv, index) => (
-                                    <div key={adv.id} className="flex items-center gap-2">
-                                        <Select
-                                            value={adv.reference}
-                                            onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select Proforma/Advance" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {availableProformaBills.map(proforma => (
-                                                    <SelectItem key={proforma.id} value={proforma.id}>
-                                                        {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
+                                {advanceDeductions.map((adv) => {
+                                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
+                                return (
+                                <Card key={adv.id} className="p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                    <div className="flex-grow space-y-2">
+                                        <Select value={adv.reference} onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select Proforma/Advance" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {availableProformaBills.map(proforma => (
+                                            <SelectItem key={proforma.id} value={proforma.id}>
+                                                {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                            </SelectItem>
+                                            ))}
+                                        </SelectContent>
                                         </Select>
                                         <Input
                                             type="number"
-                                            placeholder="Amount"
+                                            placeholder="Amount to Deduct"
                                             value={adv.amount}
                                             onChange={(e) => handleAdvanceChange(adv.id, 'amount', e.target.value)}
+                                            max={selectedProforma?.remainingBalance || 0}
                                         />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => removeAdvanceField(adv.id)}
-                                        >
-                                            <Trash2 className="h-4 w-4 text-destructive"/>
-                                        </Button>
                                     </div>
-                                ))}
+                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                    </div>
+                                    {selectedProforma && (
+                                    <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
+                                        <div className="flex justify-between"><span>Total Proforma Value:</span> <span>{formatCurrency(selectedProforma.payableAmount || 0)}</span></div>
+                                        <div className="flex justify-between"><span>Previously Deducted:</span> <span>{formatCurrency(selectedProforma.totalDeducted || 0)}</span></div>
+                                        <div className="flex justify-between font-medium"><span>Available Balance:</span> <span>{formatCurrency(selectedProforma.remainingBalance || 0)}</span></div>
+                                        <div className="flex justify-between font-bold"><span>Balance After Deduction:</span> <span>{formatCurrency((selectedProforma.remainingBalance || 0) - adv.amount)}</span></div>
+                                    </div>
+                                    )}
+                                </Card>
+                                )})}
                                 <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
