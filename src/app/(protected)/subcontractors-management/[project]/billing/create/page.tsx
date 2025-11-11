@@ -37,6 +37,7 @@ const slugify = (text: string) => {
 
 // Add these types to include the new fields
 type EnrichedBillItem = BillItem & {
+    orderQty: number; // Added field
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
 };
@@ -164,6 +165,7 @@ export default function CreateBillPage() {
             executedQty: String(Math.max(0, availableForBilling)), // Available qty for billing
             billedQty: '',
             totalAmount: '',
+            orderQty: woItem.orderQty, // Add orderQty here
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
         };
@@ -185,7 +187,7 @@ export default function CreateBillPage() {
     try {
         const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
         
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, ...rest }) => ({
+        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
             ...rest,
             billedQty: parseFloat(rest.billedQty) || 0,
         }));
@@ -280,6 +282,7 @@ export default function CreateBillPage() {
                           <TableRow>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
+                              <TableHead>Order Qty</TableHead>
                               <TableHead>JMC Certified Qty</TableHead>
                               <TableHead>Already Billed Qty</TableHead>
                               <TableHead>Available for Billing</TableHead>
@@ -294,6 +297,7 @@ export default function CreateBillPage() {
                               <TableRow key={item.jmcItemId}>
                                   <TableCell>{item.boqSlNo}</TableCell>
                                   <TableCell>{item.description}</TableCell>
+                                  <TableCell>{item.orderQty}</TableCell>
                                   <TableCell>{item.jmcCertifiedQty}</TableCell>
                                   <TableCell>{item.alreadyBilledQty}</TableCell>
                                   <TableCell className="font-semibold">{item.executedQty}</TableCell>
