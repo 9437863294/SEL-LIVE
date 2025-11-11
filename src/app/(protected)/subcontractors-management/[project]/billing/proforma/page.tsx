@@ -12,7 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';

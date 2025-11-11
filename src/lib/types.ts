@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -515,10 +514,10 @@ export interface Bill {
   projectName?: string;
   billNo: string;
   billDate: string;
+  workOrderId: string;
   woNo: string;
-  workOrderId?: string;
   items: BillItem[];
-  createdAt: any;
+  createdAt: Timestamp;
   subtotal: number;
   gstType: 'percentage' | 'manual';
   gstPercentage: number | null;
@@ -532,12 +531,12 @@ export interface Bill {
   totalDeductions: number;
   netPayable: number;
   totalAmount?: number;
-  // Workflow fields
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
   stage: string;
   currentStepId: string | null;
   assignees: string[];
   history: ActionLog[];
+  deadline?: Timestamp | null;
 }
 
 export interface ProformaBill {
@@ -1030,4 +1029,3 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
-
