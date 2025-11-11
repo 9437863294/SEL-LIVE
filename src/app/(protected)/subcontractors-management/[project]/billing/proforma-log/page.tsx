@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where, collectionGroup } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -48,19 +48,25 @@ export default function ProformaBillLogPage() {
       try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectSnap = await getDocs(projectsQuery);
-        
-        const project = projectSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+        const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
-        if (!project) {
-            console.error("Project not found");
-            return;
+        let proformaQuery;
+        let billsQuery;
+
+        if (projectSlug === 'all') {
+            proformaQuery = query(collectionGroup(db, 'proformaBills'));
+            billsQuery = query(collectionGroup(db, 'bills'));
+        } else {
+            const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
+            if (!project) {
+                console.error("Project not found");
+                setIsLoading(false);
+                return;
+            }
+            const projectId = project.id;
+            proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'));
+            billsQuery = query(collection(db, 'projects', projectId, 'bills'));
         }
-        const projectId = project.id;
-
-        const proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'), orderBy('createdAt', 'desc'));
-        const billsQuery = query(collection(db, 'projects', projectId, 'bills'));
 
         const [proformaSnapshot, billsSnapshot] = await Promise.all([
           getDocs(proformaQuery),
@@ -83,7 +89,7 @@ export default function ProformaBillLogPage() {
             .filter(bill => bill.advanceDeductions?.some(d => d.reference === doc.id))
             .map(bill => ({
               billNo: bill.billNo,
-              amount: bill.advanceDeductions.find(d => d.reference === doc.id)?.amount || 0
+              amount: bill.advanceDeductions?.find(d => d.reference === doc.id)?.amount || 0
             }));
           
           return {
@@ -95,6 +101,14 @@ export default function ProformaBillLogPage() {
             deductingBills
           } as EnrichedProformaBill;
         });
+
+        // Client-side sorting
+        entries.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+            return dateB - dateA;
+        });
+
         setProformaBills(entries);
       } catch (error) {
         console.error("Error fetching proforma bills: ", error);
