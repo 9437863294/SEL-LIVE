@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where, collectionGroup } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -22,7 +22,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -41,21 +41,29 @@ export default function BillLogPage() {
       if (!projectSlug) return;
       setIsLoading(true);
       try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectSnap = await getDocs(projectsQuery);
-        
-        const project = projectSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+        let billsQuery;
 
-        if (!project) {
-            console.error("Project not found");
-            return;
+        if (projectSlug === 'all') {
+            billsQuery = query(collectionGroup(db, 'bills'), orderBy('createdAt', 'desc'));
+        } else {
+            const projectsQuery = query(collection(db, 'projects'));
+            const projectSnap = await getDocs(projectsQuery);
+            
+            const project = projectSnap.docs
+                .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+                .find(p => slugify(p.projectName) === projectSlug);
+
+            if (!project) {
+                console.error("Project not found for slug:", projectSlug);
+                toast({ title: 'Error', description: `Project with slug "${projectSlug}" not found.`, variant: 'destructive' });
+                setIsLoading(false);
+                return;
+            }
+            const projectId = project.id;
+            billsQuery = query(collection(db, 'projects', projectId, 'bills'), orderBy('createdAt', 'desc'));
         }
-        const projectId = project.id;
-
-        const q = query(collection(db, 'projects', projectId, 'bills'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
+        
+        const querySnapshot = await getDocs(billsQuery);
         const entries = querySnapshot.docs.map(doc => {
           const data = doc.data();
           return {
@@ -66,6 +74,7 @@ export default function BillLogPage() {
           } as Bill;
         });
         setBills(entries);
+
       } catch (error) {
         console.error("Error fetching bills: ", error);
         toast({ title: 'Error', description: 'Failed to fetch bills for this project.', variant: 'destructive' });
