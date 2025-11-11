@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ReactNode } from 'react';
 
 interface ReportCardProps {
   item: {
     icon: LucideIcon;
-    text: string;
+    title: ReactNode;
     href: string;
     description: string;
     disabled?: boolean;
@@ -77,7 +78,8 @@ export default function SubcontractorsReportsPage() {
 
     const reportItems = reportItemsBase.map(item => ({
         ...item,
-        disabled: !can(item.permission, 'Subcontractors Management.Reports'),
+        title: item.text,
+        disabled: !can('View Reports', 'Subcontractors Management.Reports'),
     }));
     
     if (isLoading) {
