@@ -8,6 +8,7 @@ import {
   FileText,
   Calculator,
   ShieldAlert,
+  BarChart3,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -28,15 +29,13 @@ interface ReportCardProps {
 }
 
 const reportItemsBase = [
-  // Add specific report cards here in the future
-  // Example:
-  // { 
-  //   icon: BarChart3, 
-  //   text: 'Subcontractor Performance', 
-  //   description: 'Analyze performance metrics for subcontractors.',
-  //   href: 'reports/performance',
-  //   disabled: false,
-  // },
+  { 
+    icon: BarChart3, 
+    text: 'Work Order Progress', 
+    description: 'Track financial and physical progress of work orders.',
+    href: 'reports/work-order-progress',
+    permission: 'View',
+  },
 ];
 
 function ReportCard({ item }: ReportCardProps) {
@@ -78,15 +77,15 @@ export default function SubcontractorsReportsPage() {
 
     const reportItems = reportItemsBase.map(item => ({
         ...item,
-        disabled: !can('View', 'Subcontractors Management.Reports') || item.disabled,
+        disabled: !can(item.permission, 'Subcontractors Management.Reports'),
     }));
     
     if (isLoading) {
         return (
-             <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8">
-                <Skeleton className="h-10 w-64 mb-6" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <Skeleton className="h-48" />
+             <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
+                <Skeleton className="h-10 w-48 mb-6" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <Skeleton className="h-56" />
                 </div>
             </div>
         )

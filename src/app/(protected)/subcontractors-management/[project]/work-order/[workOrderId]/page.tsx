@@ -10,10 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill } from '@/lib/types';
+import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill, ProformaBill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
+import { Progress } from '@/components/ui/progress';
 
 type EnrichedWorkOrderItem = WorkOrderItem & {
     boqQty: string;
@@ -30,6 +31,11 @@ export default function WorkOrderDetailsPage() {
 
     const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
     const [enrichedItems, setEnrichedItems] = useState<EnrichedWorkOrderItem[]>([]);
+    const [financials, setFinancials] = useState({
+        totalAdvanceTaken: 0,
+        totalAdvanceDeducted: 0,
+        totalBilled: 0,
+    });
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -49,15 +55,12 @@ export default function WorkOrderDetailsPage() {
                 }
                 
                 const woDocRef = doc(db, 'projects', projectData.id, 'workOrders', workOrderId);
-                const jmcQuery = query(collection(db, 'projects', projectData.id, 'jmcEntries'));
-                const billsQuery = query(collection(db, 'projects', projectData.id, 'bills'));
-
-                const [woDocSnap, jmcSnap, billsSnap] = await Promise.all([
+                const [woDocSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
                     getDoc(woDocRef),
-                    getDocs(jmcQuery),
-                    getDocs(billsQuery)
+                    getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries'), where('woNo', '==', (await getDoc(woDocRef)).data()?.workOrderNo))),
+                    getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
+                    getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
-
 
                 if (!woDocSnap.exists()) {
                     toast({ title: 'Work Order not found', variant: 'destructive' });
@@ -69,7 +72,6 @@ export default function WorkOrderDetailsPage() {
 
                 const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 const certifiedQtyMap = new Map<string, number>();
-
                 jmcEntries.forEach(entry => {
                     entry.items.forEach(item => {
                         const currentQty = certifiedQtyMap.get(item.boqSlNo) || 0;
@@ -79,14 +81,25 @@ export default function WorkOrderDetailsPage() {
 
                 const bills = billsSnap.docs.map(doc => doc.data() as Bill);
                 const billedQtyMap = new Map<string, number>();
+                let totalBilledAmount = 0;
+                let totalAdvanceDeducted = 0;
+
                 bills.forEach(bill => {
+                    totalBilledAmount += bill.netPayable || 0;
+                    (bill.advanceDeductions || []).forEach(deduction => {
+                        totalAdvanceDeducted += deduction.amount;
+                    });
                     bill.items.forEach(item => {
-                        // Assuming jmcItemId holds the work order item id
                         const currentQty = billedQtyMap.get(item.jmcItemId) || 0;
                         billedQtyMap.set(item.jmcItemId, currentQty + (parseFloat(item.billedQty) || 0));
                     });
                 });
                 
+                const proformaBills = proformaSnap.docs.map(doc => doc.data() as ProformaBill);
+                const totalAdvanceTaken = proformaBills.reduce((sum, bill) => sum + bill.payableAmount, 0);
+
+                setFinancials({ totalAdvanceTaken, totalAdvanceDeducted, totalBilled: totalBilledAmount });
+
                 const boqItemIds = woData.items.map(item => item.boqItemId);
                 if (boqItemIds.length > 0) {
                     const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'), where('__name__', 'in', boqItemIds));
@@ -136,11 +149,15 @@ export default function WorkOrderDetailsPage() {
     if (!workOrder) {
         return <p>Work Order not found.</p>;
     }
+    
+    const progressPercentage = workOrder.totalAmount > 0 ? (financials.totalBilled / workOrder.totalAmount) * 100 : 0;
+    const netAdvanceBalance = financials.totalAdvanceTaken - financials.totalAdvanceDeducted;
+
 
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center gap-2">
-                <Link href={`/subcontractors-management/${projectSlug}/work-order`}>
+                <Link href={`/subcontractors-management/${projectSlug}/reports/work-order-progress`}>
                     <Button variant="ghost" size="icon">
                         <ArrowLeft className="h-6 w-6" />
                     </Button>
@@ -150,26 +167,31 @@ export default function WorkOrderDetailsPage() {
                     <p className="text-sm text-muted-foreground">WO No: {workOrder.workOrderNo}</p>
                 </div>
             </div>
-
-            <Card className="mb-6">
-                <CardHeader>
-                    <CardTitle>Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <p className="text-sm text-muted-foreground">Date</p>
-                        <p className="font-medium">{formatDate(workOrder.date)}</p>
-                    </div>
-                     <div>
-                        <p className="text-sm text-muted-foreground">Subcontractor</p>
-                        <p className="font-medium">{workOrder.subcontractorName}</p>
-                    </div>
-                     <div>
-                        <p className="text-sm text-muted-foreground">Total Amount</p>
-                        <p className="font-bold text-lg">{formatCurrency(workOrder.totalAmount)}</p>
-                    </div>
-                </CardContent>
-            </Card>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <Card>
+                    <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                        <div className="flex justify-between"><span>Work Order Value</span><span className="font-semibold">{formatCurrency(workOrder.totalAmount)}</span></div>
+                        <div className="flex justify-between"><span>Total Advance Taken</span><span className="font-semibold">{formatCurrency(financials.totalAdvanceTaken)}</span></div>
+                        <div className="flex justify-between"><span>Total Advance Deducted</span><span className="font-semibold text-destructive">-{formatCurrency(financials.totalAdvanceDeducted)}</span></div>
+                        <div className="flex justify-between font-bold border-t pt-2"><span>Net Advance Balance</span><span>{formatCurrency(netAdvanceBalance)}</span></div>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader><CardTitle>Physical/Financial Progress</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                         <div className="flex justify-between text-sm"><span>Total Billed Amount</span><span className="font-semibold">{formatCurrency(financials.totalBilled)}</span></div>
+                         <div>
+                            <div className="flex justify-between items-center mb-1">
+                               <p className="text-sm font-medium">Total Progress</p>
+                               <p className="text-sm font-semibold">{progressPercentage.toFixed(2)}%</p>
+                            </div>
+                            <Progress value={progressPercentage} />
+                         </div>
+                    </CardContent>
+                </Card>
+            </div>
 
              <Card>
                 <CardHeader>
