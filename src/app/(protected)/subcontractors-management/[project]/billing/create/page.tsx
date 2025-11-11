@@ -12,7 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -35,6 +35,13 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 }
 
+// Add these types to include the new fields
+type EnrichedBillItem = BillItem & {
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+};
+
+
 export default function CreateBillPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -42,19 +49,24 @@ export default function CreateBillPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [details, setDetails] = useState(initialBillDetails);
-  const [items, setItems] = useState<BillItem[]>([]);
+  const [items, setItems] = useState<EnrichedBillItem[]>([]); // Use the enriched type
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
+  // State for JMC and Bill data
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+
   useEffect(() => {
-    const fetchWorkOrders = async () => {
+    const fetchProjectAndWorkOrders = async () => {
         if (!projectSlug) return;
+        
         const projectsQuery = query(collection(db, 'projects'));
         const projectSnap = await getDocs(projectsQuery);
-        
         const project = projectSnap.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as Project))
             .find(p => slugify(p.projectName) === projectSlug);
@@ -64,13 +76,23 @@ export default function CreateBillPage() {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             return;
         }
-        const projectId = project.id;
-        
-        const woQuery = query(collection(db, 'projects', projectId, 'workOrders'));
-        const woSnap = await getDocs(woQuery);
+        setCurrentProject(project);
+
+        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
+        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+
+        const [woSnap, jmcSnap, billsSnap] = await Promise.all([
+          getDocs(woQuery),
+          getDocs(jmcQuery),
+          getDocs(billsQuery)
+        ]);
+
         setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
     };
-    fetchWorkOrders();
+    fetchProjectAndWorkOrders();
   }, [projectSlug, toast]);
   
   useEffect(() => {
@@ -88,7 +110,7 @@ export default function CreateBillPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty); // ExecutedQty holds available qty
+      const availableQty = parseFloat(item.executedQty); // executedQty holds the billable quantity now
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
@@ -116,18 +138,36 @@ export default function CreateBillPage() {
   };
   
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
-      const newBillItems: BillItem[] = selectedWoItems.map(woItem => ({
-        jmcItemId: woItem.id, 
-        jmcEntryId: '', 
-        jmcNo: '', 
-        boqSlNo: woItem.boqSlNo || '',
-        description: woItem.description,
-        unit: woItem.unit,
-        rate: String(woItem.rate),
-        executedQty: String(woItem.orderQty), 
-        billedQty: '',
-        totalAmount: '',
-      }));
+      const newBillItems: EnrichedBillItem[] = selectedWoItems.map(woItem => {
+          
+        const totalJmcCertifiedForBoqItem = jmcEntries
+            .flatMap(jmc => jmc.items)
+            .filter(jmcItem => jmcItem.boqSlNo === woItem.boqSlNo)
+            .reduce((sum, item) => sum + (item.certifiedQty || 0), 0);
+        
+        const alreadyBilledForWoItem = bills
+            .filter(bill => bill.workOrderId === details.workOrderId)
+            .flatMap(bill => bill.items)
+            .filter(billItem => billItem.jmcItemId === woItem.id) // jmcItemId is used to store workOrderItemId
+            .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+
+        const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+
+        return {
+            jmcItemId: woItem.id, // Storing work order item id for tracking
+            jmcEntryId: '',
+            jmcNo: '',
+            boqSlNo: woItem.boqSlNo || '',
+            description: woItem.description,
+            unit: woItem.unit,
+            rate: String(woItem.rate),
+            executedQty: String(Math.max(0, availableForBilling)), // Available qty for billing
+            billedQty: '',
+            totalAmount: '',
+            jmcCertifiedQty: totalJmcCertifiedForBoqItem,
+            alreadyBilledQty,
+        };
+      });
       setItems(prev => [...prev, ...newBillItems]);
   }
 
@@ -144,15 +184,24 @@ export default function CreateBillPage() {
     
     try {
         const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+        
+        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, ...rest }) => ({
+            ...rest,
+            billedQty: parseFloat(rest.billedQty) || 0,
+        }));
+
         const billData = {
             ...details,
             workOrderNo: selectedWorkOrder.workOrderNo,
-            items: items.map(item => ({...item, billedQty: parseFloat(item.billedQty)})),
+            items: itemsToSave,
             totalAmount,
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            projectId: currentProject?.id
         };
-        const projectId = selectedWorkOrder.projectId;
-        await addDoc(collection(db, 'projects', projectId, 'bills'), billData);
+
+        if(!currentProject) throw new Error("Project ID is missing");
+        
+        await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
         
         toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
         router.push(`/subcontractors-management/${projectSlug}/billing/log`);
@@ -231,8 +280,9 @@ export default function CreateBillPage() {
                           <TableRow>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
-                              <TableHead>Unit</TableHead>
-                              <TableHead>Ordered Qty</TableHead>
+                              <TableHead>JMC Certified Qty</TableHead>
+                              <TableHead>Already Billed Qty</TableHead>
+                              <TableHead>Available for Billing</TableHead>
                               <TableHead>Rate</TableHead>
                               <TableHead>Billed Qty</TableHead>
                               <TableHead>Total Amount</TableHead>
@@ -244,8 +294,9 @@ export default function CreateBillPage() {
                               <TableRow key={item.jmcItemId}>
                                   <TableCell>{item.boqSlNo}</TableCell>
                                   <TableCell>{item.description}</TableCell>
-                                  <TableCell>{item.unit}</TableCell>
-                                  <TableCell>{item.executedQty}</TableCell>
+                                  <TableCell>{item.jmcCertifiedQty}</TableCell>
+                                  <TableCell>{item.alreadyBilledQty}</TableCell>
+                                  <TableCell className="font-semibold">{item.executedQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
                                   <TableCell>
                                       <Input 
