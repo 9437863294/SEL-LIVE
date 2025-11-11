@@ -55,7 +55,7 @@ export default function WorkOrderDetailsPage() {
                 const [woDocSnap, jmcSnap, billsSnap] = await Promise.all([
                     getDoc(woDocRef),
                     getDocs(jmcQuery),
-                    getDocs(billsSnap)
+                    getDocs(billsQuery)
                 ]);
 
 
