@@ -15,13 +15,14 @@ import { format } from 'date-fns';
 import type { Bill, Project } from '@/lib/types';
 import ViewBillDialog from '@/components/ViewBillDialog';
 import { useParams } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
 
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -104,8 +105,8 @@ export default function BillLogPage() {
                   <TableHead>Bill No.</TableHead>
                   <TableHead>Bill Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
-                  <TableHead>No. of Items</TableHead>
-                  <TableHead>Total Amount</TableHead>
+                  <TableHead>Net Payable</TableHead>
+                  <TableHead>Deducted Advances</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -116,8 +117,8 @@ export default function BillLogPage() {
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                     </TableRow>
                   ))
@@ -127,10 +128,22 @@ export default function BillLogPage() {
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
                       <TableCell>{bill.woNo}</TableCell>
-                      <TableCell>{bill.items.length}</TableCell>
-                      <TableCell>{formatCurrency(bill.totalAmount || 0)}</TableCell>
+                      <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1 items-start">
+                          {(bill.advanceDeductions && bill.advanceDeductions.length > 0) ? (
+                            bill.advanceDeductions.map(adv => (
+                              <Badge key={adv.id} variant="secondary">
+                                {adv.reference}: {formatCurrency(adv.amount)}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">None</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleViewDetails(bill)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => {e.stopPropagation(); handleViewDetails(bill)}}>
                           <View className="h-4 w-4" />
                         </Button>
                       </TableCell>
