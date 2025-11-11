@@ -65,7 +65,11 @@ export default function CreateBillPage() {
   const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
   const [gstPercentage, setGstPercentage] = useState<number>(18);
   const [gstAmount, setGstAmount] = useState<number>(0);
-  const [retentionAmount, setRetentionAmount] = useState<number>(0);
+
+  const [retentionType, setRetentionType] = useState<'percentage' | 'manual'>('percentage');
+  const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
+  const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
+  
   const [advanceDeduction, setAdvanceDeduction] = useState<number>(0);
 
 
@@ -169,12 +173,12 @@ export default function CreateBillPage() {
             description: woItem.description,
             unit: woItem.unit,
             rate: String(woItem.rate),
-            executedQty: String(Math.max(0, availableForBilling)),
-            billedQty: '',
-            totalAmount: '',
             orderQty: woItem.orderQty,
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
+            executedQty: String(Math.max(0, availableForBilling)),
+            billedQty: '',
+            totalAmount: '',
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
@@ -187,11 +191,12 @@ export default function CreateBillPage() {
   const financials = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
     const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
+    const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
     const grossAmount = subtotal + finalGstAmount;
-    const totalDeductions = retentionAmount + advanceDeduction;
+    const totalDeductions = finalRetentionAmount + advanceDeduction;
     const netPayable = grossAmount - totalDeductions;
-    return { subtotal, finalGstAmount, grossAmount, totalDeductions, netPayable };
-  }, [items, gstType, gstPercentage, gstAmount, retentionAmount, advanceDeduction]);
+    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable };
+  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeduction]);
 
   const handleSave = async () => {
     if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
@@ -215,11 +220,13 @@ export default function CreateBillPage() {
             gstPercentage: gstType === 'percentage' ? gstPercentage : null,
             gstAmount: financials.finalGstAmount,
             grossAmount: financials.grossAmount,
-            retentionAmount,
+            retentionType,
+            retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
+            retentionAmount: financials.finalRetentionAmount,
             advanceDeduction,
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
-            totalAmount: financials.netPayable, // Storing net as the final amount
+            totalAmount: financials.netPayable,
             createdAt: serverTimestamp(),
             projectId: currentProject?.id
         };
@@ -351,41 +358,56 @@ export default function CreateBillPage() {
 
         <Card className="mt-6">
             <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="md:col-span-2 space-y-4">
-                    <Label>GST</Label>
-                    <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4">
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="percentage" id="gst-percentage" />
-                          <Label htmlFor="gst-percentage">By Percentage</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="manual" id="gst-manual" />
-                          <Label htmlFor="gst-manual">Manual Entry</Label>
-                        </div>
-                    </RadioGroup>
-                    {gstType === 'percentage' ? (
-                        <div className="flex items-center gap-2">
-                            <Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
-                            <span className="text-muted-foreground">%</span>
-                        </div>
-                    ) : (
-                        <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} />
-                    )}
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                    <div>
+                        <Label>GST</Label>
+                        <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4 mt-2">
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="percentage" id="gst-percentage" />
+                              <Label htmlFor="gst-percentage">By Percentage</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="manual" id="gst-manual" />
+                              <Label htmlFor="gst-manual">Manual Entry</Label>
+                            </div>
+                        </RadioGroup>
+                        {gstType === 'percentage' ? (
+                            <div className="flex items-center gap-2 mt-2">
+                                <Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
+                                <span className="text-muted-foreground">%</span>
+                            </div>
+                        ) : (
+                            <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
+                        )}
+                    </div>
                      <Separator />
-                    <Label>Deductions</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <Label htmlFor="retention">Retention Amount</Label>
-                            <Input id="retention" type="number" value={retentionAmount} onChange={e => setRetentionAmount(parseFloat(e.target.value) || 0)} />
-                        </div>
-                        <div className="space-y-1">
-                            <Label htmlFor="advance">Advance Deduction</Label>
-                            <Input id="advance" type="number" value={advanceDeduction} onChange={e => setAdvanceDeduction(parseFloat(e.target.value) || 0)} />
+                    <div>
+                        <Label>Deductions</Label>
+                        <div className="space-y-4 mt-2">
+                            <div className="space-y-2">
+                                <Label>Retention</Label>
+                                <RadioGroup value={retentionType} onValueChange={(v) => setRetentionType(v as any)} className="flex gap-4">
+                                    <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="ret-percentage" /><Label htmlFor="ret-percentage">Percentage</Label></div>
+                                    <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="ret-manual" /><Label htmlFor="ret-manual">Manual</Label></div>
+                                </RadioGroup>
+                                {retentionType === 'percentage' ? (
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(parseFloat(e.target.value) || 0)} />
+                                        <span className="text-muted-foreground">%</span>
+                                    </div>
+                                ) : (
+                                    <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="advance">Advance Deduction</Label>
+                                <Input id="advance" type="number" value={advanceDeduction} onChange={e => setAdvanceDeduction(parseFloat(e.target.value) || 0)} />
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div className="md:col-span-2 space-y-3 p-4 bg-muted/50 rounded-lg">
+                <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
                     <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Subtotal</span>
                         <span className="font-medium">{formatCurrency(financials.subtotal)}</span>
@@ -423,3 +445,4 @@ export default function CreateBillPage() {
   );
 }
 
+    
