@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
+import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,12 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, deleteDoc, query, where } from 'firebase/firestore';
-import type { Subcontractor, Project, ContactPerson, WorkOrder } from '@/lib/types';
+import type { Subcontractor, Project, ContactPerson, WorkOrder, Bill, ProformaBill } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { useParams } from 'next/navigation';
 import { format } from 'date-fns';
 
 const slugify = (text: string) => {
@@ -23,7 +23,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -31,12 +31,15 @@ const slugify = (text: string) => {
 export default function ManageSubcontractorsPage() {
   const { toast } = useToast();
   const params = useParams();
+  const router = useRouter();
   const projectSlug = params.project as string;
   const { can, isLoading: authLoading } = useAuthorization();
 
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
@@ -59,9 +62,11 @@ export default function ManageSubcontractorsPage() {
       }
       setCurrentProject(project);
 
-      const [subsSnap, woSnap] = await Promise.all([
+      const [subsSnap, woSnap, billsSnap, proformaSnap] = await Promise.all([
         getDocs(collection(db, 'projects', project.id, 'subcontractors')),
-        getDocs(collection(db, 'projects', project.id, 'workOrders'))
+        getDocs(collection(db, 'projects', project.id, 'workOrders')),
+        getDocs(collection(db, 'projects', project.id, 'bills')),
+        getDocs(collection(db, 'projects', project.id, 'proformaBills')),
       ]);
 
       const subsData = subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor));
@@ -69,6 +74,12 @@ export default function ManageSubcontractorsPage() {
 
       const woData = woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder));
       setWorkOrders(woData);
+      
+      const billsData = billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
+      setBills(billsData);
+      
+      const proformaData = proformaSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill));
+      setProformaBills(proformaData);
 
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
@@ -117,13 +128,57 @@ export default function ManageSubcontractorsPage() {
   const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   const formatDate = (date: any) => date ? format(new Date(date), 'dd MMM, yyyy') : 'N/A';
 
-  if (authLoading || (isLoading && canViewPage)) {
-    return <div className="w-full px-4 sm:px-6 lg:px-8"><Skeleton className="h-96" /></div>;
-  }
+  const enrichedWorkOrdersBySubcontractor = useMemo(() => {
+    const map = new Map<string, any[]>();
 
+    workOrders.forEach(wo => {
+        const woBills = bills.filter(b => b.workOrderId === wo.id);
+        const totalBilled = woBills.reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+
+        const woProformaBills = proformaBills.filter(pb => pb.workOrderId === wo.id);
+        const totalAdvanceTaken = woProformaBills.reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
+
+        const allAdvanceDeductions = bills.flatMap(b => b.advanceDeductions || []);
+        const deductedForThisWo = allAdvanceDeductions
+            .filter(deduction => woProformaBills.some(proforma => proforma.id === deduction.reference))
+            .reduce((sum, d) => sum + d.amount, 0);
+
+        const enrichedWO = {
+            ...wo,
+            totalBilled,
+            totalAdvanceTaken,
+            totalAdvanceDeducted: deductedForThisWo,
+            advanceBalance: totalAdvanceTaken - deductedForThisWo,
+            workOrderBalance: wo.totalAmount - totalBilled,
+        };
+
+        if (!map.has(wo.subcontractorId)) {
+            map.set(wo.subcontractorId, []);
+        }
+        map.get(wo.subcontractorId)!.push(enrichedWO);
+    });
+    return map;
+  }, [workOrders, bills, proformaBills]);
+
+  if (authLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 w-32" />
+            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <Skeleton className="h-96 w-full" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+  }
+  
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex items-center gap-2">
               <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
               <h1 className="text-xl font-bold">Manage Subcontractors</h1>
@@ -172,7 +227,7 @@ export default function ManageSubcontractorsPage() {
                         subcontractors.map(sub => {
                             const primaryContact = getPrimaryContact(sub);
                             const isExpanded = expandedRows.has(sub.id);
-                            const subcontractorWorkOrders = workOrders.filter(wo => wo.subcontractorId === sub.id);
+                            const subcontractorWorkOrders = enrichedWorkOrdersBySubcontractor.get(sub.id) || [];
                             return (
                                 <Fragment key={sub.id}>
                                 <TableRow>
@@ -216,7 +271,12 @@ export default function ManageSubcontractorsPage() {
                                                         <TableRow>
                                                             <TableHead>WO No.</TableHead>
                                                             <TableHead>Date</TableHead>
-                                                            <TableHead>Total Amount</TableHead>
+                                                            <TableHead>WO Value</TableHead>
+                                                            <TableHead>Billed</TableHead>
+                                                            <TableHead>Advance Taken</TableHead>
+                                                            <TableHead>Advance Deducted</TableHead>
+                                                            <TableHead>Advance Balance</TableHead>
+                                                            <TableHead>WO Balance</TableHead>
                                                             <TableHead>Status</TableHead>
                                                         </TableRow>
                                                     </TableHeader>
@@ -226,6 +286,11 @@ export default function ManageSubcontractorsPage() {
                                                                 <TableCell>{wo.workOrderNo}</TableCell>
                                                                 <TableCell>{formatDate(wo.date)}</TableCell>
                                                                 <TableCell>{formatCurrency(wo.totalAmount)}</TableCell>
+                                                                <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
+                                                                <TableCell>{formatCurrency(wo.totalAdvanceTaken)}</TableCell>
+                                                                <TableCell>{formatCurrency(wo.totalAdvanceDeducted)}</TableCell>
+                                                                <TableCell className="font-semibold">{formatCurrency(wo.advanceBalance)}</TableCell>
+                                                                <TableCell className="font-semibold">{formatCurrency(wo.workOrderBalance)}</TableCell>
                                                                 <TableCell>{wo.status || 'Active'}</TableCell>
                                                             </TableRow>
                                                         ))}
