@@ -42,20 +42,18 @@ export default function BillLogPage() {
       setIsLoading(true);
       try {
         let billsQuery;
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectSnap = await getDocs(projectsQuery);
+        const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
         if (projectSlug === 'all') {
-            billsQuery = query(collectionGroup(db, 'bills'), orderBy('createdAt', 'desc'));
+            // Fetch without ordering, sort on the client
+            billsQuery = query(collectionGroup(db, 'bills'));
         } else {
-            const projectsQuery = query(collection(db, 'projects'));
-            const projectSnap = await getDocs(projectsQuery);
-            
-            const project = projectSnap.docs
-                .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-                .find(p => slugify(p.projectName) === projectSlug);
+            const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
             if (!project) {
-                console.error("Project not found for slug:", projectSlug);
-                toast({ title: 'Error', description: `Project with slug "${projectSlug}" not found.`, variant: 'destructive' });
+                console.error("Project not found");
                 setIsLoading(false);
                 return;
             }
@@ -73,6 +71,16 @@ export default function BillLogPage() {
             totalAmount: data.totalAmount || data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0)
           } as Bill;
         });
+        
+        // Client-side sorting for 'all' projects view or any view without server-side ordering
+        if (projectSlug === 'all') {
+            entries.sort((a, b) => {
+                const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+                const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+                return dateB - dateA;
+            });
+        }
+        
         setBills(entries);
 
       } catch (error) {
