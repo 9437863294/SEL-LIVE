@@ -116,18 +116,18 @@ export default function CreateProformaPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty);
+      const orderQty = item.orderQty;
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
         item.totalAmount = '';
-      } else if (billedQty > availableQty) {
+      } else if (billedQty > orderQty) {
           toast({
               title: 'Quantity Exceeded',
-              description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
+              description: `Billed quantity cannot be more than the work order quantity (${orderQty}).`,
               variant: 'destructive',
           });
-          item.billedQty = availableQty.toString();
+          item.billedQty = orderQty.toString();
       } else {
           item.billedQty = value;
       }
@@ -201,7 +201,7 @@ export default function CreateProformaPage() {
     setIsSaving(true);
     
     try {
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, boqQty, ...rest }) => ({
+        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, boqQty, ...rest }) => ({
             ...rest,
             billedQty: parseFloat(rest.billedQty) || 0,
         }));
@@ -331,7 +331,7 @@ export default function CreateProformaPage() {
                                         type="number" 
                                         value={item.billedQty}
                                         onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                        max={item.executedQty}
+                                        max={item.orderQty}
                                       />
                                   </TableCell>
                                   <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
