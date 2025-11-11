@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,6 +22,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -45,10 +47,11 @@ export default function WorkOrderLogPage() {
 
       try {
         let woQuery;
+        let fetchedProjectId: string | undefined = undefined;
 
         if (projectSlug === 'all') {
-          // Fetch from all projects
-          woQuery = query(collectionGroup(db, 'workOrders'), orderBy('date', 'desc'));
+          // Fetch from all projects without ordering
+          woQuery = query(collectionGroup(db, 'workOrders'));
         } else {
           // Fetch from a specific project
           const projectsQuery = query(collection(db, 'projects'));
@@ -61,14 +64,37 @@ export default function WorkOrderLogPage() {
             return;
           }
           setCurrentProject(projectData);
+          fetchedProjectId = projectData.id;
           woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'), orderBy('date', 'desc'));
         }
         
         const querySnapshot = await getDocs(woQuery);
-        const entries = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WorkOrder));
+        const entries = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            // Manually add projectSlug for 'all' view since it won't be on the doc
+            const parentProjectSlug = projectSlug === 'all' 
+                ? slugify(projectsSnapshot.docs.find(p => p.id === doc.ref.parent.parent?.id)?.data().projectName || '')
+                : projectSlug;
+
+            return { 
+                id: doc.id, 
+                ...data,
+                projectSlug: parentProjectSlug,
+            } as WorkOrder
+        });
+
+        // Client-side sorting for the 'all' case to avoid index errors
+        if (projectSlug === 'all') {
+            entries.sort((a,b) => {
+                const dateA = a.date ? new Date(a.date).getTime() : 0;
+                const dateB = b.date ? new Date(b.date).getTime() : 0;
+                return dateB - dateA;
+            });
+        }
+        
         setWorkOrders(entries);
         
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching work orders: ", error);
         toast({ title: 'Error', description: 'Failed to fetch work orders.', variant: 'destructive' });
       }
