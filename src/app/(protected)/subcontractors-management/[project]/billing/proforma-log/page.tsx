@@ -12,17 +12,17 @@ import { collection, getDocs, orderBy, query, where, collectionGroup } from 'fir
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { ProformaBill, Project, Bill } from '@/lib/types';
+import type { Bill, Project, ProformaBill } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import ViewProformaBillDialog from '@/components/ViewProformaBillDialog';
 
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -30,7 +30,7 @@ const slugify = (text: string) => {
 interface EnrichedProformaBill extends ProformaBill {
     deductedAmount: number;
     availableForDeduction: number;
-    deductingBills: { billNo: string; amount: number }[];
+    deductingBills: { billNo: string; billDate: string; amount: number }[];
     projectName?: string;
 }
 
@@ -40,6 +40,8 @@ export default function ProformaBillLogPage() {
   const projectSlug = params.project as string;
   const [proformaBills, setProformaBills] = useState<EnrichedProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedBill, setSelectedBill] = useState<ProformaBill | null>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function ProformaBillLogPage() {
 
         let proformaQuery;
         let billsQuery;
-
+        
         if (projectSlug === 'all') {
             proformaQuery = query(collectionGroup(db, 'proformaBills'));
             billsQuery = query(collectionGroup(db, 'bills'));
@@ -92,6 +94,7 @@ export default function ProformaBillLogPage() {
             .filter(bill => bill.advanceDeductions?.some(d => d.reference === doc.id))
             .map(bill => ({
               billNo: bill.billNo,
+              billDate: bill.billDate,
               amount: bill.advanceDeductions?.find(d => d.reference === doc.id)?.amount || 0
             }));
           
@@ -123,6 +126,11 @@ export default function ProformaBillLogPage() {
     fetchBills();
   }, [projectSlug, toast]);
   
+  const handleViewDetails = (bill: ProformaBill) => {
+    setSelectedBill(bill);
+    setIsViewOpen(true);
+  };
+  
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
@@ -140,6 +148,7 @@ export default function ProformaBillLogPage() {
   };
 
   return (
+      <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -165,56 +174,76 @@ export default function ProformaBillLogPage() {
                   <TableHead>Payable Amount</TableHead>
                   <TableHead>Deducted Amount</TableHead>
                   <TableHead>Available for Deduction</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={projectSlug === 'all' ? 9 : 8}><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell colSpan={projectSlug === 'all' ? 10 : 9}><Skeleton className="h-5 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : proformaBills.length > 0 ? (
-                  proformaBills.map((bill) => (
-                    <Fragment key={bill.id}>
-                      <TableRow className="cursor-pointer" onClick={() => toggleRowExpansion(bill.id)}>
-                        <TableCell>
-                          {bill.deductingBills.length > 0 && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                               {expandedRows.has(bill.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            </Button>
-                          )}
-                        </TableCell>
-                        {projectSlug === 'all' && <TableCell className="font-medium">{bill.projectName}</TableCell>}
-                        <TableCell className="font-medium">{bill.proformaNo}</TableCell>
-                        <TableCell>{bill.date}</TableCell>
-                        <TableCell>{bill.workOrderNo}</TableCell>
-                        <TableCell>{bill.payablePercentage}%</TableCell>
-                        <TableCell>{formatCurrency(bill.payableAmount || 0)}</TableCell>
-                        <TableCell>{formatCurrency(bill.deductedAmount)}</TableCell>
-                        <TableCell className="font-semibold">{formatCurrency(bill.availableForDeduction)}</TableCell>
-                      </TableRow>
-                      {expandedRows.has(bill.id) && bill.deductingBills.length > 0 && (
-                        <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            <TableCell colSpan={projectSlug === 'all' ? 9 : 8} className="p-0">
-                                <div className="p-4">
-                                    <h4 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills:</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                    {bill.deductingBills.map((deduction, index) => (
-                                        <Badge key={index} variant="outline" className="text-xs">
-                                           {deduction.billNo}: {formatCurrency(deduction.amount)}
-                                        </Badge>
-                                    ))}
-                                    </div>
-                                </div>
+                  proformaBills.map((bill) => {
+                    const isExpanded = expandedRows.has(bill.id);
+                    return (
+                        <Fragment key={bill.id}>
+                        <TableRow className="cursor-pointer" onClick={() => toggleRowExpansion(bill.id)}>
+                            <TableCell>
+                                {bill.deductingBills.length > 0 && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                        {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                                    </Button>
+                                )}
+                            </TableCell>
+                            {projectSlug === 'all' && <TableCell className="font-medium">{bill.projectName}</TableCell>}
+                            <TableCell className="font-medium">{bill.proformaNo}</TableCell>
+                            <TableCell>{bill.date}</TableCell>
+                            <TableCell>{bill.workOrderNo}</TableCell>
+                            <TableCell>{bill.payablePercentage}%</TableCell>
+                            <TableCell>{formatCurrency(bill.payableAmount || 0)}</TableCell>
+                            <TableCell>{formatCurrency(bill.deductedAmount)}</TableCell>
+                            <TableCell className="font-semibold">{formatCurrency(bill.availableForDeduction)}</TableCell>
+                            <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" onClick={(e) => {e.stopPropagation(); handleViewDetails(bill)}}>
+                                  <View className="h-4 w-4" />
+                                </Button>
                             </TableCell>
                         </TableRow>
-                      )}
-                    </Fragment>
-                  ))
+                        {isExpanded && bill.deductingBills.length > 0 && (
+                            <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                <TableCell colSpan={projectSlug === 'all' ? 10 : 9} className="p-2">
+                                    <div className="p-2 bg-background rounded-md">
+                                        <h4 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills:</h4>
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Bill No.</TableHead>
+                                                    <TableHead>Bill Date</TableHead>
+                                                    <TableHead>Deducted Amount</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {bill.deductingBills.map((deduction, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell>{deduction.billNo}</TableCell>
+                                                        <TableCell>{format(new Date(deduction.billDate), 'dd MMM, yyyy')}</TableCell>
+                                                        <TableCell>{formatCurrency(deduction.amount)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        </Fragment>
+                    )
+                })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={projectSlug === 'all' ? 9 : 8} className="text-center h-24">
+                    <TableCell colSpan={projectSlug === 'all' ? 10 : 9} className="text-center h-24">
                       No proforma/advance bills found.
                     </TableCell>
                   </TableRow>
@@ -224,5 +253,12 @@ export default function ProformaBillLogPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ViewProformaBillDialog
+        isOpen={isViewOpen}
+        onOpenChange={setIsViewOpen}
+        bill={selectedBill}
+      />
+    </>
   );
 }
