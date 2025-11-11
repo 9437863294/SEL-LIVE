@@ -127,14 +127,7 @@ export const permissionModules = {
     'View Module': [],
     'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
     'Work Order': ['View', 'Create', 'Edit', 'Delete'],
-    'Billing': {
-        'View Module': true,
-        'Create': [],
-        'Edit': [],
-        'Delete': [],
-        'View Settings': [],
-        'Edit Settings': [],
-    },
+    'Billing': ['View', 'Create', 'Edit', 'Delete', 'View Settings', 'Edit Settings'],
     'Reports': ['View'],
   },
   'Bank Balance': {
