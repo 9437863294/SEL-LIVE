@@ -80,6 +80,7 @@ export default function CreateBillPage() {
   const [retentionType, setRetentionType] = useState<'percentage' | 'manual'>('percentage');
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
+  const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
   const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
@@ -276,10 +277,10 @@ export default function CreateBillPage() {
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
     const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);
     const grossAmount = subtotal + finalGstAmount;
-    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction;
+    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction + otherDeduction;
     const netPayable = grossAmount - totalDeductions;
-    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction };
-  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeductions]);
+    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction, otherDeduction };
+  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, otherDeduction, advanceDeductions]);
 
 
   const handleSave = async () => {
@@ -315,6 +316,7 @@ export default function CreateBillPage() {
             retentionType,
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
+            otherDeduction: financials.otherDeduction,
             advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0),
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
@@ -564,6 +566,16 @@ export default function CreateBillPage() {
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
                             </div>
+                             <div className="space-y-2">
+                                <Label htmlFor="otherDeduction">Other Deductions</Label>
+                                <Input
+                                    id="otherDeduction"
+                                    type="number"
+                                    placeholder="Enter other deductions"
+                                    value={otherDeduction}
+                                    onChange={(e) => setOtherDeduction(Number(e.target.value) || 0)}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -582,8 +594,16 @@ export default function CreateBillPage() {
                         <span>{formatCurrency(financials.grossAmount)}</span>
                     </div>
                      <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Total Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.totalDeductions)}</span>
+                        <span className="text-muted-foreground">Retention</span>
+                        <span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Advance Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Other Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span>
                     </div>
                      <Separator />
                      <div className="flex justify-between items-center font-bold text-lg">
@@ -604,3 +624,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
