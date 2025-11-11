@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -13,7 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -27,6 +26,7 @@ const initialBillDetails = {
     billNo: '',
     billDate: new Date().toISOString().split('T')[0],
     workOrderId: '',
+    subcontractorId: '',
 };
 
 const slugify = (text: string) => {
@@ -47,8 +47,10 @@ type EnrichedBillItem = BillItem & {
 
 type AdvanceDeductionItem = {
     id: string;
-    reference: string; // This will now be the ProformaBill ID
-    amount: number;
+    reference: string; // ProformaBill ID
+    deductionType: 'amount' | 'percentage';
+    deductionValue: number; // Holds the raw amount or percentage
+    amount: number; // Holds the final calculated deduction amount
 };
 
 
@@ -63,13 +65,14 @@ export default function CreateBillPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   
   const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
   const [gstPercentage, setGstPercentage] = useState<number>(18);
@@ -78,8 +81,9 @@ export default function CreateBillPage() {
   const [retentionType, setRetentionType] = useState<'percentage' | 'manual'>('percentage');
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
+  const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
 
   useEffect(() => {
@@ -99,19 +103,22 @@ export default function CreateBillPage() {
         }
         setCurrentProject(project);
 
+        const subsQuery = query(collection(db, 'projects', project.id, 'subcontractors'));
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
 
-        const [woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+          getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
 
-        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
         setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
         setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
@@ -119,11 +126,28 @@ export default function CreateBillPage() {
     fetchProjectAndWorkOrders();
   }, [projectSlug, toast]);
   
+  const filteredWorkOrders = useMemo(() => {
+      if (!details.subcontractorId) return [];
+      return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
+  }, [allWorkOrders, details.subcontractorId]);
+
+  const handleSubcontractorChange = (subcontractorId: string) => {
+    setDetails(prev => ({
+        ...prev,
+        subcontractorId,
+        workOrderId: '', // Reset work order when subcontractor changes
+    }));
+    setSelectedWorkOrder(null);
+    setItems([]);
+  };
+
   useEffect(() => {
-      const wo = workOrders.find(w => w.id === details.workOrderId);
+      const wo = allWorkOrders.find(w => w.id === details.workOrderId);
       setSelectedWorkOrder(wo || null);
-      setItems([]); // Reset items when WO changes
-  }, [details.workOrderId, workOrders]);
+      if(details.workOrderId) {
+        setItems([]); 
+      }
+  }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
     const deductedAmounts: Record<string, number> = {};
@@ -133,17 +157,20 @@ export default function CreateBillPage() {
         });
     });
 
-    return proformaBills
+    const workOrderProformas = proformaBills.filter(proforma => proforma.workOrderId === details.workOrderId);
+
+    return workOrderProformas
         .map(proforma => {
             const totalDeducted = deductedAmounts[proforma.id] || 0;
             const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
             return {
                 ...proforma,
+                totalDeducted,
                 remainingBalance,
             };
         })
         .filter(proforma => proforma.remainingBalance > 0);
-  }, [proformaBills, bills]);
+  }, [proformaBills, bills, details.workOrderId]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -220,42 +247,48 @@ export default function CreateBillPage() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const handleAdvanceChange = (id: string, field: 'reference' | 'amount', value: string | number) => {
+  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
     setAdvanceDeductions(prev => {
         return prev.map(adv => {
             if (adv.id !== id) return adv;
             
-            if(field === 'reference') {
-                const selectedProforma = availableProformaBills.find(p => p.id === value);
-                return { ...adv, reference: String(value), amount: selectedProforma?.remainingBalance || 0 };
+            const newAdv = { ...adv, [field]: value };
+            
+            const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
+            const maxAmount = selectedProforma?.remainingBalance || 0;
+            
+            if (field === 'reference') {
+                newAdv.deductionType = 'amount';
+                newAdv.deductionValue = 0;
+                newAdv.amount = 0;
             }
-            if(field === 'amount') {
-                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
-                const maxAmount = selectedProforma?.remainingBalance || 0;
-                const newAmount = Number(value);
-                if (newAmount > maxAmount) {
-                    toast({
-                        title: "Deduction Exceeds Balance",
-                        description: `Maximum deduction for ${selectedProforma?.proformaNo} is ${formatCurrency(maxAmount)}.`,
-                        variant: 'destructive'
-                    });
-                    return { ...adv, amount: maxAmount };
-                }
-                return { ...adv, amount: newAmount };
+
+            if (newAdv.deductionType === 'amount') {
+                newAdv.amount = Math.min(maxAmount, Number(newAdv.deductionValue) || 0);
+            } else if (newAdv.deductionType === 'percentage') {
+                const calculatedAmount = maxAmount * (Number(newAdv.deductionValue) / 100);
+                newAdv.amount = Math.min(maxAmount, calculatedAmount);
             }
-            return adv;
+            
+            // Final check to prevent over-deduction
+            if (newAdv.amount > maxAmount) {
+                newAdv.amount = maxAmount;
+                 if(newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
+            }
+
+            return newAdv;
         });
     });
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -265,10 +298,10 @@ export default function CreateBillPage() {
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
     const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);
     const grossAmount = subtotal + finalGstAmount;
-    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction;
+    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction + otherDeduction;
     const netPayable = grossAmount - totalDeductions;
-    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction };
-  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeductions]);
+    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction, otherDeduction };
+  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, otherDeduction, advanceDeductions]);
 
 
   const handleSave = async () => {
@@ -289,7 +322,7 @@ export default function CreateBillPage() {
         
         const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
             ...rest,
-            billedQty: parseFloat(rest.billedQty) || 0,
+            billedQty: rest.billedQty || '0',
         }));
 
         const billData: Omit<Bill, 'id'> = {
@@ -304,11 +337,12 @@ export default function CreateBillPage() {
             retentionType,
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
+            otherDeduction: financials.otherDeduction,
             advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0),
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
-            createdAt: serverTimestamp(),
+            createdAt: serverTimestamp() as Timestamp,
             projectId: currentProject?.id || '',
             status: 'Pending',
             stage: firstStep.name,
@@ -357,6 +391,11 @@ export default function CreateBillPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
+  const selectedAdvanceReferences = useMemo(() => 
+    new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
+    [advanceDeductions]
+  );
+
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -376,15 +415,32 @@ export default function CreateBillPage() {
         <Card className="mb-6">
           <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>
           <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div className="space-y-2">
-                      <Label htmlFor="workOrderId">Work Order No</Label>
-                      <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
-                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                      <Label htmlFor="subcontractorId">Subcontractor</Label>
+                      <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
+                          <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="workOrderId">Work Order No</Label>
+                      <Select 
+                        value={details.workOrderId} 
+                        onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
+                        disabled={!details.subcontractorId}
+                      >
+                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                          <SelectContent>
+                              {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                   <div className="space-y-2">
+                      <Label>Subcontractor Name</Label>
+                      <Input value={selectedWorkOrder?.subcontractorName || ''} readOnly className="bg-muted"/>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billNo">Bill No</Label>
@@ -405,7 +461,7 @@ export default function CreateBillPage() {
                       <CardTitle>Bill Items</CardTitle>
                       <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
                   </div>
-                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                  <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                       <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
                   </Button>
               </div>
@@ -507,43 +563,66 @@ export default function CreateBillPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label>Advance Deductions</Label>
-                                {advanceDeductions.map((adv, index) => (
-                                    <div key={adv.id} className="flex items-center gap-2">
-                                        <Select
-                                            value={adv.reference}
-                                            onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select Proforma/Advance" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {availableProformaBills.map(proforma => (
-                                                    <SelectItem key={proforma.id} value={proforma.id}>
-                                                        {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <Input
-                                            type="number"
-                                            placeholder="Amount"
-                                            value={adv.amount}
-                                            onChange={(e) => handleAdvanceChange(adv.id, 'amount', e.target.value)}
-                                            max={availableProformaBills.find(p => p.id === adv.reference)?.remainingBalance}
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => removeAdvanceField(adv.id)}
-                                        >
-                                            <Trash2 className="h-4 w-4 text-destructive"/>
-                                        </Button>
+                                {advanceDeductions.map((adv) => {
+                                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
+                                return (
+                                <Card key={adv.id} className="p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                        <div className="flex-grow space-y-2">
+                                            <Select
+                                                value={adv.reference}
+                                                onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select Proforma/Advance" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableProformaBills.map(proforma => (
+                                                        <SelectItem key={proforma.id} value={proforma.id} disabled={selectedAdvanceReferences.has(proforma.id) && proforma.id !== adv.reference}>
+                                                            {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType', v as any)} className="flex gap-4 pt-2">
+                                                <div className="flex items-center space-x-2"><RadioGroupItem value="amount" id={`adv-type-amount-${adv.id}`} /><Label htmlFor={`adv-type-amount-${adv.id}`}>Amount</Label></div>
+                                                <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id={`adv-type-percent-${adv.id}`} /><Label htmlFor={`adv-type-percent-${adv.id}`}>Percentage</Label></div>
+                                            </RadioGroup>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    type="number"
+                                                    placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'}
+                                                    value={adv.deductionValue}
+                                                    onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue', e.target.value)}
+                                                />
+                                                {adv.deductionType === 'percentage' && <span className="text-muted-foreground">%</span>}
+                                            </div>
+                                        </div>
+                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
                                     </div>
-                                ))}
+                                    {selectedProforma && (
+                                    <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
+                                        <div className="flex justify-between"><span>Total Proforma Value:</span> <span>{formatCurrency(selectedProforma.payableAmount || 0)}</span></div>
+                                        <div className="flex justify-between"><span>Previously Deducted:</span> <span>{formatCurrency(selectedProforma.totalDeducted || 0)}</span></div>
+                                        <div className="flex justify-between font-medium"><span>Available Balance:</span> <span>{formatCurrency(selectedProforma.remainingBalance || 0)}</span></div>
+                                        <div className="flex justify-between font-bold"><span>Balance After Deduction:</span> <span>{formatCurrency((selectedProforma.remainingBalance || 0) - adv.amount)}</span></div>
+                                    </div>
+                                    )}
+                                </Card>
+                                )})}
                                 <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
+                            </div>
+                             <div className="space-y-2">
+                                <Label htmlFor="otherDeduction">Other Deductions</Label>
+                                <Input
+                                    id="otherDeduction"
+                                    type="number"
+                                    placeholder="Enter other deductions"
+                                    value={otherDeduction}
+                                    onChange={(e) => setOtherDeduction(Number(e.target.value) || 0)}
+                                />
                             </div>
                         </div>
                     </div>
@@ -563,8 +642,16 @@ export default function CreateBillPage() {
                         <span>{formatCurrency(financials.grossAmount)}</span>
                     </div>
                      <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Total Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.totalDeductions)}</span>
+                        <span className="text-muted-foreground">Retention</span>
+                        <span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Advance Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Other Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span>
                     </div>
                      <Separator />
                      <div className="flex justify-between items-center font-bold text-lg">
@@ -586,3 +673,6 @@ export default function CreateBillPage() {
   );
 }
 
+    
+
+    
