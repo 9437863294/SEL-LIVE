@@ -230,7 +230,18 @@ export default function CreateBillPage() {
                 return { ...adv, reference: String(value), amount: selectedProforma?.remainingBalance || 0 };
             }
             if(field === 'amount') {
-                return { ...adv, amount: Number(value) };
+                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
+                const maxAmount = selectedProforma?.remainingBalance || 0;
+                const newAmount = Number(value);
+                if (newAmount > maxAmount) {
+                    toast({
+                        title: "Deduction Exceeds Balance",
+                        description: `Maximum deduction for ${selectedProforma?.proformaNo} is ${formatCurrency(maxAmount)}.`,
+                        variant: 'destructive'
+                    });
+                    return { ...adv, amount: maxAmount };
+                }
+                return { ...adv, amount: newAmount };
             }
             return adv;
         });
@@ -394,7 +405,7 @@ export default function CreateBillPage() {
                       <CardTitle>Bill Items</CardTitle>
                       <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
                   </div>
-                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                  <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                       <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
                   </Button>
               </div>
@@ -517,8 +528,7 @@ export default function CreateBillPage() {
                                             type="number"
                                             placeholder="Amount"
                                             value={adv.amount}
-                                            disabled
-                                            className="bg-muted"
+                                            onChange={(e) => handleAdvanceChange(adv.id, 'amount', e.target.value)}
                                         />
                                         <Button
                                             type="button"
@@ -574,3 +584,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
