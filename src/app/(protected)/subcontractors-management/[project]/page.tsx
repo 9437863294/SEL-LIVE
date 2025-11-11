@@ -5,14 +5,13 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
-  ArrowLeft,
   Users,
   FileText,
   Calculator,
   FolderOpen,
   ShieldAlert,
   BarChart3,
-  History
+  Home,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -176,7 +175,7 @@ export default function SubcontractorsProjectDashboard() {
   
   if (isLoading || isAuthLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <Skeleton className="h-10 w-1/2 mb-8" />
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -189,7 +188,7 @@ export default function SubcontractorsProjectDashboard() {
 
   if (!safeCan('View Module', 'Subcontractors Management')) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div>
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/subcontractors-management">
@@ -214,7 +213,7 @@ export default function SubcontractorsProjectDashboard() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div>
       <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link href="/subcontractors-management">

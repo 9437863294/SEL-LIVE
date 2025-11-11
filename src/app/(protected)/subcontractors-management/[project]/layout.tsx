@@ -5,13 +5,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
-  ArrowLeft,
   Users,
   FileText,
   Calculator,
   FolderOpen,
   ChevronLeft,
   ChevronRight,
+  BarChart3,
+  History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,7 +41,10 @@ export default function ProjectLayout({
 
   React.useEffect(() => {
     const fetchProject = async () => {
-      if (!projectSlug) return;
+      if (!projectSlug || projectSlug === 'all') {
+          setCurrentProject(null);
+          return;
+      };
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
       const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
@@ -57,6 +61,7 @@ export default function ProjectLayout({
     { href: `/subcontractors-management/${projectSlug}/manage`, icon: Users, label: 'Manage', permission: can('View', 'Subcontractors Management.Manage Subcontractors') },
     { href: `/subcontractors-management/${projectSlug}/work-order`, icon: FileText, label: 'Work Order', permission: can('View', 'Subcontractors Management.Work Order') },
     { href: `/subcontractors-management/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Subcontractors Management.Billing') },
+    { href: `/subcontractors-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View', 'Subcontractors Management.Reports') },
   ];
   
   const visibleNavItems = navItems.filter(item => item.permission);
@@ -64,6 +69,11 @@ export default function ProjectLayout({
   const isPrintPage = pathname.includes('/print');
   if (isPrintPage) {
     return <>{children}</>;
+  }
+
+  // If we are on the "all" projects page, we don't need a sidebar, just the main content.
+  if (projectSlug === 'all' || !projectSlug) {
+    return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
 
   return (
@@ -126,7 +136,7 @@ export default function ProjectLayout({
           </div>
         </TooltipProvider>
       </aside>
-      <div className={cn("flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
+      <div className={cn("flex-1 flex flex-col min-h-0 transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
             {children}
         </main>

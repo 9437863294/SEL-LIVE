@@ -1,28 +1,22 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Users,
-  FileText,
-  Calculator,
+  Home,
   FolderOpen,
   ShieldAlert,
-  BarChart3,
-  Home,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { Project } from '@/lib/types';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import type { Project } from '@/lib/types';
 import AllSubcontractorsDashboard from '@/components/AllSubcontractorsDashboard';
 
 const slugify = (text: string) => {
@@ -30,7 +24,6 @@ const slugify = (text: string) => {
   return text
     .toString()
     .toLowerCase()
-    .trim()
     .replace(/\s+/g, '-')
     .replace(/[^\w-]+/g, '')
     .replace(/--+/g, '-')
@@ -56,7 +49,7 @@ export default function SubcontractorsDashboardPage() {
     const fetchProjects = async () => {
         setIsLoading(true);
         try {
-            const q = query(collection(db, 'projects')); // No filter here, show all projects for selection
+            const q = query(collection(db, 'projects'));
             const querySnapshot = await getDocs(q);
             const projectsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
             setProjects(projectsData);
@@ -71,13 +64,13 @@ export default function SubcontractorsDashboardPage() {
   const handleProjectChange = (slug: string) => {
     if (!slug) return;
     if (slug === 'all') {
-      router.push(`/subcontractors-management`);
+      router.push(`/subcontractors-management/all`);
     } else {
       router.push(`/subcontractors-management/${slug}`);
     }
   };
   
-  if (isAuthLoading) {
+  if (isAuthLoading || (isLoading && canViewModule)) {
     return <div className="p-8"><Skeleton className="h-96" /></div>;
   }
 
