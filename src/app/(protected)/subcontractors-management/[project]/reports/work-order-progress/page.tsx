@@ -152,7 +152,7 @@ export default function WorkOrderProgressReport() {
                                                 <span>{wo.progress.toFixed(1)}%</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell>{wo.status || 'Active'}</TableCell>
+                                        <TableCell>Active</TableCell>
                                     </TableRow>
                                 ))
                             ) : (
