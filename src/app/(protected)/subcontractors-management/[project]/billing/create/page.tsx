@@ -328,7 +328,7 @@ export default function CreateBillPage() {
 
         const billData: Omit<Bill, 'id'> = {
             ...details,
-            workOrderNo: selectedWorkOrder.workOrderNo,
+            woNo: selectedWorkOrder.workOrderNo,
             items: itemsToSave,
             subtotal: financials.subtotal,
             gstType,
@@ -673,3 +673,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
