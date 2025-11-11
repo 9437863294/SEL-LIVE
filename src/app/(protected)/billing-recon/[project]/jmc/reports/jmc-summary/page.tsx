@@ -50,6 +50,7 @@ interface StepWiseReportData {
             total: number;
             completed: number;
             rejected: number;
+            onTime: number;
         }
     }
 }
@@ -417,6 +418,7 @@ export default function JmcSummaryPage() {
                         <TableHead>User</TableHead>
                         <TableHead>Total</TableHead>
                         <TableHead>Done</TableHead>
+                        <TableHead>On Time</TableHead>
                         <TableHead>Rejected</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -428,6 +430,7 @@ export default function JmcSummaryPage() {
                                  <TableCell>{userName}</TableCell>
                                  <TableCell>{data.total}</TableCell>
                                  <TableCell>{data.completed}</TableCell>
+                                 <TableCell>{data.onTime}</TableCell>
                                  <TableCell>{data.rejected}</TableCell>
                              </TableRow>
                          )
