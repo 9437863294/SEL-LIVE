@@ -3,12 +3,12 @@
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, View, ChevronDown, ChevronRight, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where, collectionGroup, deleteDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -16,13 +16,26 @@ import type { Bill, Project, ProformaBill } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import ViewProformaBillDialog from '@/components/ViewProformaBillDialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useAuthorization } from '@/hooks/useAuthorization';
+
 
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -38,91 +51,96 @@ export default function ProformaBillLogPage() {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
+  const { can } = useAuthorization();
+
   const [proformaBills, setProformaBills] = useState<EnrichedProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBill, setSelectedBill] = useState<ProformaBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const fetchBills = async () => {
-      if (!projectSlug) return;
-      setIsLoading(true);
-      try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectSnap = await getDocs(projectsQuery);
-        const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+  const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
-        let proformaQuery;
-        let billsQuery;
-        
-        if (projectSlug === 'all') {
-            proformaQuery = query(collectionGroup(db, 'proformaBills'));
-            billsQuery = query(collectionGroup(db, 'bills'));
-        } else {
-            const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
-            if (!project) {
-                console.error("Project not found");
-                setIsLoading(false);
-                return;
-            }
-            const projectId = project.id;
-            proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'));
-            billsQuery = query(collection(db, 'projects', projectId, 'bills'));
-        }
+  const fetchBills = async () => {
+    if (!projectSlug) return;
+    setIsLoading(true);
+    try {
+      let proformaQuery;
+      let billsQuery;
 
-        const [proformaSnapshot, billsSnapshot] = await Promise.all([
-          getDocs(proformaQuery),
-          getDocs(billsQuery)
-        ]);
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectSnap = await getDocs(projectsQuery);
+      const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
-        const allBills = billsSnapshot.docs.map(doc => doc.data() as Bill);
-
-        const entries = proformaSnapshot.docs.map(doc => {
-          const data = doc.data() as ProformaBill;
-          const projectId = doc.ref.parent.parent?.id;
-          const project = allProjects.find(p => p.id === projectId);
-
-          const deductions = allBills
-            .flatMap(bill => bill.advanceDeductions || [])
-            .filter(deduction => deduction.reference === doc.id);
-          
-          const deductedAmount = deductions.reduce((sum, d) => sum + d.amount, 0);
-          const availableForDeduction = (data.payableAmount || 0) - deductedAmount;
-
-          const deductingBills = allBills
-            .filter(bill => bill.advanceDeductions?.some(d => d.reference === doc.id))
-            .map(bill => ({
-              billNo: bill.billNo,
-              billDate: bill.billDate,
-              amount: bill.advanceDeductions?.find(d => d.reference === doc.id)?.amount || 0
-            }));
-          
-          return {
-            id: doc.id,
-            ...data,
-            projectName: project?.projectName || 'Unknown',
-            date: format(new Date(data.date), 'dd MMM, yyyy'),
-            deductedAmount,
-            availableForDeduction,
-            deductingBills
-          } as EnrichedProformaBill;
-        });
-
-        // Client-side sorting
-        entries.sort((a, b) => {
-            const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-            const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-            return dateB - dateA;
-        });
-
-        setProformaBills(entries);
-      } catch (error) {
-        console.error("Error fetching proforma bills: ", error);
-        toast({ title: 'Error', description: 'Failed to fetch proforma bills for this project.', variant: 'destructive' });
+      if (projectSlug === 'all') {
+          proformaQuery = query(collectionGroup(db, 'proformaBills'));
+          billsQuery = query(collectionGroup(db, 'bills'));
+      } else {
+          const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
+          if (!project) {
+              console.error("Project not found");
+              setIsLoading(false);
+              return;
+          }
+          const projectId = project.id;
+          proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'));
+          billsQuery = query(collection(db, 'projects', projectId, 'bills'));
       }
-      setIsLoading(false);
-    };
+
+      const [proformaSnapshot, billsSnapshot] = await Promise.all([
+        getDocs(proformaQuery),
+        getDocs(billsQuery)
+      ]);
+
+      const allBills = billsSnapshot.docs.map(doc => doc.data() as Bill);
+
+      const entries = proformaSnapshot.docs.map(doc => {
+        const data = doc.data() as ProformaBill;
+        const projectId = doc.ref.parent.parent?.id;
+        const project = allProjects.find(p => p.id === projectId);
+
+        const deductions = allBills
+          .flatMap(bill => bill.advanceDeductions || [])
+          .filter(deduction => deduction.reference === doc.id);
+        
+        const deductedAmount = deductions.reduce((sum, d) => sum + d.amount, 0);
+        const availableForDeduction = (data.payableAmount || 0) - deductedAmount;
+
+        const deductingBills = allBills
+          .filter(bill => bill.advanceDeductions?.some(d => d.reference === doc.id))
+          .map(bill => ({
+            billNo: bill.billNo,
+            billDate: bill.billDate,
+            amount: bill.advanceDeductions?.find(d => d.reference === doc.id)?.amount || 0
+          }));
+        
+        return {
+          id: doc.id,
+          ...data,
+          projectName: project?.projectName || 'Unknown',
+          date: format(new Date(data.date), 'dd MMM, yyyy'),
+          deductedAmount,
+          availableForDeduction,
+          deductingBills
+        } as EnrichedProformaBill;
+      });
+
+      // Client-side sorting
+      entries.sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+          return dateB - dateA;
+      });
+
+      setProformaBills(entries);
+    } catch (error) {
+      console.error("Error fetching proforma bills: ", error);
+      toast({ title: 'Error', description: 'Failed to fetch proforma bills for this project.', variant: 'destructive' });
+    }
+    setIsLoading(false);
+  };
+  
+  useEffect(() => {
     fetchBills();
   }, [projectSlug, toast]);
   
@@ -130,6 +148,21 @@ export default function ProformaBillLogPage() {
     setSelectedBill(bill);
     setIsViewOpen(true);
   };
+
+  const handleDeleteBill = async (billToDelete: ProformaBill) => {
+    if (!billToDelete.projectId) {
+        toast({ title: 'Error', description: 'Cannot delete bill without project information.', variant: 'destructive'});
+        return;
+    }
+    try {
+        await deleteDoc(doc(db, 'projects', billToDelete.projectId, 'proformaBills', billToDelete.id));
+        toast({ title: 'Success', description: `Proforma Bill ${billToDelete.proformaNo} has been deleted.`});
+        fetchBills();
+    } catch (error) {
+        console.error("Error deleting proforma bill:", error);
+        toast({ title: 'Error', description: 'Failed to delete the proforma bill.', variant: 'destructive'});
+    }
+  }
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -209,6 +242,26 @@ export default function ProformaBillLogPage() {
                                 <Button variant="ghost" size="icon" onClick={(e) => {e.stopPropagation(); handleViewDetails(bill)}}>
                                   <View className="h-4 w-4" />
                                 </Button>
+                                <Button variant="ghost" size="icon" disabled>
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" disabled={!canDeleteBill} onClick={e => e.stopPropagation()}>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent onClick={e => e.stopPropagation()}>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                            <AlertDialogDescription>This will permanently delete proforma bill {bill.proformaNo}. This action cannot be undone.</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => handleDeleteBill(bill)}>Delete</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             </TableCell>
                         </TableRow>
                         {isExpanded && bill.deductingBills.length > 0 && (
