@@ -31,8 +31,8 @@ import type {
 } from '@/lib/types';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
-import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
-import ViewMvacEntryDialog from '@/components/ViewMvacEntryDialog';
+import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
+import ViewMvacEntryDialog from '@/components/billing-recon/ViewMvacEntryDialog';
 import {
   Select,
   SelectContent,

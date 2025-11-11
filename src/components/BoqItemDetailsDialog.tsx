@@ -19,13 +19,13 @@ import type { BoqItem, JmcEntry, Bill, MvacEntry, MvacItem, Project } from '@/li
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
 import { format } from 'date-fns';
-import ViewJmcEntryDialog from './ViewJmcEntryDialog';
+import ViewJmcEntryDialog from './billing-recon/ViewJmcEntryDialog';
 import { Eye, Maximize, Minimize, Loader2 } from 'lucide-react';
 import { Timestamp, collection, getDocs, query } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import ViewMvacEntryDialog from './ViewMvacEntryDialog';
+import ViewMvacEntryDialog from './billing-recon/ViewMvacEntryDialog';
 
 
 /* ---------- Props ---------- */

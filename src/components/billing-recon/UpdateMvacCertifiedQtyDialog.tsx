@@ -21,7 +21,7 @@ import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebas
 import type { MvacEntry, MvacItem, ActionConfig, Project } from '@/lib/types';
 import { Loader2, Upload, File as FileIcon, X, Maximize, Minimize } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Progress } from './ui/progress';
+import { Progress } from '../ui/progress';
 
 interface UpdateMvacCertifiedQtyDialogProps {
   isOpen: boolean;

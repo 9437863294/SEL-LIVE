@@ -13,13 +13,13 @@ import { collection, addDoc, getDocs, query, doc, serverTimestamp, getDoc, updat
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { WorkOrderItem, BoqItem, Subcontractor, Project, SerialNumberConfig } from '@/lib/types';
-import { BoqItemSelector } from '@/components/BoqItemSelector';
+import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
 
 const initialWorkOrderDetails = {
     workOrderNo: '',

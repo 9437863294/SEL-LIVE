@@ -19,7 +19,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { BoqItem } from '@/lib/types';
-import { ScrollArea } from './ui/scroll-area';
+import { ScrollArea } from '../ui/scroll-area';
 
 interface BoqItemSelectorProps {
   boqItems: BoqItem[];

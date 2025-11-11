@@ -27,7 +27,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select';
+} from '../ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 
 interface JmcItemSelectorDialogProps {

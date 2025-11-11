@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project } from '@/lib/types';
-import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
+import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';

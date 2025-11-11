@@ -64,7 +64,7 @@ export default function SubcontractorsDashboardPage() {
   const handleProjectChange = (slug: string) => {
     if (!slug) return;
     if (slug === 'all') {
-      router.push(`/subcontractors-management/all`);
+      router.push('/subcontractors-management');
     } else {
       router.push(`/subcontractors-management/${slug}`);
     }

@@ -32,7 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
-import ViewJmcEntryDialog from '@/components/ViewJmcEntryDialog';
+import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -41,7 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { UpdateCertifiedQtyDialog } from '@/components/UpdateCertifiedQtyDialog';
+import { UpdateCertifiedQtyDialog } from '@/components/billing-recon/UpdateCertifiedQtyDialog';
 
 /* -------- helpers -------- */
 function formatINR(n?: number) {

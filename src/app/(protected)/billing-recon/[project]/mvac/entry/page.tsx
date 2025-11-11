@@ -22,8 +22,8 @@ import type {
   Project,
   SerialNumberConfig,
 } from '@/lib/types';
-import { BoqItemSelector } from '@/components/BoqItemSelector';
-import { BoqMultiSelectDialog } from '@/components/BoqMultiSelectDialog';
+import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
+import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
