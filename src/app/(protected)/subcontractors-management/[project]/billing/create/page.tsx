@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WorkOrderItemSelectorDialog } from '@/components/WorkOrderItemSelectorDialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
 
 const initialBillDetails = {
     billNo: '',
@@ -35,9 +37,8 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 }
 
-// Add these types to include the new fields
 type EnrichedBillItem = BillItem & {
-    orderQty: number; // Added field
+    orderQty: number;
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
 };
@@ -50,17 +51,23 @@ export default function CreateBillPage() {
   const { project: projectSlug } = useParams() as { project: string };
 
   const [details, setDetails] = useState(initialBillDetails);
-  const [items, setItems] = useState<EnrichedBillItem[]>([]); // Use the enriched type
+  const [items, setItems] = useState<EnrichedBillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
-  // State for JMC and Bill data
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  
+  const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
+  const [gstPercentage, setGstPercentage] = useState<number>(18);
+  const [gstAmount, setGstAmount] = useState<number>(0);
+  const [retentionAmount, setRetentionAmount] = useState<number>(0);
+  const [advanceDeduction, setAdvanceDeduction] = useState<number>(0);
+
 
   useEffect(() => {
     const fetchProjectAndWorkOrders = async () => {
@@ -111,7 +118,7 @@ export default function CreateBillPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty); // executedQty holds the billable quantity now
+      const availableQty = parseFloat(item.executedQty);
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
@@ -149,23 +156,23 @@ export default function CreateBillPage() {
         const alreadyBilledForWoItem = bills
             .filter(bill => bill.workOrderId === details.workOrderId)
             .flatMap(bill => bill.items)
-            .filter(billItem => billItem.jmcItemId === woItem.id) // jmcItemId is used to store workOrderItemId
+            .filter(billItem => billItem.jmcItemId === woItem.id)
             .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
 
         const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
 
         return {
-            jmcItemId: woItem.id, // Storing work order item id for tracking
+            jmcItemId: woItem.id,
             jmcEntryId: '',
             jmcNo: '',
             boqSlNo: woItem.boqSlNo || '',
             description: woItem.description,
             unit: woItem.unit,
             rate: String(woItem.rate),
-            executedQty: String(Math.max(0, availableForBilling)), // Available qty for billing
+            executedQty: String(Math.max(0, availableForBilling)),
             billedQty: '',
             totalAmount: '',
-            orderQty: woItem.orderQty, // Add orderQty here
+            orderQty: woItem.orderQty,
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
         };
@@ -176,6 +183,15 @@ export default function CreateBillPage() {
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
+  
+  const financials = useMemo(() => {
+    const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+    const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
+    const grossAmount = subtotal + finalGstAmount;
+    const totalDeductions = retentionAmount + advanceDeduction;
+    const netPayable = grossAmount - totalDeductions;
+    return { subtotal, finalGstAmount, grossAmount, totalDeductions, netPayable };
+  }, [items, gstType, gstPercentage, gstAmount, retentionAmount, advanceDeduction]);
 
   const handleSave = async () => {
     if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
@@ -185,8 +201,6 @@ export default function CreateBillPage() {
     setIsSaving(true);
     
     try {
-        const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
-        
         const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
             ...rest,
             billedQty: parseFloat(rest.billedQty) || 0,
@@ -196,7 +210,16 @@ export default function CreateBillPage() {
             ...details,
             workOrderNo: selectedWorkOrder.workOrderNo,
             items: itemsToSave,
-            totalAmount,
+            subtotal: financials.subtotal,
+            gstType,
+            gstPercentage: gstType === 'percentage' ? gstPercentage : null,
+            gstAmount: financials.finalGstAmount,
+            grossAmount: financials.grossAmount,
+            retentionAmount,
+            advanceDeduction,
+            totalDeductions: financials.totalDeductions,
+            netPayable: financials.netPayable,
+            totalAmount: financials.netPayable, // Storing net as the final amount
             createdAt: serverTimestamp(),
             projectId: currentProject?.id
         };
@@ -230,7 +253,7 @@ export default function CreateBillPage() {
               <Link href={`/subcontractors-management/${projectSlug}/billing`}>
                   <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
               </Link>
-              <h1 className="text-2xl font-bold">Create New Bill</h1>
+              <h1 className="text-2xl font-bold">Bill Entry</h1>
           </div>
           <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -282,6 +305,7 @@ export default function CreateBillPage() {
                           <TableRow>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
+                              <TableHead>Unit</TableHead>
                               <TableHead>Order Qty</TableHead>
                               <TableHead>JMC Certified Qty</TableHead>
                               <TableHead>Already Billed Qty</TableHead>
@@ -297,6 +321,7 @@ export default function CreateBillPage() {
                               <TableRow key={item.jmcItemId}>
                                   <TableCell>{item.boqSlNo}</TableCell>
                                   <TableCell>{item.description}</TableCell>
+                                  <TableCell>{item.unit}</TableCell>
                                   <TableCell>{item.orderQty}</TableCell>
                                   <TableCell>{item.jmcCertifiedQty}</TableCell>
                                   <TableCell>{item.alreadyBilledQty}</TableCell>
@@ -323,6 +348,69 @@ export default function CreateBillPage() {
               </div>
           </CardContent>
         </Card>
+
+        <Card className="mt-6">
+            <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="md:col-span-2 space-y-4">
+                    <Label>GST</Label>
+                    <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="percentage" id="gst-percentage" />
+                          <Label htmlFor="gst-percentage">By Percentage</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="manual" id="gst-manual" />
+                          <Label htmlFor="gst-manual">Manual Entry</Label>
+                        </div>
+                    </RadioGroup>
+                    {gstType === 'percentage' ? (
+                        <div className="flex items-center gap-2">
+                            <Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
+                            <span className="text-muted-foreground">%</span>
+                        </div>
+                    ) : (
+                        <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} />
+                    )}
+                     <Separator />
+                    <Label>Deductions</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <Label htmlFor="retention">Retention Amount</Label>
+                            <Input id="retention" type="number" value={retentionAmount} onChange={e => setRetentionAmount(parseFloat(e.target.value) || 0)} />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="advance">Advance Deduction</Label>
+                            <Input id="advance" type="number" value={advanceDeduction} onChange={e => setAdvanceDeduction(parseFloat(e.target.value) || 0)} />
+                        </div>
+                    </div>
+                </div>
+                <div className="md:col-span-2 space-y-3 p-4 bg-muted/50 rounded-lg">
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">{formatCurrency(financials.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">GST</span>
+                        <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between items-center font-semibold">
+                        <span>Gross Amount</span>
+                        <span>{formatCurrency(financials.grossAmount)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Total Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.totalDeductions)}</span>
+                    </div>
+                     <Separator />
+                     <div className="flex justify-between items-center font-bold text-lg">
+                        <span>Net Payable Amount</span>
+                        <span>{formatCurrency(financials.netPayable)}</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
       </div>
       <WorkOrderItemSelectorDialog
         isOpen={isSelectorOpen}
@@ -334,3 +422,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
