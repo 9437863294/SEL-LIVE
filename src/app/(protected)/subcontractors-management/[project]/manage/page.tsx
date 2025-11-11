@@ -1,4 +1,5 @@
 
+      
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -23,7 +24,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -42,6 +43,7 @@ export default function ManageSubcontractorsPage() {
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [expandedWorkOrders, setExpandedWorkOrders] = useState<Set<string>>(new Set());
 
   const canViewPage = can('View', 'Subcontractors Management.Manage Subcontractors');
   const canAdd = can('Add', 'Subcontractors Management.Manage Subcontractors');
@@ -125,6 +127,18 @@ export default function ManageSubcontractorsPage() {
     });
   };
 
+  const toggleWorkOrderExpansion = (workOrderId: string) => {
+    setExpandedWorkOrders(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(workOrderId)) {
+            newSet.delete(workOrderId);
+        } else {
+            newSet.add(workOrderId);
+        }
+        return newSet;
+    });
+  };
+
   const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   const formatDate = (date: any) => date ? format(new Date(date), 'dd MMM, yyyy') : 'N/A';
 
@@ -143,13 +157,28 @@ export default function ManageSubcontractorsPage() {
             .filter(deduction => woProformaBills.some(proforma => proforma.id === deduction.reference))
             .reduce((sum, d) => sum + d.amount, 0);
 
+        const advanceBalance = totalAdvanceTaken - deductedForThisWo;
+        const workOrderBalance = wo.totalAmount - totalBilled;
+
+        const billsWithDeductionsForThisWO = bills.filter(b =>
+            b.advanceDeductions?.some(d => woProformaBills.some(pb => pb.id === d.reference))
+        ).map(bill => {
+            const relevantDeductions = bill.advanceDeductions?.filter(d => woProformaBills.some(pb => pb.id === d.reference))
+            return {
+                billNo: bill.billNo,
+                billDate: bill.billDate,
+                deductedAmount: relevantDeductions?.reduce((sum, d) => sum + d.amount, 0),
+            }
+        });
+
         const enrichedWO = {
             ...wo,
             totalBilled,
             totalAdvanceTaken,
             totalAdvanceDeducted: deductedForThisWo,
-            advanceBalance: totalAdvanceTaken - deductedForThisWo,
-            workOrderBalance: wo.totalAmount - totalBilled,
+            advanceBalance,
+            workOrderBalance,
+            billsWithDeductionsForThisWO
         };
 
         if (!map.has(wo.subcontractorId)) {
@@ -269,6 +298,7 @@ export default function ManageSubcontractorsPage() {
                                                 <Table>
                                                     <TableHeader>
                                                         <TableRow>
+                                                            <TableHead className="w-12"></TableHead>
                                                             <TableHead>WO No.</TableHead>
                                                             <TableHead>Date</TableHead>
                                                             <TableHead>WO Value</TableHead>
@@ -281,19 +311,58 @@ export default function ManageSubcontractorsPage() {
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {subcontractorWorkOrders.map(wo => (
-                                                            <TableRow key={wo.id}>
-                                                                <TableCell>{wo.workOrderNo}</TableCell>
-                                                                <TableCell>{formatDate(wo.date)}</TableCell>
-                                                                <TableCell>{formatCurrency(wo.totalAmount)}</TableCell>
-                                                                <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
-                                                                <TableCell>{formatCurrency(wo.totalAdvanceTaken)}</TableCell>
-                                                                <TableCell>{formatCurrency(wo.totalAdvanceDeducted)}</TableCell>
-                                                                <TableCell className="font-semibold">{formatCurrency(wo.advanceBalance)}</TableCell>
-                                                                <TableCell className="font-semibold">{formatCurrency(wo.workOrderBalance)}</TableCell>
-                                                                <TableCell>{wo.status || 'Active'}</TableCell>
-                                                            </TableRow>
-                                                        ))}
+                                                        {subcontractorWorkOrders.map(wo => {
+                                                            const isWoExpanded = expandedWorkOrders.has(wo.id);
+                                                            return (
+                                                            <Fragment key={wo.id}>
+                                                                <TableRow onClick={() => toggleWorkOrderExpansion(wo.id)} className="cursor-pointer">
+                                                                    <TableCell>
+                                                                        {wo.billsWithDeductionsForThisWO.length > 0 && (
+                                                                            <Button size="icon" variant="ghost">
+                                                                                {isWoExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                                                                            </Button>
+                                                                        )}
+                                                                    </TableCell>
+                                                                    <TableCell>{wo.workOrderNo}</TableCell>
+                                                                    <TableCell>{formatDate(wo.date)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.totalAmount)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.totalAdvanceTaken)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.totalAdvanceDeducted)}</TableCell>
+                                                                    <TableCell className="font-semibold">{formatCurrency(wo.advanceBalance)}</TableCell>
+                                                                    <TableCell className="font-semibold">{formatCurrency(wo.workOrderBalance)}</TableCell>
+                                                                    <TableCell>{wo.status || 'Active'}</TableCell>
+                                                                </TableRow>
+                                                                {isWoExpanded && (
+                                                                    <TableRow className="bg-background hover:bg-background">
+                                                                        <TableCell colSpan={10} className="p-2">
+                                                                            <div className="p-2 border rounded-md">
+                                                                                <h5 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills</h5>
+                                                                                <Table>
+                                                                                    <TableHeader>
+                                                                                        <TableRow>
+                                                                                            <TableHead>Bill No.</TableHead>
+                                                                                            <TableHead>Bill Date</TableHead>
+                                                                                            <TableHead>Deducted Amount</TableHead>
+                                                                                        </TableRow>
+                                                                                    </TableHeader>
+                                                                                    <TableBody>
+                                                                                        {wo.billsWithDeductionsForThisWO.map((bill: any, index: number) => (
+                                                                                            <TableRow key={index}>
+                                                                                                <TableCell>{bill.billNo}</TableCell>
+                                                                                                <TableCell>{formatDate(bill.billDate)}</TableCell>
+                                                                                                <TableCell>{formatCurrency(bill.deductedAmount)}</TableCell>
+                                                                                            </TableRow>
+                                                                                        ))}
+                                                                                    </TableBody>
+                                                                                </Table>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                )}
+                                                            </Fragment>
+                                                            );
+                                                        })}
                                                     </TableBody>
                                                 </Table>
                                             </div>
@@ -317,3 +386,5 @@ export default function ManageSubcontractorsPage() {
     </div>
   );
 }
+
+    
