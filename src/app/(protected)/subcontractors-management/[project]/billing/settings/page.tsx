@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -81,9 +80,14 @@ export default function BillingSettingsPage() {
   const canViewPage = can('View Settings', 'Subcontractors Management.Billing');
 
   const settingsItems = settingsItemsBase.map((item) => {
+    const base = `/subcontractors-management/${projectSlug}/billing/`;
+    const resolvedHref = item.href === '#' ? '#' : `${base}${item.href}`;
+    const disabled = isLoading ? true : !can(item.permission, 'Subcontractors Management.Billing');
+
     return {
       ...item,
-      disabled: !can(item.permission, 'Subcontractors Management.Billing.Settings'),
+      href: resolvedHref,
+      disabled,
     };
   });
 
