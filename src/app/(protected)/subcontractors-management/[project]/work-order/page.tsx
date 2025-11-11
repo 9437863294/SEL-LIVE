@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, collectionGroup } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -21,7 +21,6 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -45,21 +44,30 @@ export default function WorkOrderLogPage() {
       setIsLoading(true);
 
       try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        let woQuery;
 
-        if (!projectData) {
-          toast({ title: "Project not found", variant: "destructive" });
-          setIsLoading(false);
-          return;
+        if (projectSlug === 'all') {
+          // Fetch from all projects
+          woQuery = query(collectionGroup(db, 'workOrders'), orderBy('date', 'desc'));
+        } else {
+          // Fetch from a specific project
+          const projectsQuery = query(collection(db, 'projects'));
+          const projectsSnapshot = await getDocs(projectsQuery);
+          const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+          if (!projectData) {
+            toast({ title: "Project not found", variant: "destructive" });
+            setIsLoading(false);
+            return;
+          }
+          setCurrentProject(projectData);
+          woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'), orderBy('date', 'desc'));
         }
-        setCurrentProject(projectData);
-
-        const q = query(collection(db, 'projects', projectData.id, 'workOrders'), orderBy('date', 'desc'));
-        const querySnapshot = await getDocs(q);
+        
+        const querySnapshot = await getDocs(woQuery);
         const entries = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WorkOrder));
         setWorkOrders(entries);
+        
       } catch (error) {
         console.error("Error fetching work orders: ", error);
         toast({ title: 'Error', description: 'Failed to fetch work orders.', variant: 'destructive' });
@@ -81,8 +89,9 @@ export default function WorkOrderLogPage() {
     return format(d, 'dd MMM, yyyy');
   };
   
-  const handleRowClick = (workOrderId: string) => {
-    router.push(`/subcontractors-management/${projectSlug}/work-order/${workOrderId}`);
+  const handleRowClick = (workOrder: WorkOrder) => {
+    const slug = workOrder.projectSlug || projectSlug;
+    router.push(`/subcontractors-management/${slug}/work-order/${workOrder.id}`);
   };
 
   if (authLoading || (isLoading && canViewPage)) {
@@ -148,7 +157,7 @@ export default function WorkOrderLogPage() {
                 ))
               ) : workOrders.length > 0 ? (
                 workOrders.map((wo) => (
-                  <TableRow key={wo.id} className="cursor-pointer" onClick={() => handleRowClick(wo.id)}>
+                  <TableRow key={wo.id} className="cursor-pointer" onClick={() => handleRowClick(wo)}>
                     <TableCell className="font-medium">{wo.workOrderNo}</TableCell>
                     <TableCell>{formatDate(wo.date)}</TableCell>
                     <TableCell>{wo.subcontractorName}</TableCell>
