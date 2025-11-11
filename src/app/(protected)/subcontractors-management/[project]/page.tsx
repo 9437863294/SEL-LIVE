@@ -1,7 +1,7 @@
 
-
 'use client';
 
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
@@ -22,18 +22,18 @@ import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/lib/types';
-import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-
 
 interface SubcontractorCardProps {
   item: { icon: LucideIcon; text: string; href: string; description: string; disabled?: boolean; };
 }
 
-const slugify = (text: string) =>
-  (!text ? '' : text.toLowerCase().trim()
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text.toString().toLowerCase().trim()
     .replace(/\s+/g, '-').replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, ''));
+    .replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
+};
 
 function SubcontractorCard({ item }: SubcontractorCardProps) {
   const isDisabled = item.href === '#' || item.disabled;
@@ -61,116 +61,187 @@ function SubcontractorCard({ item }: SubcontractorCardProps) {
 }
 
 export default function SubcontractorsProjectDashboard() {
-  const params = useParams();
-  const selectedSlug = params.project as string;
+  const { project: projectSlugParam } = useParams() as { project: string };
   const router = useRouter();
-  const { can } = useAuthorization();
+
+  const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch projects
+  const safeCan = useCallback(
+    (action: string, resource: string) => {
+      if (isAuthLoading) return false;
+      return typeof can === 'function' ? can(action, resource) : false;
+    },
+    [can, isAuthLoading]
+  );
+
   useEffect(() => {
+    if (isAuthLoading) return;
+
+    let cancelled = false;
     const fetchProjects = async () => {
+      setIsLoading(true);
       try {
-        const projectsSnap = await getDocs(query(collection(db, 'projects')));
-        const projectsData = projectsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as Project)
-        );
+        const q = query(collection(db, 'projects'));
+        const querySnapshot = await getDocs(q);
+        if (cancelled) return;
+        const projectsData: Project[] = querySnapshot.docs.map((d) => {
+          const data = d.data() as Omit<Project, 'id'>;
+          return { id: d.id, ...data };
+        });
         setProjects(projectsData);
       } catch (error) {
-        console.error('Error fetching projects:', error);
+        console.error('Error fetching projects: ', error);
       } finally {
-        setIsLoadingProjects(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
-    fetchProjects();
-  }, []);
 
-  // Navigate but stay on the same dashboard route (URL updates to include slug)
+    fetchProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoading]);
+
+  const currentProject = useMemo(
+    () => projects.find((p) => slugify(p.projectName) === projectSlugParam) ?? null,
+    [projects, projectSlugParam]
+  );
+
+  const projectName = useMemo(() => {
+    if (currentProject?.projectName) return currentProject.projectName;
+    return projectSlugParam.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  }, [currentProject, projectSlugParam]);
+
+  const selectedValue = useMemo(() => {
+    const found = projects.find(p => slugify(p.projectName) === projectSlugParam);
+    return found ? projectSlugParam : undefined;
+  }, [projects, projectSlugParam]);
+
   const handleProjectChange = (slug: string) => {
     if (!slug) return;
-    router.push(`/subcontractors-management/${slug}`);
+    if (slug === 'all') {
+      router.push('/subcontractors-management');
+    } else {
+      router.push(`/subcontractors-management/${slug}`);
+    }
   };
 
-  const currentProjectName = useMemo(() => {
-    const project = projects.find(p => slugify(p.projectName) === selectedSlug);
-    return project ? project.projectName : selectedSlug;
-  }, [projects, selectedSlug]);
+  const basePath = projectSlugParam ? `/subcontractors-management/${projectSlugParam}` : undefined;
 
-  const basePath = selectedSlug ? `/subcontractors-management/${selectedSlug}` : undefined;
-
-  const items = useMemo(() => ([
-    {
-      icon: Users,
-      text: 'Manage Subcontractors',
-      href: basePath ? `${basePath}/manage` : '#',
-      description: 'View, add, or edit subcontractor details.',
-      disabled: !selectedSlug || !can('View', 'Subcontractors Management.Manage Subcontractors'),
-    },
-    {
-      icon: FileText,
-      text: 'Manage Work Order',
-      href: basePath ? `${basePath}/work-order` : '#',
-      description: 'Create and manage work orders for subcontractors.',
-      disabled:
-          !selectedSlug || !can('View', 'Subcontractors Management.Work Order'),
-    },
-    {
-      icon: Calculator,
-      text: 'Billing',
-      href: basePath ? `${basePath}/billing` : '#',
-      description: 'Create and manage subcontractor bills.',
-      disabled:
-          !selectedSlug || !can('View', 'Subcontractors Management.Billing'),
-    },
-    {
+  const items = useMemo(
+    () => [
+      {
+        icon: Users,
+        text: 'Manage Subcontractors',
+        href: basePath ? `${basePath}/manage` : '#',
+        description: 'View, add, or edit subcontractor details.',
+        disabled: !projectSlugParam || !safeCan('View', 'Subcontractors Management.Manage Subcontractors'),
+      },
+      {
+        icon: FileText,
+        text: 'Manage Work Order',
+        href: basePath ? `${basePath}/work-order` : '#',
+        description: 'Create and manage work orders for subcontractors.',
+        disabled:
+          !projectSlugParam || !safeCan('View', 'Subcontractors Management.Work Order'),
+      },
+      {
+        icon: Calculator,
+        text: 'Billing',
+        href: basePath ? `${basePath}/billing` : '#',
+        description: 'Create and manage subcontractor bills.',
+        disabled:
+          !projectSlugParam || !safeCan('View', 'Subcontractors Management.Billing'),
+      },
+      {
         icon: BarChart3,
         text: 'Reports',
         href: basePath ? `${basePath}/reports` : '#',
         description: 'View reports related to subcontractors.',
-        disabled: !selectedSlug || !can('View', 'Subcontractors Management.Reports'),
+        disabled: !projectSlugParam || !safeCan('View', 'Subcontractors Management.Reports'),
     },
-  ]), [basePath, can, selectedSlug]);
+    ],
+    [basePath, safeCan, projectSlugParam]
+  );
   
-  if (isLoadingProjects) {
-      return <div className="w-full px-4 sm:px-6 lg:px-8"><Skeleton className="h-96" /></div>;
+  if (isLoading || isAuthLoading) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <Skeleton className="h-10 w-1/2 mb-8" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!safeCan('View Module', 'Subcontractors Management')) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link href="/subcontractors-management">
+              <Button variant="ghost" size="icon" aria-label="Back">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">{projectName}</h1>
+          </div>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view this project dashboard.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link href="/subcontractors-management">
             <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Subcontractors Management</h1>
+          <h1 className="text-2xl font-bold">{projectName}</h1>
         </div>
-
         <div className="flex items-center gap-2">
           <FolderOpen className="h-5 w-5 text-muted-foreground" />
-          <Select value={selectedSlug} onValueChange={handleProjectChange}>
+          <Select value={selectedValue} onValueChange={handleProjectChange}>
             <SelectTrigger className="w-[260px]">
               <SelectValue placeholder="Select Project" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
               {projects.map((p) => {
                 const value = slugify((p as any).slug ?? p.projectName);
-                return <SelectItem key={p.id} value={value}>{p.projectName}</SelectItem>;
+                return (
+                  <SelectItem key={p.id} value={value}>
+                    {p.projectName}
+                  </SelectItem>
+                );
               })}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      <p className="mb-4 text-sm text-muted-foreground">
-        Selected project: <span className="font-medium">{currentProjectName}</span>
-      </p>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {items.map((item) => <SubcontractorCard key={item.text} item={item} />)}
+        {items.map((item) => (
+          <SubcontractorCard key={item.text} item={item} />
+        ))}
       </div>
     </div>
   );
