@@ -90,8 +90,9 @@ export default function BillingDashboardPage() {
       } catch (error) {
         console.error("Failed to fetch workflow:", error);
         toast({ title: 'Error', description: 'Could not load workflow configuration.', variant: 'destructive'});
+      } finally {
+        setIsWorkflowLoading(false);
       }
-      setIsWorkflowLoading(false);
     };
     fetchWorkflow();
   }, [toast]);
