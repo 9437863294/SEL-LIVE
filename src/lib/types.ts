@@ -406,7 +406,33 @@ export interface PivotConfig {
   value: string;
 }
 
-/** ---------- Billing / JMC / MVAC ---------- **/
+/** ---------- Billing / JMC / MVAC / Subcontractors ---------- **/
+
+export interface ContactPerson {
+  id: string;
+  type: 'Project' | 'Billing' | 'Accounts' | 'Other';
+  name: string;
+  title: string;
+  mobile: string;
+  email: string;
+}
+
+export interface Subcontractor {
+  id: string;
+  status: 'Active' | 'Inactive';
+  projectId: string;
+  legalName: string;
+  dbaName: string;
+  registeredAddress: string;
+  operatingAddress: string;
+  gstNumber: string;
+  panNumber: string;
+  bankName: string;
+  bankBranch: string;
+  accountNumber: string;
+  ifscCode: string;
+  contacts: ContactPerson[];
+}
 
 export interface BoqItem {
   id: string;
@@ -498,11 +524,13 @@ export interface Bill {
   retentionType: 'percentage' | 'manual';
   retentionPercentage: number | null;
   retentionAmount: number;
-  advanceDeductions: { id: string; reference: string; amount: number; }[];
+  otherDeduction: number;
+  advanceDeductions: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage', deductionValue: number }[];
   totalDeductions: number;
   netPayable: number;
   totalAmount?: number;
   workOrderId?: string;
+  projectId: string;
 }
 
 export interface ProformaBill {

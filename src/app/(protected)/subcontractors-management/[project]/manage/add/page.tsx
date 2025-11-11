@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -105,9 +106,9 @@ export default function AddSubcontractorPage() {
         return;
     }
 
-    const { projectId, ...dataToSave } = {
+    const dataToSave = {
         ...formData,
-        contacts: formData.contacts.map(({ id, ...rest }) => rest),
+        contacts: formData.contacts.map(({ id, ...rest }: ContactPerson) => rest),
     };
     
     setIsSaving(true);
