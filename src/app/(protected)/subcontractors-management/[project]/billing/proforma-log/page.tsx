@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -141,6 +142,7 @@ export default function ProformaBillLogPage() {
                   <TableHead>Proforma No.</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
+                  <TableHead>Payable %</TableHead>
                   <TableHead>Payable Amount</TableHead>
                   <TableHead>Deducted Amount</TableHead>
                   <TableHead>Available for Deduction</TableHead>
@@ -150,7 +152,7 @@ export default function ProformaBillLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={7}><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell colSpan={8}><Skeleton className="h-5 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : proformaBills.length > 0 ? (
@@ -167,13 +169,14 @@ export default function ProformaBillLogPage() {
                         <TableCell className="font-medium">{bill.proformaNo}</TableCell>
                         <TableCell>{bill.date}</TableCell>
                         <TableCell>{bill.workOrderNo}</TableCell>
+                        <TableCell>{bill.payablePercentage}%</TableCell>
                         <TableCell>{formatCurrency(bill.payableAmount || 0)}</TableCell>
                         <TableCell>{formatCurrency(bill.deductedAmount)}</TableCell>
                         <TableCell className="font-semibold">{formatCurrency(bill.availableForDeduction)}</TableCell>
                       </TableRow>
                       {expandedRows.has(bill.id) && bill.deductingBills.length > 0 && (
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            <TableCell colSpan={7} className="p-0">
+                            <TableCell colSpan={8} className="p-0">
                                 <div className="p-4">
                                     <h4 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills:</h4>
                                     <div className="flex flex-wrap gap-2">
@@ -191,7 +194,7 @@ export default function ProformaBillLogPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">
+                    <TableCell colSpan={8} className="text-center h-24">
                       No proforma/advance bills found.
                     </TableCell>
                   </TableRow>
