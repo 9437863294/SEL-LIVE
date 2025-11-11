@@ -13,7 +13,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -27,6 +27,7 @@ const initialBillDetails = {
     billNo: '',
     billDate: new Date().toISOString().split('T')[0],
     workOrderId: '',
+    subcontractorId: '',
 };
 
 const slugify = (text: string) => {
@@ -65,13 +66,14 @@ export default function CreateBillPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   
   const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
   const [gstPercentage, setGstPercentage] = useState<number>(18);
@@ -102,19 +104,22 @@ export default function CreateBillPage() {
         }
         setCurrentProject(project);
 
+        const subsQuery = query(collection(db, 'projects', project.id, 'subcontractors'));
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
 
-        const [woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+          getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
 
-        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
         setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
         setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
@@ -122,11 +127,28 @@ export default function CreateBillPage() {
     fetchProjectAndWorkOrders();
   }, [projectSlug, toast]);
   
+  const filteredWorkOrders = useMemo(() => {
+      if (!details.subcontractorId) return [];
+      return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
+  }, [allWorkOrders, details.subcontractorId]);
+
+  const handleSubcontractorChange = (subcontractorId: string) => {
+    setDetails(prev => ({
+        ...prev,
+        subcontractorId,
+        workOrderId: '', // Reset work order when subcontractor changes
+    }));
+    setSelectedWorkOrder(null);
+    setItems([]);
+  };
+
   useEffect(() => {
-      const wo = workOrders.find(w => w.id === details.workOrderId);
+      const wo = allWorkOrders.find(w => w.id === details.workOrderId);
       setSelectedWorkOrder(wo || null);
-      setItems([]); // Reset items when WO changes
-  }, [details.workOrderId, workOrders]);
+      if(details.workOrderId) {
+        setItems([]); 
+      }
+  }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
     const deductedAmounts: Record<string, number> = {};
@@ -389,19 +411,28 @@ export default function CreateBillPage() {
         <Card className="mb-6">
           <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>
           <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div className="space-y-2">
-                      <Label htmlFor="workOrderId">Work Order No</Label>
-                      <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
-                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                      <Label htmlFor="subcontractorId">Subcontractor</Label>
+                      <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
+                          <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Subcontractor Name</Label>
-                    <Input value={selectedWorkOrder?.subcontractorName || 'N/A'} readOnly className="bg-muted"/>
+                      <Label htmlFor="workOrderId">Work Order No</Label>
+                      <Select 
+                        value={details.workOrderId} 
+                        onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
+                        disabled={!details.subcontractorId}
+                      >
+                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                          <SelectContent>
+                              {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billNo">Bill No</Label>
@@ -628,5 +659,6 @@ export default function CreateBillPage() {
     </>
   );
 }
+
 
 
