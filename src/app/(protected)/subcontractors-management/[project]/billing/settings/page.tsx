@@ -31,7 +31,7 @@ const settingsItemsBase = [
     text: 'Workflow Configuration',
     description: 'Set up approval workflows for bills.',
     href: 'settings/workflow-configuration',
-    permission: 'Edit Settings', // Assuming Edit Settings permission is needed
+    permission: 'View Settings',
   },
 ];
 
@@ -82,7 +82,7 @@ export default function BillingSettingsPage() {
   const settingsItems = settingsItemsBase.map((item) => {
     return {
       ...item,
-      disabled: !can(item.permission, 'Subcontractors Management.Billing'),
+      disabled: !can(item.permission, 'Subcontractors Management.Billing.Settings'),
     };
   });
 
