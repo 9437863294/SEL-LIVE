@@ -120,14 +120,21 @@ export const permissionModules = {
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
     'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
     'MVAC': ['View', 'Create Work Order', 'Create MVAC Entry', 'View Log', 'Delete MVAC', 'View Certified MVAC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
-    'Billing': ['View', 'Create', 'Edit', 'Delete'],
+    'Billing': ['View', 'Create Bill', 'Edit Bill', 'Delete Bill', 'View Settings', 'Edit Settings'],
     'Combined Log': ['View'],
   },
   'Subcontractors Management': {
     'View Module': [],
     'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
     'Work Order': ['View', 'Create', 'Edit', 'Delete'],
-    'Billing': ['View', 'Create', 'Edit', 'Delete', 'View Settings', 'Edit Settings'],
+    'Billing': {
+      'View Module': [],
+      'Create Bill': [],
+      'Edit Bill': [],
+      'Delete Bill': [],
+      'View Settings': [],
+      'Edit Settings': [],
+    },
     'Reports': ['View'],
   },
   'Bank Balance': {
@@ -493,6 +500,7 @@ export interface Bill {
   totalDeductions: number;
   netPayable: number;
   totalAmount?: number;
+  workOrderId?: string;
 }
 
 export interface ProformaBill {
@@ -509,6 +517,7 @@ export interface ProformaBill {
     payableAmount: number;
     createdAt: any;
     projectId: string;
+    projectName?: string;
 }
 
 /** ---------- Insurance ---------- **/
