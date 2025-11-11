@@ -389,7 +389,7 @@ export default function CreateBillPage() {
         <Card className="mb-6">
           <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>
           <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="space-y-2">
                       <Label htmlFor="workOrderId">Work Order No</Label>
                       <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
@@ -398,6 +398,10 @@ export default function CreateBillPage() {
                               {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
                           </SelectContent>
                       </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Subcontractor Name</Label>
+                    <Input value={selectedWorkOrder?.subcontractorName || 'N/A'} readOnly className="bg-muted"/>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billNo">Bill No</Label>
@@ -624,4 +628,5 @@ export default function CreateBillPage() {
     </>
   );
 }
+
 
