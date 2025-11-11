@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -22,7 +21,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -47,16 +46,17 @@ export default function WorkOrderLogPage() {
 
       try {
         let woQuery;
-        let fetchedProjectId: string | undefined = undefined;
+        
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
         if (projectSlug === 'all') {
           // Fetch from all projects without ordering
           woQuery = query(collectionGroup(db, 'workOrders'));
         } else {
           // Fetch from a specific project
-          const projectsQuery = query(collection(db, 'projects'));
-          const projectsSnapshot = await getDocs(projectsQuery);
-          const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+          const projectData = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
           if (!projectData) {
             toast({ title: "Project not found", variant: "destructive" });
@@ -64,8 +64,7 @@ export default function WorkOrderLogPage() {
             return;
           }
           setCurrentProject(projectData);
-          fetchedProjectId = projectData.id;
-          woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'), orderBy('date', 'desc'));
+          woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'));
         }
         
         const querySnapshot = await getDocs(woQuery);
@@ -73,7 +72,7 @@ export default function WorkOrderLogPage() {
             const data = doc.data();
             // Manually add projectSlug for 'all' view since it won't be on the doc
             const parentProjectSlug = projectSlug === 'all' 
-                ? slugify(projectsSnapshot.docs.find(p => p.id === doc.ref.parent.parent?.id)?.data().projectName || '')
+                ? slugify(allProjects.find(p => p.id === doc.ref.parent.parent?.id)?.projectName || '')
                 : projectSlug;
 
             return { 
@@ -83,14 +82,12 @@ export default function WorkOrderLogPage() {
             } as WorkOrder
         });
 
-        // Client-side sorting for the 'all' case to avoid index errors
-        if (projectSlug === 'all') {
-            entries.sort((a,b) => {
-                const dateA = a.date ? new Date(a.date).getTime() : 0;
-                const dateB = b.date ? new Date(b.date).getTime() : 0;
-                return dateB - dateA;
-            });
-        }
+        // Client-side sorting for all views to avoid index errors
+        entries.sort((a,b) => {
+            const dateA = a.date ? new Date(a.date).getTime() : 0;
+            const dateB = b.date ? new Date(b.date).getTime() : 0;
+            return dateB - dateA;
+        });
         
         setWorkOrders(entries);
         
@@ -158,9 +155,11 @@ export default function WorkOrderLogPage() {
           </Link>
           <h1 className="text-2xl font-bold">Work Order Log</h1>
         </div>
-        <Link href={`/subcontractors-management/${projectSlug}/work-order/create`}>
-          <Button><Plus className="mr-2 h-4 w-4" /> Create Work Order</Button>
-        </Link>
+        {projectSlug !== 'all' && (
+            <Link href={`/subcontractors-management/${projectSlug}/work-order/create`}>
+              <Button><Plus className="mr-2 h-4 w-4" /> Create Work Order</Button>
+            </Link>
+        )}
       </div>
       <Card>
         <CardContent className="p-0">
