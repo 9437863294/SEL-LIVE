@@ -229,8 +229,8 @@ export default function PrintMvacPage() {
             ...item,
             boqQty: boqItem
               ? Number(
-                  (boqItem as any).QTY ||
-                    (boqItem as any)['Total Qty'] ||
+                  (boqItem as any).QTY ??
+                    (boqItem as any)['Total Qty'] ??
                     0
                 )
               : 0,

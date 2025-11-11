@@ -190,9 +190,7 @@ export default function PrintJmcPage() {
       setIsLoading(true);
       try {
         // 1. Find project by slug
-        const projectsSnapshot = await getDocs(
-          query(collection(db, 'projects'))
-        );
+        const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
         const projectData = projectsSnapshot.docs
           .map(
             (d) =>
@@ -232,14 +230,7 @@ export default function PrintJmcPage() {
 
         // 3. Load BOQ items map by composite key
         const boqSnap = await getDocs(
-          query(
-            collection(
-              db,
-              'projects',
-              projectData.id,
-              'boqItems'
-            )
-          )
+          query(collection(db, 'projects', projectData.id, 'boqItems'))
         );
         const boqItemsMap = new Map<string, BoqItem>();
 
