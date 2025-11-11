@@ -2,38 +2,148 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, writeBatch, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, JmcEntry, BoqItem } from '@/lib/types';
-import { JmcItemSelectorDialog } from '@/components/JmcItemSelectorDialog';
-import { useParams } from 'next/navigation';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WorkOrderItemSelectorDialog } from '@/components/WorkOrderItemSelectorDialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 const initialBillDetails = {
     billNo: '',
     billDate: new Date().toISOString().split('T')[0],
-    woNo: '',
+    workOrderId: '',
 };
 
-export default function CreateBillingPage() {
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
+type EnrichedBillItem = BillItem & {
+    orderQty: number;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+};
+
+type AdvanceDeductionItem = {
+    id: string;
+    reference: string; // This will now be the ProformaBill ID
+    amount: number;
+};
+
+
+export default function CreateBillPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
+
   const [details, setDetails] = useState(initialBillDetails);
-  const [items, setItems] = useState<BillItem[]>([]);
+  const [items, setItems] = useState<EnrichedBillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+  
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
+
+  const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  
+  const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
+  const [gstPercentage, setGstPercentage] = useState<number>(18);
+  const [gstAmount, setGstAmount] = useState<number>(0);
+
+  const [retentionType, setRetentionType] = useState<'percentage' | 'manual'>('percentage');
+  const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
+  const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
+  
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+
+
+  useEffect(() => {
+    const fetchProjectAndWorkOrders = async () => {
+        if (!projectSlug) return;
+        
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectSnap = await getDocs(projectsQuery);
+        const project = projectSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+            .find(p => slugify(p.projectName) === projectSlug);
+
+        if (!project) {
+            console.error("Project not found from slug:", projectSlug);
+            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+            return;
+        }
+        setCurrentProject(project);
+
+        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
+        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+
+        const [woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+          getDocs(woQuery),
+          getDocs(jmcQuery),
+          getDocs(billsQuery),
+          getDocs(proformaBillsQuery)
+        ]);
+
+        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+    };
+    fetchProjectAndWorkOrders();
+  }, [projectSlug, toast]);
+  
+  useEffect(() => {
+      const wo = workOrders.find(w => w.id === details.workOrderId);
+      setSelectedWorkOrder(wo || null);
+      setItems([]); // Reset items when WO changes
+  }, [details.workOrderId, workOrders]);
+
+  const availableProformaBills = useMemo(() => {
+    const deductedAmounts: Record<string, number> = {};
+    bills.forEach(bill => {
+        (bill.advanceDeductions || []).forEach(deduction => {
+            deductedAmounts[deduction.reference] = (deductedAmounts[deduction.reference] || 0) + deduction.amount;
+        });
+    });
+
+    return proformaBills
+        .map(proforma => {
+            const totalDeducted = deductedAmounts[proforma.id] || 0;
+            const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
+            return {
+                ...proforma,
+                remainingBalance,
+            };
+        })
+        .filter(proforma => proforma.remainingBalance > 0);
+  }, [proformaBills, bills]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -44,23 +154,18 @@ export default function CreateBillingPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const executedQty = parseFloat(item.executedQty);
+      const availableQty = parseFloat(item.executedQty);
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
         item.totalAmount = '';
-        newItems[index] = item;
-        setItems(newItems);
-        return;
-      }
-      
-      if(billedQty > executedQty) {
+      } else if (billedQty > availableQty) {
           toast({
               title: 'Quantity Exceeded',
-              description: `Billed quantity cannot be more than available quantity (${executedQty}).`,
+              description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
               variant: 'destructive',
           });
-          item.billedQty = executedQty.toString();
+          item.billedQty = availableQty.toString();
       } else {
           item.billedQty = value;
       }
@@ -76,74 +181,171 @@ export default function CreateBillingPage() {
       setItems(newItems);
   };
   
-  const handleItemsAdd = (selectedItems: BillItem[]) => {
-      const newItems = [...items];
-      selectedItems.forEach(newItem => {
-        // Prevent adding the same item from the same JMC twice
-        const exists = newItems.some(
-            i => i.jmcItemId === newItem.jmcItemId && i.jmcEntryId === newItem.jmcEntryId
-        );
-        if (!exists) {
-            newItems.push(newItem);
-        }
+  const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
+      const newBillItems: EnrichedBillItem[] = selectedWoItems.map(woItem => {
+          
+        const totalJmcCertifiedForBoqItem = jmcEntries
+            .flatMap(jmc => jmc.items)
+            .filter(jmcItem => jmcItem.boqSlNo === woItem.boqSlNo)
+            .reduce((sum, item) => sum + (item.certifiedQty || 0), 0);
+        
+        const alreadyBilledForWoItem = bills
+            .filter(bill => bill.workOrderId === details.workOrderId)
+            .flatMap(bill => bill.items)
+            .filter(billItem => billItem.jmcItemId === woItem.id)
+            .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+
+        const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+
+        return {
+            jmcItemId: woItem.id,
+            jmcEntryId: '',
+            jmcNo: '',
+            boqSlNo: woItem.boqSlNo || '',
+            description: woItem.description,
+            unit: woItem.unit,
+            rate: String(woItem.rate),
+            orderQty: woItem.orderQty,
+            jmcCertifiedQty: totalJmcCertifiedForBoqItem,
+            alreadyBilledQty: alreadyBilledForWoItem,
+            executedQty: String(Math.max(0, availableForBilling)),
+            billedQty: '',
+            totalAmount: '',
+        };
       });
-      setItems(newItems);
+      setItems(prev => [...prev, ...newBillItems]);
   }
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const handleAdvanceChange = (id: string, field: 'reference' | 'amount', value: string | number) => {
+    setAdvanceDeductions(prev => {
+        return prev.map(adv => {
+            if (adv.id !== id) return adv;
+            
+            if(field === 'reference') {
+                const selectedProforma = availableProformaBills.find(p => p.id === value);
+                return { ...adv, reference: String(value), amount: selectedProforma?.remainingBalance || 0 };
+            }
+            if(field === 'amount') {
+                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
+                const maxAmount = selectedProforma?.remainingBalance || 0;
+                const newAmount = Number(value);
+                if (newAmount > maxAmount) {
+                    toast({
+                        title: "Deduction Exceeds Balance",
+                        description: `Maximum deduction for ${selectedProforma?.proformaNo} is ${formatCurrency(maxAmount)}.`,
+                        variant: 'destructive'
+                    });
+                    return { ...adv, amount: maxAmount };
+                }
+                return { ...adv, amount: newAmount };
+            }
+            return adv;
+        });
+    });
+  };
+
+  const addAdvanceField = () => {
+    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', amount: 0 }]);
+  };
+  const removeAdvanceField = (id: string) => {
+    if (advanceDeductions.length > 1) {
+        setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
+    } else {
+        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+    }
+  };
+
+  const financials = useMemo(() => {
+    const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+    const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
+    const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
+    const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);
+    const grossAmount = subtotal + finalGstAmount;
+    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction;
+    const netPayable = grossAmount - totalDeductions;
+    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction };
+  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeductions]);
+
+
   const handleSave = async () => {
-    if (!user) {
-        toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
+    if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
+        toast({ title: 'Missing Required Fields', description: 'Please fill in Bill No, select a Work Order, and add at least one item.', variant: 'destructive'});
         return;
     }
     setIsSaving(true);
-    if (!projectSlug || !details.billNo || !details.woNo || items.length === 0) {
-        toast({
-            title: 'Missing Required Fields',
-            description: 'Please fill in Bill No, WO No, and add at least one item.',
-            variant: 'destructive',
-        });
-        setIsSaving(false);
-        return;
-    }
     
     try {
-        const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
-        const billData = {
-            ...details,
-            items: items.map(item => ({...item, billedQty: parseFloat(item.billedQty)})), // Ensure billedQty is a number
-            createdAt: serverTimestamp()
-        };
-        await addDoc(collection(db, 'projects', projectSlug, 'bills'), billData);
+        const workflowRef = doc(db, 'workflows', 'billing-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
         
-        await logUserActivity({
-            userId: user.id,
-            action: 'Create Bill',
-            details: {
-                project: projectSlug,
-                billNo: details.billNo,
-                workOrderNo: details.woNo,
-                itemCount: items.length,
-                totalAmount: totalAmount,
-            }
-        });
+        const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+        if(steps.length === 0) throw new Error('Billing workflow has no steps.');
+        const firstStep = steps[0];
+        
+        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
+            ...rest,
+            billedQty: parseFloat(rest.billedQty) || 0,
+        }));
 
-        toast({
-            title: 'Bill Created',
-            description: 'The new bill has been successfully saved.',
-        });
-        setDetails(initialBillDetails);
-        setItems([]);
+        const billData: Omit<Bill, 'id'> = {
+            ...details,
+            workOrderNo: selectedWorkOrder.workOrderNo,
+            items: itemsToSave,
+            subtotal: financials.subtotal,
+            gstType,
+            gstPercentage: gstType === 'percentage' ? gstPercentage : null,
+            gstAmount: financials.finalGstAmount,
+            grossAmount: financials.grossAmount,
+            retentionType,
+            retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
+            retentionAmount: financials.finalRetentionAmount,
+            advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0),
+            totalDeductions: financials.totalDeductions,
+            netPayable: financials.netPayable,
+            totalAmount: financials.netPayable,
+            createdAt: serverTimestamp(),
+            projectId: currentProject?.id || '',
+            status: 'Pending',
+            stage: firstStep.name,
+            currentStepId: firstStep.id,
+            assignees: [],
+            history: [],
+        };
+        
+        const tempForAssignment = { ...billData, amount: billData.netPayable, date: billData.billDate };
+        const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
+        if(!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
+        billData.assignees = assignees;
+
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+        (billData as any).deadline = Timestamp.fromDate(deadline);
+
+        const initialLog: ActionLog = {
+            action: 'Created',
+            comment: 'Bill created.',
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: 'Creation',
+        };
+        billData.history = [initialLog];
+
+
+        if(!currentProject) throw new Error("Project ID is missing");
+        
+        await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+        
+        toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
+        router.push(`/subcontractors-management/${projectSlug}/billing`);
+
     } catch (error) {
         console.error("Error creating bill: ", error);
-        toast({
-            title: 'Save Failed',
-            description: 'An error occurred while saving the bill.',
-            variant: 'destructive',
-        });
+        toast({ title: 'Save Failed', description: 'An error occurred while saving the bill.', variant: 'destructive' });
     } finally {
         setIsSaving(false);
     }
@@ -160,12 +362,10 @@ export default function CreateBillingPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href={`/billing-recon/${projectSlug}/billing`}>
-                  <Button variant="ghost" size="icon">
-                      <ArrowLeft className="h-6 w-6" />
-                  </Button>
+              <Link href={`/subcontractors-management/${projectSlug}/billing`}>
+                  <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
               </Link>
-              <h1 className="text-2xl font-bold">Create New Bill</h1>
+              <h1 className="text-2xl font-bold">Bill Entry</h1>
           </div>
           <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -174,19 +374,21 @@ export default function CreateBillingPage() {
         </div>
 
         <Card className="mb-6">
-          <CardHeader>
-              <CardTitle>Bill Details</CardTitle>
-              <CardDescription>Provide the main details for this bill.</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>
           <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
-                      <Label htmlFor="billNo">Bill No</Label>
-                      <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
+                      <Label htmlFor="workOrderId">Work Order No</Label>
+                      <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
+                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                          <SelectContent>
+                              {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
                   </div>
                   <div className="space-y-2">
-                      <Label htmlFor="woNo">Work Order No</Label>
-                      <Input id="woNo" name="woNo" value={details.woNo} onChange={handleDetailChange} />
+                      <Label htmlFor="billNo">Bill No</Label>
+                      <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billDate">Bill Date</Label>
@@ -201,10 +403,10 @@ export default function CreateBillingPage() {
                <div className="flex items-center justify-between">
                   <div>
                       <CardTitle>Bill Items</CardTitle>
-                      <CardDescription>Add items from JMC entries to this bill.</CardDescription>
+                      <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
                   </div>
-                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)}>
-                      <Plus className="mr-2 h-4 w-4" /> Add Items from JMC
+                  <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                      <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
                   </Button>
               </div>
           </CardHeader>
@@ -213,12 +415,14 @@ export default function CreateBillingPage() {
                   <Table>
                       <TableHeader>
                           <TableRow>
-                              <TableHead>JMC No.</TableHead>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
                               <TableHead>Unit</TableHead>
+                              <TableHead>Order Qty</TableHead>
+                              <TableHead>JMC Certified Qty</TableHead>
+                              <TableHead>Already Billed Qty</TableHead>
+                              <TableHead>Available for Billing</TableHead>
                               <TableHead>Rate</TableHead>
-                              <TableHead>Available Qty</TableHead>
                               <TableHead>Billed Qty</TableHead>
                               <TableHead>Total Amount</TableHead>
                               <TableHead>Action</TableHead>
@@ -227,12 +431,14 @@ export default function CreateBillingPage() {
                       <TableBody>
                           {items.map((item, index) => (
                               <TableRow key={item.jmcItemId}>
-                                  <TableCell>{item.jmcNo}</TableCell>
                                   <TableCell>{item.boqSlNo}</TableCell>
                                   <TableCell>{item.description}</TableCell>
                                   <TableCell>{item.unit}</TableCell>
+                                  <TableCell>{item.orderQty}</TableCell>
+                                  <TableCell>{item.jmcCertifiedQty}</TableCell>
+                                  <TableCell>{item.alreadyBilledQty}</TableCell>
+                                  <TableCell className="font-semibold">{item.executedQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
-                                  <TableCell>{item.executedQty}</TableCell>
                                   <TableCell>
                                       <Input 
                                         type="number" 
@@ -254,13 +460,129 @@ export default function CreateBillingPage() {
               </div>
           </CardContent>
         </Card>
+
+        <Card className="mt-6">
+            <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                    <div>
+                        <Label>GST</Label>
+                        <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4 mt-2">
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="percentage" id="gst-percentage" />
+                              <Label htmlFor="gst-percentage">By Percentage</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="manual" id="gst-manual" />
+                              <Label htmlFor="gst-manual">Manual Entry</Label>
+                            </div>
+                        </RadioGroup>
+                        {gstType === 'percentage' ? (
+                            <div className="flex items-center gap-2 mt-2">
+                                <Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
+                                <span className="text-muted-foreground">%</span>
+                            </div>
+                        ) : (
+                            <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
+                        )}
+                    </div>
+                     <Separator />
+                    <div>
+                        <Label>Deductions</Label>
+                        <div className="space-y-4 mt-2">
+                            <div className="space-y-2">
+                                <Label>Retention</Label>
+                                <RadioGroup value={retentionType} onValueChange={(v) => setRetentionType(v as any)} className="flex gap-4">
+                                    <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="ret-percentage" /><Label htmlFor="ret-percentage">Percentage</Label></div>
+                                    <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="ret-manual" /><Label htmlFor="ret-manual">Manual</Label></div>
+                                </RadioGroup>
+                                {retentionType === 'percentage' ? (
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(parseFloat(e.target.value) || 0)} />
+                                        <span className="text-muted-foreground">%</span>
+                                    </div>
+                                ) : (
+                                    <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Advance Deductions</Label>
+                                {advanceDeductions.map((adv, index) => (
+                                    <div key={adv.id} className="flex items-center gap-2">
+                                        <Select
+                                            value={adv.reference}
+                                            onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select Proforma/Advance" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableProformaBills.map(proforma => (
+                                                    <SelectItem key={proforma.id} value={proforma.id}>
+                                                        {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Input
+                                            type="number"
+                                            placeholder="Amount"
+                                            value={adv.amount}
+                                            onChange={(e) => handleAdvanceChange(adv.id, 'amount', e.target.value)}
+                                            max={availableProformaBills.find(p => p.id === adv.reference)?.remainingBalance}
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeAdvanceField(adv.id)}
+                                        >
+                                            <Trash2 className="h-4 w-4 text-destructive"/>
+                                        </Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
+                                    <Plus className="mr-2 h-4 w-4" /> Add Advance
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">{formatCurrency(financials.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">GST</span>
+                        <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between items-center font-semibold">
+                        <span>Gross Amount</span>
+                        <span>{formatCurrency(financials.grossAmount)}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm text-destructive">
+                        <span className="text-muted-foreground">Total Deductions</span>
+                        <span className="font-medium">-{formatCurrency(financials.totalDeductions)}</span>
+                    </div>
+                     <Separator />
+                     <div className="flex justify-between items-center font-bold text-lg">
+                        <span>Net Payable Amount</span>
+                        <span>{formatCurrency(financials.netPayable)}</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
       </div>
-      <JmcItemSelectorDialog
+      <WorkOrderItemSelectorDialog
         isOpen={isSelectorOpen}
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
+        workOrder={selectedWorkOrder}
         alreadyAddedItems={items}
       />
     </>
   );
 }
+
