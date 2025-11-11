@@ -43,6 +43,12 @@ type EnrichedBillItem = BillItem & {
     alreadyBilledQty: number;
 };
 
+type AdvanceDeductionItem = {
+    id: string;
+    reference: string;
+    amount: number;
+};
+
 
 export default function CreateBillPage() {
   const { toast } = useToast();
@@ -70,7 +76,7 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   
-  const [advanceDeduction, setAdvanceDeduction] = useState<number>(0);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
 
 
   useEffect(() => {
@@ -187,16 +193,30 @@ export default function CreateBillPage() {
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
-  
+
+  const handleAdvanceChange = (id: string, field: 'reference' | 'amount', value: string | number) => {
+    setAdvanceDeductions(prev => prev.map(adv => adv.id === id ? { ...adv, [field]: value } : adv));
+  };
+  const addAdvanceField = () => {
+    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', amount: 0 }]);
+  };
+  const removeAdvanceField = (id: string) => {
+    if (advanceDeductions.length > 1) {
+        setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
+    }
+  };
+
   const financials = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
     const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
+    const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);
     const grossAmount = subtotal + finalGstAmount;
-    const totalDeductions = finalRetentionAmount + advanceDeduction;
+    const totalDeductions = finalRetentionAmount + totalAdvanceDeduction;
     const netPayable = grossAmount - totalDeductions;
-    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable };
-  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeduction]);
+    return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction };
+  }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, advanceDeductions]);
+
 
   const handleSave = async () => {
     if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
@@ -223,7 +243,7 @@ export default function CreateBillPage() {
             retentionType,
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
-            advanceDeduction,
+            advanceDeductions: advanceDeductions,
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
@@ -401,8 +421,34 @@ export default function CreateBillPage() {
                                 )}
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="advance">Advance Deduction</Label>
-                                <Input id="advance" type="number" value={advanceDeduction} onChange={e => setAdvanceDeduction(parseFloat(e.target.value) || 0)} />
+                                <Label>Advance Deductions</Label>
+                                {advanceDeductions.map((adv, index) => (
+                                    <div key={adv.id} className="flex items-center gap-2">
+                                        <Input
+                                            placeholder="Proforma Inv. No / Ref"
+                                            value={adv.reference}
+                                            onChange={(e) => handleAdvanceChange(adv.id, 'reference', e.target.value)}
+                                        />
+                                        <Input
+                                            type="number"
+                                            placeholder="Amount"
+                                            value={adv.amount}
+                                            onChange={(e) => handleAdvanceChange(adv.id, 'amount', parseFloat(e.target.value) || 0)}
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeAdvanceField(adv.id)}
+                                            disabled={advanceDeductions.length <= 1}
+                                        >
+                                            <Trash2 className="h-4 w-4 text-destructive"/>
+                                        </Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
+                                    <Plus className="mr-2 h-4 w-4" /> Add Advance
+                                </Button>
                             </div>
                         </div>
                     </div>
@@ -444,5 +490,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
