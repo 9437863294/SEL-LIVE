@@ -30,9 +30,15 @@ interface SubcontractorCardProps {
 
 const slugify = (text: string) => {
   if (!text) return '';
-  return text.toString().toLowerCase().trim()
-    .replace(/\s+/g, '-').replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
 };
 
 function SubcontractorCard({ item }: SubcontractorCardProps) {
