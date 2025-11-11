@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -11,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { ProformaBill, Project, WorkOrder } from '@/lib/types';
+import type { ProformaBill, Project, WorkOrder, Subcontractor } from '@/lib/types';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -139,6 +140,7 @@ export default function PrintProformaBillPage() {
   const [project, setProject] =
     useState<(Project & { signatures?: any[] }) | null>(null);
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
+  const [subcontractor, setSubcontractor] = useState<Subcontractor | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   /* ----- Fetch data ----- */
@@ -173,6 +175,12 @@ export default function PrintProformaBillPage() {
         const woDocSnap = await getDoc(woDocRef);
         if(woDocSnap.exists()) {
             setWorkOrder(woDocSnap.data() as WorkOrder);
+        }
+
+        const subDocRef = doc(db, 'projects', projectData.id, 'subcontractors', billData.subcontractorId);
+        const subDocSnap = await getDoc(subDocRef);
+        if(subDocSnap.exists()) {
+            setSubcontractor(subDocSnap.data() as Subcontractor);
         }
 
       } catch (e) {
@@ -242,6 +250,22 @@ export default function PrintProformaBillPage() {
               <span><strong>Bill No.:</strong> {workDetails.billNo}</span>
               <span><strong>DATE:</strong> {workDetails.billDate}</span>
             </div>
+          </div>
+          
+          <div className="text-[9pt] space-y-1 mb-2 mt-4 border border-black p-2">
+            <h2 className="font-bold text-center">Subcontractor Details</h2>
+             <div className="grid grid-cols-2 gap-x-4">
+                <div>
+                  <p><strong>Bank:</strong> {subcontractor?.bankName || 'N/A'}</p>
+                  <p><strong>Branch:</strong> {subcontractor?.bankBranch || 'N/A'}</p>
+                  <p><strong>A/c No:</strong> {subcontractor?.accountNumber || 'N/A'}</p>
+                </div>
+                <div>
+                   <p><strong>IFSC:</strong> {subcontractor?.ifscCode || 'N/A'}</p>
+                   <p><strong>GST No:</strong> {subcontractor?.gstNumber || 'N/A'}</p>
+                   <p><strong>PAN No:</strong> {subcontractor?.panNumber || 'N/A'}</p>
+                </div>
+             </div>
           </div>
 
           <div className="overflow-x-auto border border-black">
