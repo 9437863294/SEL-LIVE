@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -64,9 +65,11 @@ export default function BillingDashboardPage() {
   const projectSlug = params.project as string;
   const { can, isLoading } = useAuthorization();
   
+  const isAllProjectsView = projectSlug === 'all';
+  
   const billingItems = [
-    { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') },
-    { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') },
+    { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
+    { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
     { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
     { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
   ];
