@@ -47,8 +47,10 @@ type EnrichedBillItem = BillItem & {
 
 type AdvanceDeductionItem = {
     id: string;
-    reference: string; // This will now be the ProformaBill ID
-    amount: number;
+    reference: string; // ProformaBill ID
+    deductionType: 'amount' | 'percentage';
+    deductionValue: number; // Holds the raw amount or percentage
+    amount: number; // Holds the final calculated deduction amount
 };
 
 
@@ -79,7 +81,7 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
 
   useEffect(() => {
@@ -221,42 +223,48 @@ export default function CreateBillPage() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const handleAdvanceChange = (id: string, field: 'reference' | 'amount', value: string | number) => {
+  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
     setAdvanceDeductions(prev => {
         return prev.map(adv => {
             if (adv.id !== id) return adv;
             
-            if(field === 'reference') {
-                const selectedProforma = availableProformaBills.find(p => p.id === value);
-                return { ...adv, reference: String(value), amount: selectedProforma?.remainingBalance || 0 };
+            const newAdv = { ...adv, [field]: value };
+            
+            const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
+            const maxAmount = selectedProforma?.remainingBalance || 0;
+            
+            if (field === 'reference') {
+                newAdv.deductionType = 'amount';
+                newAdv.deductionValue = 0;
+                newAdv.amount = 0;
             }
-            if(field === 'amount') {
-                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
-                const maxAmount = selectedProforma?.remainingBalance || 0;
-                const newAmount = Number(value);
-                if (newAmount > maxAmount) {
-                    toast({
-                        title: "Deduction Exceeds Balance",
-                        description: `Maximum deduction for ${selectedProforma?.proformaNo} is ${formatCurrency(maxAmount)}.`,
-                        variant: 'destructive'
-                    });
-                    return { ...adv, amount: maxAmount };
-                }
-                return { ...adv, amount: newAmount };
+
+            if (newAdv.deductionType === 'amount') {
+                newAdv.amount = Math.min(maxAmount, Number(newAdv.deductionValue) || 0);
+            } else if (newAdv.deductionType === 'percentage') {
+                const calculatedAmount = maxAmount * (Number(newAdv.deductionValue) / 100);
+                newAdv.amount = Math.min(maxAmount, calculatedAmount);
             }
-            return adv;
+            
+            // Final check to prevent over-deduction
+            if (newAdv.amount > maxAmount) {
+                newAdv.amount = maxAmount;
+                 if(newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
+            }
+
+            return newAdv;
         });
     });
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', amount: 0 }]);
+        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -513,28 +521,32 @@ export default function CreateBillPage() {
                                 return (
                                 <Card key={adv.id} className="p-4 space-y-3">
                                     <div className="flex items-start gap-2">
-                                    <div className="flex-grow space-y-2">
-                                        <Select value={adv.reference} onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Proforma/Advance" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {availableProformaBills.map(proforma => (
-                                            <SelectItem key={proforma.id} value={proforma.id}>
-                                                {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
-                                            </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                        </Select>
-                                        <Input
-                                            type="number"
-                                            placeholder="Amount to Deduct"
-                                            value={adv.amount}
-                                            onChange={(e) => handleAdvanceChange(adv.id, 'amount', e.target.value)}
-                                            max={selectedProforma?.remainingBalance || 0}
-                                        />
-                                    </div>
-                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                        <div className="flex-grow space-y-2">
+                                            <Select value={adv.reference} onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}>
+                                                <SelectTrigger><SelectValue placeholder="Select Proforma/Advance" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {availableProformaBills.map(proforma => (
+                                                    <SelectItem key={proforma.id} value={proforma.id}>
+                                                        {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                                    </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType', v as any)} className="flex gap-4 pt-2">
+                                                <div className="flex items-center space-x-2"><RadioGroupItem value="amount" id={`adv-type-amount-${adv.id}`} /><Label htmlFor={`adv-type-amount-${adv.id}`}>Amount</Label></div>
+                                                <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id={`adv-type-percent-${adv.id}`} /><Label htmlFor={`adv-type-percent-${adv.id}`}>Percentage</Label></div>
+                                            </RadioGroup>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    type="number"
+                                                    placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'}
+                                                    value={adv.deductionValue}
+                                                    onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue', e.target.value)}
+                                                />
+                                                {adv.deductionType === 'percentage' && <span className="text-muted-foreground">%</span>}
+                                            </div>
+                                        </div>
+                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
                                     </div>
                                     {selectedProforma && (
                                     <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
