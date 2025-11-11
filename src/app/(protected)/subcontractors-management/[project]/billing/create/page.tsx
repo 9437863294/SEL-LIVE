@@ -323,7 +323,7 @@ export default function CreateBillPage() {
         
         const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
             ...rest,
-            billedQty: parseFloat(rest.billedQty) || 0,
+            billedQty: rest.billedQty || '0',
         }));
 
         const billData: Omit<Bill, 'id'> = {
@@ -438,6 +438,10 @@ export default function CreateBillPage() {
                               {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
                           </SelectContent>
                       </Select>
+                  </div>
+                   <div className="space-y-2">
+                      <Label>Subcontractor Name</Label>
+                      <Input value={selectedWorkOrder?.subcontractorName || ''} readOnly className="bg-muted"/>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billNo">Bill No</Label>
@@ -669,9 +673,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-
-
-
-
-    
