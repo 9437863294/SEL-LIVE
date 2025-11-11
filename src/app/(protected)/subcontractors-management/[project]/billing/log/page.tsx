@@ -42,12 +42,12 @@ export default function BillLogPage() {
       setIsLoading(true);
       try {
         let billsQuery;
+        
         const projectsQuery = query(collection(db, 'projects'));
         const projectSnap = await getDocs(projectsQuery);
         const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
         if (projectSlug === 'all') {
-            // Fetch without ordering, sort on the client
             billsQuery = query(collectionGroup(db, 'bills'));
         } else {
             const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
@@ -58,28 +58,30 @@ export default function BillLogPage() {
                 return;
             }
             const projectId = project.id;
-            billsQuery = query(collection(db, 'projects', projectId, 'bills'), orderBy('createdAt', 'desc'));
+            billsQuery = query(collection(db, 'projects', projectId, 'bills'));
         }
         
         const querySnapshot = await getDocs(billsQuery);
         const entries = querySnapshot.docs.map(doc => {
           const data = doc.data();
+          const projectId = doc.ref.parent.parent?.id;
+          const project = allProjects.find(p => p.id === projectId);
+
           return {
             id: doc.id,
             ...data,
+            projectName: project?.projectName || 'Unknown',
             billDate: format(new Date(data.billDate), 'dd MMM, yyyy'),
             totalAmount: data.totalAmount || data.items.reduce((sum: number, item: any) => sum + parseFloat(item.totalAmount || '0'), 0)
           } as Bill;
         });
         
-        // Client-side sorting for 'all' projects view or any view without server-side ordering
-        if (projectSlug === 'all') {
-            entries.sort((a, b) => {
-                const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-                const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-                return dateB - dateA;
-            });
-        }
+        // Client-side sorting for all views
+        entries.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+            return dateB - dateA;
+        });
         
         setBills(entries);
 
@@ -119,6 +121,7 @@ export default function BillLogPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {projectSlug === 'all' && <TableHead>Project</TableHead>}
                   <TableHead>Bill No.</TableHead>
                   <TableHead>Bill Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
@@ -131,17 +134,13 @@ export default function BillLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+                      <TableCell colSpan={projectSlug === 'all' ? 7 : 6}><Skeleton className="h-5 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : bills.length > 0 ? (
                   bills.map((bill) => (
                     <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
+                      {projectSlug === 'all' && <TableCell className="font-medium">{bill.projectName}</TableCell>}
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
                       <TableCell>{bill.woNo}</TableCell>
@@ -168,7 +167,7 @@ export default function BillLogPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
+                    <TableCell colSpan={projectSlug === 'all' ? 7 : 6} className="text-center h-24">
                       No bills found.
                     </TableCell>
                   </TableRow>

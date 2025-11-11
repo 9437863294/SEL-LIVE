@@ -21,7 +21,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -52,33 +52,30 @@ export default function WorkOrderLogPage() {
         const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
         if (projectSlug === 'all') {
-          // Fetch from all projects without ordering
           woQuery = query(collectionGroup(db, 'workOrders'));
         } else {
-          // Fetch from a specific project
-          const projectData = allProjects.find(p => slugify(p.projectName) === projectSlug);
+          const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
 
-          if (!projectData) {
-            toast({ title: "Project not found", variant: "destructive" });
+          if (!project) {
+            console.error("Project not found");
             setIsLoading(false);
             return;
           }
-          setCurrentProject(projectData);
-          woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'));
+          setCurrentProject(project);
+          woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         }
         
         const querySnapshot = await getDocs(woQuery);
         const entries = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            // Manually add projectSlug for 'all' view since it won't be on the doc
-            const parentProjectSlug = projectSlug === 'all' 
-                ? slugify(allProjects.find(p => p.id === doc.ref.parent.parent?.id)?.projectName || '')
-                : projectSlug;
+            const projectId = doc.ref.parent.parent?.id;
+            const project = allProjects.find(p => p.id === projectId);
 
             return { 
                 id: doc.id, 
                 ...data,
-                projectSlug: parentProjectSlug,
+                projectName: project?.projectName || 'Unknown',
+                projectSlug: project ? slugify(project.projectName) : '',
             } as WorkOrder
         });
 
@@ -168,6 +165,7 @@ export default function WorkOrderLogPage() {
               <TableRow>
                 <TableHead>WO No.</TableHead>
                 <TableHead>Date</TableHead>
+                {projectSlug === 'all' && <TableHead>Project</TableHead>}
                 <TableHead>Subcontractor</TableHead>
                 <TableHead>Total Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -177,7 +175,7 @@ export default function WorkOrderLogPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={5}><Skeleton className="h-5" /></TableCell>
+                    <TableCell colSpan={projectSlug === 'all' ? 6 : 5}><Skeleton className="h-5" /></TableCell>
                   </TableRow>
                 ))
               ) : workOrders.length > 0 ? (
@@ -185,6 +183,7 @@ export default function WorkOrderLogPage() {
                   <TableRow key={wo.id} className="cursor-pointer" onClick={() => handleRowClick(wo)}>
                     <TableCell className="font-medium">{wo.workOrderNo}</TableCell>
                     <TableCell>{formatDate(wo.date)}</TableCell>
+                    {projectSlug === 'all' && <TableCell>{wo.projectName}</TableCell>}
                     <TableCell>{wo.subcontractorName}</TableCell>
                     <TableCell>{formatCurrency(wo.totalAmount)}</TableCell>
                     <TableCell className="text-right">
@@ -196,7 +195,7 @@ export default function WorkOrderLogPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-24">
+                  <TableCell colSpan={projectSlug === 'all' ? 6 : 5} className="text-center h-24">
                     No work orders found for this project.
                   </TableCell>
                 </TableRow>

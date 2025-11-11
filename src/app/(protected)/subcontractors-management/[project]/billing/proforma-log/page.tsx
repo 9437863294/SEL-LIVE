@@ -31,6 +31,7 @@ interface EnrichedProformaBill extends ProformaBill {
     deductedAmount: number;
     availableForDeduction: number;
     deductingBills: { billNo: string; amount: number }[];
+    projectName?: string;
 }
 
 export default function ProformaBillLogPage() {
@@ -77,6 +78,8 @@ export default function ProformaBillLogPage() {
 
         const entries = proformaSnapshot.docs.map(doc => {
           const data = doc.data() as ProformaBill;
+          const projectId = doc.ref.parent.parent?.id;
+          const project = allProjects.find(p => p.id === projectId);
 
           const deductions = allBills
             .flatMap(bill => bill.advanceDeductions || [])
@@ -95,6 +98,7 @@ export default function ProformaBillLogPage() {
           return {
             id: doc.id,
             ...data,
+            projectName: project?.projectName || 'Unknown',
             date: format(new Date(data.date), 'dd MMM, yyyy'),
             deductedAmount,
             availableForDeduction,
@@ -153,6 +157,7 @@ export default function ProformaBillLogPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12"></TableHead>
+                  {projectSlug === 'all' && <TableHead>Project</TableHead>}
                   <TableHead>Proforma No.</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
@@ -166,7 +171,7 @@ export default function ProformaBillLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8}><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell colSpan={projectSlug === 'all' ? 9 : 8}><Skeleton className="h-5 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : proformaBills.length > 0 ? (
@@ -180,6 +185,7 @@ export default function ProformaBillLogPage() {
                             </Button>
                           )}
                         </TableCell>
+                        {projectSlug === 'all' && <TableCell className="font-medium">{bill.projectName}</TableCell>}
                         <TableCell className="font-medium">{bill.proformaNo}</TableCell>
                         <TableCell>{bill.date}</TableCell>
                         <TableCell>{bill.workOrderNo}</TableCell>
@@ -190,7 +196,7 @@ export default function ProformaBillLogPage() {
                       </TableRow>
                       {expandedRows.has(bill.id) && bill.deductingBills.length > 0 && (
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            <TableCell colSpan={8} className="p-0">
+                            <TableCell colSpan={projectSlug === 'all' ? 9 : 8} className="p-0">
                                 <div className="p-4">
                                     <h4 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills:</h4>
                                     <div className="flex flex-wrap gap-2">
@@ -208,7 +214,7 @@ export default function ProformaBillLogPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    <TableCell colSpan={projectSlug === 'all' ? 9 : 8} className="text-center h-24">
                       No proforma/advance bills found.
                     </TableCell>
                   </TableRow>
