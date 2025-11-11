@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -9,10 +10,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -20,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { WorkOrderItemSelectorDialog } from '@/components/WorkOrderItemSelectorDialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 const initialBillDetails = {
     billNo: '',
@@ -266,12 +268,20 @@ export default function CreateBillPage() {
     setIsSaving(true);
     
     try {
+        const workflowRef = doc(db, 'workflows', 'billing-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
+        
+        const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+        if(steps.length === 0) throw new Error('Billing workflow has no steps.');
+        const firstStep = steps[0];
+        
         const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
             ...rest,
             billedQty: parseFloat(rest.billedQty) || 0,
         }));
 
-        const billData = {
+        const billData: Omit<Bill, 'id'> = {
             ...details,
             workOrderNo: selectedWorkOrder.workOrderNo,
             items: itemsToSave,
@@ -288,8 +298,32 @@ export default function CreateBillPage() {
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
             createdAt: serverTimestamp(),
-            projectId: currentProject?.id
+            projectId: currentProject?.id || '',
+            status: 'Pending',
+            stage: firstStep.name,
+            currentStepId: firstStep.id,
+            assignees: [],
+            history: [],
         };
+        
+        const tempForAssignment = { ...billData, amount: billData.netPayable, date: billData.billDate };
+        const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
+        if(!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
+        billData.assignees = assignees;
+
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+        (billData as any).deadline = Timestamp.fromDate(deadline);
+
+        const initialLog: ActionLog = {
+            action: 'Created',
+            comment: 'Bill created.',
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: 'Creation',
+        };
+        billData.history = [initialLog];
+
 
         if(!currentProject) throw new Error("Project ID is missing");
         
@@ -540,5 +574,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    

@@ -417,7 +417,8 @@ export default function BillingWorkflowConfigurationPage() {
           </Button>
         </div>
       </div>
-       <Card>
+
+      <Card>
         <CardHeader>
           <CardTitle>Workflow Steps</CardTitle>
           <CardDescription>
@@ -425,7 +426,294 @@ export default function BillingWorkflowConfigurationPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">This workflow page is a placeholder. Logic will be implemented in a future update.</p>
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : (
+            <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
+              {steps.map((step, index) => (
+                <AccordionItem value={step.id} key={step.id} className="border rounded-md px-4 mb-2 bg-background">
+                  <div className="flex items-center gap-2 py-2">
+                    <GripVertical className="h-5 w-5 text-muted-foreground" />
+                    <AccordionTrigger className="flex-1 text-base hover:no-underline">
+                      {index + 1}. {step.name}
+                    </AccordionTrigger>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'up')}
+                        disabled={!canEditPage || index === 0}
+                        aria-label="Move up"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'down')}
+                        disabled={!canEditPage || index === steps.length - 1}
+                        aria-label="Move down"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteStep(step.id)}
+                        disabled={!canEditPage || steps.length <= 1}
+                        aria-label={`Delete step ${step.name}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <AccordionContent>
+                    <div className="space-y-6 p-4 border-t">
+                      {/* Step name + TAT */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor={`step-name-${step.id}`}>Step Name</Label>
+                          <Input
+                            id={`step-name-${step.id}`}
+                            value={step.name}
+                            onChange={(e) => handleStepChange(step.id, 'name', e.target.value)}
+                            disabled={!canEditPage}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`tat-${step.id}`}>TAT (hours)</Label>
+                          <Input
+                            id={`tat-${step.id}`}
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            value={Number(step.tat) || 1}
+                            onChange={(e) =>
+                              handleStepChange(
+                                step.id,
+                                'tat',
+                                Math.max(1, parseInt(e.target.value || '1', 10)) as unknown as WorkflowStep['tat'],
+                              )
+                            }
+                            disabled={!canEditPage}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Assignment type */}
+                      <div className="space-y-4">
+                        <Label>Assignment Type</Label>
+                        <RadioGroup
+                          value={step.assignmentType}
+                          onValueChange={(v) =>
+                            handleStepChange(step.id, 'assignmentType', v as WorkflowStep['assignmentType'])
+                          }
+                          className="flex flex-wrap gap-4"
+                        >
+                          {(['User-based', 'Project-based', 'Department-based'] as const).map((type) => (
+                            <div key={type} className="flex items-center space-x-2">
+                              <RadioGroupItem value={type} id={`${step.id}-${type}`} disabled={!canEditPage} />
+                              <Label htmlFor={`${step.id}-${type}`} className="font-normal">
+                                {type}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
+
+                      {/* User-based assignment */}
+                      {isUserBased(step) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Primary User</Label>
+                            <Select
+                              value={step.assignedTo[0] ?? ''}
+                              onValueChange={(value) => {
+                                const next: WorkflowStepUser['assignedTo'] = [value, step.assignedTo[1] ?? ''];
+                                handleStepChange(step.id, 'assignedTo', next);
+                              }}
+                              disabled={!canEditPage}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a user" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {users.map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Alternative User</Label>
+                            <Select
+                              value={step.assignedTo[1] || 'none'}
+                              onValueChange={(value) => {
+                                const alt = value === 'none' ? '' : value;
+                                const next: WorkflowStepUser['assignedTo'] = [step.assignedTo[0] ?? '', alt];
+                                handleStepChange(step.id, 'assignedTo', next);
+                              }}
+                              disabled={!canEditPage}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a user (optional)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {users.map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Project/Department-based assignment */}
+                      {isMapped(step) && (
+                        <div className="space-y-2">
+                          <Label>Assign Users</Label>
+                          <Card className="mt-2">
+                            <div className="overflow-x-auto">
+                              <Table className="min-w-[720px]">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="whitespace-nowrap">
+                                      {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Primary User</TableHead>
+                                    <TableHead className="whitespace-nowrap">Alternative User</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
+                                    const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+                                    const row = map[item.id] ?? { primary: '', alternative: '' };
+                                    return (
+                                      <TableRow key={item.id}>
+                                        <TableCell className="whitespace-nowrap">
+                                          {'projectName' in item ? item.projectName : item.name}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.primary || ''}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'primary', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select primary user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.alternative || 'none'}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select alternative user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="none">None</SelectItem>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </Card>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="space-y-4">
+                        <Label>Actions</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[...allActions].map((action) => {
+                            const actionName = typeof action === 'string' ? action : action.name;
+                            const isChecked = step.actions.some(
+                              (a) => (typeof a === 'string' ? a : a.name) === actionName,
+                            );
+                            const id = `${step.id}-action-${actionName}`;
+                            return (
+                              <div key={id} className="space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={id}
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) =>
+                                      handleActionToggle(step.id, action, Boolean(checked))
+                                    }
+                                    disabled={!canEditPage}
+                                  />
+                                  <Label htmlFor={id} className="font-normal">
+                                    {actionName}
+                                  </Label>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Upload requirement */}
+                      <div className="space-y-2">
+                        <Label>Upload</Label>
+                        <RadioGroup
+                          value={step.upload}
+                          onValueChange={(v) => handleStepChange(step.id, 'upload', v as UploadRequirement)}
+                          className="flex gap-4"
+                        >
+                          {(['Required', 'Not Required', 'Optional'] as const).map((opt) => (
+                            <div key={opt} className="flex items-center space-x-2">
+                              <RadioGroupItem value={opt} id={`${step.id}-upload-${opt}`} disabled={!canEditPage} />
+                              <Label htmlFor={`${step.id}-upload-${opt}`} className="font-normal">
+                                {opt}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+
+          <Button variant="outline" onClick={handleAddStep} disabled={!canEditPage}>
+            <Plus className="mr-2 h-4 w-4" /> Add Step
+          </Button>
         </CardContent>
       </Card>
     </div>
@@ -459,3 +747,4 @@ function dedupeActionsByName(list: (string | ActionConfig)[]) {
   }
   return out;
 }
+

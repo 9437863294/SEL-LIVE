@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   FileClock,
   Settings,
+  GitMerge,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -18,6 +19,11 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMemo, useState, useEffect } from 'react';
+import type { WorkflowStep } from '@/lib/types';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface BillingCardProps {
   item: {
@@ -65,28 +71,61 @@ export default function BillingDashboardPage() {
   const params = useParams();
   const projectSlug = params.project as string;
   const { can, isLoading } = useAuthorization();
+  const { toast } = useToast();
   
   const isAllProjectsView = projectSlug === 'all';
+
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchWorkflow = async () => {
+      setIsWorkflowLoading(true);
+      try {
+        const workflowRef = doc(db, 'workflows', 'billing-workflow');
+        const snap = await getDoc(workflowRef);
+        if (snap.exists()) {
+          setWorkflowSteps((snap.data()?.steps as WorkflowStep[]) || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow:", error);
+        toast({ title: 'Error', description: 'Could not load workflow configuration.', variant: 'destructive'});
+      }
+      setIsWorkflowLoading(false);
+    };
+    fetchWorkflow();
+  }, [toast]);
   
-  const billingItems = [
-    { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
-    { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
-    { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
-    { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
-    { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !can('View', 'Subcontractors Management.Billing') || isAllProjectsView },
-  ];
+  const billingItems = useMemo(() => {
+      const staticItems = [
+        { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
+        { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Create', 'Subcontractors Management.Billing') || isAllProjectsView },
+        { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
+        { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View', 'Subcontractors Management.Billing') },
+        { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !can('View', 'Subcontractors Management.Billing') || isAllProjectsView },
+      ];
+
+      const workflowItems = workflowSteps.map(step => ({
+          icon: GitMerge,
+          text: step.name,
+          href: `/subcontractors-management/${projectSlug}/billing/stage/${step.id}`,
+          description: `Tasks for the ${step.name} stage.`,
+          disabled: !can('View', 'Subcontractors Management.Billing') || isAllProjectsView,
+      }));
+
+      return [...staticItems.slice(0, 2), ...workflowItems, ...staticItems.slice(2)];
+  }, [projectSlug, can, isAllProjectsView, workflowSteps]);
   
   const canViewModule = can('View', 'Subcontractors Management.Billing');
 
-  if(isLoading) {
+  if(isLoading || isWorkflowLoading) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-64 mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                <Skeleton className="h-28" />
-                <Skeleton className="h-28" />
-                <Skeleton className="h-28" />
-                <Skeleton className="h-28" />
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-28" />
+                ))}
             </div>
        </div>
     )
