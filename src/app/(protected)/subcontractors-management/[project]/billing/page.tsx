@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -19,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import type { WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -78,6 +77,15 @@ export default function BillingDashboardPage() {
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
 
+  const safeCan = useCallback((action: string, resource: string, scope?: string) => {
+    if (isLoading) return false;
+    try {
+      return can(action, resource, scope);
+    } catch {
+      return false;
+    }
+  }, [can, isLoading]);
+
   useEffect(() => {
     const fetchWorkflow = async () => {
       setIsWorkflowLoading(true);
@@ -99,11 +107,11 @@ export default function BillingDashboardPage() {
   
   const billingItems = useMemo(() => {
       const staticItems = [
-        { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !can('Create Bill', 'Subcontractors Management.Billing') || isAllProjectsView },
-        { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !can('Proforma/Advance Bill', 'Subcontractors Management.Billing') || isAllProjectsView },
-        { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !can('View Log', 'Subcontractors Management.Billing') },
-        { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !can('View Log', 'Subcontractors Management.Billing') },
-        { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !can('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
+        { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
+        { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !safeCan('Proforma/Advance Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
+        { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
+        { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
+        { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !safeCan('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
       ];
 
       const workflowItems = workflowSteps.map(step => ({
@@ -111,13 +119,14 @@ export default function BillingDashboardPage() {
           text: step.name,
           href: `/subcontractors-management/${projectSlug}/billing/stage/${step.id}`,
           description: `Tasks for the ${step.name} stage.`,
-          disabled: !can('View', 'Subcontractors Management.Billing') || isAllProjectsView,
+          disabled: !safeCan('View', 'Subcontractors Management.Billing') || isAllProjectsView,
       }));
 
       return [...staticItems.slice(0, 2), ...workflowItems, ...staticItems.slice(2)];
-  }, [projectSlug, can, isAllProjectsView, workflowSteps]);
+  }, [projectSlug, safeCan, isAllProjectsView, workflowSteps]);
   
-  const canViewModule = can('View', 'Subcontractors Management.Billing');
+  const canViewModule = isAllProjectsView ? can('View', 'Subcontractors Management.Billing') : can('View', 'Subcontractors Management.Billing', projectSlug);
+
 
   if(isLoading || isWorkflowLoading) {
     return (
