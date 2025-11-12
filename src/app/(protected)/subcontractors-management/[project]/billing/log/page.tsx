@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,16 +46,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -163,7 +155,7 @@ export default function BillLogPage() {
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...stripId(data as any),
+          ...(stripId(data as any)),
           id: doc.id,
           projectId: projectId,
           projectName: project?.projectName || 'Unknown',
@@ -255,7 +247,7 @@ export default function BillLogPage() {
       }
       try {
           await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
-          toast({ title: 'Success', description: `Bill ${billToDelete.type === 'Proforma' ? (billToDelete as ProformaBill).proformaNo : (billToDelete as Bill).billNo} has been deleted.`});
+          toast({ title: 'Success', description: `Bill ${billToDelete.type === 'Proforma' ? (billToDelete as any).proformaNo : (billToDelete as any).billNo} has been deleted.`});
           fetchBills();
       } catch (error) {
           console.error("Error deleting bill:", error);
@@ -270,7 +262,7 @@ export default function BillLogPage() {
       currency: 'INR',
     }).format(amount);
   };
-
+  
   const formatDateSafe = (dateInput: any): string => {
     const date = toDateSafe(dateInput);
     if (!date) return 'N/A';
@@ -375,7 +367,7 @@ export default function BillLogPage() {
                   ))
                 ) : filteredBills.length > 0 ? (
                   filteredBills.map((bill) => {
-                    const billDate = toDateSafe(bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate);
+                    const billDate = bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate;
                     const retentionAmount = bill.type === 'Retention' ? -(bill.netPayable || 0) : (bill.retentionAmount || 0);
                     const totalDeducted = bill.type === 'Regular' ? (bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0) : 0;
                     
@@ -390,7 +382,7 @@ export default function BillLogPage() {
                           {bill.projectName}
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">{bill.billNo}</TableCell>
+                      <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
                       <TableCell>{formatDateSafe(billDate)}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
@@ -468,14 +460,13 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
-          proformaBills={proformaBills}
         />
       ))}
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
+                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
               </DialogHeader>
               <Table>
                   <TableHeader>

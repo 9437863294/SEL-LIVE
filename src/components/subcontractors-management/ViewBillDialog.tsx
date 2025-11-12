@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { Bill } from '@/lib/types';
+import type { Bill, ProformaBill } from '@/lib/types';
 import {
   Table,
   TableBody,
