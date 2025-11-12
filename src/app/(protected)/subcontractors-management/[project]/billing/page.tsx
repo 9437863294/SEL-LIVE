@@ -115,8 +115,7 @@ export default function BillingDashboardPage() {
         { icon: FilePlus, text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
         { icon: FileText, text: 'Retention Bill', href: `/subcontractors-management/${projectSlug}/billing/retention-bill`, description: 'Create a bill to claim withheld retention amount.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
         { icon: FileClock, text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !safeCan('Proforma/Advance Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
-        { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past regular bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
-        { icon: History, text: 'Proforma/Advance Log', href: `/subcontractors-management/${projectSlug}/billing/proforma-log`, description: 'View all proforma and advance bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
+        { icon: History, text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past regular and proforma bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
         { icon: Settings, text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !safeCan('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
       ];
 
