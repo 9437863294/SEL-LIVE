@@ -12,8 +12,9 @@ import {
   Check,
   MoreHorizontal,
   Loader2,
-  HistoryIcon,
+  History as HistoryIcon,
   Library,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -66,7 +67,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
+  DialogTitle as ShadDialogTitle,
   DialogFooter,
   DialogClose,
   DialogDescription,
@@ -89,15 +90,22 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-type UnifiedBill = (Bill | ProformaBill) & {
+type UnifiedBill = (Omit<Bill, 'billDate'> | Omit<ProformaBill, 'date'>) & {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
+  date: string; // Common date field
   sortDate: Date;
   projectName?: string;
   projectId: string;
   netPayable: number;
   retentionAmount?: number;
   totalDeductions?: number;
+  // Add all workflow properties to be safe
+  status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
+  stage?: string;
+  assignees?: string[];
+  currentStepId?: string | null;
+  history?: ActionLog[];
 };
 
 
@@ -175,13 +183,14 @@ export default function BillLogPage() {
       setProjects(allProjects);
 
       const allSubcontractors: Subcontractor[] = [];
+      // Fetching all subcontractors from all projects
       const subsQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
       const subsSnaps = await Promise.all(subsQueryPromises);
       subsSnaps.forEach((snap: QuerySnapshot) => {
         allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
       });
       setSubcontractors(allSubcontractors);
-
+      
       const allWorkOrders: WorkOrder[] = [];
       const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
       const woSnaps = await Promise.all(woQueryPromises);
@@ -214,6 +223,7 @@ export default function BillLogPage() {
           projectId: projectId,
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
+          date: data.billDate,
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
           netPayable: data.netPayable,
           retentionAmount: data.retentionAmount,
@@ -229,7 +239,7 @@ export default function BillLogPage() {
           ...stripId(data),
           id: doc.id,
           billNo: data.proformaNo,
-          billDate: data.date,
+          date: data.date,
           netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
@@ -240,7 +250,7 @@ export default function BillLogPage() {
           assignees: data.assignees || [],
           currentStepId: data.currentStepId || null,
           history: data.history || [],
-        } as unknown as UnifiedBill;
+        } as UnifiedBill;
       });
 
       const combined = [...billEntries, ...proformaEntries];
@@ -434,18 +444,27 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
+                const retentionDisplay = bill.isRetentionBill
+                    ? `-${formatCurrency(bill.netPayable)}`
+                    : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
                 return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
-                    <TableCell>{(bill as ProformaBill).proformaNo || (bill as Bill).billNo}</TableCell>
-                    <TableCell>{formatDateSafe((bill as Bill).billDate || (bill as ProformaBill).date)}</TableCell>
+                    <TableCell>{(bill as Bill).billNo || (bill as ProformaBill).proformaNo}</TableCell>
+                    <TableCell>{formatDateSafe(bill.date)}</TableCell>
                     <TableCell>
                       <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell>{bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A'}</TableCell>
-                    <TableCell>{bill.type !== 'Proforma' ? formatCurrency(bill.totalDeductions || 0) : 'N/A'}</TableCell>
+                    <TableCell className={bill.isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
+                    <TableCell>
+                        {bill.type !== 'Proforma' ? (
+                          <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
+                            {formatCurrency(bill.totalDeductions || 0)}
+                          </Button>
+                        ) : 'N/A'}
+                    </TableCell>
                     <TableCell>{bill.stage}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon"><View className="h-4 w-4" /></Button>
@@ -529,7 +548,7 @@ export default function BillLogPage() {
         
         <Tabs defaultValue="all" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all"><Library className="mr-2 h-4 w-4"/>All Bills ({allFilteredBills.length})</TabsTrigger>
+            <TabsTrigger value="all"><FileText className="mr-2 h-4 w-4"/>All Bills ({allFilteredBills.length})</TabsTrigger>
             <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
             <TabsTrigger value="hold"><HistoryIcon className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
             <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed / Rejected ({completedTasks.length})</TabsTrigger>
@@ -564,7 +583,7 @@ export default function BillLogPage() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
+                  <ShadDialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</ShadDialogTitle>
               </DialogHeader>
               <Table>
                   <TableHeader>
@@ -595,3 +614,5 @@ export default function BillLogPage() {
     </>
   );
 }
+
+```
