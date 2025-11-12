@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import { Dialog, DialogContent as DialogContentShad, DialogHeader as DialogHeaderShad, DialogTitle as DialogTitleShad, DialogFooter as DialogFooterShad, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 
 
 const slugify = (text: string) => {
@@ -54,7 +54,7 @@ const slugify = (text: string) => {
     .toString()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
+    .replace(/[^\w-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
@@ -308,9 +308,9 @@ export default function BillLogPage() {
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
-              <DialogHeaderShad>
-                  <DialogTitleShad>Advance Deductions for Bill {selectedBill?.billNo}</DialogTitleShad>
-              </DialogHeaderShad>
+              <DialogHeader>
+                  <DialogTitle>Advance Deductions for Bill {selectedBill?.billNo}</DialogTitle>
+              </DialogHeader>
               <Table>
                   <TableHeader>
                       <TableRow>
@@ -327,11 +327,11 @@ export default function BillLogPage() {
                       ))}
                   </TableBody>
               </Table>
-              <DialogFooterShad>
+              <DialogFooter>
                   <DialogClose asChild>
                       <Button variant="outline">Close</Button>
                   </DialogClose>
-              </DialogFooterShad>
+              </DialogFooter>
           </DialogContent>
       </Dialog>
     </>
