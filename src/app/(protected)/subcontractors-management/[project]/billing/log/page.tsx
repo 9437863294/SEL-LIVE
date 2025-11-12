@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -45,8 +46,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -65,7 +72,6 @@ type UnifiedBill = (Bill | ProformaBill) & {
   sortDate: Date;
 };
 
-
 export default function BillLogPage() {
   const { toast } = useToast();
   const params = useParams();
@@ -74,7 +80,7 @@ export default function BillLogPage() {
 
   const [bills, setBills] = useState<UnifiedBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedBill, setSelectedBill] = useState<Bill | ProformaBill | null>(null);
+  const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
 
@@ -111,12 +117,12 @@ export default function BillLogPage() {
       ]);
 
       const billEntries: UnifiedBill[] = billsSnapshot.docs.map((doc) => {
-        const data = doc.data() as Bill;
+        const data = doc.data() as Omit<Bill, 'id'>;
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          id: doc.id,
           ...data,
+          id: doc.id,
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
           sortDate: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.billDate),
@@ -124,12 +130,12 @@ export default function BillLogPage() {
       });
 
       const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc) => {
-        const data = doc.data() as ProformaBill;
+        const data = doc.data() as Omit<ProformaBill, 'id'>;
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          id: doc.id,
           ...data,
+          id: doc.id,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.date),
@@ -163,7 +169,7 @@ export default function BillLogPage() {
   
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: Bill) => {
       e.stopPropagation();
-      setSelectedBill(bill);
+      setSelectedBill(bill as UnifiedBill);
       setIsDeductionDetailsOpen(true);
   }
   
