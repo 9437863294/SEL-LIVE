@@ -3,7 +3,17 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, Edit, Trash2, Clock, Check, MoreHorizontal, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  View,
+  Edit,
+  Trash2,
+  Clock,
+  Check,
+  MoreHorizontal,
+  Loader2,
+  History as HistoryIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -121,7 +131,6 @@ export default function BillLogPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
@@ -159,7 +168,7 @@ export default function BillLogPage() {
 
       const allWorkOrders: WorkOrder[] = [];
       const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
-      const woSnaps = await Promise.all(woQueryPromises);
+      const woSnaps = await Promise.all(woSnaps);
       woSnaps.forEach(snap => {
         allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
       });
@@ -197,22 +206,21 @@ export default function BillLogPage() {
           history: data.history,
         } as UnifiedBill;
       });
-
-      const proformaData = proformaSnapshot.docs.map((doc) => ({id: doc.id, ...stripId(doc.data() as any)} as ProformaBill));
-      setProformaBills(proformaData);
-
-      const proformaEntries: UnifiedBill[] = proformaData.map((data) => {
-        const projectId = data.projectId;
+      
+      const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc) => {
+        const data = doc.data() as ProformaBill;
+        const projectId = doc.ref.parent.parent?.id || '';
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...data,
-          id: data.id,
+          ...stripId(data),
+          id: doc.id,
           billNo: data.proformaNo,
           billDate: data.date,
           netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
+          projectId: projectId,
           status: data.status || 'Pending',
           stage: data.stage || 'N/A',
           assignees: data.assignees || [],
@@ -250,8 +258,8 @@ export default function BillLogPage() {
     const hold: UnifiedBill[] = [];
 
     allBills.forEach(bill => {
-        const isAssigned = (bill as any).assignees?.includes(user?.id);
-        const status = (bill as any).status;
+        const isAssigned = (bill.assignees ?? []).includes(user?.id || '');
+        const status = bill.status;
 
         if (isAssigned && (status === 'Pending' || status === 'In Progress')) {
             pending.push(bill);
@@ -322,11 +330,11 @@ export default function BillLogPage() {
   };
   
   const handleAction = async (taskId: string, billType: 'proformaBills' | 'bills', action: string, comment: string = '') => {
-    if (!workflow || !user || !projectSlug) return;
+    if (!workflow || !user || !projectSlug || !selectedBill) return;
 
     setIsActionLoading(taskId);
     try {
-        const docRef = doc(db, 'projects', selectedBill!.projectId, billType, taskId);
+        const docRef = doc(db, 'projects', selectedBill.projectId, billType, taskId);
 
         await runTransaction(db, async (transaction) => {
             const taskDoc = await transaction.get(docRef);
@@ -360,14 +368,15 @@ export default function BillLogPage() {
                 newCurrentStepId = null;
             }
 
-            transaction.update(docRef, {
+            const updateData: any = {
                 status: newStatus,
                 stage: newStage,
                 currentStepId: newCurrentStepId,
                 assignees: newAssignees,
                 deadline: newDeadline,
                 history: arrayUnion(newActionLog),
-            });
+            };
+            transaction.update(docRef, updateData);
         });
 
         toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
@@ -410,7 +419,9 @@ export default function BillLogPage() {
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
                     <TableCell>{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
                     <TableCell>{formatDateSafe(billDate)}</TableCell>
-                    <TableCell><Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
+                    </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
                     <TableCell>{(bill as any).stage}</TableCell>
@@ -497,7 +508,7 @@ export default function BillLogPage() {
         <Tabs defaultValue="pending" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
-            <TabsTrigger value="hold"><History className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
+            <TabsTrigger value="hold"><HistoryIcon className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
             <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed / Rejected ({completedTasks.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks)}</TabsContent>
@@ -530,7 +541,7 @@ export default function BillLogPage() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
+                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
               </DialogHeader>
               <Table>
                   <TableHeader>
@@ -562,3 +573,4 @@ export default function BillLogPage() {
   );
 }
 
+    
