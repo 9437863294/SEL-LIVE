@@ -189,6 +189,7 @@ export default function BillLogPage() {
                   {projectSlug === 'all' && <TableHead>Project</TableHead>}
                   <TableHead>Bill No.</TableHead>
                   <TableHead>Bill Date</TableHead>
+                  <TableHead>Bill Type</TableHead>
                   <TableHead>Work Order No.</TableHead>
                   <TableHead>Net Payable</TableHead>
                   <TableHead>Retention</TableHead>
@@ -200,7 +201,7 @@ export default function BillLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={projectSlug === 'all' ? 8 : 7}>
+                      <TableCell colSpan={projectSlug === 'all' ? 9 : 8}>
                         <Skeleton className="h-5 w-full" />
                       </TableCell>
                     </TableRow>
@@ -219,9 +220,18 @@ export default function BillLogPage() {
                       )}
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
+                      <TableCell>
+                        <Badge variant={bill.isRetentionBill ? 'secondary' : 'outline'}>
+                            {bill.isRetentionBill ? 'Retention' : 'Regular'}
+                        </Badge>
+                      </TableCell>
                       <TableCell>{bill.workOrderNo}</TableCell>
                       <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
-                      <TableCell>{formatCurrency(bill.retentionAmount || 0)}</TableCell>
+                      <TableCell>
+                        {bill.isRetentionBill
+                          ? formatCurrency(-(bill.netPayable || 0))
+                          : formatCurrency(bill.retentionAmount || 0)}
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1 items-start">
                           {bill.advanceDeductions &&
@@ -275,7 +285,7 @@ export default function BillLogPage() {
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={projectSlug === 'all' ? 8 : 7}
+                      colSpan={projectSlug === 'all' ? 9 : 8}
                       className="text-center h-24"
                     >
                       No bills found.
