@@ -72,7 +72,7 @@ export default function ProjectLayout({
   }
 
   // If we are on the "all" projects page, we don't need a sidebar, just the main content.
-  if (projectSlug === 'all' || !projectSlug) {
+  if (projectSlug === 'all') {
     return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
 
@@ -99,8 +99,8 @@ export default function ProjectLayout({
                             )}
                          >
                             <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
-                                <item.icon className={cn('h-5 w-5', isExpanded && 'mr-3')} />
-                                <span className={cn(!isExpanded && 'sr-only')}>{item.label}</span>
+                                <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
+                                <span className={cn(!isExpanded && "sr-only")}>{item.label}</span>
                             </div>
                          </Button>
                        </Link>
