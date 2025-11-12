@@ -45,6 +45,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
+import { Dialog, DialogContent as DialogContentShad, DialogHeader as DialogHeaderShad, DialogTitle as DialogTitleShad, DialogFooter as DialogFooterShad, DialogClose } from '@/components/ui/dialog';
+
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -53,12 +55,11 @@ const slugify = (text: string) => {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
 
-type UnifiedBill = Bill & ProformaBill;
 
 export default function BillLogPage() {
   const { toast } = useToast();
@@ -66,11 +67,11 @@ export default function BillLogPage() {
   const projectSlug = params.project as string;
   const { can } = useAuthorization();
 
-  const [bills, setBills] = useState<UnifiedBill[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isProformaViewOpen, setIsProformaViewOpen] = useState(false);
+  const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
 
   const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
@@ -78,43 +79,30 @@ export default function BillLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      let billsQuery, proformaQuery;
-
+      let billsQuery;
+      
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
-      const allProjects = projectSnap.docs.map(
-        (doc) =>
-          ({ id: doc.id, ...doc.data() } as Project)
-      );
+      const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
       if (projectSlug === 'all') {
         billsQuery = query(collectionGroup(db, 'bills'));
-        proformaQuery = query(collectionGroup(db, 'proformaBills'));
       } else {
-        const project = allProjects.find(
-          (p) => slugify(p.projectName) === projectSlug
-        );
-
+        const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
         if (!project) {
-          console.error('Project not found');
+          console.error("Project not found");
           setIsLoading(false);
           return;
         }
-        const projectId = project.id;
-        billsQuery = query(collection(db, 'projects', projectId, 'bills'));
-        proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'));
+        billsQuery = query(collection(db, 'projects', project.id, 'bills'));
       }
-
-      const [billsSnapshot, proformaSnapshot] = await Promise.all([
-          getDocs(billsQuery),
-          getDocs(proformaQuery),
-      ]);
+      
+      const billsSnapshot = await getDocs(billsQuery);
 
       const billEntries = billsSnapshot.docs.map((doc) => {
         const data = doc.data();
-        const projectId = doc.ref.parent.parent?.id;
-        const project = allProjects.find((p) => p.id === projectId);
-
+         const projectId = doc.ref.parent.parent?.id;
+        const project = allProjects.find(p => p.id === projectId);
         return {
           id: doc.id,
           ...data,
@@ -128,33 +116,14 @@ export default function BillLogPage() {
             ),
         } as Bill;
       });
-
-      const proformaEntries = proformaSnapshot.docs.map((doc) => {
-        const data = doc.data();
-        const projectId = doc.ref.parent.parent?.id;
-        const project = allProjects.find((p) => p.id === projectId);
-         return {
-          id: doc.id,
-          ...data,
-          projectName: project?.projectName || 'Unknown',
-          billDate: format(new Date(data.date), 'dd MMM, yyyy'), // Align date field
-          billNo: data.proformaNo, // Align number field
-          netPayable: data.payableAmount, // Align amount field
-          isRetentionBill: false, // Proformas are not retention bills
-          advanceDeductions: [],
-          retentionAmount: 0,
-        } as unknown as Bill;
-      });
-
-      const allEntries = [...billEntries, ...proformaEntries];
-
-      allEntries.sort((a, b) => {
+      
+      billEntries.sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
         return dateB - dateA;
       });
 
-      setBills(allEntries);
+      setBills(billEntries);
     } catch (error) {
       console.error('Error fetching bills: ', error);
       toast({
@@ -170,14 +139,16 @@ export default function BillLogPage() {
     fetchBills();
   }, [projectSlug, toast]);
 
-  const handleViewDetails = (bill: UnifiedBill) => {
+  const handleViewDetails = (bill: Bill) => {
     setSelectedBill(bill);
-    if ('proformaNo' in bill) {
-        setIsProformaViewOpen(true);
-    } else {
-        setIsViewOpen(true);
-    }
+    setIsViewOpen(true);
   };
+  
+  const handleViewDeductionDetails = (e: React.MouseEvent, bill: Bill) => {
+      e.stopPropagation();
+      setSelectedBill(bill);
+      setIsDeductionDetailsOpen(true);
+  }
   
   const handleDeleteBill = async (billToDelete: Bill) => {
       if (!billToDelete.projectId) {
@@ -185,8 +156,7 @@ export default function BillLogPage() {
           return;
       }
       try {
-          const collectionName = 'proformaNo' in billToDelete ? 'proformaBills' : 'bills';
-          await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
+          await deleteDoc(doc(db, 'projects', billToDelete.projectId, 'bills', billToDelete.id));
           toast({ title: 'Success', description: `Bill ${billToDelete.billNo} has been deleted.`});
           fetchBills();
       } catch (error) {
@@ -201,15 +171,14 @@ export default function BillLogPage() {
       currency: 'INR',
     }).format(amount);
   };
-
-  const getBillType = (bill: UnifiedBill) => {
-      if ('proformaNo' in bill) return { text: 'Proforma', variant: 'outline' };
+  
+  const getBillType = (bill: Bill) => {
       if (bill.isRetentionBill) return { text: 'Retention', variant: 'secondary' };
       return { text: 'Regular', variant: 'default' };
   }
 
   return (
-    <>
+      <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -249,6 +218,8 @@ export default function BillLogPage() {
                 ) : bills.length > 0 ? (
                   bills.map((bill) => {
                     const billType = getBillType(bill);
+                    const totalDeducted = (bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
+
                     return (
                     <TableRow
                       key={bill.id}
@@ -269,26 +240,15 @@ export default function BillLogPage() {
                       </TableCell>
                       <TableCell>{bill.workOrderNo}</TableCell>
                       <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
+                      <TableCell>{formatCurrency(bill.isRetentionBill ? -(bill.netPayable || 0) : (bill.retentionAmount || 0))}</TableCell>
                       <TableCell>
-                        {bill.isRetentionBill
-                          ? formatCurrency(-(bill.netPayable || 0))
-                          : formatCurrency(bill.retentionAmount || 0)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 items-start">
-                          {bill.advanceDeductions &&
-                          bill.advanceDeductions.length > 0 ? (
-                            bill.advanceDeductions.map((adv) => (
-                              <Badge key={adv.id} variant="secondary">
-                                {adv.reference}: {formatCurrency(adv.amount)}
-                              </Badge>
-                            ))
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              None
-                            </span>
-                          )}
-                        </div>
+                        {totalDeducted > 0 ? (
+                            <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
+                                {formatCurrency(totalDeducted)}
+                            </Button>
+                        ) : (
+                            <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -346,11 +306,34 @@ export default function BillLogPage() {
         bill={selectedBill as Bill | null}
       />
       
-      <ViewProformaBillDialog
-        isOpen={isProformaViewOpen}
-        onOpenChange={setIsProformaViewOpen}
-        bill={selectedBill as ProformaBill | null}
-      />
+      <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
+          <DialogContent>
+              <DialogHeaderShad>
+                  <DialogTitleShad>Advance Deductions for Bill {selectedBill?.billNo}</DialogTitleShad>
+              </DialogHeaderShad>
+              <Table>
+                  <TableHeader>
+                      <TableRow>
+                          <TableHead>Proforma Bill No.</TableHead>
+                          <TableHead className="text-right">Deducted Amount</TableHead>
+                      </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                      {selectedBill?.advanceDeductions?.map(deduction => (
+                          <TableRow key={deduction.id}>
+                              <TableCell>{deduction.reference}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
+                          </TableRow>
+                      ))}
+                  </TableBody>
+              </Table>
+              <DialogFooterShad>
+                  <DialogClose asChild>
+                      <Button variant="outline">Close</Button>
+                  </DialogClose>
+              </DialogFooterShad>
+          </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -112,7 +112,7 @@ export default function ProformaBillLogPage() {
       const allBills = billsSnapshot.docs.map(doc => doc.data() as Bill);
 
       const entries = proformaSnapshot.docs.map(doc => {
-        const { id, ...data } = doc.data() as ProformaBill;
+        const data = doc.data() as ProformaBill;
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
 
