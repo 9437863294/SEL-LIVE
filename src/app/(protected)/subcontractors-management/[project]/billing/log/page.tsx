@@ -1,11 +1,11 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -28,8 +28,8 @@ import {
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
-import type { Bill, Project, ProformaBill } from '@/lib/types';
+import { format, getYear } from 'date-fns';
+import type { Bill, Project, ProformaBill, Subcontractor, WorkOrder } from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -48,12 +48,14 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  DialogContent as DialogContentShad,
+  DialogHeader as DialogHeaderShad,
+  DialogTitle as DialogTitleShad,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -62,7 +64,7 @@ const slugify = (text: string) => {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
@@ -74,6 +76,8 @@ type UnifiedBill = (Omit<Bill, 'id'> | Omit<ProformaBill, 'id'>) & {
   projectName?: string;
   projectId?: string;
   workOrderNo: string;
+  subcontractorName: string;
+  subcontractorId: string;
   netPayable: number;
   retentionAmount?: number;
   advanceDeductions?: Bill['advanceDeductions'];
@@ -101,39 +105,52 @@ export default function BillLogPage() {
   const projectSlug = params.project as string;
   const { can } = useAuthorization();
 
-  const [bills, setBills] = useState<UnifiedBill[]>([]);
+  const [allBills, setAllBills] = useState<UnifiedBill[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
+  
+  const [filters, setFilters] = useState({
+    project: projectSlug === 'all' ? 'all' : projectSlug,
+    workOrder: 'all',
+    subcontractor: 'all',
+    year: 'all',
+    month: 'all',
+  });
 
   const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
   const fetchBills = async () => {
-    if (!projectSlug) return;
     setIsLoading(true);
     try {
-      let billsQuery;
-      let proformaQuery;
-      
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
       const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+      setProjects(allProjects);
 
-      if (projectSlug === 'all') {
-        billsQuery = query(collectionGroup(db, 'bills'));
-        proformaQuery = query(collectionGroup(db, 'proformaBills'));
-      } else {
-        const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
-        if (!project) {
-          console.error("Project not found");
-          setIsLoading(false);
-          return;
-        }
-        billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
-      }
+      const allSubcontractors: Subcontractor[] = [];
+      const subsQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
+      const subsSnaps = await Promise.all(subsQueryPromises);
+      subsSnaps.forEach(snap => {
+        allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+      });
+      setSubcontractors(allSubcontractors);
+
+      const allWorkOrders: WorkOrder[] = [];
+      const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
+      const woSnaps = await Promise.all(woQueryPromises);
+      woSnaps.forEach(snap => {
+        allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+      });
+      setWorkOrders(allWorkOrders);
+
+      const billsQuery = query(collectionGroup(db, 'bills'));
+      const proformaQuery = query(collectionGroup(db, 'proformaBills'));
       
       const [billsSnapshot, proformaSnapshot] = await Promise.all([
         getDocs(billsQuery),
@@ -173,10 +190,9 @@ export default function BillLogPage() {
       });
 
       const combined = [...billEntries, ...proformaEntries];
-      
       combined.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
+      setAllBills(combined);
 
-      setBills(combined);
     } catch (error) {
       console.error('Error fetching bills: ', error);
       toast({
@@ -191,6 +207,32 @@ export default function BillLogPage() {
   useEffect(() => {
     fetchBills();
   }, [projectSlug, toast]);
+
+  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({...prev, [field]: value}));
+  }
+
+  const filteredBills = useMemo(() => {
+    return allBills.filter(bill => {
+      const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+      const woMatch = filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
+      const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+      const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
+      const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
+
+      return projectMatch && woMatch && subMatch && yearMatch && monthMatch;
+    });
+  }, [allBills, filters]);
+  
+  const filterOptions = useMemo(() => {
+    const visibleProjects = projects.filter(p => allBills.some(b => b.projectId === p.id));
+    const visibleWOs = workOrders.filter(wo => allBills.some(b => b.workOrderNo === wo.workOrderNo));
+    const visibleSubs = subcontractors.filter(s => allBills.some(b => b.subcontractorId === s.id));
+    const years = [...new Set(allBills.map(b => getYear(b.sortDate).toString()))].sort((a,b) => parseInt(b) - parseInt(a));
+    const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
+
+    return { projects: visibleProjects, workOrders: visibleWOs, subcontractors: visibleSubs, years, months };
+  }, [allBills, projects, workOrders, subcontractors]);
 
   const handleViewDetails = (bill: UnifiedBill) => {
     setSelectedBill(bill);
@@ -242,7 +284,7 @@ export default function BillLogPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
+            <Link href={`/subcontractors-management/${projectSlug === 'all' ? '' : projectSlug}`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
@@ -250,6 +292,51 @@ export default function BillLogPage() {
             <h1 className="text-2xl font-bold">Billing Log</h1>
           </div>
         </div>
+        
+        <Card className="mb-6">
+            <CardHeader className="p-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {projectSlug === 'all' && (
+                        <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
+                            <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Projects</SelectItem>
+                                {filterOptions.projects.map(p => <SelectItem key={p.id} value={slugify(p.projectName)}>{p.projectName}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    )}
+                     <Select value={filters.workOrder} onValueChange={(v) => handleFilterChange('workOrder', v)}>
+                        <SelectTrigger><SelectValue placeholder="All Work Orders" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Work Orders</SelectItem>
+                            {filterOptions.workOrders.map(wo => <SelectItem key={wo.id} value={wo.workOrderNo}>{wo.workOrderNo}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                     <Select value={filters.subcontractor} onValueChange={(v) => handleFilterChange('subcontractor', v)}>
+                        <SelectTrigger><SelectValue placeholder="All Subcontractors" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Subcontractors</SelectItem>
+                            {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
+                        <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Years</SelectItem>
+                            {filterOptions.years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                     <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
+                        <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Months</SelectItem>
+                            {filterOptions.months.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </CardHeader>
+        </Card>
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -275,8 +362,8 @@ export default function BillLogPage() {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : bills.length > 0 ? (
-                  bills.map((bill) => {
+                ) : filteredBills.length > 0 ? (
+                  filteredBills.map((bill) => {
                     const billDate = toDateSafe(bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate);
                     const retentionAmount = bill.type === 'Retention' ? -(bill.netPayable || 0) : (bill.retentionAmount || 0);
                     const totalDeducted = bill.type === 'Regular' ? (bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0) : 0;
@@ -292,7 +379,7 @@ export default function BillLogPage() {
                           {bill.projectName}
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
+                      <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{billDate ? format(billDate, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
@@ -375,10 +462,10 @@ export default function BillLogPage() {
       ))}
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
-          <DialogContent>
-              <DialogHeader>
-                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
-              </DialogHeader>
+          <DialogContentShad>
+              <DialogHeaderShad>
+                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
+              </DialogHeaderShad>
               <Table>
                   <TableHeader>
                       <TableRow>
@@ -403,7 +490,7 @@ export default function BillLogPage() {
                       <Button variant="outline">Close</Button>
                   </DialogClose>
               </DialogFooter>
-          </DialogContent>
+          </DialogContentShad>
       </Dialog>
     </>
   );
