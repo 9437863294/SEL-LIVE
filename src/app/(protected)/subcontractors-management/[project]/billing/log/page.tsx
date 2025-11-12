@@ -3,9 +3,9 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, Edit, Trash2, Check, Clock } from 'lucide-react';
+import { ArrowLeft, View, Edit, Trash2, Check, Clock, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -32,10 +32,10 @@ import {
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, getYear } from 'date-fns';
+import { format } from 'date-fns';
 import type { Bill, Project, ProformaBill, Subcontractor, WorkOrder, WorkflowStep, ActionLog } from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
@@ -54,6 +54,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -102,6 +103,21 @@ function toDateSafe(value: any): Date | null {
     return null;
 }
 
+const formatDateSafe = (dateInput: any) => {
+  const d = toDateSafe(dateInput);
+  if (!d) return 'N/A';
+  try {
+    return format(d, 'dd MMM, yyyy');
+  } catch {
+    return 'Invalid Date';
+  }
+};
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+};
+
+
 const pastTense = (action: string) => action.endsWith('e') ? `${action}d` : `${action}ed`;
 
 export default function BillLogPage() {
@@ -115,11 +131,21 @@ export default function BillLogPage() {
   const [allBills, setAllBills] = useState<UnifiedBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+
+  const [filters, setFilters] = useState({
+      projectId: 'all',
+      workOrderId: 'all',
+      subcontractorId: 'all',
+      year: 'all',
+      month: 'all',
+      billType: 'all',
+  });
   
   const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
@@ -143,6 +169,14 @@ export default function BillLogPage() {
         allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
       });
       setSubcontractors(allSubcontractors);
+      
+      const allWorkOrders: WorkOrder[] = [];
+      const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
+      const woSnaps = await Promise.all(woQueryPromises);
+      woSnaps.forEach(snap => {
+        allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+      });
+      setWorkOrders(allWorkOrders);
 
       const billsQuery = query(collectionGroup(db, 'bills'));
       const proformaQuery = query(collectionGroup(db, 'proformaBills'));
@@ -163,24 +197,33 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
+          netPayable: data.netPayable,
+          status: data.status,
+          stage: data.stage,
+          assignees: data.assignees,
+          currentStepId: data.currentStepId,
+          history: data.history,
         } as UnifiedBill;
       });
 
-      const proformaData = proformaSnapshot.docs.map((doc) => ({id: doc.id, ...stripId(doc.data() as any)} as ProformaBill));
-      setProformaBills(proformaData);
-
-      const proformaEntries: UnifiedBill[] = proformaData.map((data) => {
+      const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc) => {
+        const data = doc.data() as ProformaBill;
         const projectId = data.projectId;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...data,
-          id: data.id,
+          ...(stripId(data as any)),
+          id: doc.id,
           billNo: data.proformaNo,
           billDate: data.date,
           netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
+          status: data.status,
+          stage: data.stage,
+          assignees: data.assignees,
+          currentStepId: data.currentStepId,
+          history: data.history,
         } as UnifiedBill;
       });
 
@@ -197,22 +240,13 @@ export default function BillLogPage() {
       });
     }
     setIsLoading(false);
-  }, [projectSlug, toast]);
+  }, [toast]);
   
   useEffect(() => {
     fetchBills();
   }, [fetchBills]);
-
-  const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!userId) return { pendingTasks: [], completedTasks: [] };
-    
-    const myPending = allBills.filter(t => t.assignees?.includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected');
-    const myCompleted = allBills.filter(t => !myPending.some(pt => pt.id === t.id) && t.history?.some(h => h.userId === userId));
-
-    return { pendingTasks: myPending, completedTasks: myCompleted };
-  }, [allBills, userId]);
-
-  const handleAction = async (taskId: string, billType: 'bills' | 'proformaBills', action: string, comment: string = '') => {
+  
+  const handleAction = async (taskId: string, billType: 'proformaBills' | 'bills', action: string, comment: string = '') => {
     if (!workflow || !user) return;
     
     const currentTask = allBills.find(b => b.id === taskId);
@@ -221,6 +255,7 @@ export default function BillLogPage() {
     const currentStep = workflow.find(s => s.id === currentTask.currentStepId);
     if (!currentStep) return;
 
+    setIsActionLoading(true);
     try {
       const taskRef = doc(db, 'projects', currentTask.projectId, billType, taskId);
       await runTransaction(db, async (tx) => {
@@ -231,7 +266,7 @@ export default function BillLogPage() {
         const newActionLog: ActionLog = { action, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentStep.name };
         
         let nextStep: WorkflowStep | undefined = workflow[workflow.findIndex(s => s.id === currentStep.id) + 1];
-        let newStatus = 'In Progress';
+        let newStatus: string = 'In Progress';
         let newStage = nextStep?.name || 'Completed';
         let newCurrentStepId: string | null = nextStep?.id || null;
         let newAssignees: string[] = [];
@@ -269,6 +304,9 @@ export default function BillLogPage() {
       fetchBills();
     } catch (error: any) {
       toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsActionLoading(false);
+      setIsViewOpen(false);
     }
   };
 
@@ -276,6 +314,14 @@ export default function BillLogPage() {
     setSelectedBill(bill);
     setIsViewOpen(true);
   };
+  
+  const { pendingTasks, completedTasks } = useMemo(() => {
+    if (!userId) return { pendingTasks: [], completedTasks: [] };
+    const myPending = allBills.filter(t => t.assignees?.includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected');
+    const myCompleted = allBills.filter(t => !myPending.some(pt => pt.id === t.id) && t.history?.some(h => h.userId === userId));
+    return { pendingTasks: myPending, completedTasks: myCompleted };
+  }, [allBills, userId]);
+
 
   const renderTable = (data: UnifiedBill[]) => (
     <Card>
@@ -299,11 +345,11 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const billDate = bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate;
+                const billDate = toDateSafe(bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate);
                 return (
                 <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                   <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
-                  <TableCell>{formatDateSafe(billDate)}</TableCell>
+                  <TableCell>{billDate ? format(billDate, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                   <TableCell><Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge></TableCell>
                   <TableCell>{bill.workOrderNo}</TableCell>
                   <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
@@ -357,8 +403,9 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
+          proformaBills={proformaBills}
           workflow={workflow}
-          onAction={handleAction}
+          onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
           isActionLoading={!!isActionLoading}
         />
       ))}

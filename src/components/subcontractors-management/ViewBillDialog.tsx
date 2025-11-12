@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { Bill, ProformaBill } from '@/lib/types';
+import type { Bill, ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -22,22 +22,33 @@ import {
   TableRow,
 } from '../ui/table';
 import { ScrollArea } from '../ui/scroll-area';
-import { Printer } from 'lucide-react';
+import { Printer, Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { Textarea } from '../ui/textarea';
 
 interface ViewBillDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   bill: Bill | null;
+  proformaBills: ProformaBill[];
+  workflow: WorkflowStep[];
+  onAction: (taskId: string, action: string, comment: string) => Promise<void>;
+  isActionLoading: boolean;
 }
 
 export default function ViewBillDialog({
   isOpen,
   onOpenChange,
   bill,
+  proformaBills,
+  workflow,
+  onAction,
+  isActionLoading
 }: ViewBillDialogProps) {
   const params = useParams();
   const projectSlug = params.project as string;
+  const [actionComment, setActionComment] = useState('');
 
   if (!bill) return null;
 
@@ -49,7 +60,7 @@ export default function ViewBillDialog({
       currency: 'INR',
     }).format(num);
   };
-
+  
   const handlePrint = () => {
     if (!bill || !projectSlug) return;
     window.open(
@@ -57,11 +68,9 @@ export default function ViewBillDialog({
       '_blank'
     );
   };
-
-  const grandTotal = bill.items.reduce(
-    (sum, item) => sum + parseFloat(item.totalAmount || '0'),
-    0
-  );
+  
+  const currentStep = workflow.find(s => s.id === bill.currentStepId);
+  const availableActions = currentStep?.actions || [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -85,9 +94,9 @@ export default function ViewBillDialog({
                 <p className="font-medium">{bill.billDate}</p>
               </div>
             </div>
-
+            
             <Separator />
-
+            
             <div>
               <h3 className="text-lg font-semibold mb-2">Billed Items</h3>
               <div className="border rounded-md">
@@ -121,8 +130,7 @@ export default function ViewBillDialog({
             </div>
 
             <Separator />
-
-            <div>
+             <div>
                 <h3 className="text-lg font-semibold mb-2">Financial Summary</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm p-4 border rounded-md">
                     <div className="flex justify-between items-center py-1">
@@ -142,12 +150,15 @@ export default function ViewBillDialog({
                         <span className="text-muted-foreground">Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span>
                         <span className="font-medium text-red-600">-{formatCurrency(bill.retentionAmount)}</span>
                     </div>
-                     {(bill.advanceDeductions || []).map((adv, i) => (
-                        <div key={i} className="flex justify-between items-center py-1">
-                            <span className="text-muted-foreground">Advance Deduction</span>
-                            <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
-                        </div>
-                     ))}
+                     {(bill.advanceDeductions || []).map((adv, i) => {
+                        const proforma = proformaBills.find(pb => pb.id === adv.reference);
+                        return (
+                            <div key={i} className="flex justify-between items-center py-1">
+                                <span className="text-muted-foreground">Advance (Ref: {proforma?.proformaNo || adv.reference})</span>
+                                <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
+                            </div>
+                        )
+                     })}
                      <div className="flex justify-between items-center py-1">
                         <span className="text-muted-foreground">Other Deductions</span>
                         <span className="font-medium text-red-600">-{formatCurrency(bill.otherDeduction)}</span>
@@ -162,6 +173,29 @@ export default function ViewBillDialog({
                     </div>
                 </div>
             </div>
+
+            {bill.status !== 'Completed' && bill.status !== 'Rejected' && (
+              <div className="pt-4 space-y-4 border-t">
+                  <h3 className="text-lg font-semibold">Workflow Actions</h3>
+                  <Textarea 
+                      placeholder="Add a comment for your action (optional)..."
+                      value={actionComment}
+                      onChange={(e) => setActionComment(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                      {availableActions.map(action => (
+                          <Button 
+                            key={action}
+                            onClick={() => onAction(bill.id, action, actionComment)}
+                            disabled={isActionLoading}
+                          >
+                              {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                              {action}
+                          </Button>
+                      ))}
+                  </div>
+              </div>
+            )}
           </div>
         </ScrollArea>
         <DialogFooter className="mt-4 pr-4 sm:justify-between">
