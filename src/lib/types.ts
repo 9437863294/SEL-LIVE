@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -540,6 +539,9 @@ export interface Bill {
   assignees: string[];
   history: ActionLog[];
   deadline?: Timestamp | null;
+  isRetentionBill?: boolean;
+  claimedBillIds?: string[];
+  retentionClaimed?: boolean;
 }
 
 
@@ -1034,4 +1036,3 @@ export interface WorkOrderItem {
   boqSlNo?: string;
 }
 
-    
