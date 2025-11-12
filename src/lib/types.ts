@@ -518,6 +518,7 @@ export interface Bill {
   workOrderId: string;
   workOrderNo: string;
   subcontractorId: string;
+  subcontractorName?: string;
   items: BillItem[];
   subtotal: number;
   gstType: 'percentage' | 'manual';
@@ -560,6 +561,15 @@ export interface ProformaBill {
     createdAt: any;
     projectId: string;
     projectName?: string;
+    approvalCopyUrl?: string;
+
+    // Workflow fields
+    status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
+    stage?: string;
+    currentStepId?: string | null;
+    assignees?: string[];
+    history?: ActionLog[];
+    deadline?: Timestamp | null;
 }
 
 /** ---------- Insurance ---------- **/
@@ -1035,4 +1045,3 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
-

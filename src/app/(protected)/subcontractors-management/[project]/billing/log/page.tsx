@@ -93,14 +93,15 @@ function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
 }
 
 function toDateSafe(value: any): Date | null {
-    if (!value) return null;
-    if (value instanceof Timestamp) return value.toDate();
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-        const d = new Date(value);
-        return isNaN(d.getTime()) ? null : d;
-    }
-    return null;
+  if (!value) return null;
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (value?.seconds) return new Date(value.seconds * 1000);
+  return null;
 }
 
 const formatDateSafe = (dateInput: any) => {
@@ -219,11 +220,11 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
-          status: data.status,
-          stage: data.stage,
-          assignees: data.assignees,
-          currentStepId: data.currentStepId,
-          history: data.history,
+          status: data.status ?? 'N/A',
+          stage: data.stage ?? 'N/A',
+          assignees: data.assignees ?? [],
+          currentStepId: data.currentStepId ?? null,
+          history: data.history ?? [],
         } as UnifiedBill;
       });
 
@@ -315,13 +316,33 @@ export default function BillLogPage() {
     setIsViewOpen(true);
   };
   
-  const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!userId) return { pendingTasks: [], completedTasks: [] };
-    const myPending = allBills.filter(t => t.assignees?.includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected');
-    const myCompleted = allBills.filter(t => !myPending.some(pt => pt.id === t.id) && t.history?.some(h => h.userId === userId));
-    return { pendingTasks: myPending, completedTasks: myCompleted };
-  }, [allBills, userId]);
+  const { pendingTasks, completedTasks, allFilteredTasks } = useMemo(() => {
+    if (!allBills) return { pendingTasks: [], completedTasks: [], allFilteredTasks: [] };
+    
+    let filtered = allBills.filter(bill => {
+        const date = toDateSafe(bill.sortDate);
+        if(!date) return false;
 
+        return (
+            (filters.projectId === 'all' || bill.projectId === filters.projectId) &&
+            (filters.workOrderId === 'all' || bill.workOrderNo === filters.workOrderId) &&
+            (filters.subcontractorId === 'all' || bill.subcontractorId === filters.subcontractorId) &&
+            (filters.year === 'all' || date.getFullYear().toString() === filters.year) &&
+            (filters.month === 'all' || date.getMonth().toString() === filters.month) &&
+            (filters.billType === 'all' || bill.type === filters.billType)
+        )
+    });
+    
+    const myPending = filtered.filter(t => t.assignees?.includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected');
+    const myCompleted = filtered.filter(t => !myPending.some(pt => pt.id === t.id) && t.history?.some(h => h.userId === userId));
+    return { pendingTasks: myPending, completedTasks: myCompleted, allFilteredTasks: filtered };
+  }, [allBills, userId, filters]);
+
+  const yearOptions = useMemo(() => {
+    if(!allBills.length) return [];
+    const years = new Set(allBills.map(b => toDateSafe(b.sortDate)?.getFullYear()).filter(Boolean));
+    return Array.from(years).sort((a,b) => b-a).map(String);
+  }, [allBills]);
 
   const renderTable = (data: UnifiedBill[]) => (
     <Card>
@@ -382,17 +403,30 @@ export default function BillLogPage() {
           </div>
         </div>
         
-        <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-2">
+        <Card className="mb-4">
+          <CardContent className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <Select value={filters.projectId} onValueChange={(v) => setFilters(p => ({...p, projectId: v, subcontractorId: 'all', workOrderId: 'all'}))}><SelectTrigger><SelectValue placeholder="All Projects"/></SelectTrigger><SelectContent><SelectItem value="all">All Projects</SelectItem>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent></Select>
+            <Select value={filters.subcontractorId} onValueChange={(v) => setFilters(p => ({...p, subcontractorId: v, workOrderId: 'all'}))}><SelectTrigger><SelectValue placeholder="All Subcontractors"/></SelectTrigger><SelectContent><SelectItem value="all">All Subcontractors</SelectItem>{subcontractors.filter(s => filters.projectId === 'all' || s.projectId === filters.projectId).map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}</SelectContent></Select>
+            <Select value={filters.workOrderId} onValueChange={(v) => setFilters(p => ({...p, workOrderId: v}))}><SelectTrigger><SelectValue placeholder="All Work Orders"/></SelectTrigger><SelectContent><SelectItem value="all">All Work Orders</SelectItem>{workOrders.filter(wo => (filters.subcontractorId === 'all' || wo.subcontractorId === filters.subcontractorId) && (filters.projectId === 'all' || wo.projectId === filters.projectId)).map(wo => <SelectItem key={wo.id} value={wo.workOrderNo}>{wo.workOrderNo}</SelectItem>)}</SelectContent></Select>
+            <Select value={filters.year} onValueChange={(v) => setFilters(p => ({...p, year: v}))}><SelectTrigger><SelectValue placeholder="All Years"/></SelectTrigger><SelectContent><SelectItem value="all">All Years</SelectItem>{yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select>
+            <Select value={filters.month} onValueChange={(v) => setFilters(p => ({...p, month: v}))}><SelectTrigger><SelectValue placeholder="All Months"/></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{Array.from({length: 12}, (_, i) => <SelectItem key={i} value={String(i)}>{format(new Date(0, i), 'MMMM')}</SelectItem>)}</SelectContent></Select>
+            <Select value={filters.billType} onValueChange={(v) => setFilters(p => ({...p, billType: v}))}><SelectTrigger><SelectValue placeholder="All Types"/></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="Regular">Regular</SelectItem><SelectItem value="Retention">Retention</SelectItem><SelectItem value="Proforma">Proforma</SelectItem></SelectContent></Select>
+          </CardContent>
+        </Card>
+        
+        <Tabs defaultValue="all">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="all">All Bills ({allFilteredTasks.length})</TabsTrigger>
             <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
             <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed by Me ({completedTasks.length})</TabsTrigger>
           </TabsList>
+          <TabsContent value="all" className="mt-4">{renderTable(allFilteredTasks)}</TabsContent>
           <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks)}</TabsContent>
           <TabsContent value="completed" className="mt-4">{renderTable(completedTasks)}</TabsContent>
         </Tabs>
       </div>
 
-      {selectedBill && (selectedBill.type === 'Proforma' ? (
+      {selectedBill?.type === 'Proforma' ? (
         <ViewProformaBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
@@ -403,12 +437,12 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
-          proformaBills={proformaBills}
+          proformaBills={[]}
           workflow={workflow}
           onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
           isActionLoading={!!isActionLoading}
         />
-      ))}
+      )}
     </>
   );
 }

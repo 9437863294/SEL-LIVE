@@ -111,8 +111,8 @@ export default function ViewProformaBillDialog({
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {bill.items.map((item) => (
-                            <TableRow key={item.jmcItemId}>
+                        {bill.items.map((item, index) => (
+                            <TableRow key={index}>
                                 <TableCell>{item.boqSlNo}</TableCell>
                                 <TableCell>{item.description}</TableCell>
                                 <TableCell>{item.unit}</TableCell>
