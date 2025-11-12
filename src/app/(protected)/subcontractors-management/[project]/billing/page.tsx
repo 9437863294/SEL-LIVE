@@ -10,7 +10,7 @@ import {
   FileClock,
   Settings,
   GitMerge,
-  FileText, // Changed from Handshake
+  FileText,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -77,6 +77,7 @@ export default function BillingDashboardPage() {
 
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const safeCan = useCallback((action: string, resource: string, scope?: string) => {
     if (isLoading) return false;
@@ -94,7 +95,9 @@ export default function BillingDashboardPage() {
         const workflowRef = doc(db, 'workflows', 'billing-workflow');
         const snap = await getDoc(workflowRef);
         if (snap.exists()) {
-          setWorkflowSteps((snap.data()?.steps as WorkflowStep[]) || []);
+          const stepsData = (snap.data()?.steps as WorkflowStep[]) || [];
+          const validSteps = stepsData.filter(s => s && s.id && s.name);
+          setWorkflowSteps(validSteps);
         }
       } catch (error) {
         console.error("Failed to fetch workflow:", error);
@@ -124,7 +127,7 @@ export default function BillingDashboardPage() {
           disabled: !safeCan('View', 'Subcontractors Management.Billing') || isAllProjectsView,
       }));
 
-      return [...staticItems.slice(0, 2), ...workflowItems, ...staticItems.slice(2)];
+      return [...staticItems.slice(0, 3), ...workflowItems, ...staticItems.slice(3)];
   }, [projectSlug, safeCan, isAllProjectsView, workflowSteps]);
   
   const canViewModule = isAllProjectsView ? can('View', 'Subcontractors Management.Billing') : can('View', 'Subcontractors Management.Billing', projectSlug);
