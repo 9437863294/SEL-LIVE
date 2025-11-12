@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -65,7 +66,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle as DialogTitleCore,
+  DialogTitle,
   DialogFooter,
   DialogClose,
   DialogDescription,
@@ -92,11 +93,13 @@ type UnifiedBill = (Bill | ProformaBill) & {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   sortDate: Date;
-  displayDate: string;
   projectName?: string;
   projectId: string;
   netPayable: number;
+  retentionAmount?: number;
+  totalDeductions?: number;
 };
+
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
   const { id: _ignored, ...rest } = obj as any;
@@ -182,7 +185,7 @@ export default function BillLogPage() {
       const allWorkOrders: WorkOrder[] = [];
       const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
       const woSnaps = await Promise.all(woQueryPromises);
-      woSnaps.forEach((snap: QuerySnapshot) => {
+      woSnaps.forEach((snap) => {
         allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
       });
       setWorkOrders(allWorkOrders);
@@ -212,8 +215,9 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
-          displayDate: formatDateSafe(data.billDate),
           netPayable: data.netPayable,
+          retentionAmount: data.retentionAmount,
+          totalDeductions: data.totalDeductions,
         } as UnifiedBill;
       });
       
@@ -230,8 +234,12 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
-          displayDate: formatDateSafe(data.date),
           projectId: projectId,
+          status: data.status || 'Pending',
+          stage: data.stage || 'Initial',
+          assignees: data.assignees || [],
+          currentStepId: data.currentStepId || null,
+          history: data.history || [],
         } as unknown as UnifiedBill;
       });
 
@@ -413,6 +421,8 @@ export default function BillLogPage() {
               <TableHead>Type</TableHead>
               <TableHead>WO No.</TableHead>
               <TableHead>Net Amt</TableHead>
+              <TableHead>Retention</TableHead>
+              <TableHead>Deductions</TableHead>
               <TableHead>Stage</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -420,20 +430,22 @@ export default function BillLogPage() {
           <TableBody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 8 : 7}><Skeleton className="h-5" /></TableCell></TableRow>
+                <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 10 : 9}><Skeleton className="h-5" /></TableCell></TableRow>
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
                 return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
-                    <TableCell>{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
-                    <TableCell>{bill.displayDate}</TableCell>
+                    <TableCell>{(bill as ProformaBill).proformaNo || (bill as Bill).billNo}</TableCell>
+                    <TableCell>{formatDateSafe((bill as Bill).billDate || (bill as ProformaBill).date)}</TableCell>
                     <TableCell>
                       <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
+                    <TableCell>{bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A'}</TableCell>
+                    <TableCell>{bill.type !== 'Proforma' ? formatCurrency(bill.totalDeductions || 0) : 'N/A'}</TableCell>
                     <TableCell>{bill.stage}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon"><View className="h-4 w-4" /></Button>
@@ -442,7 +454,7 @@ export default function BillLogPage() {
                 )
               })
             ) : (
-              <TableRow><TableCell colSpan={projectSlug === 'all' ? 8 : 7} className="text-center h-24">No bills found for this category.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={projectSlug === 'all' ? 10 : 9} className="text-center h-24">No bills found for this category.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -535,7 +547,7 @@ export default function BillLogPage() {
           onOpenChange={setIsViewOpen}
           bill={selectedBill as ProformaBill | null}
           workflow={workflow}
-          onAction={(taskId, action, comment) => handleAction(taskId, 'proformaBills', action, comment)}
+          onAction={(taskId, action, comment) => handleAction(taskId, action, comment)}
           isActionLoading={isActionLoading === selectedBill.id}
         />
       ) : (
@@ -544,7 +556,7 @@ export default function BillLogPage() {
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
           workflow={workflow}
-          onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
+          onAction={(taskId, action, comment) => handleAction(taskId, action, comment)}
           isActionLoading={isActionLoading === selectedBill.id}
         />
       ))}
@@ -552,7 +564,7 @@ export default function BillLogPage() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitleCore>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleCore>
+                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
               </DialogHeader>
               <Table>
                   <TableHeader>
