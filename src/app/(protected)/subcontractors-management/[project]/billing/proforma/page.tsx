@@ -12,7 +12,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem, WorkflowStep, ActionLog } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -21,6 +21,8 @@ import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-managem
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ShieldAlert } from 'lucide-react';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { Timestamp } from 'firebase/firestore';
 
 const initialBillDetails = {
     proformaNo: '',
@@ -236,6 +238,13 @@ export default function CreateProformaPage() {
     setIsSaving(true);
     
     try {
+      const workflowRef = doc(db, 'workflows', 'billing-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
+      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+      if(steps.length === 0) throw new Error('Billing workflow has no steps.');
+      const firstStep = steps[0];
+
       let approvalCopyUrl: string | undefined = undefined;
       if (approvalCopy && exceedsLimit) {
         // Here you would upload the file to storage and get the URL
@@ -261,8 +270,32 @@ export default function CreateProformaPage() {
         payableAmount: financials.payableAmount,
         createdAt: serverTimestamp(),
         projectId: currentProject?.id || '',
+        status: 'Pending',
+        stage: firstStep.name,
+        currentStepId: firstStep.id,
+        assignees: [],
+        history: [],
         approvalCopyUrl: approvalCopyUrl,
       };
+
+      const tempForAssignment = { ...proformaData, amount: proformaData.payableAmount };
+      const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
+      if(!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
+      proformaData.assignees = assignees;
+
+      const deadline = await calculateDeadline(new Date(), firstStep.tat);
+      (proformaData as any).deadline = Timestamp.fromDate(deadline);
+
+      const initialLog: ActionLog = {
+          action: 'Created',
+          comment: 'Proforma/Advance bill created.',
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: 'Creation',
+      };
+      proformaData.history = [initialLog];
+
 
       if (!currentProject) throw new Error("Project ID is missing");
       
@@ -271,9 +304,9 @@ export default function CreateProformaPage() {
       toast({ title: 'Proforma Bill Created', description: 'The new proforma/advance bill has been successfully saved.' });
       router.push(`/subcontractors-management/${projectSlug}/billing`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating proforma bill: ", error);
-      toast({ title: 'Save Failed', description: 'An error occurred while saving the proforma bill.', variant: 'destructive' });
+      toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the proforma bill.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -441,5 +474,3 @@ export default function CreateProformaPage() {
     </>
   );
 }
-
-    

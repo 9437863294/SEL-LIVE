@@ -112,9 +112,17 @@ export default function CreateRetentionBillPage() {
     setIsSaving(true);
     
     try {
+        const workflowRef = doc(db, 'workflows', 'billing-workflow');
+        const workflowSnap = await getDoc(workflowRef);
+        if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
+        
+        const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+        if (steps.length === 0) throw new Error('Billing workflow has no steps.');
+        const firstStep = steps[0];
+
         const batch = writeBatch(db);
 
-        const newBillData = {
+        const newBillData: Omit<Bill, 'id'> = {
           billNo: details.retentionBillNo,
           billDate: details.date,
           workOrderId: selectedBills[0]?.workOrderId || '',
@@ -133,16 +141,35 @@ export default function CreateRetentionBillPage() {
           totalDeductions: 0,
           netPayable: totalRetentionAmount,
           totalAmount: totalRetentionAmount,
-          createdAt: serverTimestamp(),
+          createdAt: serverTimestamp() as Timestamp,
           projectId: currentProject.id,
-          status: 'Pending', // Assuming retention bills also follow a workflow
-          stage: 'Verification', // Default starting stage
-          currentStepId: '1',
-          assignees: [], // To be set by workflow logic
+          status: 'Pending',
+          stage: firstStep.name,
+          currentStepId: firstStep.id,
+          assignees: [],
           history: [],
           isRetentionBill: true,
           claimedBillIds: Array.from(selectedBillIds),
         };
+        
+        const tempForAssignment = { ...newBillData, amount: newBillData.netPayable };
+        const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
+        if (!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
+        newBillData.assignees = assignees;
+
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+        (newBillData as any).deadline = Timestamp.fromDate(deadline);
+
+        const initialLog: ActionLog = {
+            action: 'Created',
+            comment: 'Retention bill created.',
+            userId: user.id,
+            userName: user.name,
+            timestamp: Timestamp.now(),
+            stepName: 'Creation',
+        };
+        newBillData.history = [initialLog];
+
 
         const newBillRef = doc(collection(db, 'projects', currentProject.id, 'bills'));
         batch.set(newBillRef, newBillData);
