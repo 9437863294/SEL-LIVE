@@ -60,6 +60,7 @@ export default function CreateProformaPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [existingProformaBills, setExistingProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   
   const [payablePercentage, setPayablePercentage] = useState<number>(100);
@@ -84,18 +85,21 @@ export default function CreateProformaPage() {
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
         const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
 
-        const [woSnap, jmcSnap, billsSnap, boqSnap] = await Promise.all([
+        const [woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap] = await Promise.all([
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
-          getDocs(boqQuery)
+          getDocs(boqQuery),
+          getDocs(proformaQuery),
         ]);
 
         setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
         setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
         setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
     };
     fetchProjectAndWorkOrders();
@@ -199,6 +203,29 @@ export default function CreateProformaPage() {
         toast({ title: 'Missing Required Fields', description: 'Please fill in Proforma No, select a Work Order, and add at least one item.', variant: 'destructive'});
         return;
     }
+    
+    const workOrderValue = selectedWorkOrder.totalAmount;
+    
+    const totalBilledInRegularBills = bills
+        .filter(b => b.workOrderId === selectedWorkOrder.id)
+        .reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+    
+    const totalInOtherProformas = existingProformaBills
+        .filter(pb => pb.workOrderId === selectedWorkOrder.id)
+        .reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
+
+    const totalClaimedSoFar = totalBilledInRegularBills + totalInOtherProformas;
+    const remainingWorkOrderValue = workOrderValue - totalClaimedSoFar;
+    
+    if (financials.payableAmount > remainingWorkOrderValue) {
+        toast({
+            title: 'Value Exceeds Work Order Limit',
+            description: `The payable amount (${formatCurrency(financials.payableAmount)}) exceeds the remaining value on the work order (${formatCurrency(remainingWorkOrderValue)}).`,
+            variant: 'destructive',
+        });
+        return;
+    }
+
     setIsSaving(true);
     
     try {
