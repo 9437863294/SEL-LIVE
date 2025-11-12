@@ -118,14 +118,49 @@ export default function ViewBillDialog({
                   </TableBody>
                 </Table>
               </div>
-              <div className="flex justify-end mt-4">
-                <div className="w-full max-w-xs space-y-2">
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Grand Total</span>
-                    <span>{formatCurrency(grandTotal)}</span>
-                  </div>
+            </div>
+
+            <Separator />
+
+            <div>
+                <h3 className="text-lg font-semibold mb-2">Financial Summary</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm p-4 border rounded-md">
+                    <div className="flex justify-between items-center py-1">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">{formatCurrency(bill.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1">
+                        <span className="text-muted-foreground">GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span>
+                        <span className="font-medium">{formatCurrency(bill.gstAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-t font-semibold">
+                        <span>Gross Amount</span>
+                        <span>{formatCurrency(bill.grossAmount)}</span>
+                    </div>
+                    <Separator className="md:col-span-2 my-1"/>
+                    <div className="flex justify-between items-center py-1">
+                        <span className="text-muted-foreground">Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span>
+                        <span className="font-medium text-red-600">-{formatCurrency(bill.retentionAmount)}</span>
+                    </div>
+                     {(bill.advanceDeductions || []).map((adv, i) => (
+                        <div key={i} className="flex justify-between items-center py-1">
+                            <span className="text-muted-foreground">Advance Deduction</span>
+                            <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
+                        </div>
+                     ))}
+                     <div className="flex justify-between items-center py-1">
+                        <span className="text-muted-foreground">Other Deductions</span>
+                        <span className="font-medium text-red-600">-{formatCurrency(bill.otherDeduction)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1">
+                        <span className="text-muted-foreground">Total Deductions</span>
+                        <span className="font-medium text-red-600">-{formatCurrency(bill.totalDeductions)}</span>
+                    </div>
+                     <div className="flex justify-between items-center py-2 border-t font-bold text-lg md:col-span-2">
+                        <span>Net Payable Amount</span>
+                        <span>{formatCurrency(bill.netPayable)}</span>
+                    </div>
                 </div>
-              </div>
             </div>
           </div>
         </ScrollArea>
