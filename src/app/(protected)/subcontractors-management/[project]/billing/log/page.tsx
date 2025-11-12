@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -61,15 +60,22 @@ const slugify = (text: string) => {
     .toString()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
+    .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
 
-type UnifiedBill = (Bill | ProformaBill) & {
+type UnifiedBill = (Omit<Bill, 'id'> | Omit<ProformaBill, 'id'>) & {
+  id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   sortDate: Date;
+  projectName?: string;
+  projectId?: string;
+  workOrderNo: string;
+  netPayable: number;
+  retentionAmount?: number;
+  advanceDeductions?: Bill['advanceDeductions'];
 };
 
 export default function BillLogPage() {
@@ -79,6 +85,7 @@ export default function BillLogPage() {
   const { can } = useAuthorization();
 
   const [bills, setBills] = useState<UnifiedBill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -129,13 +136,18 @@ export default function BillLogPage() {
         } as UnifiedBill;
       });
 
-      const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc) => {
-        const data = doc.data() as Omit<ProformaBill, 'id'>;
-        const projectId = doc.ref.parent.parent?.id;
+      const proformaData = proformaSnapshot.docs.map((doc) => ({id: doc.id, ...doc.data()} as ProformaBill));
+      setProformaBills(proformaData);
+
+      const proformaEntries: UnifiedBill[] = proformaData.map((data) => {
+        const projectId = data.projectId;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...data,
-          id: doc.id,
+          id: data.id,
+          billNo: data.proformaNo,
+          billDate: data.date,
+          workOrderNo: data.workOrderNo,
+          netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.date),
@@ -167,9 +179,9 @@ export default function BillLogPage() {
     setIsViewOpen(true);
   };
   
-  const handleViewDeductionDetails = (e: React.MouseEvent, bill: Bill) => {
+  const handleViewDeductionDetails = (e: React.MouseEvent, bill: UnifiedBill) => {
       e.stopPropagation();
-      setSelectedBill(bill as UnifiedBill);
+      setSelectedBill(bill);
       setIsDeductionDetailsOpen(true);
   }
   
@@ -237,10 +249,9 @@ export default function BillLogPage() {
                   ))
                 ) : bills.length > 0 ? (
                   bills.map((bill) => {
-                    const isProforma = bill.type === 'Proforma';
-                    const billDate = isProforma ? (bill as ProformaBill).date : (bill as Bill).billDate;
-                    const retentionAmount = bill.type === 'Retention' ? -((bill as Bill).netPayable || 0) : ((bill as Bill).retentionAmount || 0);
-                    const totalDeducted = bill.type === 'Regular' ? ((bill as Bill).advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0) : 0;
+                    const billDate = bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate;
+                    const retentionAmount = bill.type === 'Retention' ? -(bill.netPayable || 0) : (bill.retentionAmount || 0);
+                    const totalDeducted = bill.type === 'Regular' ? (bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0) : 0;
                     
                     return (
                     <TableRow
@@ -253,17 +264,17 @@ export default function BillLogPage() {
                           {bill.projectName}
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">{isProforma ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
+                      <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
                       <TableCell>{format(new Date(billDate), 'dd MMM, yyyy')}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                       </TableCell>
                       <TableCell>{bill.workOrderNo}</TableCell>
-                      <TableCell>{formatCurrency(isProforma ? (bill as ProformaBill).payableAmount : (bill as Bill).netPayable)}</TableCell>
+                      <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
                       <TableCell>{formatCurrency(retentionAmount)}</TableCell>
                       <TableCell>
                         {totalDeducted > 0 ? (
-                            <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill as Bill)}>
+                            <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
                                 {formatCurrency(totalDeducted)}
                             </Button>
                         ) : (
@@ -347,12 +358,15 @@ export default function BillLogPage() {
                       </TableRow>
                   </TableHeader>
                   <TableBody>
-                      {(selectedBill as Bill)?.advanceDeductions?.map(deduction => (
-                          <TableRow key={deduction.id}>
-                              <TableCell>{deduction.reference}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
-                          </TableRow>
-                      ))}
+                      {(selectedBill as Bill)?.advanceDeductions?.map(deduction => {
+                          const proforma = proformaBills.find(p => p.id === deduction.reference);
+                          return (
+                            <TableRow key={deduction.id}>
+                                <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
+                            </TableRow>
+                          )
+                      })}
                   </TableBody>
               </Table>
               <DialogFooter>

@@ -78,7 +78,7 @@ export default function ViewBillDialog({
               </div>
               <div>
                 <Label>Work Order No.</Label>
-                <p className="font-medium">{bill.woNo}</p>
+                <p className="font-medium">{bill.workOrderNo}</p>
               </div>
               <div>
                 <Label>Bill Date</Label>
