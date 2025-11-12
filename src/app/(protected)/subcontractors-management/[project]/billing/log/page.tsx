@@ -28,7 +28,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { Bill, Project } from '@/lib/types';
+import type { Bill, Project, ProformaBill } from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -57,16 +58,19 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
+type UnifiedBill = Bill & ProformaBill;
+
 export default function BillLogPage() {
   const { toast } = useToast();
   const params = useParams();
   const projectSlug = params.project as string;
   const { can } = useAuthorization();
 
-  const [bills, setBills] = useState<Bill[]>([]);
+  const [bills, setBills] = useState<UnifiedBill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
+  const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isProformaViewOpen, setIsProformaViewOpen] = useState(false);
 
   const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
@@ -74,7 +78,7 @@ export default function BillLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      let billsQuery;
+      let billsQuery, proformaQuery;
 
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
@@ -85,6 +89,7 @@ export default function BillLogPage() {
 
       if (projectSlug === 'all') {
         billsQuery = query(collectionGroup(db, 'bills'));
+        proformaQuery = query(collectionGroup(db, 'proformaBills'));
       } else {
         const project = allProjects.find(
           (p) => slugify(p.projectName) === projectSlug
@@ -97,10 +102,15 @@ export default function BillLogPage() {
         }
         const projectId = project.id;
         billsQuery = query(collection(db, 'projects', projectId, 'bills'));
+        proformaQuery = query(collection(db, 'projects', projectId, 'proformaBills'));
       }
 
-      const querySnapshot = await getDocs(billsQuery);
-      const entries = querySnapshot.docs.map((doc) => {
+      const [billsSnapshot, proformaSnapshot] = await Promise.all([
+          getDocs(billsQuery),
+          getDocs(proformaQuery),
+      ]);
+
+      const billEntries = billsSnapshot.docs.map((doc) => {
         const data = doc.data();
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find((p) => p.id === projectId);
@@ -119,13 +129,32 @@ export default function BillLogPage() {
         } as Bill;
       });
 
-      entries.sort((a, b) => {
+      const proformaEntries = proformaSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        const projectId = doc.ref.parent.parent?.id;
+        const project = allProjects.find((p) => p.id === projectId);
+         return {
+          id: doc.id,
+          ...data,
+          projectName: project?.projectName || 'Unknown',
+          billDate: format(new Date(data.date), 'dd MMM, yyyy'), // Align date field
+          billNo: data.proformaNo, // Align number field
+          netPayable: data.payableAmount, // Align amount field
+          isRetentionBill: false, // Proformas are not retention bills
+          advanceDeductions: [],
+          retentionAmount: 0,
+        } as unknown as Bill;
+      });
+
+      const allEntries = [...billEntries, ...proformaEntries];
+
+      allEntries.sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
         return dateB - dateA;
       });
 
-      setBills(entries);
+      setBills(allEntries);
     } catch (error) {
       console.error('Error fetching bills: ', error);
       toast({
@@ -141,9 +170,13 @@ export default function BillLogPage() {
     fetchBills();
   }, [projectSlug, toast]);
 
-  const handleViewDetails = (bill: Bill) => {
+  const handleViewDetails = (bill: UnifiedBill) => {
     setSelectedBill(bill);
-    setIsViewOpen(true);
+    if ('proformaNo' in bill) {
+        setIsProformaViewOpen(true);
+    } else {
+        setIsViewOpen(true);
+    }
   };
   
   const handleDeleteBill = async (billToDelete: Bill) => {
@@ -152,7 +185,8 @@ export default function BillLogPage() {
           return;
       }
       try {
-          await deleteDoc(doc(db, 'projects', billToDelete.projectId, 'bills', billToDelete.id));
+          const collectionName = 'proformaNo' in billToDelete ? 'proformaBills' : 'bills';
+          await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
           toast({ title: 'Success', description: `Bill ${billToDelete.billNo} has been deleted.`});
           fetchBills();
       } catch (error) {
@@ -167,6 +201,12 @@ export default function BillLogPage() {
       currency: 'INR',
     }).format(amount);
   };
+
+  const getBillType = (bill: UnifiedBill) => {
+      if ('proformaNo' in bill) return { text: 'Proforma', variant: 'outline' };
+      if (bill.isRetentionBill) return { text: 'Retention', variant: 'secondary' };
+      return { text: 'Regular', variant: 'default' };
+  }
 
   return (
     <>
@@ -207,7 +247,9 @@ export default function BillLogPage() {
                     </TableRow>
                   ))
                 ) : bills.length > 0 ? (
-                  bills.map((bill) => (
+                  bills.map((bill) => {
+                    const billType = getBillType(bill);
+                    return (
                     <TableRow
                       key={bill.id}
                       onClick={() => handleViewDetails(bill)}
@@ -221,8 +263,8 @@ export default function BillLogPage() {
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
                       <TableCell>
-                        <Badge variant={bill.isRetentionBill ? 'secondary' : 'outline'}>
-                            {bill.isRetentionBill ? 'Retention' : 'Regular'}
+                        <Badge variant={billType.variant as any}>
+                           {billType.text}
                         </Badge>
                       </TableCell>
                       <TableCell>{bill.workOrderNo}</TableCell>
@@ -281,7 +323,7 @@ export default function BillLogPage() {
                         </AlertDialog>
                       </TableCell>
                     </TableRow>
-                  ))
+                  )})
                 ) : (
                   <TableRow>
                     <TableCell
@@ -301,7 +343,13 @@ export default function BillLogPage() {
       <ViewBillDialog
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        bill={selectedBill}
+        bill={selectedBill as Bill | null}
+      />
+      
+      <ViewProformaBillDialog
+        isOpen={isProformaViewOpen}
+        onOpenChange={setIsProformaViewOpen}
+        bill={selectedBill as ProformaBill | null}
       />
     </>
   );
