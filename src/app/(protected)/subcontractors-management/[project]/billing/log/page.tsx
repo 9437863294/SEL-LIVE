@@ -48,9 +48,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import {
   Dialog,
-  DialogContent as DialogContentShad,
-  DialogHeader as DialogHeaderShad,
-  DialogTitle as DialogTitleShad,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
@@ -63,7 +63,7 @@ const slugify = (text: string) => {
     .toString()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
+    .replace(/[^\w-]+/g, '')
     .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
@@ -121,6 +121,7 @@ export default function BillLogPage() {
     subcontractor: 'all',
     year: 'all',
     month: 'all',
+    type: 'all',
   });
 
   const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
@@ -158,7 +159,7 @@ export default function BillLogPage() {
       ]);
 
       const billEntries: UnifiedBill[] = billsSnapshot.docs.map((doc) => {
-        const data = doc.data() as Omit<Bill, 'id'>;
+        const data = doc.data() as Bill;
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
@@ -219,8 +220,9 @@ export default function BillLogPage() {
       const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
       const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
       const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
+      const typeMatch = filters.type === 'all' || bill.type === filters.type;
 
-      return projectMatch && woMatch && subMatch && yearMatch && monthMatch;
+      return projectMatch && woMatch && subMatch && yearMatch && monthMatch && typeMatch;
     });
   }, [allBills, filters]);
   
@@ -295,7 +297,7 @@ export default function BillLogPage() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -317,6 +319,15 @@ export default function BillLogPage() {
                         <SelectContent>
                             <SelectItem value="all">All Subcontractors</SelectItem>
                             {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
+                        <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="Regular">Regular</SelectItem>
+                            <SelectItem value="Retention">Retention</SelectItem>
+                            <SelectItem value="Proforma">Proforma</SelectItem>
                         </SelectContent>
                     </Select>
                     <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
@@ -380,7 +391,7 @@ export default function BillLogPage() {
                         </TableCell>
                       )}
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
-                      <TableCell>{billDate ? format(billDate, 'dd MMM, yyyy') : 'N/A'}</TableCell>
+                      <TableCell>{formatDateSafe(billDate)}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                       </TableCell>
@@ -462,10 +473,10 @@ export default function BillLogPage() {
       ))}
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
-          <DialogContentShad>
-              <DialogHeaderShad>
-                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
-              </DialogHeaderShad>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
+              </DialogHeader>
               <Table>
                   <TableHeader>
                       <TableRow>
@@ -490,7 +501,7 @@ export default function BillLogPage() {
                       <Button variant="outline">Close</Button>
                   </DialogClose>
               </DialogFooter>
-          </DialogContentShad>
+          </DialogContent>
       </Dialog>
     </>
   );
