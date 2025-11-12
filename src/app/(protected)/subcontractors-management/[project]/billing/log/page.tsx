@@ -52,7 +52,7 @@ const slugify = (text: string) => {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
@@ -79,7 +79,8 @@ export default function BillLogPage() {
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
       const allProjects = projectSnap.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() } as Project)
+        (doc) =>
+          ({ id: doc.id, ...doc.data() } as Project)
       );
 
       if (projectSlug === 'all') {
@@ -190,6 +191,7 @@ export default function BillLogPage() {
                   <TableHead>Bill Date</TableHead>
                   <TableHead>Work Order No.</TableHead>
                   <TableHead>Net Payable</TableHead>
+                  <TableHead>Retention</TableHead>
                   <TableHead>Deducted Advances</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -198,7 +200,7 @@ export default function BillLogPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={projectSlug === 'all' ? 7 : 6}>
+                      <TableCell colSpan={projectSlug === 'all' ? 8 : 7}>
                         <Skeleton className="h-5 w-full" />
                       </TableCell>
                     </TableRow>
@@ -217,8 +219,9 @@ export default function BillLogPage() {
                       )}
                       <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{bill.billDate}</TableCell>
-                      <TableCell>{bill.woNo}</TableCell>
+                      <TableCell>{bill.workOrderNo}</TableCell>
                       <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
+                      <TableCell>{formatCurrency(bill.retentionAmount || 0)}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1 items-start">
                           {bill.advanceDeductions &&
@@ -272,7 +275,7 @@ export default function BillLogPage() {
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={projectSlug === 'all' ? 7 : 6}
+                      colSpan={projectSlug === 'all' ? 8 : 7}
                       className="text-center h-24"
                     >
                       No bills found.
@@ -293,4 +296,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
