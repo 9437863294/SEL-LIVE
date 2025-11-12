@@ -13,34 +13,38 @@ export default function AppShell({
     children: React.ReactNode;
 }) {
     const { user, loading, isSessionExpired, setIsSessionExpired, extendSession, handleSignOut } = useAuth();
-    
-    // If there's no user and we are not loading, it's a public view (e.g. login page)
-    // We don't render the main app shell for these cases.
-    if (!loading && !user) {
-        return <div className="min-h-screen">{children}</div>;
-    }
-
-    // While loading, we can show a skeleton or nothing.
-    // This avoids showing the app shell layout on the login page briefly.
-    if (loading) {
-        return <div className="flex justify-center items-center h-screen">Loading application...</div>;
-    }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <>
+            {/* 
+              This handler is now outside the conditional rendering to ensure it always runs.
+              It will handle redirecting to /login if the user is not authenticated.
+            */}
             <Suspense fallback={null}>
                 <ClientSessionHandler />
             </Suspense>
-            <Header />
-            <div className="flex-grow">
-                {children}
-            </div>
-            <SessionExpiryDialog
-                isOpen={isSessionExpired}
-                onOpenChange={setIsSessionExpired}
-                onSessionExtend={extendSession}
-                onLogout={() => handleSignOut(true)}
-            />
-        </div>
+
+            {/* 
+              If we are loading or there's no user, we render a minimal layout or the public page.
+              The ClientSessionHandler will have already decided if a redirect is needed.
+            */}
+            {loading || !user ? (
+                <div className="min-h-screen">{children}</div>
+            ) : (
+                // Once authenticated, render the full application shell with header and footer.
+                <div className="flex flex-col min-h-screen">
+                    <Header />
+                    <div className="flex-grow">
+                        {children}
+                    </div>
+                    <SessionExpiryDialog
+                        isOpen={isSessionExpired}
+                        onOpenChange={setIsSessionExpired}
+                        onSessionExtend={extendSession}
+                        onLogout={() => handleSignOut(true)}
+                    />
+                </div>
+            )}
+        </>
     );
 }
