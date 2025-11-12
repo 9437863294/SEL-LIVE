@@ -24,6 +24,7 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
+  Timestamp,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,11 +48,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
+  DialogContent as DialogContent,
+  DialogHeader as DialogHeader,
+  DialogTitle as DialogTitle,
+  DialogFooter as DialogFooter,
+  DialogClose as DialogClose,
 } from '@/components/ui/dialog';
 
 const slugify = (text: string) => {
@@ -77,6 +78,22 @@ type UnifiedBill = (Omit<Bill, 'id'> | Omit<ProformaBill, 'id'>) & {
   retentionAmount?: number;
   advanceDeductions?: Bill['advanceDeductions'];
 };
+
+function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
+  const { id: _ignored, ...rest } = obj as any;
+  return rest as Omit<T, 'id'>;
+}
+
+function toDateSafe(value: any): Date | null {
+    if (!value) return null;
+    if (value instanceof Timestamp) return value.toDate();
+    if (value instanceof Date) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+}
 
 export default function BillLogPage() {
   const { toast } = useToast();
@@ -128,29 +145,30 @@ export default function BillLogPage() {
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...data,
+          ...(stripId(data as any)),
           id: doc.id,
+          projectId: projectId,
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
-          sortDate: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.billDate),
+          sortDate: toDateSafe(data.createdAt) || new Date(data.billDate),
         } as UnifiedBill;
       });
 
-      const proformaData = proformaSnapshot.docs.map((doc) => ({id: doc.id, ...doc.data()} as ProformaBill));
+      const proformaData = proformaSnapshot.docs.map((doc) => ({id: doc.id, ...stripId(doc.data() as any)} as ProformaBill));
       setProformaBills(proformaData);
 
       const proformaEntries: UnifiedBill[] = proformaData.map((data) => {
         const projectId = data.projectId;
         const project = allProjects.find(p => p.id === projectId);
         return {
+          ...data,
           id: data.id,
           billNo: data.proformaNo,
           billDate: data.date,
-          workOrderNo: data.workOrderNo,
           netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
-          sortDate: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.date),
+          sortDate: toDateSafe(data.createdAt) || new Date(data.date),
         } as UnifiedBill;
       });
 
@@ -265,7 +283,7 @@ export default function BillLogPage() {
                         </TableCell>
                       )}
                       <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
-                      <TableCell>{format(new Date(billDate), 'dd MMM, yyyy')}</TableCell>
+                      <TableCell>{billDate ? format(toDateSafe(billDate)!, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                       </TableCell>
@@ -358,10 +376,10 @@ export default function BillLogPage() {
                       </TableRow>
                   </TableHeader>
                   <TableBody>
-                      {(selectedBill as Bill)?.advanceDeductions?.map(deduction => {
+                      {(selectedBill as Bill)?.advanceDeductions?.map((deduction, index) => {
                           const proforma = proformaBills.find(p => p.id === deduction.reference);
                           return (
-                            <TableRow key={deduction.id}>
+                            <TableRow key={deduction.id || index}>
                                 <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
                             </TableRow>
