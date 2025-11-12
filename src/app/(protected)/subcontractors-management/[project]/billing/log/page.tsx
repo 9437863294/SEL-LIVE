@@ -48,11 +48,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import {
   Dialog,
-  DialogContent as DialogContent,
-  DialogHeader as DialogHeader,
-  DialogTitle as DialogTitle,
-  DialogFooter as DialogFooter,
-  DialogClose as DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 
 const slugify = (text: string) => {
@@ -145,12 +145,12 @@ export default function BillLogPage() {
         const projectId = doc.ref.parent.parent?.id;
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...(stripId(data as any)),
+          ...stripId(data as any),
           id: doc.id,
           projectId: projectId,
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
-          sortDate: toDateSafe(data.createdAt) || new Date(data.billDate),
+          sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
         } as UnifiedBill;
       });
 
@@ -168,7 +168,7 @@ export default function BillLogPage() {
           netPayable: data.payableAmount,
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
-          sortDate: toDateSafe(data.createdAt) || new Date(data.date),
+          sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
         } as UnifiedBill;
       });
 
@@ -227,6 +227,16 @@ export default function BillLogPage() {
     }).format(amount);
   };
 
+  const formatDateSafe = (dateInput: any): string => {
+    const date = toDateSafe(dateInput);
+    if (!date) return 'N/A';
+    try {
+      return format(date, 'dd MMM, yyyy');
+    } catch {
+      return 'Invalid Date';
+    }
+  };
+
   return (
       <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -267,7 +277,7 @@ export default function BillLogPage() {
                   ))
                 ) : bills.length > 0 ? (
                   bills.map((bill) => {
-                    const billDate = bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate;
+                    const billDate = toDateSafe(bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate);
                     const retentionAmount = bill.type === 'Retention' ? -(bill.netPayable || 0) : (bill.retentionAmount || 0);
                     const totalDeducted = bill.type === 'Regular' ? (bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0) : 0;
                     
@@ -283,7 +293,7 @@ export default function BillLogPage() {
                         </TableCell>
                       )}
                       <TableCell className="font-medium">{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
-                      <TableCell>{billDate ? format(toDateSafe(billDate)!, 'dd MMM, yyyy') : 'N/A'}</TableCell>
+                      <TableCell>{billDate ? format(billDate, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                       <TableCell>
                         <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                       </TableCell>
@@ -349,7 +359,7 @@ export default function BillLogPage() {
         </Card>
       </div>
 
-      {selectedBill && (selectedBill.type === 'Proforma') ? (
+      {selectedBill && (selectedBill.type === 'Proforma' ? (
         <ViewProformaBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
@@ -360,8 +370,9 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
+          proformaBills={proformaBills}
         />
-      )}
+      ))}
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
