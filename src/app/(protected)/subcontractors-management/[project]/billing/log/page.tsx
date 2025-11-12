@@ -38,6 +38,8 @@ import {
   runTransaction,
   arrayUnion,
   getDoc,
+  DocumentSnapshot,
+  QuerySnapshot,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,6 +85,7 @@ type UnifiedBill = (Bill | ProformaBill) & {
   sortDate: Date;
   projectName?: string;
   projectId: string;
+  netPayable: number;
 };
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
@@ -161,15 +164,15 @@ export default function BillLogPage() {
       const allSubcontractors: Subcontractor[] = [];
       const subsQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
       const subsSnaps = await Promise.all(subsQueryPromises);
-      subsSnaps.forEach(snap => {
+      subsSnaps.forEach((snap: QuerySnapshot) => {
         allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
       });
       setSubcontractors(allSubcontractors);
 
       const allWorkOrders: WorkOrder[] = [];
       const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
-      const woSnaps = await Promise.all(woSnaps);
-      woSnaps.forEach(snap => {
+      const woSnaps = await Promise.all(woQueryPromises);
+      woSnaps.forEach((snap: QuerySnapshot) => {
         allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
       });
       setWorkOrders(allWorkOrders);
@@ -188,7 +191,7 @@ export default function BillLogPage() {
         setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
       }
 
-      const billEntries: UnifiedBill[] = billsSnapshot.docs.map((doc) => {
+      const billEntries: UnifiedBill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => {
         const data = doc.data() as Bill;
         const projectId = doc.ref.parent.parent?.id || '';
         const project = allProjects.find(p => p.id === projectId);
@@ -204,10 +207,11 @@ export default function BillLogPage() {
           assignees: data.assignees,
           currentStepId: data.currentStepId,
           history: data.history,
+          netPayable: data.netPayable,
         } as UnifiedBill;
       });
       
-      const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc) => {
+      const proformaEntries: UnifiedBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => {
         const data = doc.data() as ProformaBill;
         const projectId = doc.ref.parent.parent?.id || '';
         const project = allProjects.find(p => p.id === projectId);
@@ -413,7 +417,7 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const billDate = bill.type === 'Proforma' ? (bill as ProformaBill).date : (bill as Bill).billDate;
+                const billDate = bill.type === 'Proforma' ? bill.date : bill.billDate;
                 return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
@@ -424,7 +428,7 @@ export default function BillLogPage() {
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell>{(bill as any).stage}</TableCell>
+                    <TableCell>{bill.stage}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon"><View className="h-4 w-4" /></Button>
                     </TableCell>
@@ -524,24 +528,23 @@ export default function BillLogPage() {
           bill={selectedBill as ProformaBill | null}
           workflow={workflow}
           onAction={(taskId, action, comment) => handleAction(taskId, 'proformaBills', action, comment)}
-          isActionLoading={!!isActionLoading}
+          isActionLoading={isActionLoading === selectedBill.id}
         />
       ) : (
         <ViewBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
-          proformaBills={proformaBills}
           workflow={workflow}
           onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
-          isActionLoading={!!isActionLoading}
+          isActionLoading={isActionLoading === selectedBill.id}
         />
       ))}
       
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
+                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
               </DialogHeader>
               <Table>
                   <TableHeader>
@@ -572,5 +575,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
-    

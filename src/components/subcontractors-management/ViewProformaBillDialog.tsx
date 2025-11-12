@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { ProformaBill } from '@/lib/types';
+import type { ProformaBill, WorkflowStep, ActionLog } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -22,13 +22,17 @@ import {
   TableRow,
 } from '../ui/table';
 import { ScrollArea } from '../ui/scroll-area';
-import { useMemo } from 'react';
-import { Printer } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Printer, Loader2 } from 'lucide-react';
+import { Textarea } from '../ui/textarea';
 
 interface ViewProformaBillDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   bill: ProformaBill | null;
+  workflow: WorkflowStep[];
+  onAction: (taskId: string, action: string, comment: string) => Promise<void>;
+  isActionLoading: boolean;
 }
 
 const slugify = (text: string | undefined) => {
@@ -46,7 +50,11 @@ export default function ViewProformaBillDialog({
   isOpen,
   onOpenChange,
   bill,
+  workflow,
+  onAction,
+  isActionLoading
 }: ViewProformaBillDialogProps) {
+  const [actionComment, setActionComment] = useState('');
   if (!bill) return null;
   
   const formatCurrency = (amount: string | number) => {
@@ -66,6 +74,9 @@ export default function ViewProformaBillDialog({
     const projectSlug = slugify(bill.projectName);
     window.open(`/billing-recon/${projectSlug}/proforma-bill/${bill.id}/print`, '_blank');
   };
+
+  const currentStep = workflow.find(s => s.id === bill.currentStepId);
+  const availableActions = currentStep?.actions || [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -142,6 +153,30 @@ export default function ViewProformaBillDialog({
                   </div>
               </div>
             </div>
+
+            {bill.status !== 'Completed' && bill.status !== 'Rejected' && (
+              <div className="pt-4 space-y-4 border-t">
+                  <h3 className="text-lg font-semibold">Workflow Actions</h3>
+                  <Textarea 
+                      placeholder="Add a comment for your action (optional)..."
+                      value={actionComment}
+                      onChange={(e) => setActionComment(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                      {availableActions.map(action => (
+                          <Button 
+                            key={typeof action === 'string' ? action : action.name}
+                            onClick={() => onAction(bill.id, typeof action === 'string' ? action : action.name, actionComment)}
+                            disabled={isActionLoading}
+                          >
+                              {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                              {typeof action === 'string' ? action : action.name}
+                          </Button>
+                      ))}
+                  </div>
+              </div>
+            )}
+
           </div>
         </ScrollArea>
         <DialogFooter className="mt-4 pr-4 sm:justify-between">
