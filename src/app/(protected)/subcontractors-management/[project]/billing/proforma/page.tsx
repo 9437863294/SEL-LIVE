@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,8 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ShieldAlert } from 'lucide-react';
 
 const initialBillDetails = {
     proformaNo: '',
@@ -64,6 +66,9 @@ export default function CreateProformaPage() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   
   const [payablePercentage, setPayablePercentage] = useState<number>(100);
+  const [approvalCopy, setApprovalCopy] = useState<File | null>(null);
+  const [showApprovalUpload, setShowApprovalUpload] = useState(false);
+
 
   useEffect(() => {
     const fetchProjectAndWorkOrders = async () => {
@@ -197,70 +202,80 @@ export default function CreateProformaPage() {
     return { subtotal, payableAmount };
   }, [items, payablePercentage]);
 
-
   const handleSave = async () => {
     if (!user || !details.proformaNo || !selectedWorkOrder || items.length === 0) {
-        toast({ title: 'Missing Required Fields', description: 'Please fill in Proforma No, select a Work Order, and add at least one item.', variant: 'destructive'});
-        return;
+      toast({ title: 'Missing Required Fields', description: 'Please fill in Proforma No, select a Work Order, and add at least one item.', variant: 'destructive' });
+      return;
     }
-    
+
     const workOrderValue = selectedWorkOrder.totalAmount;
     
     const totalBilledInRegularBills = bills
-        .filter(b => b.workOrderId === selectedWorkOrder.id)
-        .reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+      .filter(b => b.workOrderId === selectedWorkOrder.id)
+      .reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
     
     const totalInOtherProformas = existingProformaBills
-        .filter(pb => pb.workOrderId === selectedWorkOrder.id)
-        .reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
+      .filter(pb => pb.workOrderId === selectedWorkOrder.id)
+      .reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
 
     const totalClaimedSoFar = totalBilledInRegularBills + totalInOtherProformas;
     const remainingWorkOrderValue = workOrderValue - totalClaimedSoFar;
     
-    if (financials.payableAmount > remainingWorkOrderValue) {
-        toast({
-            title: 'Value Exceeds Work Order Limit',
-            description: `The payable amount (${formatCurrency(financials.payableAmount)}) exceeds the remaining value on the work order (${formatCurrency(remainingWorkOrderValue)}).`,
-            variant: 'destructive',
-        });
-        return;
+    const exceedsLimit = financials.payableAmount > remainingWorkOrderValue;
+    setShowApprovalUpload(exceedsLimit);
+
+    if (exceedsLimit && !approvalCopy) {
+      toast({
+        title: 'Approval Required',
+        description: `The payable amount exceeds the remaining work order value. Please upload an approval copy.`,
+        variant: 'destructive',
+      });
+      return;
     }
 
     setIsSaving(true);
     
     try {
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, boqQty, ...rest }) => ({
-            ...rest,
-            billedQty: parseFloat(rest.billedQty) || 0,
-        }));
+      let approvalCopyUrl: string | undefined = undefined;
+      if (approvalCopy && exceedsLimit) {
+        // Here you would upload the file to storage and get the URL
+        // This is a placeholder for the actual upload logic
+        // For example: approvalCopyUrl = await uploadFile(approvalCopy);
+      }
 
-        const proformaData: Omit<ProformaBill, 'id'> = {
-            proformaNo: details.proformaNo,
-            date: details.date,
-            workOrderId: details.workOrderId,
-            workOrderNo: selectedWorkOrder.workOrderNo,
-            subcontractorId: selectedWorkOrder.subcontractorId,
-            subcontractorName: selectedWorkOrder.subcontractorName,
-            items: itemsToSave,
-            subtotal: financials.subtotal,
-            payablePercentage: payablePercentage,
-            payableAmount: financials.payableAmount,
-            createdAt: serverTimestamp(),
-            projectId: currentProject?.id || '',
-        };
+      const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, boqQty, ...rest }) => ({
+        ...rest,
+        billedQty: parseFloat(rest.billedQty) || 0,
+      }));
 
-        if(!currentProject) throw new Error("Project ID is missing");
-        
-        await addDoc(collection(db, 'projects', currentProject.id, 'proformaBills'), proformaData);
-        
-        toast({ title: 'Proforma Bill Created', description: 'The new proforma/advance bill has been successfully saved.' });
-        router.push(`/subcontractors-management/${projectSlug}/billing`);
+      const proformaData: Omit<ProformaBill, 'id'> = {
+        proformaNo: details.proformaNo,
+        date: details.date,
+        workOrderId: details.workOrderId,
+        workOrderNo: selectedWorkOrder.workOrderNo,
+        subcontractorId: selectedWorkOrder.subcontractorId,
+        subcontractorName: selectedWorkOrder.subcontractorName,
+        items: itemsToSave,
+        subtotal: financials.subtotal,
+        payablePercentage: payablePercentage,
+        payableAmount: financials.payableAmount,
+        createdAt: serverTimestamp(),
+        projectId: currentProject?.id || '',
+        approvalCopyUrl: approvalCopyUrl,
+      };
+
+      if (!currentProject) throw new Error("Project ID is missing");
+      
+      await addDoc(collection(db, 'projects', currentProject.id, 'proformaBills'), proformaData);
+      
+      toast({ title: 'Proforma Bill Created', description: 'The new proforma/advance bill has been successfully saved.' });
+      router.push(`/subcontractors-management/${projectSlug}/billing`);
 
     } catch (error) {
-        console.error("Error creating proforma bill: ", error);
-        toast({ title: 'Save Failed', description: 'An error occurred while saving the proforma bill.', variant: 'destructive' });
+      console.error("Error creating proforma bill: ", error);
+      toast({ title: 'Save Failed', description: 'An error occurred while saving the proforma bill.', variant: 'destructive' });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
   
@@ -385,6 +400,22 @@ export default function CreateProformaPage() {
                         <Input type="number" placeholder="Payable %" value={payablePercentage} onChange={e => setPayablePercentage(parseFloat(e.target.value) || 0)} />
                         <span className="text-muted-foreground">%</span>
                     </div>
+                     {showApprovalUpload && (
+                        <div className="space-y-2 pt-4">
+                            <Alert variant="destructive">
+                                <ShieldAlert className="h-4 w-4" />
+                                <AlertTitle>Approval Required</AlertTitle>
+                                <AlertDescription>
+                                    This amount exceeds the work order value. Please upload an approval document to proceed.
+                                </AlertDescription>
+                            </Alert>
+                            <Label htmlFor="approvalCopy">Approval Copy</Label>
+                            <div className="flex items-center gap-2">
+                                <Input id="approvalCopy" type="file" onChange={(e) => setApprovalCopy(e.target.files ? e.target.files[0] : null)} />
+                                {approvalCopy && <span className="text-sm text-muted-foreground truncate">{approvalCopy.name}</span>}
+                            </div>
+                        </div>
+                    )}
                 </div>
                 <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
                     <div className="flex justify-between items-center text-sm">
@@ -410,3 +441,5 @@ export default function CreateProformaPage() {
     </>
   );
 }
+
+    
