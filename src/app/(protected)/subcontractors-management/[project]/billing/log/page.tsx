@@ -61,7 +61,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -84,6 +92,7 @@ type UnifiedBill = (Bill | ProformaBill) & {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   sortDate: Date;
+  displayDate: string;
   projectName?: string;
   projectId: string;
   netPayable: number;
@@ -197,12 +206,13 @@ export default function BillLogPage() {
         const projectId = doc.ref.parent.parent?.id || '';
         const project = allProjects.find(p => p.id === projectId);
         return {
-          ...(stripId(data as any)),
+          ...stripId(data),
           id: doc.id,
           projectId: projectId,
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
+          displayDate: formatDateSafe(data.billDate),
           netPayable: data.netPayable,
         } as UnifiedBill;
       });
@@ -220,13 +230,14 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: 'Proforma',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
+          displayDate: formatDateSafe(data.date),
           projectId: projectId,
           status: data.status || 'Pending',
           stage: data.stage || 'N/A',
           assignees: data.assignees || [],
           currentStepId: data.currentStepId || null,
           history: data.history || [],
-        } as UnifiedBill;
+        } as unknown as UnifiedBill;
       });
 
       const combined = [...billEntries, ...proformaEntries];
@@ -413,12 +424,11 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const billDate = bill.type === 'Proforma' ? bill.date : bill.billDate;
                 return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
                     <TableCell>{bill.type === 'Proforma' ? (bill as ProformaBill).proformaNo : (bill as Bill).billNo}</TableCell>
-                    <TableCell>{formatDateSafe(billDate)}</TableCell>
+                    <TableCell>{bill.displayDate}</TableCell>
                     <TableCell>
                       <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
                     </TableCell>
@@ -531,7 +541,6 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
-          proformaBills={allBills.filter(b => b.type === 'Proforma') as ProformaBill[]}
           workflow={workflow}
           onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
           isActionLoading={isActionLoading === selectedBill.id}
@@ -572,4 +581,3 @@ export default function BillLogPage() {
     </>
   );
 }
-

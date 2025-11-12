@@ -150,7 +150,7 @@ export default function ViewBillDialog({
                     </div>
                      {(bill.advanceDeductions || []).map((adv, i) => (
                         <div key={i} className="flex justify-between items-center py-1">
-                            <span className="text-muted-foreground">Advance (Ref: {adv.reference})</span>
+                            <span className="text-muted-foreground">Advance Deduction</span>
                             <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
                         </div>
                      ))}
