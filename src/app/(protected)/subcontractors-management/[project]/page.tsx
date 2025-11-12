@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -25,6 +24,7 @@ import { db } from '@/lib/firebase';
 import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import AllSubcontractorsDashboard from '@/components/AllSubcontractorsDashboard';
 
 interface SubcontractorCardProps {
   item: {
@@ -83,12 +83,16 @@ export default function SubcontractorsProjectDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const isAllProjectsView = projectSlugParam === 'all';
+
   const safeCan = useCallback(
-    (action: string, resource: string) => {
+    (action: string, resource: string, scope?: string) => {
       if (isAuthLoading) return false;
-      return typeof can === 'function' ? can(action, resource) : false;
+      // For 'all' view, don't pass a specific scope unless it's a general permission
+      const scopeToCheck = isAllProjectsView && resource.includes('.') ? undefined : scope;
+      return typeof can === 'function' ? can(action, resource, scopeToCheck) : false;
     },
-    [can, isAuthLoading]
+    [can, isAuthLoading, isAllProjectsView]
   );
 
   useEffect(() => {
@@ -125,14 +129,16 @@ export default function SubcontractorsProjectDashboard() {
   );
 
   const projectName = useMemo(() => {
+    if (isAllProjectsView) return "All Projects";
     if (currentProject?.projectName) return currentProject.projectName;
     return projectSlugParam.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-  }, [currentProject, projectSlugParam]);
+  }, [currentProject, projectSlugParam, isAllProjectsView]);
 
   const selectedValue = useMemo(() => {
+    if (isAllProjectsView) return 'all';
     const found = projects.find(p => slugify(p.projectName) === projectSlugParam);
     return found ? projectSlugParam : undefined;
-  }, [projects, projectSlugParam]);
+  }, [projects, projectSlugParam, isAllProjectsView]);
 
   const handleProjectChange = (slug: string) => {
     if (!slug) return;
@@ -152,7 +158,7 @@ export default function SubcontractorsProjectDashboard() {
         text: 'Manage Subcontractors',
         href: basePath ? `${basePath}/manage` : '#',
         description: 'View, add, or edit subcontractor details.',
-        disabled: !projectSlugParam || !safeCan('View', 'Subcontractors Management.Manage Subcontractors'),
+        disabled: !basePath || !safeCan('View', 'Subcontractors Management.Manage Subcontractors', currentProject?.id),
       },
       {
         icon: FileText,
@@ -160,7 +166,7 @@ export default function SubcontractorsProjectDashboard() {
         href: basePath ? `${basePath}/work-order` : '#',
         description: 'Create and manage work orders for subcontractors.',
         disabled:
-          !projectSlugParam || !safeCan('View', 'Subcontractors Management.Work Order'),
+          !basePath || !safeCan('View', 'Subcontractors Management.Work Order', currentProject?.id),
       },
       {
         icon: Calculator,
@@ -168,17 +174,17 @@ export default function SubcontractorsProjectDashboard() {
         href: basePath ? `${basePath}/billing` : '#',
         description: 'Create and manage subcontractor bills.',
         disabled:
-          !projectSlugParam || !safeCan('View', 'Subcontractors Management.Billing'),
+          !basePath || !safeCan('View', 'Subcontractors Management.Billing', currentProject?.id),
       },
       {
         icon: BarChart3,
         text: 'Reports',
         href: basePath ? `${basePath}/reports` : '#',
         description: 'View reports related to subcontractors.',
-        disabled: !projectSlugParam || !safeCan('View', 'Subcontractors Management.Reports'),
+        disabled: !basePath || !safeCan('View', 'Subcontractors Management.Reports', currentProject?.id),
     },
     ],
-    [basePath, safeCan, projectSlugParam]
+    [basePath, safeCan, currentProject?.id]
   );
   
   if (isLoading || isAuthLoading) {
@@ -194,7 +200,7 @@ export default function SubcontractorsProjectDashboard() {
     );
   }
 
-  if (!safeCan('View Module', 'Subcontractors Management')) {
+  if (!safeCan('View Module', 'Subcontractors Management', isAllProjectsView ? undefined : currentProject?.id)) {
     return (
       <div>
         <div className="mb-8 flex items-center justify-between">
@@ -220,6 +226,37 @@ export default function SubcontractorsProjectDashboard() {
     );
   }
 
+  if (isAllProjectsView) {
+      return (
+          <div>
+            <div className="mb-8 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Link href="/">
+                  <Button variant="ghost" size="icon" aria-label="Home">
+                    <Home className="h-6 w-6" />
+                  </Button>
+                </Link>
+                <h1 className="text-2xl font-bold">Subcontractors Management</h1>
+              </div>
+               <div className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                <Select value={selectedValue} onValueChange={handleProjectChange}>
+                    <SelectTrigger className="w-[260px]"><SelectValue placeholder="Select Project" /></SelectTrigger>
+                    <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((p) => {
+                        const value = slugify(p.projectName);
+                        return <SelectItem key={p.id} value={value}>{p.projectName}</SelectItem>;
+                    })}
+                    </SelectContent>
+                </Select>
+                </div>
+            </div>
+            <AllSubcontractorsDashboard />
+        </div>
+      )
+  }
+
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
@@ -240,7 +277,7 @@ export default function SubcontractorsProjectDashboard() {
             <SelectContent>
               <SelectItem value="all">All Projects</SelectItem>
               {projects.map((p) => {
-                const value = slugify((p as any).slug ?? p.projectName);
+                const value = slugify(p.projectName);
                 return (
                   <SelectItem key={p.id} value={value}>
                     {p.projectName}

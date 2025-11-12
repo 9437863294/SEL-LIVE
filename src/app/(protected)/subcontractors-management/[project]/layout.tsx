@@ -58,10 +58,10 @@ export default function ProjectLayout({
 
   const navItems = [
     { href: `/subcontractors-management`, icon: FolderOpen, label: 'Projects', permission: can('View Module', 'Subcontractors Management')},
-    { href: `/subcontractors-management/${projectSlug}/manage`, icon: Users, label: 'Manage', permission: can('View', 'Subcontractors Management.Manage Subcontractors') },
-    { href: `/subcontractors-management/${projectSlug}/work-order`, icon: FileText, label: 'Work Order', permission: can('View', 'Subcontractors Management.Work Order') },
-    { href: `/subcontractors-management/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Subcontractors Management.Billing') },
-    { href: `/subcontractors-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View', 'Subcontractors Management.Reports') },
+    { href: `/subcontractors-management/${projectSlug}/manage`, icon: Users, label: 'Manage', permission: can('View', 'Subcontractors Management.Manage Subcontractors', projectId) },
+    { href: `/subcontractors-management/${projectSlug}/work-order`, icon: FileText, label: 'Work Order', permission: can('View', 'Subcontractors Management.Work Order', projectId) },
+    { href: `/subcontractors-management/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Subcontractors Management.Billing', projectId) },
+    { href: `/subcontractors-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View', 'Subcontractors Management.Reports', projectId) },
   ];
   
   const visibleNavItems = navItems.filter(item => item.permission);
@@ -71,10 +71,11 @@ export default function ProjectLayout({
     return <>{children}</>;
   }
 
-  // If we are on the "all" projects page, we don't need a sidebar, just the main content.
+  // If we are on the "all" projects view, we render the children directly without a sidebar.
   if (projectSlug === 'all') {
     return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
+
 
   return (
     <div className="flex w-full h-full">
