@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -12,7 +11,8 @@ import {
   Check,
   MoreHorizontal,
   Loader2,
-  History as HistoryIcon,
+  HistoryIcon,
+  Library,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -65,7 +65,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
+  DialogTitle as DialogTitleCore,
   DialogFooter,
   DialogClose,
   DialogDescription,
@@ -232,11 +232,6 @@ export default function BillLogPage() {
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.date) || new Date(),
           displayDate: formatDateSafe(data.date),
           projectId: projectId,
-          status: data.status || 'Pending',
-          stage: data.stage || 'N/A',
-          assignees: data.assignees || [],
-          currentStepId: data.currentStepId || null,
-          history: data.history || [],
         } as unknown as UnifiedBill;
       });
 
@@ -263,12 +258,24 @@ export default function BillLogPage() {
     setFilters(prev => ({...prev, [field]: value}));
   }
 
-  const { pendingTasks, completedTasks, holdTasks } = useMemo(() => {
+  const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
+    const filterFn = (bill: UnifiedBill) => {
+        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+        const woMatch = filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
+        const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+        const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
+        const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
+        const typeMatch = filters.type === 'all' || bill.type === filters.type;
+        return projectMatch && woMatch && subMatch && yearMatch && monthMatch && typeMatch;
+    };
+    
+    const filtered = allBills.filter(filterFn);
+    
     const pending: UnifiedBill[] = [];
     const completed: UnifiedBill[] = [];
     const hold: UnifiedBill[] = [];
 
-    allBills.forEach(bill => {
+    filtered.forEach(bill => {
         const isAssigned = (bill.assignees ?? []).includes(user?.id || '');
         const status = bill.status;
 
@@ -280,21 +287,12 @@ export default function BillLogPage() {
             hold.push(bill);
         }
     });
-
-    const filterFn = (bill: UnifiedBill) => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
-        const woMatch = filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
-        const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
-        const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
-        const typeMatch = filters.type === 'all' || bill.type === filters.type;
-        return projectMatch && woMatch && subMatch && yearMatch && monthMatch && typeMatch;
-    };
     
     return {
-        pendingTasks: pending.filter(filterFn),
-        completedTasks: completed.filter(filterFn),
-        holdTasks: hold.filter(filterFn),
+        pendingTasks: pending,
+        completedTasks: completed,
+        holdTasks: hold,
+        allFilteredBills: filtered,
     };
 }, [allBills, filters, user?.id]);
   
@@ -340,12 +338,14 @@ export default function BillLogPage() {
     return map[action] ?? `${action.toLowerCase()}ed`;
   };
   
-  const handleAction = async (taskId: string, billType: 'proformaBills' | 'bills', action: string, comment: string = '') => {
+  const handleAction = async (taskId: string, action: string, comment: string = '') => {
     if (!workflow || !user || !projectSlug || !selectedBill) return;
 
+    const collectionName = selectedBill.type === 'Proforma' ? 'proformaBills' : 'bills';
+    
     setIsActionLoading(taskId);
     try {
-        const docRef = doc(db, 'projects', selectedBill.projectId, billType, taskId);
+        const docRef = doc(db, 'projects', selectedBill.projectId, collectionName, taskId);
 
         await runTransaction(db, async (transaction) => {
             const taskDoc = await transaction.get(docRef);
@@ -515,12 +515,14 @@ export default function BillLogPage() {
             </CardHeader>
         </Card>
         
-        <Tabs defaultValue="pending" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="all" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="all"><Library className="mr-2 h-4 w-4"/>All Bills ({allFilteredBills.length})</TabsTrigger>
             <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
             <TabsTrigger value="hold"><HistoryIcon className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
             <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed / Rejected ({completedTasks.length})</TabsTrigger>
           </TabsList>
+          <TabsContent value="all" className="mt-4">{renderTable(allFilteredBills)}</TabsContent>
           <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks)}</TabsContent>
           <TabsContent value="hold" className="mt-4">{renderTable(holdTasks)}</TabsContent>
           <TabsContent value="completed" className="mt-4">{renderTable(completedTasks)}</TabsContent>
@@ -550,7 +552,7 @@ export default function BillLogPage() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
+                  <DialogTitleCore>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleCore>
               </DialogHeader>
               <Table>
                   <TableHeader>
