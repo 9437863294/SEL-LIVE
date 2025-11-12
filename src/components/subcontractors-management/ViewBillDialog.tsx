@@ -31,7 +31,6 @@ interface ViewBillDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   bill: Bill | null;
-  proformaBills: ProformaBill[];
   workflow: WorkflowStep[];
   onAction: (taskId: string, action: string, comment: string) => Promise<void>;
   isActionLoading: boolean;
@@ -41,7 +40,6 @@ export default function ViewBillDialog({
   isOpen,
   onOpenChange,
   bill,
-  proformaBills,
   workflow,
   onAction,
   isActionLoading
@@ -150,15 +148,12 @@ export default function ViewBillDialog({
                         <span className="text-muted-foreground">Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span>
                         <span className="font-medium text-red-600">-{formatCurrency(bill.retentionAmount)}</span>
                     </div>
-                     {(bill.advanceDeductions || []).map((adv, i) => {
-                        const proforma = proformaBills.find(pb => pb.id === adv.reference);
-                        return (
-                            <div key={i} className="flex justify-between items-center py-1">
-                                <span className="text-muted-foreground">Advance (Ref: {proforma?.proformaNo || adv.reference})</span>
-                                <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
-                            </div>
-                        )
-                     })}
+                     {(bill.advanceDeductions || []).map((adv, i) => (
+                        <div key={i} className="flex justify-between items-center py-1">
+                            <span className="text-muted-foreground">Advance (Ref: {adv.reference})</span>
+                            <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
+                        </div>
+                     ))}
                      <div className="flex justify-between items-center py-1">
                         <span className="text-muted-foreground">Other Deductions</span>
                         <span className="font-medium text-red-600">-{formatCurrency(bill.otherDeduction)}</span>
@@ -185,12 +180,12 @@ export default function ViewBillDialog({
                   <div className="flex flex-wrap gap-2">
                       {availableActions.map(action => (
                           <Button 
-                            key={action}
-                            onClick={() => onAction(bill.id, action, actionComment)}
+                            key={typeof action === 'string' ? action : action.name}
+                            onClick={() => onAction(bill.id, typeof action === 'string' ? action : action.name, actionComment)}
                             disabled={isActionLoading}
                           >
                               {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                              {action}
+                              {typeof action === 'string' ? action : action.name}
                           </Button>
                       ))}
                   </div>

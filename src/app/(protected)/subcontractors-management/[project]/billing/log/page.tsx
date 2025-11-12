@@ -38,8 +38,8 @@ import {
   runTransaction,
   arrayUnion,
   getDoc,
-  DocumentSnapshot,
   QuerySnapshot,
+  DocumentSnapshot,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -61,7 +61,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle as DialogTitleShad, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -81,6 +81,7 @@ const slugify = (text: string) => {
 };
 
 type UnifiedBill = (Bill | ProformaBill) & {
+  id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   sortDate: Date;
   projectName?: string;
@@ -94,24 +95,24 @@ function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
 }
 
 function toDateSafe(value: any): Date | null {
-    if (!value) return null;
-    if (value instanceof Timestamp) return value.toDate();
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-        const d = new Date(value);
-        return isNaN(d.getTime()) ? null : d;
-    }
-    return null;
+  if (!value) return null;
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
 }
 
 const formatDateSafe = (dateInput: any): string => {
-    const d = toDateSafe(dateInput);
-    if (!d) return 'N/A';
-    try {
-      return format(d, 'dd MMM, yyyy');
-    } catch {
-      return 'Invalid Date';
-    }
+  const d = toDateSafe(dateInput);
+  if (!d) return 'N/A';
+  try {
+    return format(d, 'dd MMM, yyyy');
+  } catch {
+    return 'Invalid Date';
+  }
 };
 
 const formatCurrency = (amount: number) => {
@@ -202,11 +203,6 @@ export default function BillLogPage() {
           projectName: project?.projectName || 'Unknown',
           type: data.isRetentionBill ? 'Retention' : 'Regular',
           sortDate: toDateSafe(data.createdAt) || toDateSafe(data.billDate) || new Date(),
-          status: data.status,
-          stage: data.stage,
-          assignees: data.assignees,
-          currentStepId: data.currentStepId,
-          history: data.history,
           netPayable: data.netPayable,
         } as UnifiedBill;
       });
@@ -320,7 +316,7 @@ export default function BillLogPage() {
       }
       try {
           await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
-          toast({ title: 'Success', description: `Bill ${billToDelete.type === 'Proforma' ? (billToDelete as any).proformaNo : (billToDelete as any).billNo} has been deleted.`});
+          toast({ title: 'Success', description: `Bill has been deleted.`});
           fetchBills();
       } catch (error) {
           console.error("Error deleting bill:", error);
@@ -535,6 +531,7 @@ export default function BillLogPage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill as Bill | null}
+          proformaBills={allBills.filter(b => b.type === 'Proforma') as ProformaBill[]}
           workflow={workflow}
           onAction={(taskId, action, comment) => handleAction(taskId, 'bills', action, comment)}
           isActionLoading={isActionLoading === selectedBill.id}
@@ -544,7 +541,7 @@ export default function BillLogPage() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitleShad>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitleShad>
+                  <DialogTitle>Advance Deductions for Bill {(selectedBill as Bill)?.billNo}</DialogTitle>
               </DialogHeader>
               <Table>
                   <TableHeader>
@@ -555,7 +552,7 @@ export default function BillLogPage() {
                   </TableHeader>
                   <TableBody>
                       {(selectedBill as Bill)?.advanceDeductions?.map((deduction, index) => {
-                          const proforma = proformaBills.find(p => p.id === deduction.reference);
+                          const proforma = allBills.find(p => p.id === deduction.reference && p.type === 'Proforma') as ProformaBill | undefined;
                           return (
                             <TableRow key={deduction.id || index}>
                                 <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
@@ -575,3 +572,4 @@ export default function BillLogPage() {
     </>
   );
 }
+
