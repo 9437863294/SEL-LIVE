@@ -76,132 +76,113 @@ export default function ViewBillDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col min-h-0">
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>Bill Details: {bill.billNo}</DialogTitle>
         </DialogHeader>
-        <div className="flex-1 min-h-0">
-          <ScrollArea className="h-full">
-            <div className="space-y-4 p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>Bill No.</Label>
-                  <p className="font-medium">{bill.billNo}</p>
+        <div className="flex-1 min-h-0 pr-6 -mr-6">
+            <ScrollArea className="h-full pr-6">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>Bill No.</Label>
+                    <p className="font-medium">{bill.billNo}</p>
+                  </div>
+                  <div>
+                    <Label>Work Order No.</Label>
+                    <p className="font-medium">{bill.workOrderNo}</p>
+                  </div>
+                  <div>
+                    <Label>Bill Date</Label>
+                    <p className="font-medium">{formatDateSafe(bill.billDate)}</p>
+                  </div>
                 </div>
+                
+                <Separator />
+                
                 <div>
-                  <Label>Work Order No.</Label>
-                  <p className="font-medium">{bill.workOrderNo}</p>
-                </div>
-                <div>
-                  <Label>Bill Date</Label>
-                  <p className="font-medium">{formatDateSafe(bill.billDate)}</p>
-                </div>
-              </div>
-              
-              <Separator />
-              
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Billed Items</h3>
-                <div className="border rounded-md">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>JMC No.</TableHead>
-                        <TableHead>BOQ Sl.No.</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Unit</TableHead>
-                        <TableHead>Rate</TableHead>
-                        <TableHead>Billed Qty</TableHead>
-                        <TableHead>Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {bill.items.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{item.jmcNo}</TableCell>
-                          <TableCell>{item.boqSlNo}</TableCell>
-                          <TableCell>{item.description}</TableCell>
-                          <TableCell>{item.unit}</TableCell>
-                          <TableCell>{formatCurrency(item.rate)}</TableCell>
-                          <TableCell>{item.billedQty}</TableCell>
-                          <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                  <h3 className="text-lg font-semibold mb-2">Billed Items</h3>
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>JMC No.</TableHead>
+                          <TableHead>BOQ Sl.No.</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Unit</TableHead>
+                          <TableHead>Rate</TableHead>
+                          <TableHead>Billed Qty</TableHead>
+                          <TableHead>Total</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {bill.items.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{item.jmcNo}</TableCell>
+                            <TableCell>{item.boqSlNo}</TableCell>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>{item.unit}</TableCell>
+                            <TableCell>{formatCurrency(item.rate)}</TableCell>
+                            <TableCell>{item.billedQty}</TableCell>
+                            <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
-              </div>
 
-              <Separator />
-              <div>
+                <Separator />
+                <div>
                   <h3 className="text-lg font-semibold mb-2">Financial Summary</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm p-4 border rounded-md">
-                      <div className="flex justify-between items-center py-1">
-                          <span className="text-muted-foreground">Subtotal</span>
-                          <span className="font-medium">{formatCurrency(bill.subtotal)}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1">
-                          <span className="text-muted-foreground">GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span>
-                          <span className="font-medium">{formatCurrency(bill.gstAmount)}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-t font-semibold">
-                          <span>Gross Amount</span>
-                          <span>{formatCurrency(bill.grossAmount)}</span>
-                      </div>
-                      <Separator className="md:col-span-2 my-1"/>
-                      <div className="flex justify-between items-center py-1">
-                          <span className="text-muted-foreground">Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span>
-                          <span className="font-medium text-red-600">-{formatCurrency(bill.retentionAmount)}</span>
-                      </div>
-                      {(bill.advanceDeductions || []).map((adv, i) => (
-                          <div key={i} className="flex justify-between items-center py-1">
-                              <span className="text-muted-foreground">Advance Deduction</span>
-                              <span className="font-medium text-red-600">-{formatCurrency(adv.amount)}</span>
-                          </div>
-                      ))}
-                      <div className="flex justify-between items-center py-1">
-                          <span className="text-muted-foreground">Other Deductions</span>
-                          <span className="font-medium text-red-600">-{formatCurrency(bill.otherDeduction)}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1">
-                          <span className="text-muted-foreground">Total Deductions</span>
-                          <span className="font-medium text-red-600">-{formatCurrency(bill.totalDeductions)}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-t font-bold text-lg md:col-span-2">
-                          <span>Net Payable Amount</span>
-                          <span>{formatCurrency(bill.netPayable)}</span>
+                  <div className="text-sm p-4 border rounded-md space-y-2">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                        <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(bill.subtotal)}</span></div>
+                        <div className="flex justify-between"><span>GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span><span>{formatCurrency(bill.gstAmount)}</span></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-1 pt-2 border-t">
+                        <div className="flex justify-between font-bold"><span>Gross Amount</span><span>{formatCurrency(bill.grossAmount)}</span></div>
+                    </div>
+                     <div className="grid grid-cols-2 gap-x-8 gap-y-1 pt-2 border-t text-red-600">
+                        <div className="flex justify-between"><span>Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span><span>-{formatCurrency(bill.retentionAmount)}</span></div>
+                        <div className="flex justify-between"><span>Advance Deduction</span><span>-{formatCurrency((bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0))}</span></div>
+                        <div className="flex justify-between"><span>Other Deductions</span><span>-{formatCurrency(bill.otherDeduction)}</span></div>
+                        <div className="flex justify-between"><span>Total Deductions</span><span>-{formatCurrency(bill.totalDeductions)}</span></div>
+                    </div>
+                     <div className="grid grid-cols-1 gap-x-8 gap-y-1 pt-2 border-t">
+                         <div className="flex justify-between font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(bill.netPayable)}</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                {bill.status !== 'Completed' && bill.status !== 'Rejected' && (
+                  <div className="pt-4 space-y-4 border-t">
+                      <h3 className="text-lg font-semibold">Workflow Actions</h3>
+                      <Textarea 
+                          placeholder="Add a comment for your action (optional)..."
+                          value={actionComment}
+                          onChange={(e) => setActionComment(e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                          {availableActions.map(action => {
+                              const actionName = typeof action === 'string' ? action : action.name;
+                              return (
+                                <Button 
+                                  key={actionName}
+                                  onClick={() => onAction(bill.id, actionName, actionComment)}
+                                  disabled={isActionLoading}
+                                >
+                                    {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                                    {actionName}
+                                </Button>
+                              );
+                          })}
                       </div>
                   </div>
+                )}
               </div>
-
-              {bill.status !== 'Completed' && bill.status !== 'Rejected' && (
-                <div className="pt-4 space-y-4 border-t">
-                    <h3 className="text-lg font-semibold">Workflow Actions</h3>
-                    <Textarea 
-                        placeholder="Add a comment for your action (optional)..."
-                        value={actionComment}
-                        onChange={(e) => setActionComment(e.target.value)}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                        {availableActions.map(action => {
-                            const actionName = typeof action === 'string' ? action : action.name;
-                            return (
-                              <Button 
-                                key={actionName}
-                                onClick={() => onAction(bill.id, actionName, actionComment)}
-                                disabled={isActionLoading}
-                              >
-                                  {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                                  {actionName}
-                              </Button>
-                            );
-                        })}
-                    </div>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+            </ScrollArea>
         </div>
-        <DialogFooter className="mt-4 pr-4 sm:justify-between">
+        <DialogFooter className="mt-4 pr-4 sm:justify-between shrink-0">
             <Button variant="outline" onClick={handlePrint}>
               <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
