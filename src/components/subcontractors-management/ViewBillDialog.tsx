@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import type { Bill, WorkflowStep, ActionLog } from '@/lib/types';
+import type { Bill, WorkflowStep, ActionLog, ProformaBill } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -52,7 +52,7 @@ const formatDateSafe = (dateInput: any) => {
 
 const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
+    if(isNaN(num)) return String(amount || '0');
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
 }
 
@@ -83,12 +83,12 @@ export default function ViewBillDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col min-h-0">
+        <DialogHeader className="shrink-0 p-6 pb-2">
           <DialogTitle>Bill Details: {bill.billNo}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-1 min-h-0 overflow-y-auto pr-6 -mr-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6">
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div><Label>Bill No.</Label><p className="font-medium">{bill.billNo}</p></div>
@@ -104,7 +104,6 @@ export default function ViewBillDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>JMC No.</TableHead>
                       <TableHead>BOQ Sl.No.</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Unit</TableHead>
@@ -116,7 +115,6 @@ export default function ViewBillDialog({
                   <TableBody>
                     {bill.items.map((item, index) => (
                       <TableRow key={index}>
-                        <TableCell>{item.jmcNo}</TableCell>
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell>{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
@@ -135,11 +133,11 @@ export default function ViewBillDialog({
             <div>
               <h3 className="text-lg font-semibold mb-2">Financial Summary</h3>
               <div className="text-sm p-4 border rounded-md space-y-2">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                 <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                     <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(bill.subtotal)}</span></div>
                     <div className="flex justify-between"><span>GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span><span>{formatCurrency(bill.gstAmount)}</span></div>
                 </div>
-                <div className="grid grid-cols-1 gap-x-8 gap-y-1 pt-2 border-t">
+                <div className="pt-2 border-t mt-2">
                     <div className="flex justify-between font-bold"><span>Gross Amount</span><span>{formatCurrency(bill.grossAmount)}</span></div>
                 </div>
                  <div className="grid grid-cols-2 gap-x-8 gap-y-1 pt-2 border-t text-red-600">
@@ -148,7 +146,7 @@ export default function ViewBillDialog({
                     <div className="flex justify-between"><span>Other Deductions</span><span>-{formatCurrency(bill.otherDeduction)}</span></div>
                     <div className="flex justify-between"><span>Total Deductions</span><span>-{formatCurrency(bill.totalDeductions)}</span></div>
                 </div>
-                 <div className="grid grid-cols-1 gap-x-8 gap-y-1 pt-2 border-t">
+                 <div className="pt-2 border-t mt-2">
                      <div className="flex justify-between font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(bill.netPayable)}</span></div>
                 </div>
               </div>
@@ -181,7 +179,7 @@ export default function ViewBillDialog({
             )}
           </div>
         </div>
-        <DialogFooter className="mt-4 pr-4 sm:justify-between shrink-0">
+        <DialogFooter className="p-6 pt-2 shrink-0">
             <Button variant="outline" onClick={handlePrint}>
               <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
