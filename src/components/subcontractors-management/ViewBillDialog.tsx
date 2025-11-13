@@ -36,6 +36,18 @@ interface ViewBillDialogProps {
   isActionLoading: boolean;
 }
 
+const formatDateSafe = (dateInput: any) => {
+    if (!dateInput) return 'N/A';
+    // Add any date formatting logic you need here
+    return String(dateInput);
+}
+
+const formatCurrency = (amount: string | number) => {
+    const num = parseFloat(String(amount));
+    if(isNaN(num)) return amount;
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+}
+
 export default function ViewBillDialog({
   isOpen,
   onOpenChange,
@@ -49,15 +61,6 @@ export default function ViewBillDialog({
   const [actionComment, setActionComment] = useState('');
 
   if (!bill) return null;
-
-  const formatCurrency = (amount: string | number) => {
-    const num = parseFloat(String(amount));
-    if (isNaN(num)) return amount;
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(num);
-  };
   
   const handlePrint = () => {
     if (!bill || !projectSlug) return;
@@ -72,7 +75,7 @@ export default function ViewBillDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col min-h-0">
         <DialogHeader>
           <DialogTitle>Bill Details: {bill.billNo}</DialogTitle>
         </DialogHeader>
@@ -90,7 +93,7 @@ export default function ViewBillDialog({
                 </div>
                 <div>
                   <Label>Bill Date</Label>
-                  <p className="font-medium">{bill.billDate}</p>
+                  <p className="font-medium">{formatDateSafe(bill.billDate)}</p>
                 </div>
               </div>
               
