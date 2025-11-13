@@ -83,7 +83,7 @@ export default function ViewBillDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col min-h-0">
+      <DialogContent className="sm:max-w-4xl flex flex-col min-h-0 max-h-[90vh]">
         <DialogHeader className="shrink-0 p-6 pb-2">
           <DialogTitle>Bill Details: {bill.billNo}</DialogTitle>
         </DialogHeader>
@@ -116,7 +116,7 @@ export default function ViewBillDialog({
                     {bill.items.map((item, index) => (
                       <TableRow key={index}>
                         <TableCell>{item.boqSlNo}</TableCell>
-                        <TableCell>{item.description}</TableCell>
+                        <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
                         <TableCell>{item.unit}</TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>{item.billedQty}</TableCell>
@@ -132,21 +132,22 @@ export default function ViewBillDialog({
             
             <div>
               <h3 className="text-lg font-semibold mb-2">Financial Summary</h3>
-              <div className="text-sm p-4 border rounded-md space-y-2">
-                 <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                    <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(bill.subtotal)}</span></div>
-                    <div className="flex justify-between"><span>GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span><span>{formatCurrency(bill.gstAmount)}</span></div>
+              <div className="grid grid-cols-2 gap-x-8 p-4 border rounded-md">
+                {/* Left Column */}
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(bill.subtotal)}</span></div>
+                  <div className="flex justify-between"><span>GST ({bill.gstType === 'percentage' ? `${bill.gstPercentage}%` : 'Manual'})</span><span>{formatCurrency(bill.gstAmount)}</span></div>
+                  <div className="flex justify-between font-bold pt-2 border-t"><span>Gross Amount</span><span>{formatCurrency(bill.grossAmount)}</span></div>
                 </div>
-                <div className="pt-2 border-t mt-2">
-                    <div className="flex justify-between font-bold"><span>Gross Amount</span><span>{formatCurrency(bill.grossAmount)}</span></div>
+                {/* Right Column */}
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-red-600"><span>Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span><span>-{formatCurrency(bill.retentionAmount)}</span></div>
+                  <div className="flex justify-between text-red-600"><span>Advance Deduction</span><span>-{formatCurrency((bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0))}</span></div>
+                  <div className="flex justify-between text-red-600"><span>Other Deductions</span><span>-{formatCurrency(bill.otherDeduction)}</span></div>
+                  <div className="flex justify-between font-bold pt-2 border-t"><span>Total Deductions</span><span>-{formatCurrency(bill.totalDeductions)}</span></div>
                 </div>
-                 <div className="grid grid-cols-2 gap-x-8 gap-y-1 pt-2 border-t text-red-600">
-                    <div className="flex justify-between"><span>Retention ({bill.retentionType === 'percentage' ? `${bill.retentionPercentage}%` : 'Manual'})</span><span>-{formatCurrency(bill.retentionAmount)}</span></div>
-                    <div className="flex justify-between"><span>Advance Deduction</span><span>-{formatCurrency((bill.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0))}</span></div>
-                    <div className="flex justify-between"><span>Other Deductions</span><span>-{formatCurrency(bill.otherDeduction)}</span></div>
-                    <div className="flex justify-between"><span>Total Deductions</span><span>-{formatCurrency(bill.totalDeductions)}</span></div>
-                </div>
-                 <div className="pt-2 border-t mt-2">
+                 {/* Full-width Net Payable */}
+                 <div className="col-span-2 pt-2 border-t">
                      <div className="flex justify-between font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(bill.netPayable)}</span></div>
                 </div>
               </div>
