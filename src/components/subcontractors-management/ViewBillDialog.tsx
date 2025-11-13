@@ -111,8 +111,8 @@ export default function ViewBillDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {bill.items.map((item) => (
-                      <TableRow key={item.jmcItemId}>
+                    {bill.items.map((item, index) => (
+                      <TableRow key={index}>
                         <TableCell>{item.jmcNo}</TableCell>
                         <TableCell>{item.boqSlNo}</TableCell>
                         <TableCell>{item.description}</TableCell>
@@ -178,16 +178,19 @@ export default function ViewBillDialog({
                       onChange={(e) => setActionComment(e.target.value)}
                   />
                   <div className="flex flex-wrap gap-2">
-                      {availableActions.map(action => (
-                          <Button 
-                            key={typeof action === 'string' ? action : action.name}
-                            onClick={() => onAction(bill.id, typeof action === 'string' ? action : action.name, actionComment)}
-                            disabled={isActionLoading}
-                          >
-                              {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                              {typeof action === 'string' ? action : action.name}
-                          </Button>
-                      ))}
+                      {availableActions.map(action => {
+                          const actionName = typeof action === 'string' ? action : action.name;
+                          return (
+                            <Button 
+                              key={actionName}
+                              onClick={() => onAction(bill.id, actionName, actionComment)}
+                              disabled={isActionLoading}
+                            >
+                                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                                {actionName}
+                            </Button>
+                          );
+                      })}
                   </div>
               </div>
             )}
@@ -205,3 +208,4 @@ export default function ViewBillDialog({
     </Dialog>
   );
 }
+

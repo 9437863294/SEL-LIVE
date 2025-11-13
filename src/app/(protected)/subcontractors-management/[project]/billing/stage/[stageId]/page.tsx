@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
-import type { Bill, WorkflowStep, ActionLog, Project, ProformaBill } from '@/lib/types';
+import type { Bill, WorkflowStep, ActionLog, Project, ProformaBill, ActionConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -20,6 +20,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
+import { Textarea } from '@/components/ui/textarea';
+
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -28,7 +30,7 @@ function toDateSafe(value: any): Date | null {
   if (value instanceof Date) return value;
   if (typeof value === 'string' || typeof value === 'number') {
     const d = new Date(value);
-    return isNaN(+d) ? null : d;
+    return isNaN(d.getTime()) ? null : d;
   }
   if (value?.seconds) return new Date(value.seconds * 1000);
   return null;
@@ -41,12 +43,7 @@ function humanDate(value: any) {
 }
 
 function pastTense(action: string) {
-  const map: Record<string, string> = {
-    Approve: 'approved',
-    Verify: 'verified',
-    Complete: 'completed',
-    Reject: 'rejected',
-  };
+  const map: Record<string, string> = { Approve: 'approved', Verify: 'verified', Complete: 'completed', Reject: 'rejected' };
   return map[action] ?? `${action.toLowerCase()}ed`;
 }
 
@@ -63,7 +60,7 @@ const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
+    .replace(/[^\w-]+/g, '')
     .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
@@ -89,6 +86,8 @@ export default function BillStagePage() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [actionComment, setActionComment] = useState('');
+
 
   const fetchTasks = useCallback(async () => {
     if (!userId || !stageId || !projectSlug) return;
@@ -140,7 +139,7 @@ export default function BillStagePage() {
   }, [tasks, userId, stage]);
 
   const handleAction = async (taskId: string, action: string, comment: string = '') => {
-    if (!workflow || !userId || !userName || !stage || !projectId) return;
+    if (!workflow || !user || !userName || !stage || !projectId) return;
 
     setIsActionLoading(taskId);
     try {
@@ -213,36 +212,43 @@ export default function BillStagePage() {
                 <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
               ))
             ) : data.length > 0 ? (
-              data.map(task => (
-                <TableRow key={task.id} onClick={() => { setSelectedBill(task); setIsViewOpen(true); }} className="cursor-pointer">
-                  <TableCell>{task.billNo}</TableCell>
-                  <TableCell>{humanDate(task.billDate)}</TableCell>
-                  <TableCell>{task.subcontractorName}</TableCell>
-                  <TableCell>{formatINR(task.netPayable)}</TableCell>
-                  <TableCell><Badge>{task.status}</Badge></TableCell>
-                  <TableCell className="text-right">
-                    {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
-                            <MoreHorizontal className="h-4 w-4" />
-                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                           <DropdownMenuItem onSelect={() => { setSelectedBill(task); setIsViewOpen(true); }}>
-                             <Eye className="mr-2 h-4 w-4" /> View Details
-                           </DropdownMenuItem>
-                           {type === 'pending' && stage?.actions.map(action => (
-                             <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action) }}>
-                               {action}
+              data.map((task) => {
+                const currentStep = workflow?.find((s) => s.id === task.currentStepId);
+                const actions = Array.isArray(currentStep?.actions) ? (currentStep.actions) : [];
+                return (
+                  <TableRow key={task.id} onClick={() => { setSelectedBill(task); setIsViewOpen(true); }} className="cursor-pointer">
+                    <TableCell>{task.billNo}</TableCell>
+                    <TableCell>{humanDate(task.billDate)}</TableCell>
+                    <TableCell>{task.subcontractorName}</TableCell>
+                    <TableCell>{formatINR(task.netPayable)}</TableCell>
+                    <TableCell><Badge>{task.status}</Badge></TableCell>
+                    <TableCell className="text-right">
+                      {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                             <DropdownMenuItem onSelect={() => { setSelectedBill(task); setIsViewOpen(true); }}>
+                               <Eye className="mr-2 h-4 w-4" /> View Details
                              </DropdownMenuItem>
-                           ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+                             {type === 'pending' && actions.map((action) => {
+                                const actionName = typeof action === 'string' ? action : action.name;
+                                return (
+                                 <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); handleAction(task.id, actionName) }}>
+                                   {actionName}
+                                 </DropdownMenuItem>
+                               );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="text-center h-24">No {type} tasks.</TableCell>
@@ -277,8 +283,11 @@ export default function BillStagePage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           bill={selectedBill}
-          proformaBills={proformaBills}
+          workflow={workflow}
+          onAction={handleAction}
+          isActionLoading={!!isActionLoading}
        />
     </>
   );
 }
+
