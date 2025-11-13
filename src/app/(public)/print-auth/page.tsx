@@ -1,8 +1,10 @@
+
 'use client';
 
 import { Suspense } from 'react';
 import { PrintAuthPageContent } from '@/components/auth/PrintAuthPageContent';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
 function PrintAuthPageLoading() {
     return (
