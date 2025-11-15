@@ -5,19 +5,17 @@ import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  View,
-  Edit,
-  Trash2,
-  Clock,
-  Check,
-  MoreHorizontal,
-  Loader2,
-  History as HistoryIcon,
-  Library,
-  FileText,
+  ShieldAlert,
+  Users,
+  Wallet,
+  IndianRupee,
+  BookCheck,
+  TrendingDown,
+  TrendingUp,
+  Receipt,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -47,35 +45,10 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear } from 'date-fns';
 import type { Bill, Project, ProformaBill, Subcontractor, WorkOrder, WorkflowStep, ActionLog } from '@/lib/types';
-import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams, useRouter } from 'next/navigation';
-import { Badge } from '@/components/ui/badge';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle as ShadDialogTitle,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 
 const slugify = (text: string) => {
@@ -90,27 +63,15 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-type DisplayBill = {
-  id: string;
-  type: 'Regular' | 'Retention' | 'Proforma';
-  date: string; // Common date field
-  sortDate: Date;
-  projectName?: string;
-  projectId: string;
-  netPayable: number;
-  billNo: string;
-  subcontractorId: string;
-  subcontractorName?: string;
-  workOrderNo: string;
-  status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
-  retentionAmount?: number;
-  totalDeductions?: number;
-  isRetentionBill?: boolean;
-  assignees?: string[];
-  currentStepId?: string | null;
-  history?: ActionLog[];
-};
-
+interface StepWiseReportData {
+    [stepName: string]: {
+        [userName: string]: {
+            total: number;
+            completed: number;
+            rejected: number;
+        }
+    }
+}
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
   const { id: _ignored, ...rest } = obj as any;
@@ -147,9 +108,9 @@ const formatCurrency = (amount: number) => {
 export default function BillingSummaryReport() {
   const { toast } = useToast();
   const params = useParams();
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const projectSlug = params.project as string;
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
@@ -158,26 +119,13 @@ export default function BillingSummaryReport() {
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
 
-  const [selectedRegularBill, setSelectedRegularBill] = useState<Bill | null>(null);
-  const [selectedProformaBill, setSelectedProformaBill] = useState<ProformaBill | null>(null);
-  const [isBillViewOpen, setIsBillViewOpen] = useState(false);
-  const [isProformaViewOpen, setIsProformaViewOpen] = useState(false);
-  
-  const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
-  const [billForDeductions, setBillForDeductions] = useState<Bill | null>(null);
-  
   const [filters, setFilters] = useState({
     project: projectSlug === 'all' ? 'all' : projectSlug,
-    workOrder: 'all',
     subcontractor: 'all',
     year: 'all',
     month: 'all',
-    type: 'all',
   });
-
-  const canDeleteBill = can('Delete Bill', 'Subcontractors Management.Billing');
 
   const fetchBills = useCallback(async () => {
     setIsLoading(true);
@@ -217,30 +165,9 @@ export default function BillingSummaryReport() {
         setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
       }
 
-      const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => {
-        const data = doc.data() as Bill;
-        const projectId = doc.ref.parent.parent?.id || '';
-        const project = allProjects.find(p => p.id === projectId);
-        return {
-          ...data,
-          id: doc.id,
-          projectId: projectId,
-          projectName: project?.projectName || 'Unknown',
-        };
-      });
+      const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
+      const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
       
-      const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => {
-        const data = doc.data() as ProformaBill;
-        const projectId = doc.ref.parent.parent?.id || '';
-        const project = allProjects.find(p => p.id === projectId);
-        return {
-          ...data,
-          id: doc.id,
-          projectId: projectId,
-          projectName: project?.projectName || 'Unknown',
-        };
-      });
-
       setBills(billEntries);
       setProformaBills(proformaEntries);
 
@@ -263,65 +190,74 @@ export default function BillingSummaryReport() {
     setFilters(prev => ({...prev, [field]: value}));
   }
 
-  const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const unifiedList: DisplayBill[] = [
-      ...bills.map((b): DisplayBill => ({
-          ...stripId(b),
-          id: b.id,
-          type: b.isRetentionBill ? 'Retention' : 'Regular',
-          date: b.billDate,
-          sortDate: toDateSafe(b.billDate) || new Date(0),
-          billNo: b.billNo,
-          netPayable: b.netPayable,
-          subcontractorId: b.subcontractorId,
-          subcontractorName: b.subcontractorName,
-      })),
-      ...proformaBills.map((pb): DisplayBill => ({
-          ...stripId(pb),
-          id: pb.id,
-          type: 'Proforma',
-          date: pb.date,
-          sortDate: toDateSafe(pb.date) || new Date(0),
-          billNo: pb.proformaNo,
-          netPayable: pb.payableAmount,
-          subcontractorId: pb.subcontractorId,
-          subcontractorName: pb.subcontractorName,
-      })),
-    ];
-    
-    const filtered = unifiedList.filter(bill => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+  const { filteredBills, filteredProformas } = useMemo(() => {
+    const filterFn = (bill: Bill | ProformaBill) => {
+        const projectMatch = filters.project === 'all' || slugify((projects.find(p=>p.id === bill.projectId))?.projectName) === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
-        const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
-        const typeMatch = filters.type === 'all' || bill.type === filters.type;
-        return projectMatch && subMatch && yearMatch && monthMatch && typeMatch;
-    }).sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
-    
-    const pending: DisplayBill[] = [];
-    const completed: DisplayBill[] = [];
-    const hold: DisplayBill[] = [];
+        const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
+        if (!sortDate) return false;
+        
+        const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
+        const monthMatch = filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
 
-    filtered.forEach(bill => {
-        const isAssigned = (bill.assignees ?? []).includes(user?.id || '');
-        const status = bill.status;
-
-        if (isAssigned && (status === 'Pending' || status === 'In Progress')) {
-            pending.push(bill);
-        } else if (status === 'Completed' || status === 'Rejected') {
-            completed.push(bill);
-        } else {
-            hold.push(bill);
-        }
-    });
+        return projectMatch && subMatch && yearMatch && monthMatch;
+    };
     
     return {
-        pendingTasks: pending,
-        completedTasks: completed,
-        holdTasks: hold,
-        allFilteredBills: filtered,
+      filteredBills: bills.filter(filterFn),
+      filteredProformas: proformaBills.filter(filterFn)
     };
-}, [bills, proformaBills, filters, user?.id]);
+}, [bills, proformaBills, filters, projects]);
+
+  const summaryStats = useMemo(() => {
+      const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+      const totalRetention = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
+      const totalAdvance = filteredProformas.reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
+      const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
+      const netAdvance = totalAdvance - totalAdvanceRecovered;
+
+      return { totalBilled, totalRetention, totalAdvance, totalAdvanceRecovered, netAdvance };
+  }, [filteredBills, filteredProformas]);
+
+  const stepWiseReport = useMemo((): StepWiseReportData => {
+    if (!workflow || !users.length) return {};
+  
+    const report: StepWiseReportData = {};
+    const userMap = new Map(users.map(u => [u.id, u.name]));
+    
+    workflow.forEach(step => {
+        report[step.name] = {};
+    });
+  
+    const initializeUserInStep = (stepName: string, userName: string) => {
+      if (!report[stepName]) report[stepName] = {};
+      if (!report[stepName][userName]) {
+        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
+      }
+    };
+    
+    [...filteredBills, ...filteredProformas].forEach(bill => {
+        const history: ActionLog[] = bill.history || [];
+        
+        history.forEach(log => {
+          if (!log.stepName || !workflow.some(s => s.name === log.stepName)) return;
+
+          const userName = log.userName || userMap.get(log.userId) || 'Unknown User';
+          initializeUserInStep(log.stepName, userName);
+          
+          report[log.stepName][userName].total++;
+
+          if (['Approve', 'Complete', 'Verified'].includes(log.action)) {
+              report[log.stepName][userName].completed++;
+          }
+          if (log.action === 'Reject') {
+              report[log.stepName][userName].rejected++;
+          }
+        });
+    });
+  
+    return report;
+  }, [filteredBills, filteredProformas, workflow, users]);
   
   const filterOptions = useMemo(() => {
     const allItems = [...bills, ...proformaBills];
@@ -332,168 +268,18 @@ export default function BillingSummaryReport() {
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
   }, [bills, proformaBills, projects, subcontractors]);
-
-  const handleViewDetails = (bill: DisplayBill) => {
-    if (bill.type === 'Proforma') {
-      const originalProforma = proformaBills.find(pb => pb.id === bill.id);
-      if (originalProforma) {
-        setSelectedProformaBill(originalProforma);
-        setIsProformaViewOpen(true);
-      }
-    } else {
-      const originalBill = bills.find(b => b.id === bill.id);
-      if (originalBill) {
-        setSelectedRegularBill(originalBill);
-        setIsBillViewOpen(true);
-      }
-    }
-  };
   
-  const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
-      e.stopPropagation();
-      const originalBill = bills.find(b => b.id === bill.id);
-      if(originalBill) {
-          setBillForDeductions(originalBill);
-          setIsDeductionDetailsOpen(true);
-      }
+   const statsToDisplay = [
+      { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
+      { title: 'Total Retention', value: formatCurrency(summaryStats.totalRetention), icon: TrendingDown },
+      { title: 'Total Advance', value: formatCurrency(summaryStats.totalAdvance), icon: TrendingUp },
+      { title: 'Advance Recovered', value: formatCurrency(summaryStats.totalAdvanceRecovered), icon: TrendingDown },
+      { title: 'Net Advance Balance', value: formatCurrency(summaryStats.netAdvance), icon: Wallet },
+  ];
+
+  if (isAuthLoading || (isLoading)) {
+    return <div className="w-full p-6"><Skeleton className="h-96" /></div>;
   }
-  
-  const handleDeleteBill = async (billToDelete: DisplayBill) => {
-      const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
-      if (!billToDelete.projectId) {
-          toast({ title: 'Error', description: 'Cannot delete bill without project information.', variant: 'destructive'});
-          return;
-      }
-      try {
-          await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
-          toast({ title: 'Success', description: `Bill has been deleted.`});
-          fetchBills();
-      } catch (error) {
-          console.error("Error deleting bill:", error);
-          toast({ title: 'Error', description: 'Failed to delete the bill.', variant: 'destructive'});
-      }
-  }
-
-  const pastTense = (action: string) => {
-    const map: Record<string, string> = { Approve: 'approved', Verify: 'verified', Complete: 'completed', Reject: 'rejected' };
-    return map[action] ?? `${action.toLowerCase()}ed`;
-  };
-  
-  const handleAction = async (taskId: string, action: string, comment: string = '') => {
-    if (!workflow || !user || !projectSlug || !(selectedRegularBill || selectedProformaBill)) return;
-    
-    const currentBill = selectedRegularBill || selectedProformaBill;
-    if (!currentBill) return;
-    
-    const collectionName = (currentBill as ProformaBill).proformaNo ? 'proformaBills' : 'bills';
-    
-    setIsActionLoading(taskId);
-    try {
-        const docRef = doc(db, 'projects', currentBill.projectId, collectionName, taskId);
-
-        await runTransaction(db, async (transaction) => {
-            const taskDoc = await transaction.get(docRef);
-            if (!taskDoc.exists()) throw new Error('Task document not found!');
-            const currentTaskData = taskDoc.data() as Bill | ProformaBill;
-
-            const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
-            if (!currentStep) throw new Error('Current workflow step not found!');
-
-            const newActionLog: ActionLog = { action, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentStep.name };
-            
-            const nextStep = workflow[workflow.findIndex(s => s.id === currentStep.id) + 1];
-            let newStatus: Bill['status'] = 'In Progress';
-            let newStage = nextStep?.name || 'Completed';
-            let newCurrentStepId: string | null = nextStep?.id || null;
-            let newAssignees: string[] = [];
-            let newDeadline: Timestamp | null = null;
-            
-            if (action === 'Approve' || action === 'Verified') {
-                if (nextStep) {
-                    const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
-                    if (assignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
-                    newAssignees = assignees;
-                    newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
-                } else {
-                    newStatus = 'Completed';
-                }
-            } else if (action === 'Reject') {
-                newStage = 'Rejected';
-                newStatus = 'Rejected';
-                newCurrentStepId = null;
-            }
-
-            const updateData: any = {
-                status: newStatus,
-                stage: newStage,
-                currentStepId: newCurrentStepId,
-                assignees: newAssignees,
-                deadline: newDeadline,
-                history: arrayUnion(newActionLog),
-            };
-            transaction.update(docRef, updateData);
-        });
-
-        toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
-        await fetchBills();
-        setIsBillViewOpen(false);
-        setIsProformaViewOpen(false);
-
-    } catch (error: any) {
-        toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
-    } finally {
-        setIsActionLoading(null);
-    }
-  };
-
-  const renderTable = (data: DisplayBill[]) => (
-    <Card>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {projectSlug === 'all' && <TableHead>Project</TableHead>}
-              <TableHead>Bill No.</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Subcontractor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 8 : 7}><Skeleton className="h-5" /></TableCell></TableRow>
-              ))
-            ) : data.length > 0 ? (
-              data.map((bill) => {
-                return (
-                  <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
-                    {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
-                    <TableCell>{bill.billNo}</TableCell>
-                    <TableCell>{formatDateSafe(bill.date)}</TableCell>
-                    <TableCell>
-                      <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
-                    </TableCell>
-                    <TableCell>{bill.subcontractorName}</TableCell>
-                    <TableCell>{bill.status || 'N/A'}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon"><View className="h-4 w-4" /></Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            ) : (
-              <TableRow><TableCell colSpan={projectSlug === 'all' ? 8 : 7} className="text-center h-24">No bills found for this category.</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
 
   return (
       <>
@@ -503,13 +289,13 @@ export default function BillingSummaryReport() {
             <Link href={`/subcontractors-management/${projectSlug === 'all' ? '' : projectSlug}/reports`}>
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
-            <h1 className="text-2xl font-bold">Billing Summary</h1>
+            <h1 className="text-2xl font-bold">Billing Summary Report</h1>
           </div>
         </div>
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -524,15 +310,6 @@ export default function BillingSummaryReport() {
                         <SelectContent>
                             <SelectItem value="all">All Subcontractors</SelectItem>
                             {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Types</SelectItem>
-                            <SelectItem value="Regular">Regular</SelectItem>
-                            <SelectItem value="Retention">Retention</SelectItem>
-                            <SelectItem value="Proforma">Proforma</SelectItem>
                         </SelectContent>
                     </Select>
                     <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
@@ -552,69 +329,59 @@ export default function BillingSummaryReport() {
                 </div>
             </CardHeader>
         </Card>
-        
-        <Tabs defaultValue="all" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all"><FileText className="mr-2 h-4 w-4"/>All Bills ({allFilteredBills.length})</TabsTrigger>
-            <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
-            <TabsTrigger value="hold"><HistoryIcon className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
-            <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed / Rejected ({completedTasks.length})</TabsTrigger>
-          </TabsList>
-          <TabsContent value="all" className="mt-4">{renderTable(allFilteredBills)}</TabsContent>
-          <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks)}</TabsContent>
-          <TabsContent value="hold" className="mt-4">{renderTable(holdTasks)}</TabsContent>
-          <TabsContent value="completed" className="mt-4">{renderTable(completedTasks)}</TabsContent>
-        </Tabs>
-      </div>
 
-      <ViewBillDialog
-        isOpen={isBillViewOpen}
-        onOpenChange={setIsBillViewOpen}
-        bill={selectedRegularBill}
-        workflow={workflow}
-        onAction={handleAction}
-        isActionLoading={!!isActionLoading}
-      />
-      <ViewProformaBillDialog
-        isOpen={isProformaViewOpen}
-        onOpenChange={setIsProformaViewOpen}
-        bill={selectedProformaBill}
-        workflow={workflow}
-        onAction={handleAction}
-        isActionLoading={!!isActionLoading}
-      />
-      
-      <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
-          <DialogContent>
-              <DialogHeader>
-                  <ShadDialogTitle>Advance Deductions for Bill {billForDeductions?.billNo}</ShadDialogTitle>
-              </DialogHeader>
-              <Table>
-                  <TableHeader>
-                      <TableRow>
-                          <TableHead>Proforma Bill No.</TableHead>
-                          <TableHead className="text-right">Deducted Amount</TableHead>
-                      </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {(billForDeductions?.advanceDeductions || []).map((deduction, index) => {
-                          const proforma = proformaBills.find(p => p.id === deduction.reference);
-                          return (
-                            <TableRow key={deduction.id || index}>
-                                <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
-                            </TableRow>
-                          )
-                      })}
-                  </TableBody>
-              </Table>
-              <DialogFooter>
-                  <DialogClose asChild>
-                      <Button variant="outline">Close</Button>
-                  </DialogClose>
-              </DialogFooter>
-          </DialogContent>
-      </Dialog>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+            {statsToDisplay.map((stat) => (
+              <Card key={stat.title}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                </CardContent>
+              </Card>
+            ))}
+        </div>
+
+        <div className="mb-6"><h2 className="text-xl font-bold">Step-wise Report</h2></div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {workflow.map(step => {
+                const stepData = stepWiseReport[step.name];
+                if (!stepData || Object.keys(stepData).length === 0) return null;
+                return (
+                    <Card key={step.id}>
+                        <CardHeader className="p-4 bg-muted/50"><CardTitle className="text-base text-center">{step.name}</CardTitle></CardHeader>
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>User</TableHead>
+                                        <TableHead>Total</TableHead>
+                                        <TableHead>Done</TableHead>
+                                        <TableHead>Rejected</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {Object.entries(stepData).map(([userName, data]) => (
+                                        <TableRow key={userName}>
+                                            <TableCell>{userName}</TableCell>
+                                            <TableCell>{data.total}</TableCell>
+                                            <TableCell>{data.completed}</TableCell>
+                                            <TableCell>{data.rejected}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                )
+            })}
+        </div>
+      </div>
     </>
   );
 }
+
+    
