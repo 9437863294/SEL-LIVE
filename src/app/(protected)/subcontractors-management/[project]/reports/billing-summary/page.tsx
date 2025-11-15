@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -99,8 +99,8 @@ type DisplayBill = {
   projectId: string;
   netPayable: number;
   billNo: string;
-  subcontractorName: string;
   subcontractorId: string;
+  subcontractorName?: string;
   workOrderNo: string;
   status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
   retentionAmount?: number;
@@ -273,7 +273,8 @@ export default function BillingSummaryReport() {
           sortDate: toDateSafe(b.billDate) || new Date(0),
           billNo: b.billNo,
           netPayable: b.netPayable,
-          subcontractorName: b.subcontractorName || 'N/A',
+          subcontractorId: b.subcontractorId,
+          subcontractorName: b.subcontractorName,
       })),
       ...proformaBills.map((pb): DisplayBill => ({
           ...stripId(pb),
@@ -283,7 +284,8 @@ export default function BillingSummaryReport() {
           sortDate: toDateSafe(pb.date) || new Date(0),
           billNo: pb.proformaNo,
           netPayable: pb.payableAmount,
-          subcontractorName: pb.subcontractorName || 'N/A',
+          subcontractorId: pb.subcontractorId,
+          subcontractorName: pb.subcontractorName,
       })),
     ];
     
@@ -325,7 +327,7 @@ export default function BillingSummaryReport() {
     const allItems = [...bills, ...proformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
-    const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || b.date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
+    const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
@@ -467,9 +469,6 @@ export default function BillingSummaryReport() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const retentionDisplay = bill.isRetentionBill
-                    ? `-${formatCurrency(bill.netPayable)}`
-                    : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
                 return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
@@ -501,7 +500,7 @@ export default function BillingSummaryReport() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/reports`}>
+            <Link href={`/subcontractors-management/${projectSlug === 'all' ? '' : projectSlug}/reports`}>
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
             <h1 className="text-2xl font-bold">Billing Summary</h1>
@@ -598,7 +597,7 @@ export default function BillingSummaryReport() {
                       </TableRow>
                   </TableHeader>
                   <TableBody>
-                      {billForDeductions?.advanceDeductions?.map((deduction, index) => {
+                      {(billForDeductions?.advanceDeductions || []).map((deduction, index) => {
                           const proforma = proformaBills.find(p => p.id === deduction.reference);
                           return (
                             <TableRow key={deduction.id || index}>
