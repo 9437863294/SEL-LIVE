@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, query, where, collectionGroup, Timestamp } from 'firebase/firestore';
 import type { Bill, Project, Subcontractor, ProformaBill } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear } from 'date-fns';
@@ -35,12 +35,25 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 };
 
+const toDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
 const formatDateSafe = (dateInput: any) => {
-  if (!dateInput) return 'N/A';
-  const d = typeof dateInput.toDate === 'function' ? dateInput.toDate() : new Date(dateInput);
+  const d = toDateSafe(dateInput);
+  if (!d) return 'N/A';
   try {
     return format(d, 'dd MMM, yyyy');
-  } catch { return 'Invalid Date'; }
+  } catch {
+    return 'Invalid Date';
+  }
 };
 
 const formatCurrency = (amount: number) => {
@@ -59,7 +72,8 @@ export default function BillingSummaryReport() {
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
+  const [selectedRegularBill, setSelectedRegularBill] = useState<Bill | null>(null);
+  const [selectedProformaBill, setSelectedProformaBill] = useState<ProformaBill | null>(null);
   const [isBillViewOpen, setIsBillViewOpen] = useState(false);
   const [isProformaViewOpen, setIsProformaViewOpen] = useState(false);
 
@@ -156,10 +170,11 @@ export default function BillingSummaryReport() {
   }, [filteredBills]);
 
   const handleViewDetails = (bill: UnifiedBill) => {
-    setSelectedBill(bill);
     if (bill.type === 'Proforma') {
+      setSelectedProformaBill(bill as ProformaBill);
       setIsProformaViewOpen(true);
     } else {
+      setSelectedRegularBill(bill as Bill);
       setIsBillViewOpen(true);
     }
   };
@@ -286,7 +301,7 @@ export default function BillingSummaryReport() {
       <ViewBillDialog
         isOpen={isBillViewOpen}
         onOpenChange={setIsBillViewOpen}
-        bill={selectedBill as Bill | null}
+        bill={selectedRegularBill}
         workflow={[]}
         onAction={async () => {}}
         isActionLoading={false}
@@ -294,7 +309,7 @@ export default function BillingSummaryReport() {
       <ViewProformaBillDialog
         isOpen={isProformaViewOpen}
         onOpenChange={setIsProformaViewOpen}
-        bill={selectedBill as ProformaBill | null}
+        bill={selectedProformaBill}
         workflow={[]}
         onAction={async () => {}}
         isActionLoading={false}
