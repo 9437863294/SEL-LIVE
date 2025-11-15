@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -107,6 +106,9 @@ type DisplayBill = {
   retentionAmount?: number;
   totalDeductions?: number;
   isRetentionBill?: boolean;
+  assignees?: string[];
+  currentStepId?: string | null;
+  history?: ActionLog[];
 };
 
 
@@ -263,24 +265,26 @@ export default function BillingSummaryReport() {
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
     const unifiedList: DisplayBill[] = [
-        ...bills.map((b): DisplayBill => ({
-            ...stripId(b),
-            id: b.id,
-            type: b.isRetentionBill ? 'Retention' : 'Regular',
-            date: b.billDate,
-            sortDate: toDateSafe(b.billDate) || new Date(0),
-            billNo: b.billNo,
-            netPayable: b.netPayable,
-        })),
-        ...proformaBills.map((pb): DisplayBill => ({
-            ...stripId(pb),
-            id: pb.id,
-            type: 'Proforma',
-            date: pb.date,
-            sortDate: toDateSafe(pb.date) || new Date(0),
-            billNo: pb.proformaNo,
-            netPayable: pb.payableAmount,
-        })),
+      ...bills.map((b): DisplayBill => ({
+          ...stripId(b),
+          id: b.id,
+          type: b.isRetentionBill ? 'Retention' : 'Regular',
+          date: b.billDate,
+          sortDate: toDateSafe(b.billDate) || new Date(0),
+          billNo: b.billNo,
+          netPayable: b.netPayable,
+          subcontractorName: b.subcontractorName || 'N/A',
+      })),
+      ...proformaBills.map((pb): DisplayBill => ({
+          ...stripId(pb),
+          id: pb.id,
+          type: 'Proforma',
+          date: pb.date,
+          sortDate: toDateSafe(pb.date) || new Date(0),
+          billNo: pb.proformaNo,
+          netPayable: pb.payableAmount,
+          subcontractorName: pb.subcontractorName || 'N/A',
+      })),
     ];
     
     const filtered = unifiedList.filter(bill => {
@@ -377,6 +381,8 @@ export default function BillingSummaryReport() {
     if (!workflow || !user || !projectSlug || !(selectedRegularBill || selectedProformaBill)) return;
     
     const currentBill = selectedRegularBill || selectedProformaBill;
+    if (!currentBill) return;
+    
     const collectionName = (currentBill as ProformaBill).proformaNo ? 'proformaBills' : 'bills';
     
     setIsActionLoading(taskId);
@@ -460,7 +466,11 @@ export default function BillingSummaryReport() {
                 <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 8 : 7}><Skeleton className="h-5" /></TableCell></TableRow>
               ))
             ) : data.length > 0 ? (
-              data.map((bill) => (
+              data.map((bill) => {
+                const retentionDisplay = bill.isRetentionBill
+                    ? `-${formatCurrency(bill.netPayable)}`
+                    : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
+                return (
                   <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                     {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
                     <TableCell>{bill.billNo}</TableCell>
@@ -476,7 +486,7 @@ export default function BillingSummaryReport() {
                     </TableCell>
                   </TableRow>
                 )
-              )
+              })
             ) : (
               <TableRow><TableCell colSpan={projectSlug === 'all' ? 8 : 7} className="text-center h-24">No bills found for this category.</TableCell></TableRow>
             )}
@@ -578,7 +588,7 @@ export default function BillingSummaryReport() {
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
           <DialogContent>
               <DialogHeader>
-                  <ShadDialogTitle>Advance Deductions for Bill {(billForDeductions)?.billNo}</ShadDialogTitle>
+                  <ShadDialogTitle>Advance Deductions for Bill {billForDeductions?.billNo}</ShadDialogTitle>
               </DialogHeader>
               <Table>
                   <TableHeader>
@@ -588,7 +598,7 @@ export default function BillingSummaryReport() {
                       </TableRow>
                   </TableHeader>
                   <TableBody>
-                      {(billForDeductions)?.advanceDeductions?.map((deduction, index) => {
+                      {billForDeductions?.advanceDeductions?.map((deduction, index) => {
                           const proforma = proformaBills.find(p => p.id === deduction.reference);
                           return (
                             <TableRow key={deduction.id || index}>
