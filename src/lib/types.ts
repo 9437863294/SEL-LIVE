@@ -136,7 +136,7 @@ export const permissionModules = {
       'View Settings',
       'Edit Settings'
     ],
-    'Reports': ['View'],
+    'Reports': ['View', 'View Work Order Progress', 'View Billing Summary'],
   },
   'Bank Balance': {
     'View Module': [],
