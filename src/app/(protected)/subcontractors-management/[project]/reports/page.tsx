@@ -9,6 +9,7 @@ import {
   Calculator,
   ShieldAlert,
   BarChart3,
+  BookCheck,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,13 @@ const reportItemsBase = [
     href: 'reports/work-order-progress',
     permission: 'View',
   },
+  { 
+    icon: BookCheck,
+    text: 'Billing Summary',
+    description: 'View a comprehensive summary of all bills.',
+    href: 'reports/billing-summary',
+    permission: 'View',
+  }
 ];
 
 function ReportCard({ item }: ReportCardProps) {
