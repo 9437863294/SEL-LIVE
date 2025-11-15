@@ -17,6 +17,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear } from 'date-fns';
 import { useParams, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
+import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 
 type UnifiedBill = (Omit<Bill, 'billDate'> | Omit<ProformaBill, 'date'>) & {
   id: string;
@@ -56,6 +58,10 @@ export default function BillingSummaryReport() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [selectedBill, setSelectedBill] = useState<UnifiedBill | null>(null);
+  const [isBillViewOpen, setIsBillViewOpen] = useState(false);
+  const [isProformaViewOpen, setIsProformaViewOpen] = useState(false);
 
   const [filters, setFilters] = useState({
     project: projectSlug === 'all' ? 'all' : projectSlug,
@@ -149,122 +155,150 @@ export default function BillingSummaryReport() {
     return filteredBills.reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
   }, [filteredBills]);
 
-  return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/subcontractors-management/${projectSlug}/reports`}>
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-          </Link>
-          <h1 className="text-2xl font-bold">Billing Summary Report</h1>
-        </div>
-      </div>
-      
-       <Card className="mb-6">
-        <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 items-end">
-            <div className="space-y-1">
-                <p className="text-sm font-medium">Project</p>
-                <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
-                    <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Projects</SelectItem>
-                        {filterOptions.projects.map(p => <SelectItem key={p.id} value={slugify(p.projectName)}>{p.projectName}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-            </div>
-             <div className="space-y-1">
-                <p className="text-sm font-medium">Subcontractor</p>
-                 <Select value={filters.subcontractor} onValueChange={(v) => handleFilterChange('subcontractor', v)}>
-                    <SelectTrigger><SelectValue placeholder="All Subcontractors" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Subcontractors</SelectItem>
-                        {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-            </div>
-             <div className="space-y-1">
-                <p className="text-sm font-medium">Type</p>
-                <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
-                    <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="Regular">Regular</SelectItem>
-                        <SelectItem value="Retention">Retention</SelectItem>
-                        <SelectItem value="Proforma">Proforma</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-             <div className="space-y-1">
-                <p className="text-sm font-medium">Year</p>
-                <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
-                    <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Years</SelectItem>
-                        {filterOptions.years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-            </div>
-             <div className="space-y-1">
-                <p className="text-sm font-medium">Month</p>
-                 <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
-                    <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        {filterOptions.months.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-            </div>
-            <Card className="p-3 bg-muted">
-                <p className="text-sm font-medium text-muted-foreground">Total Payable</p>
-                <p className="text-xl font-bold">{formatCurrency(totalAmount)}</p>
-            </Card>
-        </CardContent>
-       </Card>
+  const handleViewDetails = (bill: UnifiedBill) => {
+    setSelectedBill(bill);
+    if (bill.type === 'Proforma') {
+      setIsProformaViewOpen(true);
+    } else {
+      setIsBillViewOpen(true);
+    }
+  };
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project</TableHead>
-                <TableHead>Bill No.</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Subcontractor</TableHead>
-                <TableHead>WO No.</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 10 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-5" /></TableCell></TableRow>
-                ))
-              ) : filteredBills.length > 0 ? (
-                filteredBills.map((bill) => (
-                  <TableRow key={bill.id}>
-                    <TableCell>{bill.projectName}</TableCell>
-                    <TableCell className="font-medium">{(bill as Bill).billNo || (bill as ProformaBill).proformaNo}</TableCell>
-                    <TableCell>{formatDateSafe(bill.date)}</TableCell>
-                    <TableCell><Badge variant={bill.type === 'Regular' ? 'default' : bill.type === 'Proforma' ? 'secondary' : 'outline'}>{bill.type}</Badge></TableCell>
-                    <TableCell>{bill.subcontractorName}</TableCell>
-                    <TableCell>{bill.workOrderNo}</TableCell>
-                    <TableCell>{bill.status || 'N/A'}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(bill.netPayable)}</TableCell>
-                  </TableRow>
-                ))
-              ) : (
+  return (
+    <>
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link href={`/subcontractors-management/${projectSlug}/reports`}>
+              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+            </Link>
+            <h1 className="text-2xl font-bold">Billing Summary Report</h1>
+          </div>
+        </div>
+        
+        <Card className="mb-6">
+          <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 items-end">
+              <div className="space-y-1">
+                  <p className="text-sm font-medium">Project</p>
+                  <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
+                      <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Projects</SelectItem>
+                          {filterOptions.projects.map(p => <SelectItem key={p.id} value={slugify(p.projectName)}>{p.projectName}</SelectItem>)}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <div className="space-y-1">
+                  <p className="text-sm font-medium">Subcontractor</p>
+                  <Select value={filters.subcontractor} onValueChange={(v) => handleFilterChange('subcontractor', v)}>
+                      <SelectTrigger><SelectValue placeholder="All Subcontractors" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Subcontractors</SelectItem>
+                          {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <div className="space-y-1">
+                  <p className="text-sm font-medium">Type</p>
+                  <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
+                      <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="Regular">Regular</SelectItem>
+                          <SelectItem value="Retention">Retention</SelectItem>
+                          <SelectItem value="Proforma">Proforma</SelectItem>
+                      </SelectContent>
+                  </Select>
+              </div>
+              <div className="space-y-1">
+                  <p className="text-sm font-medium">Year</p>
+                  <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
+                      <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Years</SelectItem>
+                          {filterOptions.years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <div className="space-y-1">
+                  <p className="text-sm font-medium">Month</p>
+                  <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
+                      <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">All Months</SelectItem>
+                          {filterOptions.months.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <Card className="p-3 bg-muted">
+                  <p className="text-sm font-medium text-muted-foreground">Total Payable</p>
+                  <p className="text-xl font-bold">{formatCurrency(totalAmount)}</p>
+              </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    No bills found for the selected filters.
-                  </TableCell>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Bill No.</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Subcontractor</TableHead>
+                  <TableHead>WO No.</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 10 }).map((_, i) => (
+                    <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-5" /></TableCell></TableRow>
+                  ))
+                ) : filteredBills.length > 0 ? (
+                  filteredBills.map((bill) => (
+                    <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
+                      <TableCell>{bill.projectName}</TableCell>
+                      <TableCell className="font-medium">{(bill as Bill).billNo || (bill as ProformaBill).proformaNo}</TableCell>
+                      <TableCell>{formatDateSafe(bill.date)}</TableCell>
+                      <TableCell><Badge variant={bill.type === 'Regular' ? 'default' : bill.type === 'Proforma' ? 'secondary' : 'outline'}>{bill.type}</Badge></TableCell>
+                      <TableCell>{bill.subcontractorName}</TableCell>
+                      <TableCell>{bill.workOrderNo}</TableCell>
+                      <TableCell>{bill.status || 'N/A'}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(bill.netPayable)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center h-24">
+                      No bills found for the selected filters.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <ViewBillDialog
+        isOpen={isBillViewOpen}
+        onOpenChange={setIsBillViewOpen}
+        bill={selectedBill as Bill | null}
+        workflow={[]}
+        onAction={async () => {}}
+        isActionLoading={false}
+      />
+      <ViewProformaBillDialog
+        isOpen={isProformaViewOpen}
+        onOpenChange={setIsProformaViewOpen}
+        bill={selectedBill as ProformaBill | null}
+        workflow={[]}
+        onAction={async () => {}}
+        isActionLoading={false}
+      />
+    </>
   );
 }
