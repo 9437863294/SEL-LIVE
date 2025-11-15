@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ type DisplayBill = {
   netPayable: number;
   billNo: string;
   subcontractorName: string;
+  subcontractorId: string; // Added for filtering
   workOrderNo: string;
   status?: string;
 };
@@ -136,11 +137,11 @@ export default function BillingSummaryReport() {
 
   const filteredBills = useMemo(() => {
       const unifiedList: DisplayBill[] = [
-          ...bills.map(b => ({
+          ...bills.map((b): DisplayBill => ({
               id: b.id,
               type: b.isRetentionBill ? 'Retention' : 'Regular',
               date: b.billDate,
-              sortDate: new Date(b.billDate),
+              sortDate: toDateSafe(b.billDate) || new Date(0),
               billNo: b.billNo,
               netPayable: b.netPayable,
               projectName: b.projectName,
@@ -150,11 +151,11 @@ export default function BillingSummaryReport() {
               workOrderNo: b.workOrderNo,
               status: b.status,
           })),
-          ...proformaBills.map(pb => ({
+          ...proformaBills.map((pb): DisplayBill => ({
               id: pb.id,
               type: 'Proforma',
               date: pb.date,
-              sortDate: new Date(pb.date),
+              sortDate: toDateSafe(pb.date) || new Date(0),
               billNo: pb.proformaNo,
               netPayable: pb.payableAmount,
               projectName: pb.projectName,
@@ -180,7 +181,7 @@ export default function BillingSummaryReport() {
     const allItems = [...bills, ...proformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
-    const years = [...new Set(allItems.map(b => getYear(toDateSafe(b.date || (b as Bill).billDate)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
+    const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || b.date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
