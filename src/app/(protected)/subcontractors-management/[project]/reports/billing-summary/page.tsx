@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 
-type UnifiedBill = (Omit<Bill, 'billDate'> | Omit<ProformaBill, 'date'>) & {
+type DisplayBill = {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   date: string;
@@ -28,6 +28,10 @@ type UnifiedBill = (Omit<Bill, 'billDate'> | Omit<ProformaBill, 'date'>) & {
   projectName?: string;
   projectId: string;
   netPayable: number;
+  billNo: string;
+  subcontractorName: string;
+  workOrderNo: string;
+  status?: string;
 };
 
 const slugify = (text: string) => {
@@ -67,7 +71,8 @@ export default function BillingSummaryReport() {
   const { project: projectSlug } = params as { project: string };
   const { toast } = useToast();
 
-  const [allBills, setAllBills] = useState<UnifiedBill[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -98,39 +103,23 @@ export default function BillingSummaryReport() {
 
         const billsSnap = await getDocs(query(collectionGroup(db, 'bills')));
         const proformaSnap = await getDocs(query(collectionGroup(db, 'proformaBills')));
-
-        const billEntries: UnifiedBill[] = billsSnap.docs.map(doc => {
+        
+        const billEntries: Bill[] = billsSnap.docs.map(doc => {
             const data = doc.data() as Bill;
             const projectId = doc.ref.parent.parent?.id || '';
             const project = allProjects.find(p => p.id === projectId);
-            return {
-              ...data,
-              id: doc.id, projectId, projectName: project?.projectName,
-              type: data.isRetentionBill ? 'Retention' : 'Regular',
-              date: data.billDate,
-              sortDate: new Date(data.billDate),
-              netPayable: data.netPayable,
-            } as UnifiedBill;
+            return { ...data, id: doc.id, projectId, projectName: project?.projectName };
         });
 
-        const proformaEntries: UnifiedBill[] = proformaSnap.docs.map(doc => {
+        const proformaEntries: ProformaBill[] = proformaSnap.docs.map(doc => {
             const data = doc.data() as ProformaBill;
             const projectId = doc.ref.parent.parent?.id || '';
             const project = allProjects.find(p => p.id === projectId);
-            return {
-              ...data,
-              id: doc.id, projectId, projectName: project?.projectName,
-              billNo: data.proformaNo,
-              type: 'Proforma',
-              date: data.date,
-              sortDate: new Date(data.date),
-              netPayable: data.payableAmount,
-            } as UnifiedBill;
+            return { ...data, id: doc.id, projectId, projectName: project?.projectName };
         });
 
-        const combined = [...billEntries, ...proformaEntries];
-        combined.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
-        setAllBills(combined);
+        setBills(billEntries);
+        setProformaBills(proformaEntries);
 
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -146,36 +135,74 @@ export default function BillingSummaryReport() {
   };
 
   const filteredBills = useMemo(() => {
-    return allBills.filter(bill => {
+      const unifiedList: DisplayBill[] = [
+          ...bills.map(b => ({
+              id: b.id,
+              type: b.isRetentionBill ? 'Retention' : 'Regular',
+              date: b.billDate,
+              sortDate: new Date(b.billDate),
+              billNo: b.billNo,
+              netPayable: b.netPayable,
+              projectName: b.projectName,
+              projectId: b.projectId,
+              subcontractorId: b.subcontractorId,
+              subcontractorName: b.subcontractorName || '',
+              workOrderNo: b.workOrderNo,
+              status: b.status,
+          })),
+          ...proformaBills.map(pb => ({
+              id: pb.id,
+              type: 'Proforma',
+              date: pb.date,
+              sortDate: new Date(pb.date),
+              billNo: pb.proformaNo,
+              netPayable: pb.payableAmount,
+              projectName: pb.projectName,
+              projectId: pb.projectId,
+              subcontractorId: pb.subcontractorId,
+              subcontractorName: pb.subcontractorName,
+              workOrderNo: pb.workOrderNo,
+              status: pb.status,
+          })),
+      ];
+
+      return unifiedList.filter(bill => {
         const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const yearMatch = filters.year === 'all' || getYear(bill.sortDate).toString() === filters.year;
         const monthMatch = filters.month === 'all' || bill.sortDate.getMonth().toString() === filters.month;
         const typeMatch = filters.type === 'all' || bill.type === filters.type;
         return projectMatch && subMatch && yearMatch && monthMatch && typeMatch;
-    });
-  }, [allBills, filters]);
+    }).sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
+  }, [bills, proformaBills, filters]);
   
   const filterOptions = useMemo(() => {
-    const visibleProjects = projects.filter(p => allBills.some(b => b.projectId === p.id));
-    const visibleSubs = subcontractors.filter(s => allBills.some(b => b.subcontractorId === s.id));
-    const years = [...new Set(allBills.map(b => getYear(b.sortDate).toString()))].sort((a,b) => parseInt(b) - parseInt(a));
+    const allItems = [...bills, ...proformaBills];
+    const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
+    const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
+    const years = [...new Set(allItems.map(b => getYear(toDateSafe(b.date || (b as Bill).billDate)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
-  }, [allBills, projects, subcontractors]);
+  }, [bills, proformaBills, projects, subcontractors]);
   
   const totalAmount = useMemo(() => {
     return filteredBills.reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
   }, [filteredBills]);
 
-  const handleViewDetails = (bill: UnifiedBill) => {
+  const handleViewDetails = (bill: DisplayBill) => {
     if (bill.type === 'Proforma') {
-      setSelectedProformaBill(bill as ProformaBill);
-      setIsProformaViewOpen(true);
+      const originalProforma = proformaBills.find(pb => pb.id === bill.id);
+      if (originalProforma) {
+        setSelectedProformaBill(originalProforma);
+        setIsProformaViewOpen(true);
+      }
     } else {
-      setSelectedRegularBill(bill as Bill);
-      setIsBillViewOpen(true);
+      const originalBill = bills.find(b => b.id === bill.id);
+      if (originalBill) {
+        setSelectedRegularBill(originalBill);
+        setIsBillViewOpen(true);
+      }
     }
   };
 
@@ -276,7 +303,7 @@ export default function BillingSummaryReport() {
                   filteredBills.map((bill) => (
                     <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
                       <TableCell>{bill.projectName}</TableCell>
-                      <TableCell className="font-medium">{(bill as Bill).billNo || (bill as ProformaBill).proformaNo}</TableCell>
+                      <TableCell className="font-medium">{bill.billNo}</TableCell>
                       <TableCell>{formatDateSafe(bill.date)}</TableCell>
                       <TableCell><Badge variant={bill.type === 'Regular' ? 'default' : bill.type === 'Proforma' ? 'secondary' : 'outline'}>{bill.type}</Badge></TableCell>
                       <TableCell>{bill.subcontractorName}</TableCell>
