@@ -326,9 +326,10 @@ export default function EditRolePage() {
                                                                   </div>
                                                                 );
                                                               }
-
-                                                            const grantedInGroup = editingRole.permissions?.[fullKey] || [];
-                                                            const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
+                                                              
+                                                              const resourcePermissions = Array.isArray(permissions) ? permissions : Object.keys(permissions);
+                                                              const grantedInGroup = editingRole.permissions?.[fullKey] || [];
+                                                              const isAllInGroupSelected = resourcePermissions.length > 0 && grantedInGroup.length === resourcePermissions.length;
 
                                                             return (
                                                                 <div key={fullKey} className="p-3 border rounded-md mt-2">
@@ -376,3 +377,4 @@ export default function EditRolePage() {
         </div>
     );
 }
+
