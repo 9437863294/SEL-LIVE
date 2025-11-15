@@ -1,4 +1,5 @@
 
+'use client';
 
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useCallback } from 'react';
@@ -6,43 +7,69 @@ import { useCallback } from 'react';
 export const useAuthorization = () => {
   const { permissions, loading } = useAuth();
 
-  const can = useCallback((action: string, module: string, scope?: string): boolean => {
+  const can = useCallback((action: string, resource: string, scope?: string): boolean => {
     if (loading) {
       return false; 
     }
-    
-    // Direct check for simple modules or top-level module actions
-    if (permissions[module]?.includes(action)) {
-      return true;
-    }
 
-    // Check for nested "View Module" permission, e.g., permissions['Expenses']['View Module']
-    if (action === 'View Module' && permissions[module] && typeof permissions[module] === 'object' && !Array.isArray(permissions[module])) {
-      const nestedPermissions = permissions[module] as Record<string, string[]>;
-      if (nestedPermissions['View Module']) {
-        return true;
+    const checkPermissions = (permissionSet: Record<string, any>, resourceParts: string[]): boolean => {
+      const currentPart = resourceParts[0];
+      const remainingParts = resourceParts.slice(1);
+      
+      if (!permissionSet || !permissionSet.hasOwnProperty(currentPart)) {
+        return false;
       }
+      
+      const nextPermissionSet = permissionSet[currentPart];
+
+      if (remainingParts.length === 0) {
+        // This is the final level, check for the action
+        if (Array.isArray(nextPermissionSet)) {
+          return nextPermissionSet.includes(action);
+        }
+        // This handles cases like `can('View', 'Some Module.View Module')` which isn't standard
+        // but the original hook was trying to support. A direct check is better.
+        if (typeof nextPermissionSet === 'object' && nextPermissionSet !== null && !Array.isArray(nextPermissionSet) && action in nextPermissionSet) {
+          return true;
+        }
+        return false;
+      }
+      
+      // Recurse into the next level
+      if (typeof nextPermissionSet === 'object' && nextPermissionSet !== null && !Array.isArray(nextPermissionSet)) {
+        return checkPermissions(nextPermissionSet, remainingParts);
+      }
+      
+      return false;
+    };
+    
+    // Check for direct scoped permission first, e.g., 'Expenses.Departments.dept_id_123'
+    if (scope) {
+        const scopedResourceKey = `${resource}.${scope}`;
+        if (permissions[scopedResourceKey]?.includes(action)) {
+            return true;
+        }
     }
     
-    // Check for scoped permissions, e.g., Expenses.Departments.dept_id_123
-    const scopedPermissionKey = scope ? `${module}.${scope}` : module;
-    if (scope && permissions[scopedPermissionKey]?.includes(action)) {
-      return true;
-    }
-
-    // Fallback for sub-module actions without a scope, e.g., can('View', 'Expenses.Reports')
-    if (module.includes('.') && permissions[module]?.includes(action)) {
-        return true;
-    }
-
-    // Special check for 'View All' which grants 'View' on all scopes within that module
+    // Check for 'View All' which grants 'View' on all scopes.
     if (action === 'View' && scope) {
-      const viewAllModule = module.split('.')[0]; // e.g., 'Expenses' from 'Expenses.Departments'
+      const viewAllModule = resource.split('.')[0];
       if (permissions[viewAllModule]?.includes('View All')) {
         return true;
       }
     }
-    
+
+    // New recursive check for nested permissions
+    const resourceParts = resource.split('.');
+    if (checkPermissions(permissions, resourceParts)) {
+        return true;
+    }
+
+    // Original direct check for simple top-level permissions
+    if (permissions[resource]?.includes(action)) {
+        return true;
+    }
+
     return false;
   }, [permissions, loading]);
 
