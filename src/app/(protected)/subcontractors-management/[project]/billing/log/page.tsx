@@ -14,7 +14,6 @@ import {
   Loader2,
   History as HistoryIcon,
   FileText,
-  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -324,14 +323,14 @@ export default function BillLogPage() {
 }, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
   
   const filterOptions = useMemo(() => {
-    const allItems = [...allBills, ...allProformaBills];
+    const allItems = [...bills, ...proformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
     const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
-  }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
+  }, [bills, proformaBills, projects, workOrders, subcontractors]);
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
@@ -551,7 +550,7 @@ export default function BillLogPage() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -643,7 +642,7 @@ export default function BillLogPage() {
                   </TableHeader>
                   <TableBody>
                       {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
-                          const proforma = proformaBills.find(p => p.id === deduction.reference);
+                          const proforma = allProformaBills.find(p => p.id === deduction.reference);
                           return (
                             <TableRow key={index}>
                                 <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
