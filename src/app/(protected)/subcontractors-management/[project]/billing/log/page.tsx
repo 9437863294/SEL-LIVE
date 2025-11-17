@@ -14,6 +14,7 @@ import {
   Loader2,
   History as HistoryIcon,
   FileText,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -95,26 +96,26 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-interface UnifiedBill {
-  id: string;
-  type: 'Regular' | 'Retention' | 'Proforma';
-  date: string;
-  sortDate: Date;
-  billNo: string;
-  netPayable: number;
-  projectName?: string;
-  projectId: string;
-  subcontractorId: string;
-  subcontractorName: string;
-  workOrderNo: string;
-  status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
-  stage?: string;
-  assignees?: string[];
-  currentStepId?: string | null;
-  history?: ActionLog[];
-  retentionAmount?: number;
-  totalDeductions?: number;
-  isRetentionBill?: boolean;
+interface DisplayBill {
+    id: string;
+    type: 'Regular' | 'Retention' | 'Proforma';
+    date: string;
+    sortDate: Date;
+    billNo: string;
+    netPayable: number;
+    projectName?: string;
+    projectId: string;
+    subcontractorId: string;
+    subcontractorName: string;
+    workOrderNo: string;
+    status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
+    stage?: string;
+    assignees?: string[];
+    currentStepId?: string | null;
+    history?: ActionLog[];
+    retentionAmount?: number;
+    totalDeductions?: number;
+    isRetentionBill?: boolean;
 }
 
 
@@ -159,9 +160,10 @@ export default function BillLogPage() {
   const { user } = useAuth();
   const projectSlug = params.project as string;
   const { can } = useAuthorization();
+  const router = useRouter();
 
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
@@ -170,7 +172,7 @@ export default function BillLogPage() {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
 
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
-  const [selectedProforma, setSelectedProforma] = useState<ProformaBill | null>(null);
+  const [selectedProformaBill, setSelectedProformaBill] = useState<ProformaBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
   
@@ -226,8 +228,8 @@ export default function BillLogPage() {
       const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
       const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
       
-      setBills(billEntries);
-      setProformaBills(proformaEntries);
+      setAllBills(billEntries);
+      setAllProformaBills(proformaEntries);
 
     } catch (error) {
       console.error('Error fetching bills: ', error);
@@ -249,7 +251,7 @@ export default function BillLogPage() {
   }
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const displayBills: DisplayBill[] = bills.map(b => {
+    const displayBills: DisplayBill[] = allBills.map(b => {
       const project = projects.find(p => p.id === b.projectId);
       return {
         ...b,
@@ -257,11 +259,11 @@ export default function BillLogPage() {
         date: b.billDate,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: b.subcontractorName || 'N/A',
+        subcontractorName: b.subcontractorName || subcontractors.find(s => s.id === b.subcontractorId)?.legalName || 'N/A',
       }
     });
 
-    const displayProformas: DisplayBill[] = proformaBills.map(p => {
+    const displayProformas: DisplayBill[] = allProformaBills.map(p => {
        const project = projects.find(proj => proj.id === p.projectId);
        return {
         ...p,
@@ -271,7 +273,7 @@ export default function BillLogPage() {
         netPayable: p.payableAmount,
         sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: p.subcontractorName || 'N/A',
+        subcontractorName: p.subcontractorName || subcontractors.find(s => s.id === p.subcontractorId)?.legalName || 'N/A',
        }
     });
 
@@ -314,37 +316,37 @@ export default function BillLogPage() {
         holdTasks: hold,
         allFilteredBills: filtered,
     };
-}, [bills, proformaBills, filters, user?.id, projects]);
+}, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
   
   const filterOptions = useMemo(() => {
-    const allItems = [...bills, ...proformaBills];
+    const allItems = [...allBills, ...allProformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
     const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, workOrders, subcontractors]);
+  }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
 
-  const handleViewDetails = (unifiedBill: UnifiedBill) => {
+  const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
-      const original = proformaBills.find((p: ProformaBill) => p.id === unifiedBill.id);
-      setSelectedProforma(original || null);
+      const original = allProformaBills.find((p: ProformaBill) => p.id === unifiedBill.id);
+      setSelectedProformaBill(original || null);
     } else {
-      const original = bills.find((b: Bill) => b.id === unifiedBill.id);
+      const original = allBills.find((b: Bill) => b.id === unifiedBill.id);
       setSelectedBill(original || null);
     }
     setIsViewOpen(true);
   };
   
-  const handleViewDeductionDetails = (e: React.MouseEvent, bill: UnifiedBill) => {
+  const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
       e.stopPropagation();
-      const original = bills.find((b: Bill) => b.id === bill.id);
+      const original = allBills.find((b: Bill) => b.id === bill.id);
       setSelectedBill(original || null);
       setIsDeductionDetailsOpen(true);
   }
   
-  const handleDeleteBill = async (billToDelete: UnifiedBill) => {
+  const handleDeleteBill = async (billToDelete: DisplayBill) => {
       const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
       if (!billToDelete.projectId) {
           toast({ title: 'Error', description: 'Cannot delete bill without project information.', variant: 'destructive'});
@@ -366,7 +368,7 @@ export default function BillLogPage() {
   };
   
   const handleAction = async (taskId: string, action: string, comment: string = '') => {
-    const currentBill = selectedBill || selectedProforma;
+    const currentBill = selectedBill || selectedProformaBill;
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
     const collectionName = (currentBill as any).proformaNo ? 'proformaBills' : 'bills';
@@ -429,7 +431,7 @@ export default function BillLogPage() {
     }
   };
 
-  const renderTable = (data: UnifiedBill[]) => (
+  const renderTable = (data: DisplayBill[]) => (
     <Card>
       <CardContent className="p-0">
         <Table>
@@ -552,13 +554,6 @@ export default function BillLogPage() {
                             </SelectContent>
                         </Select>
                     )}
-                     <Select value={filters.workOrder} onValueChange={(v) => handleFilterChange('workOrder', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Work Orders" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Work Orders</SelectItem>
-                            {filterOptions.workOrders.map(wo => <SelectItem key={wo.id} value={wo.workOrderNo}>{wo.workOrderNo}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
                      <Select value={filters.subcontractor} onValueChange={(v) => handleFilterChange('subcontractor', v)}>
                         <SelectTrigger><SelectValue placeholder="All Subcontractors" /></SelectTrigger>
                         <SelectContent>
@@ -614,16 +609,16 @@ export default function BillLogPage() {
           bill={selectedBill}
           workflow={workflow}
           onAction={handleAction}
-          isActionLoading={isActionLoading === selectedBill.id}
+          isActionLoading={!!isActionLoading}
         />
-      ) : selectedProforma ? (
+      ) : selectedProformaBill ? (
         <ViewProformaBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
-          bill={selectedProforma}
+          bill={selectedProformaBill}
           workflow={workflow}
           onAction={handleAction}
-          isActionLoading={isActionLoading === selectedProforma.id}
+          isActionLoading={!!isActionLoading}
         />
       ) : null)}
       
@@ -641,7 +636,7 @@ export default function BillLogPage() {
                   </TableHeader>
                   <TableBody>
                       {selectedBill?.advanceDeductions?.map((deduction, index) => {
-                          const proforma = proformaBills.find(p => p.id === deduction.reference);
+                          const proforma = allProformaBills.find(p => p.id === deduction.reference);
                           return (
                             <TableRow key={index}>
                                 <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
@@ -661,5 +656,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
-    
