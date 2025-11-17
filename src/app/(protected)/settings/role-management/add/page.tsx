@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -289,39 +288,85 @@ export default function AddRolePage() {
                                                             );
                                                           }
 
-                                                        const resourcePermissions = Array.isArray(permissions) ? permissions : Object.keys(permissions);
-                                                        const grantedInGroup = newRole.permissions?.[fullKey] || [];
-                                                        const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
+                                                        if (Array.isArray(permissions)) {
+                                                            const resourcePermissions = permissions;
+                                                            const grantedInGroup = newRole.permissions?.[fullKey] || [];
+                                                            const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
 
+                                                            return (
+                                                                <div key={fullKey} className="p-3 border rounded-md mt-2">
+                                                                    <div className="flex justify-between items-center mb-3">
+                                                                    <h4 className="font-semibold text-sm">{subModuleKey}</h4>
+                                                                    <div className="flex items-center space-x-2">
+                                                                        <Checkbox
+                                                                            id={`select-all-group-new-${fullKey}`}
+                                                                            checked={isAllInGroupSelected}
+                                                                            onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
+                                                                            disabled={!isViewModulePermission || !Array.isArray(permissions)}
+                                                                        />
+                                                                        <Label htmlFor={`select-all-group-new-${fullKey}`} className="text-xs font-medium">All</Label>
+                                                                    </div>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                                        {Array.isArray(permissions) && permissions.map(permission => (
+                                                                            <div key={permission} className="flex items-center space-x-2">
+                                                                                <Checkbox
+                                                                                    id={`new-${fullKey}-${permission}`}
+                                                                                    checked={grantedInGroup.includes(permission)}
+                                                                                    onCheckedChange={(checked) => handlePermissionChange(fullKey, permission, !!checked)}
+                                                                                    disabled={!isViewModulePermission}
+                                                                                />
+                                                                                <Label htmlFor={`new-${fullKey}-${permission}`} className="text-xs font-normal leading-tight">{permission}</Label>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        }
+                                                        
+                                                        // Handle nested objects of permissions
                                                         return (
                                                             <div key={fullKey} className="p-3 border rounded-md mt-2">
-                                                                <div className="flex justify-between items-center mb-3">
-                                                                <h4 className="font-semibold text-sm">{subModuleKey}</h4>
-                                                                <div className="flex items-center space-x-2">
-                                                                    <Checkbox
-                                                                        id={`select-all-group-new-${fullKey}`}
-                                                                        checked={isAllInGroupSelected}
-                                                                        onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
-                                                                        disabled={!isViewModulePermission || !Array.isArray(permissions)}
-                                                                    />
-                                                                    <Label htmlFor={`select-all-group-new-${fullKey}`} className="text-xs font-medium">All</Label>
-                                                                </div>
-                                                                </div>
-                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                                    {Array.isArray(permissions) && permissions.map(permission => (
-                                                                        <div key={permission} className="flex items-center space-x-2">
-                                                                            <Checkbox
-                                                                                id={`new-${fullKey}-${permission}`}
-                                                                                checked={grantedInGroup.includes(permission)}
-                                                                                onCheckedChange={(checked) => handlePermissionChange(fullKey, permission, !!checked)}
-                                                                                disabled={!isViewModulePermission}
-                                                                            />
-                                                                            <Label htmlFor={`new-${fullKey}-${permission}`} className="text-xs font-normal leading-tight">{permission}</Label>
+                                                                <h4 className="font-semibold text-sm mb-2">{subModuleKey}</h4>
+                                                                {Object.entries(permissions).map(([nestedKey, nestedPerms]) => {
+                                                                    if (!Array.isArray(nestedPerms)) return null;
+                                                                    const nestedFullKey = `${fullKey}.${nestedKey}`;
+                                                                    const grantedInNestedGroup = newRole.permissions?.[nestedFullKey] || [];
+                                                                    const isAllInNestedSelected = nestedPerms.length > 0 && grantedInNestedGroup.length === nestedPerms.length;
+                                                                    
+                                                                    return (
+                                                                        <div key={nestedFullKey} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
+                                                                            <div className="flex justify-between items-center mb-2">
+                                                                                <p className="text-sm font-medium">{nestedKey}</p>
+                                                                                <div className="flex items-center space-x-2">
+                                                                                     <Checkbox
+                                                                                        id={`select-all-nested-${nestedFullKey}`}
+                                                                                        checked={isAllInNestedSelected}
+                                                                                        onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(nestedFullKey, nestedPerms, e.currentTarget.dataset.state === 'unchecked') }}
+                                                                                        disabled={!isViewModulePermission}
+                                                                                    />
+                                                                                    <Label htmlFor={`select-all-nested-${nestedFullKey}`} className="text-xs font-medium">All</Label>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                                                {nestedPerms.map(p => (
+                                                                                    <div key={p} className="flex items-center space-x-2">
+                                                                                        <Checkbox
+                                                                                            id={`new-${nestedFullKey}-${p}`}
+                                                                                            checked={grantedInNestedGroup.includes(p)}
+                                                                                            onCheckedChange={(checked) => handlePermissionChange(nestedFullKey, p, !!checked)}
+                                                                                            disabled={!isViewModulePermission}
+                                                                                        />
+                                                                                        <Label htmlFor={`new-${nestedFullKey}-${p}`} className="text-xs font-normal">{p}</Label>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
                                                                         </div>
-                                                                    ))}
-                                                                </div>
+                                                                    )
+                                                                })}
                                                             </div>
                                                         )
+
                                                     })}
                                                 </div>
                                             </>
@@ -339,4 +384,3 @@ export default function AddRolePage() {
         </div>
     );
 }
-
