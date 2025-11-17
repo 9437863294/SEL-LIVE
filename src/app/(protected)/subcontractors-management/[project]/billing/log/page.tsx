@@ -109,28 +109,32 @@ interface DisplayBillItem {
   totalAmount: number;
 }
 
-interface DisplayBill {
-    id: string;
-    type: 'Regular' | 'Retention' | 'Proforma';
-    date: string;
-    sortDate: Date;
-    projectId: string;
-    projectName?: string;
-    subcontractorId: string;
-    subcontractorName: string;
-    workOrderNo: string;
-    billNo: string; // Used for both ProformaNo and BillNo
-    status?: string;
-    stage?: string;
-    assignees?: string[];
-    currentStepId?: string | null;
-    history?: ActionLog[];
-    isRetentionBill?: boolean;
-    netPayable: number;
-    retentionAmount?: number;
-    totalDeductions?: number;
-    items: DisplayBillItem[];
+// A base structure with common fields
+interface DisplayBillBase {
+  id: string;
+  type: 'Regular' | 'Retention' | 'Proforma';
+  date: string;
+  sortDate: Date;
+  projectId: string;
+  projectName?: string;
+  subcontractorId: string;
+  subcontractorName: string;
+  workOrderNo: string;
+  billNo: string; // Used for both ProformaNo and BillNo
+  netPayable: number;
+  isRetentionBill: boolean;
+  items: DisplayBillItem[];
+
+  // Optional workflow fields
+  status?: string;
+  stage?: string;
+  assignees?: string[];
+  currentStepId?: string | null;
+  history?: ActionLog[];
 }
+
+// Intersect with partials of the original types to allow type-safe access later
+type DisplayBill = DisplayBillBase & Partial<Bill> & Partial<ProformaBill>;
 
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
@@ -280,25 +284,13 @@ export default function BillLogPage() {
     const displayBills: DisplayBill[] = allBills.map((b: Bill) => {
       const project = projects.find((p) => p.id === b.projectId);
       return {
-        id: b.id,
+        ...b,
         type: b.isRetentionBill ? 'Retention' : 'Regular',
         date: b.billDate,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
-        projectId: b.projectId,
         projectName: project?.projectName,
-        subcontractorId: b.subcontractorId,
         subcontractorName: b.subcontractorName || subcontractors.find((s) => s.id === b.subcontractorId)?.legalName || 'N/A',
-        workOrderNo: b.workOrderNo,
-        billNo: b.billNo,
-        status: b.status,
-        stage: b.stage,
-        assignees: b.assignees,
-        currentStepId: b.currentStepId,
-        history: b.history,
-        isRetentionBill: b.isRetentionBill || false,
         netPayable: b.netPayable || 0,
-        retentionAmount: b.retentionAmount || 0,
-        totalDeductions: b.totalDeductions || 0,
         items: (b.items || []).map(i => ({
             jmcItemId: i.jmcItemId,
             description: i.description,
@@ -313,28 +305,21 @@ export default function BillLogPage() {
     const displayProformas: DisplayBill[] = allProformaBills.map((p: ProformaBill) => {
       const project = projects.find((proj) => proj.id === p.projectId);
       return {
-        id: p.id,
+        ...p,
         type: 'Proforma',
         date: p.date,
-        sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
-        projectId: p.projectId,
-        projectName: project?.projectName,
-        subcontractorId: p.subcontractorId,
-        subcontractorName: p.subcontractorName || subcontractors.find((s) => s.id === p.subcontractorId)?.legalName || 'N/A',
-        workOrderNo: p.workOrderNo,
         billNo: p.proformaNo,
-        status: p.status,
-        stage: p.stage,
-        assignees: p.assignees,
-        currentStepId: p.currentStepId,
-        history: p.history,
         netPayable: p.payableAmount,
+        isRetentionBill: false,
+        sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
+        projectName: project?.projectName,
+        subcontractorName: p.subcontractorName || subcontractors.find((s) => s.id === p.subcontractorId)?.legalName || 'N/A',
         items: (p.items || []).map(i => ({
             description: i.description,
             unit: i.unit,
-            rate: i.rate,
+            rate: parseFloat(i.rate),
             billedQty: i.billedQty,
-            totalAmount: i.totalAmount,
+            totalAmount: parseFloat(i.totalAmount),
         }))
       };
     });
@@ -581,10 +566,10 @@ export default function BillLogPage() {
             ) : data.length > 0 ? (
               data.map((bill: DisplayBill) => {
                 const retentionDisplay =
-                  bill.isRetentionBill
+                  bill.type === 'Retention'
                     ? `+${formatCurrency(bill.netPayable || 0)}`
-                    : bill.type !== 'Proforma' && bill.retentionAmount !== undefined
-                    ? formatCurrency(bill.retentionAmount)
+                    : bill.type !== 'Proforma'
+                    ? formatCurrency(bill.retentionAmount ?? 0)
                     : 'N/A';
                 return (
                   <TableRow
@@ -613,7 +598,7 @@ export default function BillLogPage() {
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
                     <TableCell
-                      className={bill.isRetentionBill ? 'text-green-600' : ''}
+                      className={bill.type === 'Retention' ? 'text-green-600' : ''}
                     >
                       {retentionDisplay}
                     </TableCell>
@@ -912,3 +897,5 @@ export default function BillLogPage() {
     </>
   );
 }
+
+    
