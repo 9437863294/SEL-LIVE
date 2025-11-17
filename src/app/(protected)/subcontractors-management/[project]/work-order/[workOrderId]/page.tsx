@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDoc, getDocs, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, collectionGroup } from 'firebase/firestore';
 import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill, ProformaBill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,9 +25,10 @@ type EnrichedWorkOrderItem = WorkOrderItem & {
     scope2?: string;
 };
 
-const getScope1 = (item: any): string => item?.scope1 || item?.['Scope 1'] || '';
-const getScope2 = (item: any): string => item?.scope2 || item?.['Scope 2'] || '';
-
+const getScope1 = (item: any): string => String(item?.scope1 || item?.['Scope 1'] || '').trim();
+const getScope2 = (item: any): string => String(item?.scope2 || item?.['Scope 2'] || '').trim();
+const getBoqSlNo = (item: any): string => String(item?.boqSlNo ?? item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? '').trim();
+const compositeKey = (item: any) => `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
 
 export default function WorkOrderDetailsPage() {
     const params = useParams();
@@ -71,7 +72,6 @@ export default function WorkOrderDetailsPage() {
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
                 
-                // Fetch JMC entries from all projects
                 const jmcGroupQuery = query(collectionGroup(db, 'jmcEntries'));
                 
                 const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
@@ -80,8 +80,14 @@ export default function WorkOrderDetailsPage() {
                     getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
 
-                // Filter JMC entries on the client-side
                 const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(jmc => jmc.woNo === woData.workOrderNo);
+                
+                const jmcCertifiedQtyMap = new Map<string, number>();
+                jmcEntries.flatMap(entry => entry.items).forEach(jmcItem => {
+                    const key = compositeKey(jmcItem);
+                    const currentQty = jmcCertifiedQtyMap.get(key) || 0;
+                    jmcCertifiedQtyMap.set(key, currentQty + (jmcItem.certifiedQty || 0));
+                });
                 
                 const bills = billsSnap.docs.map(doc => doc.data() as Bill);
                 const billedQtyMap = new Map<string, number>();
@@ -89,7 +95,9 @@ export default function WorkOrderDetailsPage() {
                 let totalAdvanceDeducted = 0;
 
                 bills.forEach(bill => {
-                    totalBilledAmount += bill.netPayable || 0;
+                    if (!bill.isRetentionBill) {
+                        totalBilledAmount += bill.netPayable || 0;
+                    }
                     (bill.advanceDeductions || []).forEach(deduction => {
                         totalAdvanceDeducted += deduction.amount;
                     });
@@ -104,42 +112,34 @@ export default function WorkOrderDetailsPage() {
 
                 setFinancials({ totalAdvanceTaken, totalAdvanceDeducted, totalBilled: totalBilledAmount });
 
-                const boqItemIds = woData.items.map(item => item.boqItemId);
+                const boqItemIds = woData.items.map(item => item.boqItemId).filter(Boolean);
+                const boqItemsMap = new Map<string, BoqItem>();
+
                 if (boqItemIds.length > 0) {
-                    const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'), where('__name__', 'in', boqItemIds));
+                    // Fetch all BOQ items for the project once
+                    const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
                     const boqSnapshot = await getDocs(boqQuery);
-                    const boqItemsMap = new Map(boqSnapshot.docs.map(doc => [doc.id, doc.data() as BoqItem]));
-
-                    const enriched = woData.items.map(item => {
-                        const boqItem = boqItemsMap.get(item.boqItemId);
-                        const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
-                        
-                        const itemScope1 = getScope1(item);
-                        const itemScope2 = getScope2(item);
-                        
-                        const totalJmcCertifiedQty = jmcEntries
-                            .flatMap(entry => entry.items)
-                            .filter(jmcItem => 
-                                jmcItem.boqSlNo === item.boqSlNo &&
-                                getScope1(jmcItem) === itemScope1 &&
-                                getScope2(jmcItem) === itemScope2
-                            )
-                            .reduce((sum, jmcItem) => sum + (jmcItem.certifiedQty || 0), 0);
-
-                        const totalBilledQty = billedQtyMap.get(item.id) || 0;
-                        
-                        return {
-                            ...item,
-                            boqQty: boqItem ? String(boqItem['QTY'] || '0') : 'N/A',
-                            boqRate: boqItem && rateKey ? String((boqItem as any)[rateKey] || '0') : 'N/A',
-                            totalJmcCertifiedQty,
-                            totalBilledQty,
-                            scope1: itemScope1,
-                            scope2: itemScope2,
-                        };
+                    boqSnapshot.forEach(doc => {
+                        boqItemsMap.set(doc.id, {id: doc.id, ...doc.data()} as BoqItem);
                     });
-                    setEnrichedItems(enriched);
                 }
+                
+                const enriched = woData.items.map(item => {
+                    const boqItem = boqItemsMap.get(item.boqItemId);
+                    const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
+                    const key = compositeKey(item);
+                    
+                    return {
+                        ...item,
+                        boqQty: boqItem ? String(boqItem['QTY'] || '0') : 'N/A',
+                        boqRate: boqItem && rateKey ? String((boqItem as any)[rateKey] || '0') : 'N/A',
+                        totalJmcCertifiedQty: jmcCertifiedQtyMap.get(key) || 0,
+                        totalBilledQty: billedQtyMap.get(item.id) || 0,
+                        scope1: getScope1(item),
+                        scope2: getScope2(item),
+                    };
+                });
+                setEnrichedItems(enriched);
 
             } catch (error) {
                 console.error("Error fetching work order:", error);
@@ -256,3 +256,5 @@ export default function WorkOrderDetailsPage() {
         </div>
     );
 }
+
+    
