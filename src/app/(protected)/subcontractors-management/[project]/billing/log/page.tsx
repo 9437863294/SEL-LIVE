@@ -109,7 +109,6 @@ interface DisplayBillItem {
   totalAmount: number;
 }
 
-// A base structure with common fields
 interface DisplayBillBase {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
@@ -134,7 +133,7 @@ interface DisplayBillBase {
 }
 
 // Intersect with partials of the original types to allow type-safe access later
-type DisplayBill = DisplayBillBase & Partial<Bill> & Partial<ProformaBill>;
+type DisplayBill = DisplayBillBase & (Partial<Bill> | Partial<ProformaBill>);
 
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
@@ -287,6 +286,7 @@ export default function BillLogPage() {
         ...b,
         type: b.isRetentionBill ? 'Retention' : 'Regular',
         date: b.billDate,
+        isRetentionBill: !!b.isRetentionBill,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
         projectName: project?.projectName,
         subcontractorName: b.subcontractorName || subcontractors.find((s) => s.id === b.subcontractorId)?.legalName || 'N/A',
@@ -568,8 +568,8 @@ export default function BillLogPage() {
                 const retentionDisplay =
                   bill.type === 'Retention'
                     ? `+${formatCurrency(bill.netPayable || 0)}`
-                    : bill.type !== 'Proforma'
-                    ? formatCurrency(bill.retentionAmount ?? 0)
+                    : bill.type !== 'Proforma' && (bill as Bill).retentionAmount
+                    ? formatCurrency((bill as Bill).retentionAmount || 0)
                     : 'N/A';
                 return (
                   <TableRow
@@ -609,7 +609,7 @@ export default function BillLogPage() {
                           className="p-0 h-auto"
                           onClick={(e) => handleViewDeductionDetails(e, bill)}
                         >
-                          {formatCurrency(bill.totalDeductions || 0)}
+                          {formatCurrency((bill as Bill).totalDeductions || 0)}
                         </Button>
                       ) : (
                         'N/A'
@@ -899,3 +899,4 @@ export default function BillLogPage() {
 }
 
     
+```
