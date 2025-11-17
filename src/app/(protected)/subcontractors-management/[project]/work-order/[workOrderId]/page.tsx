@@ -71,17 +71,17 @@ export default function WorkOrderDetailsPage() {
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
                 
-                // Fetch JMC entries across all projects that match the work order number
-                const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('woNo', '==', woData.workOrderNo));
+                // Fetch JMC entries from all projects
+                const jmcGroupQuery = query(collectionGroup(db, 'jmcEntries'));
                 
                 const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDocs(jmcQuery),
+                    getDocs(jmcGroupQuery),
                     getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
 
-
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
+                // Filter JMC entries on the client-side
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(jmc => jmc.woNo === woData.workOrderNo);
                 
                 const bills = billsSnap.docs.map(doc => doc.data() as Bill);
                 const billedQtyMap = new Map<string, number>();
