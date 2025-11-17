@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
@@ -238,7 +239,7 @@ export default function BillingSummaryReport() {
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, rejected: 0, onTime: 0 };
+        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
       }
     };
     
@@ -377,7 +378,7 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8 md:grid-flow-row-dense">
             {isLoading ? (
                 Array.from({ length: 7 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
@@ -387,12 +388,12 @@ export default function BillingSummaryReport() {
                 ))
             ) : (
                 statsToDisplay.map((stat) => (
-                  <Card key={stat.title} className="flex flex-col justify-between">
+                  <Card key={stat.title} className="flex flex-col">
                     <CardHeader className="flex flex-row items-start justify-between space-y-0 p-4 pb-2">
-                      <CardTitle className="text-sm font-medium min-h-[3em]">{stat.title}</CardTitle>
+                      <CardTitle className="text-sm font-medium min-h-[md:3em]">{stat.title}</CardTitle>
                       <stat.icon className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent className="p-4 pt-0">
+                    <CardContent className="p-4 pt-0 mt-auto">
                       <p className="text-2xl font-bold">{stat.value}</p>
                     </CardContent>
                   </Card>
