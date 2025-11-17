@@ -126,6 +126,8 @@ export default function BillingSummaryReport() {
     year: 'all',
     month: 'all',
   });
+  
+  const canViewPage = can('View', 'Subcontractors Management.Reports.Billing Summary');
 
   const fetchBills = useCallback(async () => {
     setIsLoading(true);
@@ -192,7 +194,7 @@ export default function BillingSummaryReport() {
 
   const { filteredBills, filteredProformas } = useMemo(() => {
     const filterFn = (bill: Bill | ProformaBill) => {
-        const projectMatch = filters.project === 'all' || slugify((projects.find(p=>p.id === bill.projectId))?.projectName) === filters.project;
+        const projectMatch = filters.project === 'all' || slugify((projects.find(p=>p.id === bill.projectId))?.projectName || '') === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
         if (!sortDate) return false;
@@ -277,16 +279,53 @@ export default function BillingSummaryReport() {
       { title: 'Net Advance Balance', value: formatCurrency(summaryStats.netAdvance), icon: Wallet },
   ];
 
-  if (isAuthLoading || (isLoading)) {
-    return <div className="w-full p-6"><Skeleton className="h-96" /></div>;
+  if (isAuthLoading || (isLoading && canViewPage)) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-10 w-80 mb-6" />
+            <Skeleton className="h-24 w-full mb-6" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+                {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            </div>
+            <Skeleton className="h-6 w-48 mb-6" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+            </div>
+        </div>
+    )
   }
+
+  if(!canViewPage) {
+    return (
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <Link href={`/subcontractors-management/${projectSlug}/reports`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <h1 className="text-2xl font-bold">Billing Summary</h1>
+                </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Access Denied</CardTitle>
+                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-8">
+                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                </CardContent>
+            </Card>
+        </div>
+    )
+  }
+
 
   return (
       <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug === 'all' ? '' : projectSlug}/reports`}>
+            <Link href={`/subcontractors-management/${projectSlug}/reports`}>
               <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
             <h1 className="text-2xl font-bold">Billing Summary Report</h1>
@@ -331,57 +370,71 @@ export default function BillingSummaryReport() {
         </Card>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
-            {statsToDisplay.map((stat) => (
-              <Card key={stat.title}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                  <stat.icon className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{stat.value}</p>
-                </CardContent>
-              </Card>
-            ))}
+            {isLoading ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                    <Card key={index}>
+                        <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                        <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
+                    </Card>
+                ))
+            ) : (
+                statsToDisplay.map((stat) => (
+                  <Card key={stat.title}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                      <stat.icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-2xl font-bold">{stat.value}</p>
+                    </CardContent>
+                  </Card>
+                ))
+            )}
         </div>
 
         <div className="mb-6"><h2 className="text-xl font-bold">Step-wise Report</h2></div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {workflow.map(step => {
-                const stepData = stepWiseReport[step.name];
-                if (!stepData || Object.keys(stepData).length === 0) return null;
-                return (
-                    <Card key={step.id}>
-                        <CardHeader className="p-4 bg-muted/50"><CardTitle className="text-base text-center">{step.name}</CardTitle></CardHeader>
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>User</TableHead>
-                                        <TableHead>Total</TableHead>
-                                        <TableHead>Done</TableHead>
-                                        <TableHead>Rejected</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {Object.entries(stepData).map(([userName, data]) => (
-                                        <TableRow key={userName}>
-                                            <TableCell>{userName}</TableCell>
-                                            <TableCell>{data.total}</TableCell>
-                                            <TableCell>{data.completed}</TableCell>
-                                            <TableCell>{data.rejected}</TableCell>
+            {isLoading ? (
+                Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
+            ) : (
+                workflow.map((step) => {
+                    const stepData = stepWiseReport[step.name];
+                    if (!stepData || Object.keys(stepData).length === 0) return null;
+                    return (
+                        <Card key={step.id}>
+                            <CardHeader className="p-4 bg-muted/50"><CardTitle className="text-base text-center">{step.name}</CardTitle></CardHeader>
+                            <CardContent className="p-0">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>User</TableHead>
+                                            <TableHead>Total</TableHead>
+                                            <TableHead>Done</TableHead>
+                                            <TableHead>Rejected</TableHead>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                )
-            })}
+                                    </TableHeader>
+                                    <TableBody>
+                                        {Object.entries(stepData).map(([userName, data]) => {
+                                            if (data.total === 0 && data.completed === 0) return null;
+                                            return (
+                                                <TableRow key={userName}>
+                                                    <TableCell>{userName}</TableCell>
+                                                    <TableCell>{data.total}</TableCell>
+                                                    <TableCell>{data.completed}</TableCell>
+                                                    <TableCell>{data.rejected}</TableCell>
+                                                </TableRow>
+                                            )
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+                    )
+                })
+            )}
         </div>
       </div>
     </>
   );
 }
-
-    
