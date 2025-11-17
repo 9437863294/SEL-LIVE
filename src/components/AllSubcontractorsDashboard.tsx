@@ -93,6 +93,20 @@ export default function AllSubcontractorsDashboard() {
         description: 'View consolidated reports.',
         disabled: !safeCan('View', 'Subcontractors Management.Reports'),
       },
+      {
+        icon: BarChart3,
+        text: 'Work Order Progress Report',
+        href: '/subcontractors-management/all/reports/work-order-progress',
+        description: 'Track financial and physical progress of work orders.',
+        disabled: !safeCan('View', 'Subcontractors Management.Reports.Work Order Progress'),
+      },
+      {
+        icon: BarChart3,
+        text: 'Billing Summary Report',
+        href: '/subcontractors-management/all/reports/billing-summary',
+        description: 'A summary of all billing activities.',
+        disabled: !safeCan('View', 'Subcontractors Management.Reports.Billing Summary'),
+      },
     ],
     [safeCan]
   );
