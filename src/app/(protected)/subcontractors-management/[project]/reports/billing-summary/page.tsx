@@ -15,6 +15,7 @@ import {
   Receipt,
   PiggyBank,
   Combine,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -214,6 +215,10 @@ export default function BillingSummaryReport() {
 }, [bills, proformaBills, filters, projects]);
 
   const summaryStats = useMemo(() => {
+    const relevantWorkOrderIds = new Set([...filteredBills.map(b => b.workOrderId), ...filteredProformas.map(p => p.workOrderId)]);
+    const relevantWorkOrders = workOrders.filter(wo => relevantWorkOrderIds.has(wo.id));
+    const totalWorkOrderValue = relevantWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
+
     const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
     const totalRetentionDeducted = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
     const totalRetentionClaimed = filteredBills.filter(b => b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
@@ -222,8 +227,8 @@ export default function BillingSummaryReport() {
     const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
     const netAdvance = totalAdvance - totalAdvanceRecovered;
 
-    return { totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
-  }, [filteredBills, filteredProformas]);
+    return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
+  }, [filteredBills, filteredProformas, workOrders]);
 
   const stepWiseReport = useMemo((): StepWiseReportData => {
     if (!workflow || !users.length) return {};
@@ -278,6 +283,7 @@ export default function BillingSummaryReport() {
   }, [bills, proformaBills, projects, subcontractors]);
   
    const statsToDisplay = [
+      { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
       { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetentionDeducted), icon: TrendingDown },
       { title: 'Total Retention Paid', value: formatCurrency(summaryStats.totalRetentionClaimed), icon: TrendingUp },
@@ -292,8 +298,8 @@ export default function BillingSummaryReport() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 mb-8">
-                {Array.from({length: 7}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
+                {Array.from({length: 8}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -342,7 +348,7 @@ export default function BillingSummaryReport() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -377,9 +383,9 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-4 mb-8">
             {isLoading ? (
-                Array.from({ length: 7 }).map((_, index) => (
+                Array.from({ length: 8 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
                         <CardHeader className="p-4 pb-2"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
