@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -132,6 +132,7 @@ function toDateSafe(value: any): Date | null {
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
+  if (value?.seconds) return new Date(value.seconds * 1000);
   return null;
 }
 
@@ -162,8 +163,8 @@ export default function BillLogPage() {
   const { can } = useAuthorization();
   const router = useRouter();
 
-  const [allBills, setAllBills] = useState<Bill[]>([]);
-  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
@@ -228,8 +229,8 @@ export default function BillLogPage() {
       const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
       const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
       
-      setAllBills(billEntries);
-      setAllProformaBills(proformaEntries);
+      setBills(billEntries);
+      setProformaBills(proformaEntries);
 
     } catch (error) {
       console.error('Error fetching bills: ', error);
@@ -251,7 +252,7 @@ export default function BillLogPage() {
   }
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const displayBills: DisplayBill[] = allBills.map(b => {
+    const displayBills: DisplayBill[] = bills.map(b => {
       const project = projects.find(p => p.id === b.projectId);
       return {
         ...b,
@@ -263,7 +264,7 @@ export default function BillLogPage() {
       }
     });
 
-    const displayProformas: DisplayBill[] = allProformaBills.map(p => {
+    const displayProformas: DisplayBill[] = proformaBills.map(p => {
        const project = projects.find(proj => proj.id === p.projectId);
        return {
         ...p,
@@ -280,7 +281,7 @@ export default function BillLogPage() {
     const combined: DisplayBill[] = [...displayBills, ...displayProformas].sort((a,b) => b.sortDate.getTime() - a.sortDate.getTime());
 
     const filterFn = (bill: DisplayBill) => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName) === filters.project;
+        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const sortDate = bill.sortDate;
         if (!sortDate) return false;
@@ -316,32 +317,34 @@ export default function BillLogPage() {
         holdTasks: hold,
         allFilteredBills: filtered,
     };
-}, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
+}, [bills, proformaBills, filters, user?.id, projects, subcontractors]);
   
   const filterOptions = useMemo(() => {
-    const allItems = [...allBills, ...allProformaBills];
+    const allItems: (Bill | ProformaBill)[] = [...bills, ...proformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
     const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
-  }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
+  }, [bills, proformaBills, projects, workOrders, subcontractors]);
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
-      const original = allProformaBills.find((p: ProformaBill) => p.id === unifiedBill.id);
+      const original = proformaBills.find(p => p.id === unifiedBill.id);
       setSelectedProformaBill(original || null);
+      setSelectedBill(null);
     } else {
-      const original = allBills.find((b: Bill) => b.id === unifiedBill.id);
+      const original = bills.find(b => b.id === unifiedBill.id);
       setSelectedBill(original || null);
+      setSelectedProformaBill(null);
     }
     setIsViewOpen(true);
   };
   
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
       e.stopPropagation();
-      const original = allBills.find((b: Bill) => b.id === bill.id);
+      const original = bills.find((b: Bill) => b.id === bill.id);
       setSelectedBill(original || null);
       setIsDeductionDetailsOpen(true);
   }
@@ -635,8 +638,8 @@ export default function BillLogPage() {
                       </TableRow>
                   </TableHeader>
                   <TableBody>
-                      {selectedBill?.advanceDeductions?.map((deduction, index) => {
-                          const proforma = allProformaBills.find(p => p.id === deduction.reference);
+                      {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
+                          const proforma = proformaBills.find(p => p.id === deduction.reference);
                           return (
                             <TableRow key={index}>
                                 <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
