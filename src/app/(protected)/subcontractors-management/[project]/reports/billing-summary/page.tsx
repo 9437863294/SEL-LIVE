@@ -230,48 +230,6 @@ export default function BillingSummaryReport() {
 
     return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance, balanceToBeBilled };
   }, [filteredBills, filteredProformas, workOrders]);
-
-  const stepWiseReport = useMemo((): StepWiseReportData => {
-    if (!workflow || !users.length) return {};
-  
-    const report: StepWiseReportData = {};
-    const userMap = new Map(users.map(u => [u.id, u.name]));
-    
-    workflow.forEach(step => {
-        report[step.name] = {};
-    });
-  
-    const initializeUserInStep = (stepName: string, userName: string) => {
-      if (!report[stepName]) report[stepName] = {};
-      if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
-      }
-    };
-    
-    const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
-  
-    [...filteredBills, ...filteredProformas].forEach(bill => {
-        const history: ActionLog[] = bill.history || [];
-        
-        history.forEach(log => {
-          if (!log.stepName || !workflow.some(s => s.name === log.stepName)) return;
-
-          const userName = log.userName || userMap.get(log.userId) || 'Unknown User';
-          initializeUserInStep(log.stepName, userName);
-          
-          report[log.stepName][userName].total++;
-
-          if (isCompletionAction(log.action)) {
-              report[log.stepName][userName].completed++;
-          }
-          if (log.action === 'Reject') {
-              report[log.stepName][userName].rejected++;
-          }
-        });
-    });
-  
-    return report;
-  }, [filteredBills, filteredProformas, workflow, users]);
   
   const filterOptions = useMemo(() => {
     const allItems = [...bills, ...proformaBills];
@@ -286,7 +244,7 @@ export default function BillingSummaryReport() {
    const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
-      { title: 'Balance to be Billed', value: formatCurrency(summaryStats.balanceToBeBilled), icon: Wallet },
+      { title: 'Balance To Be Billed', value: formatCurrency(summaryStats.balanceToBeBilled), icon: Wallet },
       { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetentionDeducted), icon: TrendingDown },
       { title: 'Total Retention Paid', value: formatCurrency(summaryStats.totalRetentionClaimed), icon: TrendingUp },
       { title: 'Retention Balance', value: formatCurrency(summaryStats.retentionBalance), icon: PiggyBank },
@@ -385,7 +343,7 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             {isLoading ? (
                 Array.from({ length: 9 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
@@ -405,51 +363,6 @@ export default function BillingSummaryReport() {
                     </CardContent>
                   </Card>
                 ))
-            )}
-        </div>
-
-        <div className="mb-6"><h2 className="text-xl font-bold">Step-wise Report</h2></div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {isLoading ? (
-                Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
-            ) : (
-                workflow.map((step) => {
-                    const stepData = stepWiseReport[step.name];
-                    if (!stepData || Object.keys(stepData).every(userName => stepData[userName].total === 0)) {
-                        return null; 
-                    }
-                    return (
-                        <Card key={step.id}>
-                            <CardHeader className="p-4 bg-muted/50"><CardTitle className="text-base text-center">{step.name}</CardTitle></CardHeader>
-                            <CardContent className="p-0">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>User</TableHead>
-                                            <TableHead>Total</TableHead>
-                                            <TableHead>Done</TableHead>
-                                            <TableHead>Rejected</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {Object.entries(stepData).map(([userName, data]) => {
-                                            if (data.total === 0 && data.completed === 0) return null;
-                                            return (
-                                                <TableRow key={userName}>
-                                                    <TableCell>{userName}</TableCell>
-                                                    <TableCell>{data.total}</TableCell>
-                                                    <TableCell>{data.completed}</TableCell>
-                                                    <TableCell>{data.rejected}</TableCell>
-                                                </TableRow>
-                                            )
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </CardContent>
-                        </Card>
-                    )
-                })
             )}
         </div>
       </div>
