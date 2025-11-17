@@ -14,6 +14,7 @@ import {
   Loader2,
   History as HistoryIcon,
   FileText,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -323,14 +324,14 @@ export default function BillLogPage() {
 }, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
   
   const filterOptions = useMemo(() => {
-    const allItems = [...bills, ...proformaBills];
+    const allItems = [...allBills, ...allProformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
     const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, workOrders, subcontractors]);
+  }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
@@ -348,8 +349,10 @@ export default function BillLogPage() {
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
       e.stopPropagation();
       const original = allBills.find((b: Bill) => b.id === bill.id);
-      setSelectedBill(original || null);
-      setIsDeductionDetailsOpen(true);
+      if (original) {
+          setSelectedBill(original);
+          setIsDeductionDetailsOpen(true);
+      }
   }
   
   const handleDeleteBill = async (billToDelete: DisplayBill) => {
@@ -462,7 +465,7 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const retentionDisplay = bill.isRetentionBill
+                const retentionDisplay = (bill as Bill).isRetentionBill
                     ? `+${formatCurrency(bill.netPayable)}`
                     : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
                 return (
@@ -475,7 +478,7 @@ export default function BillLogPage() {
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell className={bill.isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
+                    <TableCell className={(bill as Bill).isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
                     <TableCell>
                         {bill.type !== 'Proforma' ? (
                           <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
@@ -612,7 +615,7 @@ export default function BillLogPage() {
         <ViewBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
-          bill={selectedBill}
+          bill={selectedBill as Bill}
           workflow={workflow}
           onAction={handleAction}
           isActionLoading={!!isActionLoading}
