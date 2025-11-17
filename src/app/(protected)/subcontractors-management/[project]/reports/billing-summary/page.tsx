@@ -13,6 +13,8 @@ import {
   TrendingDown,
   TrendingUp,
   Receipt,
+  PiggyBank,
+  Combine,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -177,7 +179,7 @@ export default function BillingSummaryReport() {
       console.error('Error fetching bills: ', error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch bills.',
+        description: 'Failed to load bill data.',
         variant: 'destructive',
       });
     }
@@ -212,13 +214,15 @@ export default function BillingSummaryReport() {
 }, [bills, proformaBills, filters, projects]);
 
   const summaryStats = useMemo(() => {
-      const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
-      const totalRetention = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
-      const totalAdvance = filteredProformas.reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
-      const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
-      const netAdvance = totalAdvance - totalAdvanceRecovered;
+    const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+    const totalRetentionDeducted = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
+    const totalRetentionClaimed = filteredBills.filter(b => b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
+    const retentionBalance = totalRetentionDeducted - totalRetentionClaimed;
+    const totalAdvance = filteredProformas.reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
+    const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
+    const netAdvance = totalAdvance - totalAdvanceRecovered;
 
-      return { totalBilled, totalRetention, totalAdvance, totalAdvanceRecovered, netAdvance };
+    return { totalBilled, totalRetention: totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
   }, [filteredBills, filteredProformas]);
 
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -234,7 +238,7 @@ export default function BillingSummaryReport() {
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
+        report[stepName][userName] = { total: 0, completed: 0, rejected: 0, onTime: 0 };
       }
     };
     
@@ -273,19 +277,21 @@ export default function BillingSummaryReport() {
   
    const statsToDisplay = [
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
-      { title: 'Total Retention', value: formatCurrency(summaryStats.totalRetention), icon: TrendingDown },
+      { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetention), icon: TrendingDown },
+      { title: 'Total Retention Paid', value: formatCurrency(summaryStats.totalRetentionClaimed), icon: TrendingUp },
+      { title: 'Retention Balance', value: formatCurrency(summaryStats.retentionBalance), icon: PiggyBank },
       { title: 'Total Advance', value: formatCurrency(summaryStats.totalAdvance), icon: TrendingUp },
       { title: 'Advance Recovered', value: formatCurrency(summaryStats.totalAdvanceRecovered), icon: TrendingDown },
       { title: 'Net Advance Balance', value: formatCurrency(summaryStats.netAdvance), icon: Wallet },
   ];
-
+  
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
-                {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-6 mb-8">
+                {Array.from({length: 7}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-6 w-48 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -334,7 +340,7 @@ export default function BillingSummaryReport() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -369,9 +375,9 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 mb-8">
             {isLoading ? (
-                Array.from({ length: 5 }).map((_, index) => (
+                Array.from({ length: 7 }).map((_, index) => (
                     <Card key={index}>
                         <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
@@ -438,3 +444,5 @@ export default function BillingSummaryReport() {
     </>
   );
 }
+
+    
