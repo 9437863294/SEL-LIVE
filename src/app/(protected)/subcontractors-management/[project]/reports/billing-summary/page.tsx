@@ -51,6 +51,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { Progress } from '@/components/ui/progress';
 
 
 const slugify = (text: string) => {
@@ -241,6 +242,7 @@ export default function BillingSummaryReport() {
       totalBilled: number;
       advanceTaken: number;
       advanceDeducted: number;
+      progress: number;
     }>();
 
     workOrders.forEach(wo => {
@@ -259,6 +261,7 @@ export default function BillingSummaryReport() {
         totalBilled: 0,
         advanceTaken: 0,
         advanceDeducted: 0,
+        progress: 0,
       });
     });
 
@@ -277,6 +280,10 @@ export default function BillingSummaryReport() {
       if (summary) {
         summary.advanceTaken += proforma.payableAmount || 0;
       }
+    });
+    
+    woMap.forEach(summary => {
+        summary.progress = summary.woValue > 0 ? (summary.totalBilled / summary.woValue) * 100 : 0;
     });
 
     return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
@@ -354,7 +361,7 @@ export default function BillingSummaryReport() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -389,11 +396,11 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-9 gap-4 mb-8">
             {isLoading ? (
                 Array.from({ length: 9 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
-                        <CardHeader className="p-4 pb-2"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                        <CardHeader className="p-4 pb-2 min-h-[4.5rem]"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                     </Card>
                 ))
@@ -422,6 +429,7 @@ export default function BillingSummaryReport() {
                         <TableHead>Subcontractor</TableHead>
                         <TableHead>WO Value</TableHead>
                         <TableHead>Total Billed</TableHead>
+                        <TableHead>Progress</TableHead>
                         <TableHead>Advance Taken</TableHead>
                         <TableHead>Advance Deducted</TableHead>
                     </TableRow>
@@ -429,7 +437,7 @@ export default function BillingSummaryReport() {
                 <TableBody>
                    {isLoading ? (
                         Array.from({ length: 3 }).map((_, i) => (
-                            <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-6" /></TableCell></TableRow>
+                            <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6" /></TableCell></TableRow>
                         ))
                    ) : workOrderSummary.length > 0 ? (
                        workOrderSummary.map(wo => (
@@ -438,13 +446,19 @@ export default function BillingSummaryReport() {
                             <TableCell>{wo.subcontractorName}</TableCell>
                             <TableCell>{formatCurrency(wo.woValue)}</TableCell>
                             <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
+                             <TableCell>
+                                <div className="flex items-center gap-2">
+                                    <Progress value={wo.progress} className="w-24 h-2" />
+                                    <span>{wo.progress.toFixed(1)}%</span>
+                                </div>
+                            </TableCell>
                             <TableCell>{formatCurrency(wo.advanceTaken)}</TableCell>
                             <TableCell>{formatCurrency(wo.advanceDeducted)}</TableCell>
                         </TableRow>
                        ))
                    ) : (
                         <TableRow>
-                            <TableCell colSpan={6} className="text-center h-24">No data to display for the selected filters.</TableCell>
+                            <TableCell colSpan={7} className="text-center h-24">No data to display for the selected filters.</TableCell>
                         </TableRow>
                    )}
                 </TableBody>
@@ -456,5 +470,3 @@ export default function BillingSummaryReport() {
     </>
   );
 }
-
-```
