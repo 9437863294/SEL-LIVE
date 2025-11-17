@@ -61,7 +61,7 @@ const initialSteps: WorkflowStep[] = [
     tat: 24,
     assignmentType: 'User-based',
     assignedTo: [],
-    actions: ['Approve', 'Reject', 'Needs Correction'],
+    actions: ['Approve', 'Reject', 'Needs Correction', 'Update Certified Qty'],
     upload: 'Required',
   },
   {
@@ -81,6 +81,8 @@ const allActions: (string | ActionConfig)[] = [
   'Needs Correction',
   'Complete',
   'Verified',
+  'Edit',
+  'Go to Previous Step',
 ];
 
 /* ---------------- page ---------------- */
@@ -264,14 +266,10 @@ export default function BillingWorkflowConfigurationPage() {
         if (s.id !== stepId) return s;
         let newActions = [...s.actions];
 
-        const hasAction = newActions.some(
-          (a) => (typeof a === 'string' ? a : a.name) === actionName,
-        );
+        const hasAction = newActions.some((a) => (typeof a === 'string' ? a : a.name) === actionName);
         if (checked && !hasAction) newActions.push(action);
         if (!checked && hasAction) {
-          newActions = newActions.filter(
-            (a) => (typeof a === 'string' ? a : a.name) !== actionName,
-          );
+          newActions = newActions.filter((a) => (typeof a === 'string' ? a : a.name) !== actionName);
         }
         return { ...s, actions: dedupeActionsByName(newActions) };
       }),
@@ -747,4 +745,3 @@ function dedupeActionsByName(list: (string | ActionConfig)[]) {
   }
   return out;
 }
-
