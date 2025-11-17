@@ -110,26 +110,26 @@ interface DisplayBillItem {
 }
 
 interface DisplayBill {
-  id: string;
-  type: 'Regular' | 'Retention' | 'Proforma';
-  date: string;
-  sortDate: Date;
-  projectId: string;
-  projectName?: string;
-  subcontractorId: string;
-  subcontractorName: string;
-  workOrderNo: string;
-  billNo: string; // Used for both ProformaNo and BillNo
-  status?: string;
-  stage?: string;
-  assignees?: string[];
-  currentStepId?: string | null;
-  history?: ActionLog[];
-  isRetentionBill: boolean;
-  netPayable: number;
-  retentionAmount?: number;
-  totalDeductions?: number;
-  items: DisplayBillItem[];
+    id: string;
+    type: 'Regular' | 'Retention' | 'Proforma';
+    date: string;
+    sortDate: Date;
+    projectId: string;
+    projectName?: string;
+    subcontractorId: string;
+    subcontractorName: string;
+    workOrderNo: string;
+    billNo: string; // Used for both ProformaNo and BillNo
+    status?: string;
+    stage?: string;
+    assignees?: string[];
+    currentStepId?: string | null;
+    history?: ActionLog[];
+    isRetentionBill?: boolean;
+    netPayable: number;
+    retentionAmount?: number;
+    totalDeductions?: number;
+    items: DisplayBillItem[];
 }
 
 
@@ -328,7 +328,6 @@ export default function BillLogPage() {
         assignees: p.assignees,
         currentStepId: p.currentStepId,
         history: p.history,
-        isRetentionBill: false,
         netPayable: p.payableAmount,
         items: (p.items || []).map(i => ({
             description: i.description,
@@ -625,7 +624,7 @@ export default function BillLogPage() {
                           className="p-0 h-auto"
                           onClick={(e) => handleViewDeductionDetails(e, bill)}
                         >
-                          {formatCurrency((bill as Bill).totalDeductions || 0)}
+                          {formatCurrency(bill.totalDeductions || 0)}
                         </Button>
                       ) : (
                         'N/A'
