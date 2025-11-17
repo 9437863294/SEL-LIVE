@@ -86,6 +86,47 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+
+// Unified display type for the log table
+interface DisplayBillItem {
+  jmcItemId: string;
+  description: string;
+  unit: string;
+  rate: number;
+  billedQty: number;
+  totalAmount: number;
+  boqSlNo?: string;
+  executedQty?: string;
+  jmcEntryId?: string;
+  jmcNo?: string;
+}
+
+interface DisplayBill {
+  id: string;
+  type: 'Regular' | 'Retention' | 'Proforma';
+  date: string;
+  sortDate: Date;
+  projectId: string;
+  projectName?: string;
+  subcontractorId: string;
+  subcontractorName: string;
+  workOrderNo: string;
+  billNo: string;
+  netPayable: number;
+  items: DisplayBillItem[];
+  isRetentionBill: boolean;
+  retentionAmount?: number;
+  totalDeductions?: number;
+
+  // Optional workflow fields
+  status?: string;
+  stage?: string;
+  assignees?: string[];
+  currentStepId?: string | null;
+  history?: ActionLog[];
+  deadline?: Timestamp | null;
+}
+
 const slugify = (text: string) => {
   if (!text) return '';
   return text
@@ -97,48 +138,6 @@ const slugify = (text: string) => {
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
-
-// Define a unified item structure for display purposes
-interface DisplayBillItem {
-  jmcItemId?: string;
-  description: string;
-  unit: string;
-  rate: number;
-  billedQty: number;
-  totalAmount: number;
-  // Add optional fields from BillItem that might not be in ProformaBill item
-  jmcEntryId?: string;
-  jmcNo?: string;
-  boqSlNo?: string;
-  executedQty?: string;
-}
-
-
-// A unified type to represent either a regular bill or a proforma bill
-type DisplayBill = {
-  id: string;
-  type: 'Regular' | 'Retention' | 'Proforma';
-  date: string;
-  sortDate: Date;
-  projectId: string;
-  projectName?: string;
-  subcontractorId: string;
-  subcontractorName: string;
-  workOrderNo: string;
-  billNo: string; // BillNo or ProformaNo
-  netPayable: number;
-  isRetentionBill: boolean;
-  items: DisplayBillItem[];
-
-  // Optional workflow fields, present on both
-  status?: string;
-  stage?: string;
-  assignees?: string[];
-  currentStepId?: string | null;
-  history?: ActionLog[];
-  deadline?: Timestamp | null;
-} & (Partial<Bill> & Partial<ProformaBill>);
-
 
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
@@ -252,13 +251,13 @@ export default function BillLogPage() {
         ]);
 
         billsSnapshot.forEach((doc) =>
-          billEntries.push({ id: doc.id, ...doc.data() } as Bill),
+          billEntries.push({ id: doc.id, projectId: project.id, ...(doc.data() as Omit<Bill, 'id'>) })
         );
         proformaSnapshot.forEach((doc) =>
-          proformaEntries.push({ id: doc.id, ...doc.data() } as ProformaBill),
+          proformaEntries.push({ id: doc.id, projectId: project.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
         );
       }
-
+      
       const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       if (workflowSnap.exists()) {
         setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
@@ -286,7 +285,7 @@ export default function BillLogPage() {
   };
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const displayBills: DisplayBill[] = allBills.map((b: Bill) => {
+    const displayBills: DisplayBill[] = allBills.map((b) => {
       const project = projects.find((p) => p.id === b.projectId);
       return {
         ...b,
@@ -300,18 +299,22 @@ export default function BillLogPage() {
           subcontractors.find((s) => s.id === b.subcontractorId)?.legalName ||
           'N/A',
         netPayable: b.netPayable || 0,
-        items: (b.items || []).map((i: BillItem) => ({
+        items: (b.items || []).map((i) => ({
           jmcItemId: i.jmcItemId,
           description: i.description,
           unit: i.unit,
           rate: parseFloat(i.rate) || 0,
           billedQty: parseFloat(i.billedQty) || 0,
           totalAmount: parseFloat(i.totalAmount) || 0,
+          boqSlNo: i.boqSlNo,
+          executedQty: i.executedQty,
+          jmcEntryId: i.jmcEntryId,
+          jmcNo: i.jmcNo,
         })),
       };
     });
 
-    const displayProformas: DisplayBill[] = allProformaBills.map((p: ProformaBill) => {
+    const displayProformas: DisplayBill[] = allProformaBills.map((p) => {
       const project = projects.find((proj) => proj.id === p.projectId);
       return {
         ...p,
@@ -327,12 +330,17 @@ export default function BillLogPage() {
           subcontractors.find((s) => s.id === p.subcontractorId)?.legalName ||
           'N/A',
         items: (p.items || []).map((i) => ({
-          jmcItemId: '', // Proforma items don't have this, so provide a default
           description: i.description,
           unit: i.unit,
           rate: parseFloat(i.rate) || 0,
           billedQty: i.billedQty || 0,
           totalAmount: parseFloat(i.totalAmount) || 0,
+          // Add placeholders for BillItem fields
+          jmcItemId: '',
+          jmcEntryId: '',
+          jmcNo: '',
+          boqSlNo: '',
+          executedQty: '',
         })),
       };
     });
@@ -419,11 +427,11 @@ export default function BillLogPage() {
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
-      const original = allProformaBills.find((p: ProformaBill) => p.id === unifiedBill.id);
+      const original = allProformaBills.find((p) => p.id === unifiedBill.id);
       setSelectedProformaBill(original || null);
       setSelectedBill(null);
     } else {
-      const original = allBills.find((b: Bill) => b.id === unifiedBill.id);
+      const original = allBills.find((b) => b.id === unifiedBill.id);
       setSelectedBill(original || null);
       setSelectedProformaBill(null);
     }
@@ -441,7 +449,9 @@ export default function BillLogPage() {
 
   const handleDeleteBill = async (billToDelete: DisplayBill) => {
     const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
-    if (!billToDelete.projectId) {
+    const projectId = allBills.find(b => b.id === billToDelete.id)?.projectId || allProformaBills.find(p => p.id === billToDelete.id)?.projectId;
+
+    if (!projectId) {
       toast({
         title: 'Error',
         description: 'Cannot delete bill without project information.',
@@ -450,7 +460,7 @@ export default function BillLogPage() {
       return;
     }
     try {
-      await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
+      await deleteDoc(doc(db, 'projects', projectId, collectionName, billToDelete.id));
       toast({ title: 'Success', description: `Bill has been deleted.` });
       fetchBills();
     } catch (error) {
@@ -478,10 +488,16 @@ export default function BillLogPage() {
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
     const collectionName = (currentBill as any).proformaNo ? 'proformaBills' : 'bills';
+    const projectId = allBills.find(b => b.id === taskId)?.projectId || allProformaBills.find(p => p.id === taskId)?.projectId;
+
+    if(!projectId) {
+       toast({ title: 'Action Failed', description: 'Could not determine project for this bill.', variant: 'destructive'});
+       return;
+    }
 
     setIsActionLoading(taskId);
     try {
-      const docRef = doc(db, 'projects', currentBill.projectId, collectionName, taskId);
+      const docRef = doc(db, 'projects', projectId, collectionName, taskId);
 
       await runTransaction(db, async (tx) => {
         const taskDoc = await tx.get(docRef);
@@ -586,8 +602,8 @@ export default function BillLogPage() {
                 const retentionDisplay =
                   bill.isRetentionBill
                     ? `+${formatCurrency(bill.netPayable || 0)}`
-                    : bill.type !== 'Proforma' && (bill as Bill).retentionAmount
-                    ? formatCurrency((bill as Bill).retentionAmount || 0)
+                    : bill.type !== 'Proforma' && bill.retentionAmount
+                    ? formatCurrency(bill.retentionAmount || 0)
                     : 'N/A';
                 return (
                   <TableRow
@@ -627,7 +643,7 @@ export default function BillLogPage() {
                           className="p-0 h-auto"
                           onClick={(e) => handleViewDeductionDetails(e, bill)}
                         >
-                          {formatCurrency((bill as Bill).totalDeductions || 0)}
+                          {formatCurrency(bill.totalDeductions || 0)}
                         </Button>
                       ) : (
                         'N/A'
@@ -915,5 +931,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
-```
