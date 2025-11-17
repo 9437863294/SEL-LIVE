@@ -163,8 +163,8 @@ export default function BillLogPage() {
   const { can } = useAuthorization();
   const router = useRouter();
 
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
@@ -212,25 +212,29 @@ export default function BillLogPage() {
       });
       setWorkOrders(allWorkOrders);
 
-      const billsQuery = query(collectionGroup(db, 'bills'));
-      const proformaQuery = query(collectionGroup(db, 'proformaBills'));
-      const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
-      
-      const [billsSnapshot, proformaSnapshot, workflowDoc] = await Promise.all([
-        getDocs(billsQuery),
-        getDocs(proformaQuery),
-        workflowSnap
-      ]);
+      const billEntries: Bill[] = [];
+      const proformaEntries: ProformaBill[] = [];
 
-      if (workflowDoc.exists()) {
-        setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
+      for (const project of allProjects) {
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        
+        const [billsSnapshot, proformaSnapshot] = await Promise.all([
+          getDocs(billsQuery),
+          getDocs(proformaQuery)
+        ]);
+
+        billsSnapshot.forEach(doc => billEntries.push({ id: doc.id, ...doc.data() } as Bill));
+        proformaSnapshot.forEach(doc => proformaEntries.push({ id: doc.id, ...doc.data() } as ProformaBill));
       }
 
-      const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
-      const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
+      const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
+      if (workflowSnap.exists()) {
+        setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
+      }
       
-      setBills(billEntries);
-      setProformaBills(proformaEntries);
+      setAllBills(billEntries);
+      setAllProformaBills(proformaEntries);
 
     } catch (error) {
       console.error('Error fetching bills: ', error);
@@ -252,7 +256,7 @@ export default function BillLogPage() {
   }
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const displayBills: DisplayBill[] = bills.map(b => {
+    const displayBills: DisplayBill[] = allBills.map(b => {
       const project = projects.find(p => p.id === b.projectId);
       return {
         ...b,
@@ -264,7 +268,7 @@ export default function BillLogPage() {
       }
     });
 
-    const displayProformas: DisplayBill[] = proformaBills.map(p => {
+    const displayProformas: DisplayBill[] = allProformaBills.map(p => {
        const project = projects.find(proj => proj.id === p.projectId);
        return {
         ...p,
@@ -317,25 +321,25 @@ export default function BillLogPage() {
         holdTasks: hold,
         allFilteredBills: filtered,
     };
-}, [bills, proformaBills, filters, user?.id, projects, subcontractors]);
+}, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
   
   const filterOptions = useMemo(() => {
-    const allItems: (Bill | ProformaBill)[] = [...bills, ...proformaBills];
+    const allItems = [...allBills, ...allProformaBills];
     const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
     const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
     const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, workOrders, subcontractors]);
+  }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
-      const original = proformaBills.find(p => p.id === unifiedBill.id);
+      const original = allProformaBills.find(p => p.id === unifiedBill.id);
       setSelectedProformaBill(original || null);
       setSelectedBill(null);
     } else {
-      const original = bills.find(b => b.id === unifiedBill.id);
+      const original = allBills.find(b => b.id === unifiedBill.id);
       setSelectedBill(original || null);
       setSelectedProformaBill(null);
     }
@@ -344,7 +348,7 @@ export default function BillLogPage() {
   
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
       e.stopPropagation();
-      const original = bills.find((b: Bill) => b.id === bill.id);
+      const original = allBills.find((b: Bill) => b.id === bill.id);
       setSelectedBill(original || null);
       setIsDeductionDetailsOpen(true);
   }
