@@ -222,7 +222,7 @@ export default function BillingSummaryReport() {
     const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
     const netAdvance = totalAdvance - totalAdvanceRecovered;
 
-    return { totalBilled, totalRetention: totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
+    return { totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
   }, [filteredBills, filteredProformas]);
 
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -242,6 +242,8 @@ export default function BillingSummaryReport() {
       }
     };
     
+    const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
+  
     [...filteredBills, ...filteredProformas].forEach(bill => {
         const history: ActionLog[] = bill.history || [];
         
@@ -253,7 +255,7 @@ export default function BillingSummaryReport() {
           
           report[log.stepName][userName].total++;
 
-          if (['Approve', 'Complete', 'Verified'].includes(log.action)) {
+          if (isCompletionAction(log.action)) {
               report[log.stepName][userName].completed++;
           }
           if (log.action === 'Reject') {
@@ -277,7 +279,7 @@ export default function BillingSummaryReport() {
   
    const statsToDisplay = [
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
-      { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetention), icon: TrendingDown },
+      { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetentionDeducted), icon: TrendingDown },
       { title: 'Total Retention Paid', value: formatCurrency(summaryStats.totalRetentionClaimed), icon: TrendingUp },
       { title: 'Retention Balance', value: formatCurrency(summaryStats.retentionBalance), icon: PiggyBank },
       { title: 'Total Advance', value: formatCurrency(summaryStats.totalAdvance), icon: TrendingUp },
@@ -375,22 +377,22 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
             {isLoading ? (
                 Array.from({ length: 7 }).map((_, index) => (
-                    <Card key={index}>
-                        <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                    <Card key={index} className="flex flex-col justify-between">
+                        <CardHeader className="p-4 pb-2"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                     </Card>
                 ))
             ) : (
                 statsToDisplay.map((stat) => (
-                  <Card key={stat.title}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                  <Card key={stat.title} className="flex flex-col justify-between">
+                    <CardHeader className="flex flex-row items-start justify-between space-y-0 p-4 pb-2">
+                      <CardTitle className="text-sm font-medium min-h-[3em]">{stat.title}</CardTitle>
                       <stat.icon className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-4 pt-0">
                       <p className="text-2xl font-bold">{stat.value}</p>
                     </CardContent>
                   </Card>
@@ -406,7 +408,9 @@ export default function BillingSummaryReport() {
             ) : (
                 workflow.map((step) => {
                     const stepData = stepWiseReport[step.name];
-                    if (!stepData || Object.keys(stepData).length === 0) return null;
+                    if (!stepData || Object.keys(stepData).every(userName => stepData[userName].total === 0)) {
+                        return null; 
+                    }
                     return (
                         <Card key={step.id}>
                             <CardHeader className="p-4 bg-muted/50"><CardTitle className="text-base text-center">{step.name}</CardTitle></CardHeader>
@@ -444,5 +448,3 @@ export default function BillingSummaryReport() {
     </>
   );
 }
-
-    
