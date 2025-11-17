@@ -289,6 +289,7 @@ export default function AddRolePage() {
                                                             );
                                                           }
 
+                                                        const resourcePermissions = Array.isArray(permissions) ? permissions : Object.keys(permissions);
                                                         const grantedInGroup = newRole.permissions?.[fullKey] || [];
                                                         const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
 
@@ -338,3 +339,4 @@ export default function AddRolePage() {
         </div>
     );
 }
+

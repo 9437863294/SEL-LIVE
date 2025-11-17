@@ -329,7 +329,7 @@ export default function EditRolePage() {
                                                               
                                                               const resourcePermissions = Array.isArray(permissions) ? permissions : Object.keys(permissions);
                                                               const grantedInGroup = editingRole.permissions?.[fullKey] || [];
-                                                              const isAllInGroupSelected = resourcePermissions.length > 0 && grantedInGroup.length === resourcePermissions.length;
+                                                              const isAllInGroupSelected = Array.isArray(permissions) && permissions.length > 0 && grantedInGroup.length === permissions.length;
 
                                                             return (
                                                                 <div key={fullKey} className="p-3 border rounded-md mt-2">
@@ -339,7 +339,7 @@ export default function EditRolePage() {
                                                                         <Checkbox
                                                                             id={`select-all-group-edit-${fullKey}`}
                                                                             checked={isAllInGroupSelected}
-                                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
+                                                                            onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
                                                                             disabled={!isViewModulePermission || !Array.isArray(permissions)}
                                                                         />
                                                                         <Label htmlFor={`select-all-group-edit-${fullKey}`} className="text-xs font-medium">All</Label>
