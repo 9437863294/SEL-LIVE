@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -60,20 +61,22 @@ export default function WorkOrderDetailsPage() {
                 }
                 
                 const woDocRef = doc(db, 'projects', projectData.id, 'workOrders', workOrderId);
-                const [woDocSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDoc(woDocRef),
-                    getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries'), where('woNo', '==', (await getDoc(woDocRef)).data()?.workOrderNo))),
-                    getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
-                    getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
-                ]);
+                const woDocSnap = await getDoc(woDocRef);
 
                 if (!woDocSnap.exists()) {
                     toast({ title: 'Work Order not found', variant: 'destructive' });
                     return notFound();
                 }
-
+                
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
+
+                const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+                    getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries'), where('woNo', '==', woData.workOrderNo))),
+                    getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
+                    getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
+                ]);
+
 
                 const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 
@@ -88,7 +91,6 @@ export default function WorkOrderDetailsPage() {
                         totalAdvanceDeducted += deduction.amount;
                     });
                     bill.items.forEach(item => {
-                        // Match on jmcItemId which refers to the WorkOrderItem ID
                         const currentQty = billedQtyMap.get(item.jmcItemId) || 0;
                         billedQtyMap.set(item.jmcItemId, currentQty + (parseFloat(item.billedQty) || 0));
                     });
