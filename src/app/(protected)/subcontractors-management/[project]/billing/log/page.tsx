@@ -113,9 +113,9 @@ interface DisplayBill {
     assignees?: string[];
     currentStepId?: string | null;
     history?: ActionLog[];
+    isRetentionBill?: boolean;
     retentionAmount?: number;
     totalDeductions?: number;
-    isRetentionBill?: boolean;
 }
 
 
@@ -256,7 +256,7 @@ export default function BillLogPage() {
   }
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
-    const displayBills: DisplayBill[] = allBills.map(b => {
+    const displayBills: DisplayBill[] = allBills.map((b: Bill) => {
       const project = projects.find(p => p.id === b.projectId);
       return {
         ...b,
@@ -268,7 +268,7 @@ export default function BillLogPage() {
       }
     });
 
-    const displayProformas: DisplayBill[] = allProformaBills.map(p => {
+    const displayProformas: DisplayBill[] = allProformaBills.map((p: ProformaBill) => {
        const project = projects.find(proj => proj.id === p.projectId);
        return {
         ...p,
@@ -285,7 +285,7 @@ export default function BillLogPage() {
     const combined: DisplayBill[] = [...displayBills, ...displayProformas].sort((a,b) => b.sortDate.getTime() - a.sortDate.getTime());
 
     const filterFn = (bill: DisplayBill) => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName) === filters.project;
+        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const sortDate = bill.sortDate;
         if (!sortDate) return false;
@@ -464,7 +464,7 @@ export default function BillLogPage() {
                 <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 10 : 9}><Skeleton className="h-5" /></TableCell></TableRow>
               ))
             ) : data.length > 0 ? (
-              data.map((bill) => {
+              data.map((bill: DisplayBill) => {
                 const retentionDisplay = bill.isRetentionBill
                     ? `+${formatCurrency(bill.netPayable)}`
                     : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
@@ -615,7 +615,7 @@ export default function BillLogPage() {
         <ViewBillDialog
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
-          bill={selectedBill as Bill}
+          bill={selectedBill}
           workflow={workflow}
           onAction={handleAction}
           isActionLoading={!!isActionLoading}
