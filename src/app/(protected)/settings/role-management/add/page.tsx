@@ -190,7 +190,7 @@ export default function AddRolePage() {
                                                                 <Checkbox
                                                                     id={`select-all-group-new-${moduleName}-view`}
                                                                     checked={isViewModulePermission}
-                                                                    onClick={(e) => { e.stopPropagation(); handlePermissionChange(moduleName, 'View Module', e.currentTarget.dataset.state === 'unchecked')}}
+                                                                    onCheckedChange={(checked) => handlePermissionChange(moduleName, 'View Module', !!checked)}
                                                                 />
                                                                 <Label htmlFor={`select-all-group-new-${moduleName}-view`} className="text-xs font-medium">Allow</Label>
                                                             </div>
@@ -220,7 +220,7 @@ export default function AddRolePage() {
                                                                                         <Checkbox
                                                                                             id={`select-all-dept-${dept.id}`}
                                                                                             checked={isAllInDeptSelected}
-                                                                                            onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(deptKey, deptPermissions, e.currentTarget.dataset.state === 'unchecked')}}
+                                                                                            onCheckedChange={(checked) => handleSelectAllForGroup(deptKey, deptPermissions, !!checked)}
                                                                                             disabled={!isViewModulePermission}
                                                                                         />
                                                                                         <Label htmlFor={`select-all-dept-${dept.id}`} className="text-xs font-medium">All</Label>
@@ -262,7 +262,7 @@ export default function AddRolePage() {
                                                                           <Checkbox
                                                                             id={`select-all-project-${proj.id}`}
                                                                             checked={isAllInProjectSelected}
-                                                                            onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(projectKey, projectPermissions, e.currentTarget.dataset.state === 'unchecked') }}
+                                                                            onCheckedChange={(checked) => handleSelectAllForGroup(projectKey, projectPermissions, !!checked)}
                                                                             disabled={!isViewModulePermission}
                                                                           />
                                                                           <Label htmlFor={`select-all-project-${proj.id}`} className="text-xs font-medium">All</Label>
@@ -301,7 +301,7 @@ export default function AddRolePage() {
                                                                         <Checkbox
                                                                             id={`select-all-group-new-${fullKey}`}
                                                                             checked={isAllInGroupSelected}
-                                                                            onClick={(e) => {e.stopPropagation(); handleSelectAllForGroup(fullKey, permissions as string[], e.currentTarget.dataset.state === 'unchecked')}}
+                                                                            onCheckedChange={(checked) => handleSelectAllForGroup(fullKey, permissions as string[], !!checked)}
                                                                             disabled={!isViewModulePermission || !Array.isArray(permissions)}
                                                                         />
                                                                         <Label htmlFor={`select-all-group-new-${fullKey}`} className="text-xs font-medium">All</Label>
@@ -342,7 +342,7 @@ export default function AddRolePage() {
                                                                                      <Checkbox
                                                                                         id={`select-all-nested-${nestedFullKey}`}
                                                                                         checked={isAllInNestedSelected}
-                                                                                        onClick={(e) => { e.stopPropagation(); handleSelectAllForGroup(nestedFullKey, nestedPerms, e.currentTarget.dataset.state === 'unchecked') }}
+                                                                                        onCheckedChange={(checked) => handleSelectAllForGroup(nestedFullKey, nestedPerms, !!checked)}
                                                                                         disabled={!isViewModulePermission}
                                                                                     />
                                                                                     <Label htmlFor={`select-all-nested-${nestedFullKey}`} className="text-xs font-medium">All</Label>
