@@ -159,23 +159,41 @@ export default function BillingSummaryReport() {
       setSubcontractors(allSubcontractors);
       setWorkOrders(allWorkOrders);
 
-      const billsQuery = query(collectionGroup(db, 'bills'));
-      const proformaQuery = query(collectionGroup(db, 'proformaBills'));
-      
-      const [billsSnapshot, proformaSnapshot] = await Promise.all([
-        getDocs(billsQuery),
-        getDocs(proformaQuery),
-      ]);
+      const billEntries: Bill[] = [];
+      const proformaEntries: ProformaBill[] = [];
 
-      const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
-      const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
+      for (const project of allProjects) {
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        
+        const [billsSnapshot, proformaSnapshot] = await Promise.all([
+            getDocs(billsQuery),
+            getDocs(proformaQuery),
+        ]);
+
+        billsSnapshot.forEach((doc) =>
+          billEntries.push({ id: doc.id, ...(doc.data() as Omit<Bill, 'id'>) })
+        );
+        proformaSnapshot.forEach((doc) =>
+          proformaEntries.push({ id: doc.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
+        );
+      }
       
+      const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
+      if (workflowSnap.exists()) {
+        setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
+      }
+
       setBills(billEntries);
       setProformaBills(proformaEntries);
 
     } catch (error) {
       console.error('Error fetching bills: ', error);
-      toast({ title: 'Error', description: 'Failed to load bill data.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: 'Failed to load bill data.',
+        variant: 'destructive',
+      });
     }
     setIsLoading(false);
   }, [toast]);
@@ -190,7 +208,10 @@ export default function BillingSummaryReport() {
 
   const { filteredBills, filteredProformas } = useMemo(() => {
     const filterFn = (bill: Bill | ProformaBill) => {
-        const projectMatch = filters.project === 'all' || slugify((projects.find(p=>p.id === bill.projectId))?.projectName || '') === filters.project;
+        const projectForBill = projects.find(p => p.id === bill.projectId);
+        const projectSlugForBill = projectForBill ? slugify(projectForBill.projectName) : '';
+
+        const projectMatch = filters.project === 'all' || projectSlugForBill === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
         if (!sortDate) return false;
@@ -237,16 +258,13 @@ export default function BillingSummaryReport() {
       progress: number;
     }>();
 
-    workOrders.forEach(wo => {
-      const projectForWo = projects.find(p => p.id === wo.projectId);
-      const woProjectSlug = projectForWo ? slugify(projectForWo.projectName) : '';
+    const relevantProjectIds = filters.project === 'all' 
+      ? new Set(projects.map(p => p.id))
+      : new Set(projects.filter(p => slugify(p.projectName) === filters.project).map(p => p.id));
 
-      if (filters.project !== 'all' && woProjectSlug !== filters.project) {
-        return;
-      }
-       if (filters.subcontractor !== 'all' && wo.subcontractorId !== filters.subcontractor) {
-        return;
-      }
+    workOrders.forEach(wo => {
+      if (!relevantProjectIds.has(wo.projectId)) return;
+      if (filters.subcontractor !== 'all' && wo.subcontractorId !== filters.subcontractor) return;
 
       woMap.set(wo.id, {
         woNo: wo.workOrderNo,
@@ -312,7 +330,7 @@ export default function BillingSummaryReport() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 xl:grid-cols-9 gap-4 mb-8">
                 {Array.from({length: 9}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-96 w-full" />
@@ -392,7 +410,7 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-9 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             {isLoading ? (
                 Array.from({ length: 9 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
@@ -466,3 +484,5 @@ export default function BillingSummaryReport() {
     </>
   );
 }
+```
+
