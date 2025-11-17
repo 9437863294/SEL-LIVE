@@ -15,6 +15,7 @@ import {
   PiggyBank,
   Combine,
   FileText,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -188,6 +189,7 @@ export default function BillingSummaryReport() {
 
         const projectMatch = filters.project === 'all' || projectSlugForBill === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+        
         const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
         if (!sortDate) return false;
         
@@ -388,7 +390,7 @@ export default function BillingSummaryReport() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             {isLoading ? (
                 Array.from({ length: 9 }).map((_, index) => (
-                    <Card key={index} className="flex flex-col justify-between">
+                    <Card key={index}>
                         <CardHeader className="p-4 pb-2 min-h-[4.5rem]"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                     </Card>
