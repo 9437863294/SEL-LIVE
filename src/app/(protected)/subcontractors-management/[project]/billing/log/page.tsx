@@ -1,9 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
+import { useRouter, useParams } from 'next/navigation';
 import {
   ArrowLeft,
   Edit,
@@ -14,6 +14,7 @@ import {
   History as HistoryIcon,
   FileText,
   Eye,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -50,9 +51,9 @@ import type {
   WorkOrder,
   WorkflowStep,
   ActionLog,
+  BillItem,
 } from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
-import { useParams, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
@@ -98,22 +99,38 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-// This union type represents that a DisplayBill can be based on a Bill OR a ProformaBill,
-// with some common fields for display purposes.
-type DisplayBill = {
+// Define a unified display type
+interface DisplayBillItem {
+  jmcItemId?: string;
+  description: string;
+  unit: string;
+  rate: number;
+  billedQty: number;
+  totalAmount: number;
+}
+
+interface DisplayBill {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   date: string;
   sortDate: Date;
+  projectId: string;
   projectName?: string;
+  subcontractorId: string;
   subcontractorName: string;
   workOrderNo: string;
+  billNo: string; // Used for both ProformaNo and BillNo
   status?: string;
   stage?: string;
   assignees?: string[];
   currentStepId?: string | null;
   history?: ActionLog[];
-} & (Partial<Bill> & Partial<ProformaBill>);
+  isRetentionBill: boolean;
+  netPayable: number;
+  retentionAmount?: number;
+  totalDeductions?: number;
+  items: DisplayBillItem[];
+}
 
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
@@ -263,33 +280,63 @@ export default function BillLogPage() {
     const displayBills: DisplayBill[] = allBills.map((b: Bill) => {
       const project = projects.find((p) => p.id === b.projectId);
       return {
-        ...b,
+        id: b.id,
         type: b.isRetentionBill ? 'Retention' : 'Regular',
         date: b.billDate,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
+        projectId: b.projectId,
         projectName: project?.projectName,
-        subcontractorName:
-          b.subcontractorName ||
-          subcontractors.find((s) => s.id === b.subcontractorId)?.legalName ||
-          'N/A',
+        subcontractorId: b.subcontractorId,
+        subcontractorName: b.subcontractorName || subcontractors.find((s) => s.id === b.subcontractorId)?.legalName || 'N/A',
+        workOrderNo: b.workOrderNo,
+        billNo: b.billNo,
+        status: b.status,
+        stage: b.stage,
+        assignees: b.assignees,
+        currentStepId: b.currentStepId,
+        history: b.history,
+        isRetentionBill: b.isRetentionBill || false,
+        netPayable: b.netPayable || 0,
+        retentionAmount: b.retentionAmount || 0,
+        totalDeductions: b.totalDeductions || 0,
+        items: (b.items || []).map(i => ({
+            jmcItemId: i.jmcItemId,
+            description: i.description,
+            unit: i.unit,
+            rate: parseFloat(i.rate),
+            billedQty: parseFloat(i.billedQty),
+            totalAmount: parseFloat(i.totalAmount),
+        }))
       };
     });
 
     const displayProformas: DisplayBill[] = allProformaBills.map((p: ProformaBill) => {
       const project = projects.find((proj) => proj.id === p.projectId);
       return {
-        ...p,
+        id: p.id,
         type: 'Proforma',
         date: p.date,
-        billNo: p.proformaNo,
-        netPayable: p.payableAmount,
-        isRetentionBill: false, // Ensure this property exists for type consistency
         sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
+        projectId: p.projectId,
         projectName: project?.projectName,
-        subcontractorName:
-          p.subcontractorName ||
-          subcontractors.find((s) => s.id === p.subcontractorId)?.legalName ||
-          'N/A',
+        subcontractorId: p.subcontractorId,
+        subcontractorName: p.subcontractorName || subcontractors.find((s) => s.id === p.subcontractorId)?.legalName || 'N/A',
+        workOrderNo: p.workOrderNo,
+        billNo: p.proformaNo,
+        status: p.status,
+        stage: p.stage,
+        assignees: p.assignees,
+        currentStepId: p.currentStepId,
+        history: p.history,
+        isRetentionBill: false,
+        netPayable: p.payableAmount,
+        items: (p.items || []).map(i => ({
+            description: i.description,
+            unit: i.unit,
+            rate: i.rate,
+            billedQty: i.billedQty,
+            totalAmount: i.totalAmount,
+        }))
       };
     });
 
@@ -534,11 +581,12 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill: DisplayBill) => {
-                const retentionDisplay = 'isRetentionBill' in bill && bill.isRetentionBill
-                  ? `+${formatCurrency(bill.netPayable || 0)}`
-                  : bill.type !== 'Proforma' && 'retentionAmount' in bill
-                  ? formatCurrency(bill.retentionAmount || 0)
-                  : 'N/A';
+                const retentionDisplay =
+                  bill.isRetentionBill
+                    ? `+${formatCurrency(bill.netPayable || 0)}`
+                    : bill.type !== 'Proforma' && bill.retentionAmount !== undefined
+                    ? formatCurrency(bill.retentionAmount)
+                    : 'N/A';
                 return (
                   <TableRow
                     key={bill.id}
@@ -566,7 +614,7 @@ export default function BillLogPage() {
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
                     <TableCell
-                      className={bill.type === 'Retention' ? 'text-green-600' : ''}
+                      className={bill.isRetentionBill ? 'text-green-600' : ''}
                     >
                       {retentionDisplay}
                     </TableCell>
@@ -865,5 +913,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
-
