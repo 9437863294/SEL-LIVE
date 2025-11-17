@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -97,16 +97,26 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-type DisplayBill = Omit<Bill, 'date'> &
-  Omit<ProformaBill, 'date'> & {
-    id: string;
-    type: 'Regular' | 'Retention' | 'Proforma';
-    date: string;
-    sortDate: Date;
-    projectName?: string;
-    subcontractorName: string;
-    isRetentionBill?: boolean;
-};
+// This union type represents that a DisplayBill can be based on a Bill OR a ProformaBill,
+// with some common fields for display purposes.
+type DisplayBill = {
+  id: string;
+  type: 'Regular' | 'Retention' | 'Proforma';
+  date: string;
+  sortDate: Date;
+  projectName?: string;
+  subcontractorName: string;
+  workOrderNo: string;
+  status?: string;
+  stage?: string;
+  assignees?: string[];
+  currentStepId?: string | null;
+  history?: ActionLog[];
+} & (
+  | (Bill & { billNo: string; netPayable: number; totalDeductions?: number; retentionAmount?: number })
+  | (ProformaBill & { billNo: string; netPayable: number; totalDeductions?: number; retentionAmount?: number })
+);
+
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
   const { id: _ignored, ...rest } = obj as any;
@@ -279,6 +289,9 @@ export default function BillLogPage() {
         date: p.date,
         billNo: p.proformaNo,
         netPayable: p.payableAmount,
+        totalDeductions: 0,
+        retentionAmount: 0,
+        isRetentionBill: false,
         sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
         projectName: project?.projectName,
         subcontractorName:
@@ -293,21 +306,21 @@ export default function BillLogPage() {
     );
 
     const filterFn = (bill: DisplayBill) => {
-      const projectMatch =
-        filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
-      const subMatch =
-        filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-      const sortDate = bill.sortDate;
-      if (!sortDate) return false;
-
-      const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
-      const monthMatch =
-        filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
-      const typeMatch = filters.type === 'all' || bill.type === filters.type;
-      const workOrderMatch =
-        filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
-
-      return projectMatch && subMatch && yearMatch && monthMatch && typeMatch && workOrderMatch;
+        const projectMatch =
+          filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+        const subMatch =
+          filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+        const sortDate = bill.sortDate;
+        if (!sortDate) return false;
+  
+        const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
+        const monthMatch =
+          filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
+        const typeMatch = filters.type === 'all' || bill.type === filters.type;
+        const workOrderMatch =
+          filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
+  
+        return projectMatch && subMatch && yearMatch && monthMatch && typeMatch && workOrderMatch;
     };
 
     const filtered = combined.filter(filterFn);
@@ -348,11 +361,7 @@ export default function BillLogPage() {
 
     const yearSet = new Set<string>();
     combined.forEach((b) => {
-      const rawDate =
-        'billDate' in b
-          ? (b as Bill).billDate
-          : (b as ProformaBill).date;
-
+      const rawDate = (b as Bill).billDate || (b as ProformaBill).date;
       const d = toDateSafe(rawDate);
       if (!d) return;
       yearSet.add(getYear(d).toString());
@@ -382,7 +391,7 @@ export default function BillLogPage() {
 
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
     e.stopPropagation();
-    const original = allBills.find((b: Bill) => b.id === bill.id);
+    const original = allBills.find((b) => b.id === bill.id);
     if (original) {
       setSelectedBill(original);
       setIsDeductionDetailsOpen(true);
@@ -865,4 +874,3 @@ export default function BillLogPage() {
   );
 }
 
-    
