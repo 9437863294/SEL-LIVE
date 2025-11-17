@@ -3,20 +3,35 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Eye } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Eye, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc, Timestamp, runTransaction, arrayUnion } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  Timestamp,
+  runTransaction,
+  arrayUnion,
+} from 'firebase/firestore';
 import type { Bill, WorkflowStep, ActionLog, Project, ProformaBill, ActionConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
@@ -28,7 +43,8 @@ function toDateSafe(value: any): Date | null {
   if (!value) return null;
   if (value instanceof Timestamp) return value.toDate();
   if (value instanceof Date) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value === 'string') {
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -69,8 +85,11 @@ const slugify = (text: string) => {
 
 /* -------- component -------- */
 export default function BillStagePage() {
-  const { project: projectSlug, stageId } = useParams() as { project: string; stageId: string };
-  const { user, users } = useAuth();
+  const { project: projectSlug, stageId } = useParams() as {
+    project: string;
+    stageId: string;
+  };
+  const { user } = useAuth();
   const userId = user?.id || '';
   const userName = user?.name || 'System';
 
@@ -85,7 +104,7 @@ export default function BillStagePage() {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
   const [actionComment, setActionComment] = useState('');
 
 
@@ -94,30 +113,45 @@ export default function BillStagePage() {
     setIsLoading(true);
 
     try {
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQuery);
-      const projectData = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      // 1) workflow + stage
+      const workflowRef = doc(db, 'workflows', 'billing-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) {
+        toast({ title: 'Error', description: 'Workflow not found.', variant: 'destructive' });
+        router.back();
+        return;
+      }
+      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+      setWorkflow(steps);
+      const currentStage = steps.find((s) => s.id === stageId);
+      if (!currentStage) {
+        toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
+        router.back();
+        return;
+      }
+      setStage(currentStage);
+
+      // 2) project by slug (cache id)
+      const projectsQueryRef = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQueryRef);
+      const slugify = (text: string) =>
+        text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Project))
+        .find((p) => slugify(p.projectName) === projectSlug);
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;
       setProjectId(pid);
-      
-      const workflowRef = doc(db, 'workflows', 'billing-workflow');
-      const workflowSnap = await getDoc(workflowRef);
-      if (!workflowSnap.exists()) throw new Error('Workflow not found.');
-      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
-      setWorkflow(steps);
-      const currentStage = steps.find((s) => s.id === stageId);
-      if (!currentStage) throw new Error('Workflow stage not found.');
-      setStage(currentStage);
-      
+
+      // 3) stage tasks + BOQ + bills (for cached project id)
       const [stageTasksSnap, proformaSnap] = await Promise.all([
         getDocs(query(collection(db, 'projects', pid, 'bills'), where('currentStepId', '==', stageId))),
         getDocs(query(collection(db, 'projects', pid, 'proformaBills'))),
       ]);
       
-      setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Bill)));
-      setProformaBills(proformaSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ProformaBill)));
+      setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+      setProformaBills(proformaSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as ProformaBill)));
 
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -141,12 +175,17 @@ export default function BillStagePage() {
   const handleAction = async (taskId: string, action: string, comment: string = '') => {
     if (!workflow || !user || !userName || !stage || !projectId) return;
 
+    if (action === 'Edit') {
+        router.push(`/subcontractors-management/${projectSlug}/billing/edit/${taskId}`);
+        return;
+    }
+
     setIsActionLoading(taskId);
     try {
       const taskRef = doc(db, 'projects', projectId, 'bills', taskId);
       await runTransaction(db, async (tx) => {
         const taskDoc = await tx.get(taskRef);
-        if (!taskDoc.exists()) throw new Error('Task not found!');
+        if (!taskDoc.exists()) throw new Error('Task document not found!');
         const currentTaskData = taskDoc.data() as Bill;
         
         const newActionLog: ActionLog = { action, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
@@ -250,9 +289,7 @@ export default function BillStagePage() {
                 );
               })
             ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center h-24">No {type} tasks.</TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24">No {type} tasks.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
