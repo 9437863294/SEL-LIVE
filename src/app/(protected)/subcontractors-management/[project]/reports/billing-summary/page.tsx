@@ -226,8 +226,9 @@ export default function BillingSummaryReport() {
     const totalAdvance = filteredProformas.reduce((sum, bill) => sum + (bill.payableAmount || 0), 0);
     const totalAdvanceRecovered = filteredBills.flatMap(b => b.advanceDeductions || []).reduce((sum, d) => sum + d.amount, 0);
     const netAdvance = totalAdvance - totalAdvanceRecovered;
+    const balanceToBeBilled = totalWorkOrderValue - totalBilled;
 
-    return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
+    return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance, balanceToBeBilled };
   }, [filteredBills, filteredProformas, workOrders]);
 
   const stepWiseReport = useMemo((): StepWiseReportData => {
@@ -285,6 +286,7 @@ export default function BillingSummaryReport() {
    const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
+      { title: 'Balance to be Billed', value: formatCurrency(summaryStats.balanceToBeBilled), icon: Wallet },
       { title: 'Total Retention Deducted', value: formatCurrency(summaryStats.totalRetentionDeducted), icon: TrendingDown },
       { title: 'Total Retention Paid', value: formatCurrency(summaryStats.totalRetentionClaimed), icon: TrendingUp },
       { title: 'Retention Balance', value: formatCurrency(summaryStats.retentionBalance), icon: PiggyBank },
@@ -383,9 +385,9 @@ export default function BillingSummaryReport() {
             </CardHeader>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 mb-8">
             {isLoading ? (
-                Array.from({ length: 8 }).map((_, index) => (
+                Array.from({ length: 9 }).map((_, index) => (
                     <Card key={index} className="flex flex-col justify-between">
                         <CardHeader className="p-4 pb-2"><Skeleton className="h-4 w-3/4" /></CardHeader>
                         <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
@@ -393,9 +395,9 @@ export default function BillingSummaryReport() {
                 ))
             ) : (
                 statsToDisplay.map((stat) => (
-                  <Card key={stat.title} className="flex flex-col">
-                    <CardHeader className="flex flex-row items-start justify-between space-y-0 p-4 pb-2">
-                      <CardTitle className="text-sm font-medium min-h-[md:3em]">{stat.title}</CardTitle>
+                  <Card key={stat.title} className="flex flex-col h-full">
+                    <CardHeader className="flex flex-row items-start justify-between space-y-0 p-4 pb-2 min-h-[4.5rem]">
+                      <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
                       <stat.icon className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent className="p-4 pt-0 mt-auto">
