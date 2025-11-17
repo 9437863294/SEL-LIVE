@@ -6,7 +6,6 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ShieldAlert,
-  Users,
   Wallet,
   IndianRupee,
   BookCheck,
@@ -89,6 +88,7 @@ function toDateSafe(value: any): Date | null {
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
+  if (value?.seconds) return new Date(value.seconds * 1000);
   return null;
 }
 
@@ -231,11 +231,62 @@ export default function BillingSummaryReport() {
     return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance, balanceToBeBilled };
   }, [filteredBills, filteredProformas, workOrders]);
   
+   const workOrderSummary = useMemo(() => {
+    if (isLoading) return [];
+    
+    const woMap = new Map<string, {
+      woNo: string;
+      subcontractorName: string;
+      woValue: number;
+      totalBilled: number;
+      advanceTaken: number;
+      advanceDeducted: number;
+    }>();
+
+    workOrders.forEach(wo => {
+      // Filter only if a specific project is selected from the start
+      if (filters.project !== 'all' && slugify(projects.find(p => p.id === wo.projectId)?.projectName || '') !== filters.project) {
+        return;
+      }
+       if (filters.subcontractor !== 'all' && wo.subcontractorId !== filters.subcontractor) {
+        return;
+      }
+
+      woMap.set(wo.id, {
+        woNo: wo.workOrderNo,
+        subcontractorName: wo.subcontractorName,
+        woValue: wo.totalAmount,
+        totalBilled: 0,
+        advanceTaken: 0,
+        advanceDeducted: 0,
+      });
+    });
+
+    filteredBills.forEach(bill => {
+      const summary = woMap.get(bill.workOrderId);
+      if (summary) {
+        summary.totalBilled += bill.netPayable || 0;
+        (bill.advanceDeductions || []).forEach(deduction => {
+          summary.advanceDeducted += deduction.amount;
+        });
+      }
+    });
+
+    filteredProformas.forEach(proforma => {
+      const summary = woMap.get(proforma.workOrderId);
+      if (summary) {
+        summary.advanceTaken += proforma.payableAmount || 0;
+      }
+    });
+
+    return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
+  }, [workOrders, filteredBills, filteredProformas, filters.project, filters.subcontractor, projects]);
+  
   const filterOptions = useMemo(() => {
-    const allItems = [...bills, ...proformaBills];
-    const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
-    const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
-    const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
+    const combined = [...bills, ...proformaBills];
+    const visibleProjects = projects.filter(p => combined.some(b => b.projectId === p.id));
+    const visibleSubs = subcontractors.filter(s => combined.some(b => b.subcontractorId === s.id));
+    const years = [...new Set(combined.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
@@ -259,14 +310,9 @@ export default function BillingSummaryReport() {
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
-                {Array.from({length: 8}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+                {Array.from({length: 9}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
-            <Skeleton className="h-6 w-48 mb-6" />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
-            </div>
+            <Skeleton className="h-96 w-full" />
         </div>
     )
   }
@@ -365,7 +411,50 @@ export default function BillingSummaryReport() {
                 ))
             )}
         </div>
+        
+        <Card>
+          <CardHeader><CardTitle>Work Order Wise Summary</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>WO No</TableHead>
+                        <TableHead>Subcontractor</TableHead>
+                        <TableHead>WO Value</TableHead>
+                        <TableHead>Total Billed</TableHead>
+                        <TableHead>Advance Taken</TableHead>
+                        <TableHead>Advance Deducted</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                   {isLoading ? (
+                        Array.from({ length: 3 }).map((_, i) => (
+                            <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-6" /></TableCell></TableRow>
+                        ))
+                   ) : workOrderSummary.length > 0 ? (
+                       workOrderSummary.map(wo => (
+                        <TableRow key={wo.woNo}>
+                            <TableCell>{wo.woNo}</TableCell>
+                            <TableCell>{wo.subcontractorName}</TableCell>
+                            <TableCell>{formatCurrency(wo.woValue)}</TableCell>
+                            <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
+                            <TableCell>{formatCurrency(wo.advanceTaken)}</TableCell>
+                            <TableCell>{formatCurrency(wo.advanceDeducted)}</TableCell>
+                        </TableRow>
+                       ))
+                   ) : (
+                        <TableRow>
+                            <TableCell colSpan={6} className="text-center h-24">No data to display for the selected filters.</TableCell>
+                        </TableRow>
+                   )}
+                </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
       </div>
     </>
   );
 }
+
+```
