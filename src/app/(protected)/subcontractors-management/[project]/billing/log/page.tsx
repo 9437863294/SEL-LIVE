@@ -37,6 +37,7 @@ import {
   arrayUnion,
   getDoc,
   QuerySnapshot,
+  collectionGroup,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,7 +50,7 @@ import type {
   WorkOrder,
   WorkflowStep,
   ActionLog,
-  BillItem,
+  BillItem as OriginalBillItem,
 } from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { Badge } from '@/components/ui/badge';
@@ -85,17 +86,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+// A unified item structure for display purposes
 interface DisplayBillItem {
-    jmcItemId: string;
-    description: string;
-    unit: string;
-    rate: number;
-    billedQty: number;
-    totalAmount: number;
-    boqSlNo?: string;
-    executedQty?: string;
-    jmcEntryId?: string;
-    jmcNo?: string;
+  jmcItemId: string;
+  description: string;
+  unit: string;
+  rate: number;
+  billedQty: number;
+  totalAmount: number;
 }
 
 // A base structure for any item in the log
@@ -109,7 +107,7 @@ interface DisplayBillBase {
   subcontractorId: string;
   subcontractorName: string;
   workOrderNo: string;
-  billNo: string; // Will hold proformaNo for proforma bills
+  billNo: string; 
   netPayable: number;
   items: DisplayBillItem[];
   isRetentionBill: boolean;
@@ -123,10 +121,8 @@ interface DisplayBillBase {
   deadline?: Timestamp | null;
 }
 
-// A discriminated union would be ideal, but for simplicity we'll use partials
-// This says a DisplayBill is the base shape, plus *either* Bill or ProformaBill partial properties
-type DisplayBill = DisplayBillBase & Partial<Bill> & Partial<ProformaBill>;
-
+// Discriminated union to combine original data with the base display type
+type DisplayBill = DisplayBillBase & (Partial<Bill> & Partial<ProformaBill>);
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -252,10 +248,10 @@ export default function BillLogPage() {
         ]);
 
         billsSnapshot.forEach((doc) =>
-          billEntries.push({ id: doc.id, projectId: project.id, ...(doc.data() as Omit<Bill, 'id'>) })
+          billEntries.push({ id: doc.id, ...doc.data() as Omit<Bill, 'id'> })
         );
         proformaSnapshot.forEach((doc) =>
-          proformaEntries.push({ id: doc.id, projectId: project.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
+          proformaEntries.push({ id: doc.id, ...doc.data() as Omit<ProformaBill, 'id'> })
         );
       }
       
@@ -328,10 +324,6 @@ export default function BillLogPage() {
           'N/A',
         items: (p.items || []).map((i) => ({
           jmcItemId: '',
-          jmcEntryId: '',
-          jmcNo: '',
-          boqSlNo: '',
-          executedQty: '',
           description: i.description,
           unit: i.unit,
           rate: parseFloat(i.rate) || 0,
@@ -639,7 +631,7 @@ export default function BillLogPage() {
                           className="p-0 h-auto"
                           onClick={(e) => handleViewDeductionDetails(e, bill)}
                         >
-                          {formatCurrency(bill.totalDeductions || 0)}
+                          {formatCurrency((bill as Bill).totalDeductions || 0)}
                         </Button>
                       ) : (
                         'N/A'
@@ -668,7 +660,7 @@ export default function BillLogPage() {
                                 onSelect={(e) => {
                                   e.stopPropagation();
                                   router.push(
-                                    `/subcontractors-management/${slugify(bill.projectName)}/billing/edit/${bill.id}`,
+                                    `/subcontractors-management/${slugify(bill.projectName || '')}/billing/edit/${bill.id}`,
                                   );
                                 }}
                               >
