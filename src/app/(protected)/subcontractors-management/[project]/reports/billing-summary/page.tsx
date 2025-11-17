@@ -30,18 +30,12 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   getDocs,
-  orderBy,
+  doc,
+  setDoc,
+  getDoc,
   query,
   where,
   collectionGroup,
-  deleteDoc,
-  doc,
-  Timestamp,
-  runTransaction,
-  arrayUnion,
-  getDoc,
-  QuerySnapshot,
-  DocumentSnapshot,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,9 +77,10 @@ function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
 
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
-  if (value instanceof Timestamp) return value.toDate();
+  if (typeof value?.toDate === 'function') return value.toDate();
   if (value instanceof Date) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value === 'string') {
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -159,32 +154,12 @@ export default function BillingSummaryReport() {
       setSubcontractors(allSubcontractors);
       setWorkOrders(allWorkOrders);
 
-      const billEntries: Bill[] = [];
-      const proformaEntries: ProformaBill[] = [];
-
-      for (const project of allProjects) {
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
-        
-        const [billsSnapshot, proformaSnapshot] = await Promise.all([
-            getDocs(billsQuery),
-            getDocs(proformaQuery),
-        ]);
-
-        billsSnapshot.forEach((doc) =>
-          billEntries.push({ id: doc.id, ...(doc.data() as Omit<Bill, 'id'>) })
-        );
-        proformaSnapshot.forEach((doc) =>
-          proformaEntries.push({ id: doc.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
-        );
-      }
-      
-      const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
-      if (workflowSnap.exists()) {
-        setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
-      }
-
+      const billsSnapshot = await getDocs(collectionGroup(db, 'bills'));
+      const billEntries = billsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
       setBills(billEntries);
+      
+      const proformaSnapshot = await getDocs(collectionGroup(db, 'proformaBills'));
+      const proformaEntries = proformaSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill));
       setProformaBills(proformaEntries);
 
     } catch (error) {
@@ -484,5 +459,3 @@ export default function BillingSummaryReport() {
     </>
   );
 }
-```
-
