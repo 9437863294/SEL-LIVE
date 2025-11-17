@@ -19,6 +19,7 @@ import {
   serverTimestamp,
   getDoc,
   updateDoc,
+  collectionGroup,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,7 +40,7 @@ const slugify = (text: string) => {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
@@ -81,32 +82,33 @@ export default function EditBillPage() {
 
   useEffect(() => {
     const fetchBill = async () => {
-        if (!projectSlug || !billId) return;
+        if (!billId) return;
         setIsLoading(true);
         try {
-            const projectsQuery = query(collection(db, 'projects'));
-            const projectsSnapshot = await getDocs(projectsQuery);
-            const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+            const billsQuery = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${projectSlug}/bills/${billId}`));
+            const billSnapshot = await getDocs(billsQuery);
 
-            if (!projectData) {
-                toast({ title: "Project not found", variant: "destructive" });
-                return;
+            if (billSnapshot.empty) {
+                 const billsQueryFallback = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${currentProject?.id}/bills/${billId}`));
+                 const billSnapshotFallback = await getDocs(billsQuery);
+                 if(billSnapshotFallback.empty) {
+                    toast({ title: 'Bill not found', variant: 'destructive' });
+                    notFound();
+                    return;
+                 }
             }
-            setCurrentProject(projectData);
             
-            const billDocRef = doc(db, 'projects', projectData.id, 'bills', billId);
-            const billDocSnap = await getDoc(billDocRef);
-
-            if (!billDocSnap.exists()) {
-                toast({ title: 'Bill not found', variant: 'destructive' });
-                notFound();
-                return;
-            }
-
+            const billDocSnap = billSnapshot.docs[0];
             const billData = { id: billDocSnap.id, ...billDocSnap.data() } as Bill;
             setBill(billData);
-            
-            // Populate financial states from the loaded bill
+
+            // Fetch related project
+            const projectRef = doc(db, 'projects', billData.projectId);
+            const projectSnap = await getDoc(projectRef);
+            if (projectSnap.exists()) {
+              setCurrentProject({id: projectSnap.id, ...projectSnap.data()} as Project);
+            }
+
             setGstType(billData.gstType || 'percentage');
             setGstPercentage(billData.gstPercentage ?? 18);
             setGstAmount(billData.gstAmount || 0);
@@ -116,7 +118,7 @@ export default function EditBillPage() {
             setOtherDeduction(billData.otherDeduction || 0);
             setAdvanceDeductions((billData.advanceDeductions || []).map(ad => ({...ad, id: crypto.randomUUID()})));
 
-            const woDocRef = doc(db, 'projects', projectData.id, 'workOrders', billData.workOrderId);
+            const woDocRef = doc(db, 'projects', billData.projectId, 'workOrders', billData.workOrderId);
             const woDocSnap = await getDoc(woDocRef);
             if(woDocSnap.exists()) {
               setWorkOrder({id: woDocSnap.id, ...woDocSnap.data()} as WorkOrder);
@@ -129,7 +131,7 @@ export default function EditBillPage() {
         setIsLoading(false);
     };
     fetchBill();
-  }, [projectSlug, billId, toast, router]);
+  }, [projectSlug, billId, toast, notFound, currentProject]);
 
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
     if (!bill) return;
@@ -323,8 +325,8 @@ export default function EditBillPage() {
             </div>
             {/* Summary Table */}
              <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
+                <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
+                <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
                 <Separator />
                 <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
                 <div className="flex justify-between text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
@@ -338,4 +340,3 @@ export default function EditBillPage() {
     </div>
   );
 }
-
