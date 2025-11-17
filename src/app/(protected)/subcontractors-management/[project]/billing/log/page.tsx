@@ -37,7 +37,6 @@ import {
   arrayUnion,
   getDoc,
   QuerySnapshot,
-  collectionGroup,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -86,9 +85,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// A unified item structure for display purposes
+
+// Unified Display types
 interface DisplayBillItem {
-  jmcItemId: string;
   description: string;
   unit: string;
   rate: number;
@@ -96,8 +95,7 @@ interface DisplayBillItem {
   totalAmount: number;
 }
 
-// A base structure for any item in the log
-interface DisplayBillBase {
+interface DisplayBill {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   date: string;
@@ -107,22 +105,20 @@ interface DisplayBillBase {
   subcontractorId: string;
   subcontractorName: string;
   workOrderNo: string;
-  billNo: string; 
+  billNo: string;
   netPayable: number;
   items: DisplayBillItem[];
   isRetentionBill: boolean;
-
-  // Optional workflow fields
   status?: string;
   stage?: string;
   assignees?: string[];
   currentStepId?: string | null;
   history?: ActionLog[];
   deadline?: Timestamp | null;
+  retentionAmount?: number;
+  totalDeductions?: number;
+  advanceDeductions?: { id: string; reference: string; amount: number }[];
 }
-
-// Discriminated union to combine original data with the base display type
-type DisplayBill = DisplayBillBase & (Partial<Bill> & Partial<ProformaBill>);
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -248,10 +244,10 @@ export default function BillLogPage() {
         ]);
 
         billsSnapshot.forEach((doc) =>
-          billEntries.push({ id: doc.id, ...doc.data() as Omit<Bill, 'id'> })
+          billEntries.push({ id: doc.id, ...(doc.data() as Omit<Bill, 'id'>) })
         );
         proformaSnapshot.forEach((doc) =>
-          proformaEntries.push({ id: doc.id, ...doc.data() as Omit<ProformaBill, 'id'> })
+          proformaEntries.push({ id: doc.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
         );
       }
       
@@ -326,9 +322,9 @@ export default function BillLogPage() {
           jmcItemId: '',
           description: i.description,
           unit: i.unit,
-          rate: parseFloat(i.rate) || 0,
+          rate: parseFloat(String(i.rate)) || 0,
           billedQty: i.billedQty || 0,
-          totalAmount: parseFloat(i.totalAmount) || 0,
+          totalAmount: parseFloat(String(i.totalAmount)) || 0,
         })),
       };
     });
@@ -631,7 +627,7 @@ export default function BillLogPage() {
                           className="p-0 h-auto"
                           onClick={(e) => handleViewDeductionDetails(e, bill)}
                         >
-                          {formatCurrency((bill as Bill).totalDeductions || 0)}
+                          {formatCurrency(bill.totalDeductions || 0)}
                         </Button>
                       ) : (
                         'N/A'
@@ -919,3 +915,5 @@ export default function BillLogPage() {
     </>
   );
 }
+
+```
