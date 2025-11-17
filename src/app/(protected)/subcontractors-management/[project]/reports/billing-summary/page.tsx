@@ -133,7 +133,7 @@ export default function BillingSummaryReport() {
   
   const canViewPage = can('View', 'Subcontractors Management.Reports.Billing Summary');
 
-  const fetchBills = useCallback(async () => {
+  const fetchBillingData = useCallback(async () => {
     setIsLoading(true);
     try {
       const projectsQuery = query(collection(db, 'projects'));
@@ -142,34 +142,30 @@ export default function BillingSummaryReport() {
       setProjects(allProjects);
 
       const allSubcontractors: Subcontractor[] = [];
-      const subsQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
-      const subsSnaps = await Promise.all(subsQueryPromises);
-      subsSnaps.forEach((snap: QuerySnapshot) => {
-        allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-      });
-      setSubcontractors(allSubcontractors);
-      
       const allWorkOrders: WorkOrder[] = [];
-      const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
-      const woSnaps = await Promise.all(woQueryPromises);
-      woSnaps.forEach((snap) => {
-        allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+      
+      const subAndWoPromises = allProjects.map(p => Promise.all([
+          getDocs(collection(db, 'projects', p.id, 'subcontractors')),
+          getDocs(collection(db, 'projects', p.id, 'workOrders')),
+      ]));
+      
+      const results = await Promise.all(subAndWoPromises);
+
+      results.forEach(([subsSnap, woSnap]) => {
+        allSubcontractors.push(...subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        allWorkOrders.push(...woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
       });
+
+      setSubcontractors(allSubcontractors);
       setWorkOrders(allWorkOrders);
 
       const billsQuery = query(collectionGroup(db, 'bills'));
       const proformaQuery = query(collectionGroup(db, 'proformaBills'));
-      const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       
-      const [billsSnapshot, proformaSnapshot, workflowDoc] = await Promise.all([
+      const [billsSnapshot, proformaSnapshot] = await Promise.all([
         getDocs(billsQuery),
         getDocs(proformaQuery),
-        workflowSnap
       ]);
-
-      if (workflowDoc.exists()) {
-        setWorkflow(workflowDoc.data().steps as WorkflowStep[]);
-      }
 
       const billEntries: Bill[] = billsSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as Bill));
       const proformaEntries: ProformaBill[] = proformaSnapshot.docs.map((doc: DocumentSnapshot) => ({ id: doc.id, ...doc.data() } as ProformaBill));
@@ -179,18 +175,14 @@ export default function BillingSummaryReport() {
 
     } catch (error) {
       console.error('Error fetching bills: ', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load bill data.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to load bill data.', variant: 'destructive' });
     }
     setIsLoading(false);
-  }, [projectSlug, toast]);
+  }, [toast]);
   
   useEffect(() => {
-    fetchBills();
-  }, [fetchBills]);
+    fetchBillingData();
+  }, [fetchBillingData]);
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({...prev, [field]: value}));
@@ -246,8 +238,10 @@ export default function BillingSummaryReport() {
     }>();
 
     workOrders.forEach(wo => {
-      // Filter only if a specific project is selected from the start
-      if (filters.project !== 'all' && slugify(projects.find(p => p.id === wo.projectId)?.projectName || '') !== filters.project) {
+      const projectForWo = projects.find(p => p.id === wo.projectId);
+      const woProjectSlug = projectForWo ? slugify(projectForWo.projectName) : '';
+
+      if (filters.project !== 'all' && woProjectSlug !== filters.project) {
         return;
       }
        if (filters.subcontractor !== 'all' && wo.subcontractorId !== filters.subcontractor) {
@@ -268,7 +262,9 @@ export default function BillingSummaryReport() {
     filteredBills.forEach(bill => {
       const summary = woMap.get(bill.workOrderId);
       if (summary) {
-        summary.totalBilled += bill.netPayable || 0;
+        if (!bill.isRetentionBill) {
+            summary.totalBilled += bill.netPayable || 0;
+        }
         (bill.advanceDeductions || []).forEach(deduction => {
           summary.advanceDeducted += deduction.amount;
         });
@@ -287,7 +283,7 @@ export default function BillingSummaryReport() {
     });
 
     return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
-  }, [workOrders, filteredBills, filteredProformas, filters.project, filters.subcontractor, projects]);
+  }, [workOrders, filteredBills, filteredProformas, filters.project, filters.subcontractor, projects, isLoading]);
   
   const filterOptions = useMemo(() => {
     const combined = [...bills, ...proformaBills];
@@ -361,7 +357,7 @@ export default function BillingSummaryReport() {
         
         <Card className="mb-6">
             <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
