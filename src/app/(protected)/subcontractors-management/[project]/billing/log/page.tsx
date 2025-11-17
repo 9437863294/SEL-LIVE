@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
@@ -14,7 +14,6 @@ import {
   History as HistoryIcon,
   FileText,
   Eye,
-  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -99,7 +98,7 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-// Define a unified display type
+// Define a unified item structure for display purposes
 interface DisplayBillItem {
   jmcItemId?: string;
   description: string;
@@ -107,9 +106,16 @@ interface DisplayBillItem {
   rate: number;
   billedQty: number;
   totalAmount: number;
+  // Add optional fields from BillItem that might not be in ProformaBill item
+  jmcEntryId?: string;
+  jmcNo?: string;
+  boqSlNo?: string;
+  executedQty?: string;
 }
 
-interface DisplayBillBase {
+
+// A unified type to represent either a regular bill or a proforma bill
+type DisplayBill = {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   date: string;
@@ -119,27 +125,20 @@ interface DisplayBillBase {
   subcontractorId: string;
   subcontractorName: string;
   workOrderNo: string;
-  billNo: string; // Used for both ProformaNo and BillNo
+  billNo: string; // BillNo or ProformaNo
   netPayable: number;
   isRetentionBill: boolean;
   items: DisplayBillItem[];
 
-  // Optional workflow fields
+  // Optional workflow fields, present on both
   status?: string;
   stage?: string;
   assignees?: string[];
   currentStepId?: string | null;
   history?: ActionLog[];
-}
+  deadline?: Timestamp | null;
+} & (Partial<Bill> & Partial<ProformaBill>);
 
-// Intersect with partials of the original types to allow type-safe access later
-type DisplayBill = DisplayBillBase & (Partial<Bill> | Partial<ProformaBill>);
-
-
-function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
-  const { id: _ignored, ...rest } = obj as any;
-  return rest as Omit<T, 'id'>;
-}
 
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
@@ -209,16 +208,20 @@ export default function BillLogPage() {
     try {
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
-      const allProjects = projectSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Project));
+      const allProjects = projectSnap.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as Project),
+      );
       setProjects(allProjects);
-  
+
       const allSubcontractors: Subcontractor[] = [];
       const subsQueryPromises = allProjects.map((p) =>
         getDocs(collection(db, 'projects', p.id, 'subcontractors')),
       );
       const subsSnaps = await Promise.all(subsQueryPromises);
       subsSnaps.forEach((snap: QuerySnapshot) => {
-        allSubcontractors.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)));
+        allSubcontractors.push(
+          ...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)),
+        );
       });
       setSubcontractors(allSubcontractors);
       
@@ -228,22 +231,26 @@ export default function BillLogPage() {
       );
       const woSnaps = await Promise.all(woQueryPromises);
       woSnaps.forEach((snap) => {
-        allWorkOrders.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkOrder)));
+        allWorkOrders.push(
+          ...snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkOrder)),
+        );
       });
       setWorkOrders(allWorkOrders);
-  
+
       const billEntries: Bill[] = [];
       const proformaEntries: ProformaBill[] = [];
-  
+
       for (const project of allProjects) {
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
-  
+        const proformaQuery = query(
+          collection(db, 'projects', project.id, 'proformaBills'),
+        );
+
         const [billsSnapshot, proformaSnapshot] = await Promise.all([
           getDocs(billsQuery),
           getDocs(proformaQuery),
         ]);
-  
+
         billsSnapshot.forEach((doc) =>
           billEntries.push({ id: doc.id, ...doc.data() } as Bill),
         );
@@ -251,12 +258,12 @@ export default function BillLogPage() {
           proformaEntries.push({ id: doc.id, ...doc.data() } as ProformaBill),
         );
       }
-  
+
       const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       if (workflowSnap.exists()) {
         setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
       }
-  
+
       setAllBills(billEntries);
       setAllProformaBills(proformaEntries);
     } catch (error) {
@@ -269,7 +276,6 @@ export default function BillLogPage() {
     }
     setIsLoading(false);
   }, [toast]);
-  
 
   useEffect(() => {
     fetchBills();
@@ -289,16 +295,19 @@ export default function BillLogPage() {
         isRetentionBill: !!b.isRetentionBill,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: b.subcontractorName || subcontractors.find((s) => s.id === b.subcontractorId)?.legalName || 'N/A',
+        subcontractorName:
+          b.subcontractorName ||
+          subcontractors.find((s) => s.id === b.subcontractorId)?.legalName ||
+          'N/A',
         netPayable: b.netPayable || 0,
-        items: (b.items || []).map(i => ({
-            jmcItemId: i.jmcItemId,
-            description: i.description,
-            unit: i.unit,
-            rate: parseFloat(i.rate),
-            billedQty: parseFloat(i.billedQty),
-            totalAmount: parseFloat(i.totalAmount),
-        }))
+        items: (b.items || []).map((i: BillItem) => ({
+          jmcItemId: i.jmcItemId,
+          description: i.description,
+          unit: i.unit,
+          rate: parseFloat(i.rate) || 0,
+          billedQty: parseFloat(i.billedQty) || 0,
+          totalAmount: parseFloat(i.totalAmount) || 0,
+        })),
       };
     });
 
@@ -313,14 +322,18 @@ export default function BillLogPage() {
         isRetentionBill: false,
         sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: p.subcontractorName || subcontractors.find((s) => s.id === p.subcontractorId)?.legalName || 'N/A',
-        items: (p.items || []).map(i => ({
-            description: i.description,
-            unit: i.unit,
-            rate: parseFloat(i.rate),
-            billedQty: i.billedQty,
-            totalAmount: parseFloat(i.totalAmount),
-        }))
+        subcontractorName:
+          p.subcontractorName ||
+          subcontractors.find((s) => s.id === p.subcontractorId)?.legalName ||
+          'N/A',
+        items: (p.items || []).map((i) => ({
+          jmcItemId: '', // Proforma items don't have this, so provide a default
+          description: i.description,
+          unit: i.unit,
+          rate: parseFloat(i.rate) || 0,
+          billedQty: i.billedQty || 0,
+          totalAmount: parseFloat(i.totalAmount) || 0,
+        })),
       };
     });
 
@@ -329,21 +342,22 @@ export default function BillLogPage() {
     );
 
     const filterFn = (bill: DisplayBill) => {
-        const projectMatch =
-          filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
-        const subMatch =
-          filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        const sortDate = bill.sortDate;
-        if (!sortDate) return false;
-  
-        const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
-        const monthMatch =
-          filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
-        const typeMatch = filters.type === 'all' || bill.type === filters.type;
-        const workOrderMatch =
-          filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
-  
-        return projectMatch && subMatch && yearMatch && monthMatch && typeMatch && workOrderMatch;
+      const projectMatch =
+        filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+      const subMatch =
+        filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+      const sortDate = bill.sortDate;
+      if (!sortDate) return false;
+
+      const yearMatch =
+        filters.year === 'all' || getYear(sortDate).toString() === filters.year;
+      const monthMatch =
+        filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
+      const typeMatch = filters.type === 'all' || bill.type === filters.type;
+      const workOrderMatch =
+        filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
+
+      return projectMatch && subMatch && yearMatch && monthMatch && typeMatch && workOrderMatch;
     };
 
     const filtered = combined.filter(filterFn);
@@ -375,6 +389,7 @@ export default function BillLogPage() {
 
   const filterOptions = useMemo(() => {
     const combined = [...allBills, ...allProformaBills];
+
     const visibleProjects = projects.filter((p: Project) =>
       combined.some((b: Bill | ProformaBill) => b.projectId === p.id),
     );
@@ -384,7 +399,10 @@ export default function BillLogPage() {
 
     const yearSet = new Set<string>();
     combined.forEach((b) => {
-      const rawDate = (b as Bill).billDate || (b as ProformaBill).date;
+      const rawDate =
+        'billDate' in b
+          ? (b as Bill).billDate
+          : (b as ProformaBill).date;
       const d = toDateSafe(rawDate);
       if (!d) return;
       yearSet.add(getYear(d).toString());
@@ -566,7 +584,7 @@ export default function BillLogPage() {
             ) : data.length > 0 ? (
               data.map((bill: DisplayBill) => {
                 const retentionDisplay =
-                  bill.type === 'Retention'
+                  bill.isRetentionBill
                     ? `+${formatCurrency(bill.netPayable || 0)}`
                     : bill.type !== 'Proforma' && (bill as Bill).retentionAmount
                     ? formatCurrency((bill as Bill).retentionAmount || 0)
@@ -598,7 +616,7 @@ export default function BillLogPage() {
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
                     <TableCell
-                      className={bill.type === 'Retention' ? 'text-green-600' : ''}
+                      className={bill.isRetentionBill ? 'text-green-600' : ''}
                     >
                       {retentionDisplay}
                     </TableCell>
@@ -898,5 +916,4 @@ export default function BillLogPage() {
   );
 }
 
-    
 ```
