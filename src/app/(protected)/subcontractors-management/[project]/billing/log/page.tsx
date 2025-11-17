@@ -1,17 +1,15 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  View,
   Edit,
   Trash2,
   Clock,
   Check,
   MoreHorizontal,
-  Loader2,
   History as HistoryIcon,
   FileText,
   Eye,
@@ -30,10 +28,7 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   getDocs,
-  orderBy,
   query,
-  where,
-  collectionGroup,
   deleteDoc,
   doc,
   Timestamp,
@@ -41,12 +36,20 @@ import {
   arrayUnion,
   getDoc,
   QuerySnapshot,
-  DocumentSnapshot,
+  collectionGroup,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, getYear } from 'date-fns';
-import type { Bill, Project, ProformaBill, Subcontractor, WorkOrder, WorkflowStep, ActionLog } from '@/lib/types';
+import type {
+  Bill,
+  Project,
+  ProformaBill,
+  Subcontractor,
+  WorkOrder,
+  WorkflowStep,
+  ActionLog,
+} from '@/lib/types';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { useParams, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -70,19 +73,17 @@ import {
   DialogTitle as ShadDialogTitle,
   DialogFooter,
   DialogClose,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -96,28 +97,16 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-interface DisplayBill {
+type DisplayBill = Omit<Bill, 'date'> &
+  Omit<ProformaBill, 'date'> & {
     id: string;
     type: 'Regular' | 'Retention' | 'Proforma';
     date: string;
     sortDate: Date;
-    billNo: string;
-    netPayable: number;
     projectName?: string;
-    projectId: string;
-    subcontractorId: string;
     subcontractorName: string;
-    workOrderNo: string;
-    status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
-    stage?: string;
-    assignees?: string[];
-    currentStepId?: string | null;
-    history?: ActionLog[];
     isRetentionBill?: boolean;
-    retentionAmount?: number;
-    totalDeductions?: number;
-}
-
+};
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
   const { id: _ignored, ...rest } = obj as any;
@@ -147,13 +136,12 @@ const formatDateSafe = (dateInput: any): string => {
 };
 
 const formatCurrency = (amount: number) => {
-    if (isNaN(amount)) return 'N/A';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount);
+  if (isNaN(amount)) return 'N/A';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+  }).format(amount);
 };
-
 
 export default function BillLogPage() {
   const { toast } = useToast();
@@ -176,7 +164,7 @@ export default function BillLogPage() {
   const [selectedProformaBill, setSelectedProformaBill] = useState<ProformaBill | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeductionDetailsOpen, setIsDeductionDetailsOpen] = useState(false);
-  
+
   const [filters, setFilters] = useState({
     project: projectSlug === 'all' ? 'all' : projectSlug,
     workOrder: 'all',
@@ -191,86 +179,101 @@ export default function BillLogPage() {
   const fetchBills = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Projects
       const projectsQuery = query(collection(db, 'projects'));
       const projectSnap = await getDocs(projectsQuery);
-      const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+      const allProjects = projectSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Project));
       setProjects(allProjects);
 
+      // Subcontractors
       const allSubcontractors: Subcontractor[] = [];
-      const subsQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
+      const subsQueryPromises = allProjects.map((p) =>
+        getDocs(collection(db, 'projects', p.id, 'subcontractors')),
+      );
       const subsSnaps = await Promise.all(subsQueryPromises);
       subsSnaps.forEach((snap: QuerySnapshot) => {
-        allSubcontractors.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        allSubcontractors.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)));
       });
       setSubcontractors(allSubcontractors);
       
+      // Work Orders
       const allWorkOrders: WorkOrder[] = [];
-      const woQueryPromises = allProjects.map(p => getDocs(collection(db, 'projects', p.id, 'workOrders')));
+      const woQueryPromises = allProjects.map((p) =>
+        getDocs(collection(db, 'projects', p.id, 'workOrders')),
+      );
       const woSnaps = await Promise.all(woQueryPromises);
       woSnaps.forEach((snap) => {
-        allWorkOrders.push(...snap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        allWorkOrders.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkOrder)));
       });
       setWorkOrders(allWorkOrders);
 
+      // Bills + Proforma Bills
       const billEntries: Bill[] = [];
       const proformaEntries: ProformaBill[] = [];
 
       for (const project of allProjects) {
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
-        
+
         const [billsSnapshot, proformaSnapshot] = await Promise.all([
           getDocs(billsQuery),
-          getDocs(proformaQuery)
+          getDocs(proformaQuery),
         ]);
 
-        billsSnapshot.forEach(doc => billEntries.push({ id: doc.id, ...doc.data() } as Bill));
-        proformaSnapshot.forEach(doc => proformaEntries.push({ id: doc.id, ...doc.data() } as ProformaBill));
+        billsSnapshot.forEach((doc) =>
+          billEntries.push({ id: doc.id, ...doc.data() } as Bill),
+        );
+        proformaSnapshot.forEach((doc) =>
+          proformaEntries.push({ id: doc.id, ...doc.data() } as ProformaBill),
+        );
       }
 
+      // Workflow
       const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       if (workflowSnap.exists()) {
         setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
       }
-      
+
       setAllBills(billEntries);
       setAllProformaBills(proformaEntries);
-
     } catch (error) {
       console.error('Error fetching bills: ', error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch bills.',
+        description: 'Failed to load bill data.',
         variant: 'destructive',
       });
     }
     setIsLoading(false);
-  }, [projectSlug, toast]);
-  
+  }, [toast]);
+
   useEffect(() => {
     fetchBills();
   }, [fetchBills]);
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
-    setFilters(prev => ({...prev, [field]: value}));
-  }
+    setFilters((prev) => ({ ...prev, [field]: value }));
+  };
 
   const { pendingTasks, completedTasks, holdTasks, allFilteredBills } = useMemo(() => {
     const displayBills: DisplayBill[] = allBills.map((b: Bill) => {
-      const project = projects.find(p => p.id === b.projectId);
+      const project = projects.find((p) => p.id === b.projectId);
       return {
         ...b,
         type: b.isRetentionBill ? 'Retention' : 'Regular',
         date: b.billDate,
         sortDate: toDateSafe(b.createdAt) || toDateSafe(b.billDate) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: b.subcontractorName || subcontractors.find(s => s.id === b.subcontractorId)?.legalName || 'N/A',
-      }
+        subcontractorName:
+          b.subcontractorName ||
+          subcontractors.find((s) => s.id === b.subcontractorId)?.legalName ||
+          'N/A',
+      };
     });
 
     const displayProformas: DisplayBill[] = allProformaBills.map((p: ProformaBill) => {
-       const project = projects.find(proj => proj.id === p.projectId);
-       return {
+      const project = projects.find((proj) => proj.id === p.projectId);
+      return {
         ...p,
         type: 'Proforma',
         date: p.date,
@@ -278,57 +281,88 @@ export default function BillLogPage() {
         netPayable: p.payableAmount,
         sortDate: toDateSafe(p.createdAt) || toDateSafe(p.date) || new Date(0),
         projectName: project?.projectName,
-        subcontractorName: p.subcontractorName || subcontractors.find(s => s.id === p.subcontractorId)?.legalName || 'N/A',
-       }
+        subcontractorName:
+          p.subcontractorName ||
+          subcontractors.find((s) => s.id === p.subcontractorId)?.legalName ||
+          'N/A',
+      };
     });
 
-    const combined: DisplayBill[] = [...displayBills, ...displayProformas].sort((a,b) => b.sortDate.getTime() - a.sortDate.getTime());
+    const combined: DisplayBill[] = [...displayBills, ...displayProformas].sort(
+      (a, b) => b.sortDate.getTime() - a.sortDate.getTime(),
+    );
 
     const filterFn = (bill: DisplayBill) => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
-        const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        const sortDate = bill.sortDate;
-        if (!sortDate) return false;
-        
-        const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
-        const monthMatch = filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
-        const typeMatch = filters.type === 'all' || bill.type === filters.type;
-        return projectMatch && subMatch && yearMatch && monthMatch && typeMatch;
+      const projectMatch =
+        filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+      const subMatch =
+        filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
+      const sortDate = bill.sortDate;
+      if (!sortDate) return false;
+
+      const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
+      const monthMatch =
+        filters.month === 'all' || sortDate.getMonth().toString() === filters.month;
+      const typeMatch = filters.type === 'all' || bill.type === filters.type;
+      const workOrderMatch =
+        filters.workOrder === 'all' || bill.workOrderNo === filters.workOrder;
+
+      return projectMatch && subMatch && yearMatch && monthMatch && typeMatch && workOrderMatch;
     };
-    
+
     const filtered = combined.filter(filterFn);
-    
+
     const pending: DisplayBill[] = [];
     const completed: DisplayBill[] = [];
     const hold: DisplayBill[] = [];
 
-    filtered.forEach(bill => {
-        const isAssigned = (bill.assignees ?? []).includes(user?.id || '');
-        const status = bill.status;
+    filtered.forEach((bill) => {
+      const isAssigned = (bill.assignees ?? []).includes(user?.id || '');
+      const status = bill.status;
 
-        if (isAssigned && (status === 'Pending' || status === 'In Progress')) {
-            pending.push(bill);
-        } else if (status === 'Completed' || status === 'Rejected') {
-            completed.push(bill);
-        } else {
-            hold.push(bill);
-        }
+      if (isAssigned && (status === 'Pending' || status === 'In Progress')) {
+        pending.push(bill);
+      } else if (status === 'Completed' || status === 'Rejected') {
+        completed.push(bill);
+      } else {
+        hold.push(bill);
+      }
     });
-    
+
     return {
-        pendingTasks: pending,
-        completedTasks: completed,
-        holdTasks: hold,
-        allFilteredBills: filtered,
+      pendingTasks: pending,
+      completedTasks: completed,
+      holdTasks: hold,
+      allFilteredBills: filtered,
     };
-}, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
-  
+  }, [allBills, allProformaBills, filters, user?.id, projects, subcontractors]);
+
   const filterOptions = useMemo(() => {
-    const allItems = [...allBills, ...allProformaBills];
-    const visibleProjects = projects.filter(p => allItems.some(b => b.projectId === p.id));
-    const visibleSubs = subcontractors.filter(s => allItems.some(b => b.subcontractorId === s.id));
-    const years = [...new Set(allItems.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
-    const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
+    const combined = [...allBills, ...allProformaBills];
+    const visibleProjects = projects.filter((p) =>
+      combined.some((b) => b.projectId === p.id),
+    );
+    const visibleSubs = subcontractors.filter((s) =>
+      combined.some((b) => b.subcontractorId === s.id),
+    );
+
+    const yearSet = new Set<string>();
+    combined.forEach((b) => {
+      const rawDate =
+        'billDate' in b
+          ? (b as Bill).billDate
+          : (b as ProformaBill).date;
+
+      const d = toDateSafe(rawDate);
+      if (!d) return;
+      yearSet.add(getYear(d).toString());
+    });
+    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
+
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      value: i.toString(),
+      label: format(new Date(0, i), 'MMMM'),
+    }));
 
     return { projects: visibleProjects, workOrders, subcontractors: visibleSubs, years, months };
   }, [allBills, allProformaBills, projects, workOrders, subcontractors]);
@@ -345,98 +379,128 @@ export default function BillLogPage() {
     }
     setIsViewOpen(true);
   };
-  
+
   const handleViewDeductionDetails = (e: React.MouseEvent, bill: DisplayBill) => {
-      e.stopPropagation();
-      const original = allBills.find((b: Bill) => b.id === bill.id);
-      if (original) {
-          setSelectedBill(original);
-          setIsDeductionDetailsOpen(true);
-      }
-  }
-  
+    e.stopPropagation();
+    const original = allBills.find((b: Bill) => b.id === bill.id);
+    if (original) {
+      setSelectedBill(original);
+      setIsDeductionDetailsOpen(true);
+    }
+  };
+
   const handleDeleteBill = async (billToDelete: DisplayBill) => {
-      const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
-      if (!billToDelete.projectId) {
-          toast({ title: 'Error', description: 'Cannot delete bill without project information.', variant: 'destructive'});
-          return;
-      }
-      try {
-          await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
-          toast({ title: 'Success', description: `Bill has been deleted.`});
-          fetchBills();
-      } catch (error) {
-          console.error("Error deleting bill:", error);
-          toast({ title: 'Error', description: 'Failed to delete the bill.', variant: 'destructive'});
-      }
-  }
+    const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
+    if (!billToDelete.projectId) {
+      toast({
+        title: 'Error',
+        description: 'Cannot delete bill without project information.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'projects', billToDelete.projectId, collectionName, billToDelete.id));
+      toast({ title: 'Success', description: `Bill has been deleted.` });
+      fetchBills();
+    } catch (error) {
+      console.error('Error deleting bill:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete the bill.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const pastTense = (action: string) => {
-    const map: Record<string, string> = { Approve: 'approved', Verify: 'verified', Complete: 'completed', Reject: 'rejected' };
+    const map: Record<string, string> = {
+      Approve: 'approved',
+      Verify: 'verified',
+      Complete: 'completed',
+      Reject: 'rejected',
+    };
     return map[action] ?? `${action.toLowerCase()}ed`;
   };
-  
+
   const handleAction = async (taskId: string, action: string, comment: string = '') => {
     const currentBill = selectedBill || selectedProformaBill;
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
     const collectionName = (currentBill as any).proformaNo ? 'proformaBills' : 'bills';
-    
+
     setIsActionLoading(taskId);
     try {
-        const docRef = doc(db, 'projects', currentBill.projectId, collectionName, taskId);
+      const docRef = doc(db, 'projects', currentBill.projectId, collectionName, taskId);
 
-        await runTransaction(db, async (tx) => {
-            const taskDoc = await tx.get(docRef);
-            if (!taskDoc.exists()) throw new Error('Task document not found!');
-            const currentTaskData = taskDoc.data() as Bill | ProformaBill;
+      await runTransaction(db, async (tx) => {
+        const taskDoc = await tx.get(docRef);
+        if (!taskDoc.exists()) throw new Error('Task document not found!');
+        const currentTaskData = taskDoc.data() as Bill | ProformaBill;
 
-            const currentStep = workflow.find(s => s.id === currentTaskData.currentStepId);
-            if (!currentStep) throw new Error('Current workflow step not found!');
+        const currentStep = workflow.find((s) => s.id === currentTaskData.currentStepId);
+        if (!currentStep) throw new Error('Current workflow step not found!');
 
-            const newActionLog: ActionLog = { action, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentStep.name };
-            
-            const nextStep = workflow[workflow.findIndex(s => s.id === currentStep.id) + 1];
-            let newStatus: Bill['status'] = 'In Progress';
-            let newStage = nextStep?.name || 'Completed';
-            let newCurrentStepId: string | null = nextStep?.id || null;
-            let newAssignees: string[] = [];
-            let newDeadline: Timestamp | null = null;
-            
-            if (action === 'Approve' || action === 'Verified') {
-                if (nextStep) {
-                    const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
-                    if (assignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
-                    newAssignees = assignees;
-                    newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
-                } else {
-                    newStatus = 'Completed';
-                }
-            } else if (action === 'Reject') {
-                newStage = 'Rejected';
-                newStatus = 'Rejected';
-                newCurrentStepId = null;
+        const newActionLog: ActionLog = {
+          action,
+          comment,
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: currentStep.name,
+        };
+
+        const nextStep =
+          workflow[workflow.findIndex((s) => s.id === currentStep.id) + 1];
+
+        let newStatus: Bill['status'] = 'In Progress';
+        let newStage = nextStep?.name || 'Completed';
+        let newCurrentStepId: string | null = nextStep?.id || null;
+        let newAssignees: string[] = [];
+        let newDeadline: Timestamp | null = null;
+
+        if (action === 'Approve' || action === 'Verify') {
+          if (nextStep) {
+            const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
+            if (assignees.length === 0) {
+              throw new Error(`No assignee for step: ${nextStep.name}`);
             }
+            newAssignees = assignees;
+            newDeadline = Timestamp.fromDate(
+              await calculateDeadline(new Date(), nextStep.tat),
+            );
+          } else {
+            newStatus = 'Completed';
+          }
+        } else if (action === 'Reject') {
+          newStage = 'Rejected';
+          newStatus = 'Rejected';
+          newCurrentStepId = null;
+        }
 
-            const updateData: any = {
-                status: newStatus,
-                stage: newStage,
-                currentStepId: newCurrentStepId,
-                assignees: newAssignees,
-                deadline: newDeadline,
-                history: arrayUnion(newActionLog),
-            };
-            tx.update(docRef, updateData);
-        });
+        const updateData: any = {
+          status: newStatus,
+          stage: newStage,
+          currentStepId: newCurrentStepId,
+          assignees: newAssignees,
+          deadline: newDeadline,
+          history: arrayUnion(newActionLog),
+        };
 
-        toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
-        await fetchBills();
-        setIsViewOpen(false);
+        tx.update(docRef, updateData);
+      });
 
+      toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
+      await fetchBills();
+      setIsViewOpen(false);
     } catch (error: any) {
-        toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Action Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
     } finally {
-        setIsActionLoading(null);
+      setIsActionLoading(null);
     }
   };
 
@@ -461,77 +525,136 @@ export default function BillLogPage() {
           <TableBody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={projectSlug === 'all' ? 10 : 9}><Skeleton className="h-5" /></TableCell></TableRow>
+                <TableRow key={i}>
+                  <TableCell colSpan={projectSlug === 'all' ? 10 : 9}>
+                    <Skeleton className="h-5" />
+                  </TableCell>
+                </TableRow>
               ))
             ) : data.length > 0 ? (
               data.map((bill: DisplayBill) => {
                 const retentionDisplay = bill.isRetentionBill
-                    ? `+${formatCurrency(bill.netPayable)}`
-                    : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
+                  ? `+${formatCurrency(bill.netPayable)}`
+                  : bill.type !== 'Proforma'
+                  ? formatCurrency(bill.retentionAmount || 0)
+                  : 'N/A';
                 return (
-                  <TableRow key={bill.id} onClick={() => handleViewDetails(bill)} className="cursor-pointer">
-                    {projectSlug === 'all' && <TableCell>{bill.projectName}</TableCell>}
+                  <TableRow
+                    key={bill.id}
+                    onClick={() => handleViewDetails(bill)}
+                    className="cursor-pointer"
+                  >
+                    {projectSlug === 'all' && (
+                      <TableCell>{bill.projectName}</TableCell>
+                    )}
                     <TableCell>{bill.billNo}</TableCell>
                     <TableCell>{formatDateSafe(bill.date)}</TableCell>
                     <TableCell>
-                      <Badge variant={bill.type === 'Regular' ? 'default' : (bill.type === 'Retention' ? 'secondary' : 'outline')}>{bill.type}</Badge>
+                      <Badge
+                        variant={
+                          bill.type === 'Regular'
+                            ? 'default'
+                            : bill.type === 'Retention'
+                            ? 'secondary'
+                            : 'outline'
+                        }
+                      >
+                        {bill.type}
+                      </Badge>
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell className={bill.isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
+                    <TableCell
+                      className={bill.isRetentionBill ? 'text-green-600' : ''}
+                    >
+                      {retentionDisplay}
+                    </TableCell>
                     <TableCell>
-                        {bill.type !== 'Proforma' ? (
-                          <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
-                            {formatCurrency(bill.totalDeductions || 0)}
-                          </Button>
-                        ) : 'N/A'}
+                      {bill.type !== 'Proforma' ? (
+                        <Button
+                          variant="link"
+                          className="p-0 h-auto"
+                          onClick={(e) => handleViewDeductionDetails(e, bill)}
+                        >
+                          {formatCurrency(bill.totalDeductions || 0)}
+                        </Button>
+                      ) : (
+                        'N/A'
+                      )}
                     </TableCell>
                     <TableCell>{bill.stage}</TableCell>
                     <TableCell className="text-right">
-                       <AlertDialog>
+                      <AlertDialog>
                         <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
-                                <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => handleViewDetails(bill)}>
-                                    <Eye className="mr-2 h-4 w-4" /> View Details
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => handleViewDetails(bill)}>
+                              <Eye className="mr-2 h-4 w-4" /> View Details
+                            </DropdownMenuItem>
+                            {can('Edit Bill', 'Subcontractors Management.Billing') && (
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.stopPropagation();
+                                  router.push(
+                                    `/subcontractors-management/${projectSlug}/billing/edit/${bill.id}`,
+                                  );
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" /> Edit
+                              </DropdownMenuItem>
+                            )}
+                            {canDeleteBill && (
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onSelect={(e) => e.stopPropagation()}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" /> Delete
                                 </DropdownMenuItem>
-                                {can('Edit Bill', 'Subcontractors Management.Billing') && (
-                                <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); router.push(`/subcontractors-management/${projectSlug}/billing/edit/${bill.id}`)}}>
-                                    <Edit className="mr-2 h-4 w-4" /> Edit
-                                </DropdownMenuItem>
-                                )}
-                                {canDeleteBill && (
-                                <AlertDialogTrigger asChild>
-                                    <DropdownMenuItem className="text-destructive" onSelect={(e) => e.stopPropagation()}>
-                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                    </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                )}
-                            </DropdownMenuContent>
+                              </AlertDialogTrigger>
+                            )}
+                          </DropdownMenuContent>
                         </DropdownMenu>
                         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                This will permanently delete bill {bill.billNo}. This action cannot be undone.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteBill(bill)}>Delete</AlertDialogAction>
-                            </AlertDialogFooter>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete bill {bill.billNo}. This
+                              action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteBill(bill)}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
                     </TableCell>
                   </TableRow>
-                )
+                );
               })
             ) : (
-              <TableRow><TableCell colSpan={projectSlug === 'all' ? 10 : 9} className="text-center h-24">No bills found for this category.</TableCell></TableRow>
+              <TableRow>
+                <TableCell
+                  colSpan={projectSlug === 'all' ? 10 : 9}
+                  className="text-center h-24"
+                >
+                  No bills found for this category.
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
@@ -540,128 +663,206 @@ export default function BillLogPage() {
   );
 
   return (
-      <>
+    <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug === 'all' ? '' : projectSlug}`}>
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+            <Link
+              href={`/subcontractors-management/${
+                projectSlug === 'all' ? '' : projectSlug
+              }`}
+            >
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
             </Link>
             <h1 className="text-2xl font-bold">Billing Log</h1>
           </div>
         </div>
-        
+
         <Card className="mb-6">
-            <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                    {projectSlug === 'all' && (
-                        <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
-                            <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Projects</SelectItem>
-                                {filterOptions.projects.map(p => <SelectItem key={p.id} value={slugify(p.projectName)}>{p.projectName}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    )}
-                     <Select value={filters.subcontractor} onValueChange={(v) => handleFilterChange('subcontractor', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Subcontractors" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Subcontractors</SelectItem>
-                            {filterOptions.subcontractors.map(s => <SelectItem key={s.id} value={s.id}>{s.legalName}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Types</SelectItem>
-                            <SelectItem value="Regular">Regular</SelectItem>
-                            <SelectItem value="Retention">Retention</SelectItem>
-                            <SelectItem value="Proforma">Proforma</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Select value={filters.year} onValueChange={(v) => handleFilterChange('year', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Years</SelectItem>
-                            {filterOptions.years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                     <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
-                        <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Months</SelectItem>
-                            {filterOptions.months.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-            </CardHeader>
+          <CardHeader className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {projectSlug === 'all' && (
+                <Select
+                  value={filters.project}
+                  onValueChange={(v) => handleFilterChange('project', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {filterOptions.projects.map((p) => (
+                      <SelectItem key={p.id} value={slugify(p.projectName)}>
+                        {p.projectName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Select
+                value={filters.subcontractor}
+                onValueChange={(v) => handleFilterChange('subcontractor', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Subcontractors" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Subcontractors</SelectItem>
+                  {filterOptions.subcontractors.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.legalName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.type}
+                onValueChange={(v) => handleFilterChange('type', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="Regular">Regular</SelectItem>
+                  <SelectItem value="Retention">Retention</SelectItem>
+                  <SelectItem value="Proforma">Proforma</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.year}
+                onValueChange={(v) => handleFilterChange('year', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Years" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {filterOptions.years.map((y) => (
+                    <SelectItem key={y} value={y}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.month}
+                onValueChange={(v) => handleFilterChange('month', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Months" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  {filterOptions.months.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardHeader>
         </Card>
-        
+
         <Tabs defaultValue="all" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all"><FileText className="mr-2 h-4 w-4"/>All Bills ({allFilteredBills.length})</TabsTrigger>
-            <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4"/>Pending Tasks ({pendingTasks.length})</TabsTrigger>
-            <TabsTrigger value="hold"><HistoryIcon className="mr-2 h-4 w-4"/>On Hold / Other Stages ({holdTasks.length})</TabsTrigger>
-            <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4"/>Completed / Rejected ({completedTasks.length})</TabsTrigger>
+            <TabsTrigger value="all">
+              <FileText className="mr-2 h-4 w-4" />
+              All Bills ({allFilteredBills.length})
+            </TabsTrigger>
+            <TabsTrigger value="pending">
+              <Clock className="mr-2 h-4 w-4" />
+              Pending Tasks ({pendingTasks.length})
+            </TabsTrigger>
+            <TabsTrigger value="hold">
+              <HistoryIcon className="mr-2 h-4 w-4" />
+              On Hold / Other Stages ({holdTasks.length})
+            </TabsTrigger>
+            <TabsTrigger value="completed">
+              <Check className="mr-2 h-4 w-4" />
+              Completed / Rejected ({completedTasks.length})
+            </TabsTrigger>
           </TabsList>
-          <TabsContent value="all" className="mt-4">{renderTable(allFilteredBills)}</TabsContent>
-          <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks)}</TabsContent>
-          <TabsContent value="hold" className="mt-4">{renderTable(holdTasks)}</TabsContent>
-          <TabsContent value="completed" className="mt-4">{renderTable(completedTasks)}</TabsContent>
+          <TabsContent value="all" className="mt-4">
+            {renderTable(allFilteredBills)}
+          </TabsContent>
+          <TabsContent value="pending" className="mt-4">
+            {renderTable(pendingTasks)}
+          </TabsContent>
+          <TabsContent value="hold" className="mt-4">
+            {renderTable(holdTasks)}
+          </TabsContent>
+          <TabsContent value="completed" className="mt-4">
+            {renderTable(completedTasks)}
+          </TabsContent>
         </Tabs>
       </div>
 
-      {isViewOpen && (selectedBill ? (
-        <ViewBillDialog
-          isOpen={isViewOpen}
-          onOpenChange={setIsViewOpen}
-          bill={selectedBill}
-          workflow={workflow}
-          onAction={handleAction}
-          isActionLoading={!!isActionLoading}
-        />
-      ) : selectedProformaBill ? (
-        <ViewProformaBillDialog
-          isOpen={isViewOpen}
-          onOpenChange={setIsViewOpen}
-          bill={selectedProformaBill}
-          workflow={workflow}
-          onAction={handleAction}
-          isActionLoading={!!isActionLoading}
-        />
-      ) : null)}
-      
+      {isViewOpen &&
+        (selectedBill ? (
+          <ViewBillDialog
+            isOpen={isViewOpen}
+            onOpenChange={setIsViewOpen}
+            bill={selectedBill}
+            workflow={workflow}
+            onAction={handleAction}
+            isActionLoading={!!isActionLoading}
+          />
+        ) : selectedProformaBill ? (
+          <ViewProformaBillDialog
+            isOpen={isViewOpen}
+            onOpenChange={setIsViewOpen}
+            bill={selectedProformaBill}
+            workflow={workflow}
+            onAction={handleAction}
+            isActionLoading={!!isActionLoading}
+          />
+        ) : null)}
+
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
-          <DialogContent>
-              <DialogHeader>
-                  <ShadDialogTitle>Advance Deductions for Bill {selectedBill?.billNo}</ShadDialogTitle>
-              </DialogHeader>
-              <Table>
-                  <TableHeader>
-                      <TableRow>
-                          <TableHead>Proforma Bill No.</TableHead>
-                          <TableHead className="text-right">Deducted Amount</TableHead>
-                      </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
-                          const proforma = allProformaBills.find(p => p.id === deduction.reference);
-                          return (
-                            <TableRow key={index}>
-                                <TableCell>{proforma?.proformaNo || deduction.reference}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(deduction.amount)}</TableCell>
-                            </TableRow>
-                          )
-                      })}
-                  </TableBody>
-              </Table>
-              <DialogFooter>
-                  <DialogClose asChild>
-                      <Button variant="outline">Close</Button>
-                  </DialogClose>
-              </DialogFooter>
-          </DialogContent>
+        <DialogContent>
+          <DialogHeader>
+            <ShadDialogTitle>
+              Advance Deductions for Bill {selectedBill?.billNo}
+            </ShadDialogTitle>
+          </DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Proforma Bill No.</TableHead>
+                <TableHead className="text-right">Deducted Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
+                const proforma = allProformaBills.find(
+                  (p) => p.id === deduction.reference,
+                );
+                return (
+                  <TableRow key={index}>
+                    <TableCell>
+                      {proforma?.proformaNo || deduction.reference}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(deduction.amount)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </>
   );
 }
+
+    
