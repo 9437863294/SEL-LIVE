@@ -915,5 +915,3 @@ export default function BillLogPage() {
     </>
   );
 }
-
-```

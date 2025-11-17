@@ -1,4 +1,3 @@
-
 // src/app/layout.tsx
 import './globals.css';
 import { Inter, Roboto } from 'next/font/google';
@@ -7,6 +6,8 @@ import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from '@/components/ui/toaster';
 import { ModuleProvider } from '@/context/ModuleContext';
 import AppShell from '@/components/AppShell';
+import { Suspense } from 'react';
+import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -30,6 +31,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body>
         <AuthProvider>
+          {/* ClientSessionHandler must be inside AuthProvider but outside AppShell to run reliably */}
+          <Suspense fallback={null}>
+            <ClientSessionHandler />
+          </Suspense>
           <ModuleProvider>
             <AppShell>{children}</AppShell>
             <Toaster />

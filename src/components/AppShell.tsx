@@ -5,7 +5,6 @@ import { Suspense } from 'react';
 import Header from '@/components/Header';
 import { SessionExpiryDialog } from './auth/SessionExpiryDialog';
 import { useAuth } from './auth/AuthProvider';
-import { ClientSessionHandler } from './auth/ClientSessionHandler';
 
 export default function AppShell({
     children,
@@ -17,16 +16,8 @@ export default function AppShell({
     return (
         <>
             {/* 
-              This handler is now outside the conditional rendering to ensure it always runs.
-              It will handle redirecting to /login if the user is not authenticated.
-            */}
-            <Suspense fallback={null}>
-                <ClientSessionHandler />
-            </Suspense>
-
-            {/* 
               If we are loading or there's no user, we render a minimal layout or the public page.
-              The ClientSessionHandler will have already decided if a redirect is needed.
+              The ClientSessionHandler, now in the root layout, handles redirects.
             */}
             {loading || !user ? (
                 <div className="min-h-screen">{children}</div>
