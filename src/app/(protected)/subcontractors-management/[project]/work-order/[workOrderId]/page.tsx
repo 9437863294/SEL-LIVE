@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, collectionGroup } from 'firebase/firestore';
 import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill, ProformaBill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,9 +70,12 @@ export default function WorkOrderDetailsPage() {
                 
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
-
+                
+                // Fetch JMC entries across all projects that match the work order number
+                const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('woNo', '==', woData.workOrderNo));
+                
                 const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDocs(query(collection(db, 'projects', projectData.id, 'jmcEntries'), where('woNo', '==', woData.workOrderNo))),
+                    getDocs(jmcQuery),
                     getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
