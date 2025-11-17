@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDoc, getDocs, query, collectionGroup } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, collectionGroup, where } from 'firebase/firestore';
 import type { WorkOrder, WorkOrderItem, BoqItem, Project, JmcEntry, Bill, ProformaBill } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -131,7 +131,7 @@ export default function WorkOrderDetailsPage() {
                     
                     return {
                         ...item,
-                        boqQty: boqItem ? String(boqItem['QTY'] || '0') : 'N/A',
+                        boqQty: boqItem ? String((boqItem as any)['QTY'] || '0') : 'N/A',
                         boqRate: boqItem && rateKey ? String((boqItem as any)[rateKey] || '0') : 'N/A',
                         totalJmcCertifiedQty: jmcCertifiedQtyMap.get(key) || 0,
                         totalBilledQty: billedQtyMap.get(item.id) || 0,
@@ -257,4 +257,3 @@ export default function WorkOrderDetailsPage() {
     );
 }
 
-    
