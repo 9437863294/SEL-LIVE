@@ -285,7 +285,7 @@ export default function BillLogPage() {
     const combined: DisplayBill[] = [...displayBills, ...displayProformas].sort((a,b) => b.sortDate.getTime() - a.sortDate.getTime());
 
     const filterFn = (bill: DisplayBill) => {
-        const projectMatch = filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+        const projectMatch = filters.project === 'all' || slugify(bill.projectName) === filters.project;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         const sortDate = bill.sortDate;
         if (!sortDate) return false;
@@ -335,11 +335,11 @@ export default function BillLogPage() {
 
   const handleViewDetails = (unifiedBill: DisplayBill) => {
     if (unifiedBill.type === 'Proforma') {
-      const original = allProformaBills.find(p => p.id === unifiedBill.id);
+      const original = allProformaBills.find((p: ProformaBill) => p.id === unifiedBill.id);
       setSelectedProformaBill(original || null);
       setSelectedBill(null);
     } else {
-      const original = allBills.find(b => b.id === unifiedBill.id);
+      const original = allBills.find((b: Bill) => b.id === unifiedBill.id);
       setSelectedBill(original || null);
       setSelectedProformaBill(null);
     }
@@ -465,7 +465,7 @@ export default function BillLogPage() {
               ))
             ) : data.length > 0 ? (
               data.map((bill) => {
-                const retentionDisplay = (bill as Bill).isRetentionBill
+                const retentionDisplay = bill.isRetentionBill
                     ? `+${formatCurrency(bill.netPayable)}`
                     : bill.type !== 'Proforma' ? formatCurrency(bill.retentionAmount || 0) : 'N/A';
                 return (
@@ -478,7 +478,7 @@ export default function BillLogPage() {
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable)}</TableCell>
-                    <TableCell className={(bill as Bill).isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
+                    <TableCell className={bill.isRetentionBill ? "text-green-600" : ""}>{retentionDisplay}</TableCell>
                     <TableCell>
                         {bill.type !== 'Proforma' ? (
                           <Button variant="link" className="p-0 h-auto" onClick={(e) => handleViewDeductionDetails(e, bill)}>
