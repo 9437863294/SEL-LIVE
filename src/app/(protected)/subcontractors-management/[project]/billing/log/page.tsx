@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
@@ -37,7 +37,6 @@ import {
   arrayUnion,
   getDoc,
   QuerySnapshot,
-  collectionGroup,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -86,22 +85,21 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-
-// Unified display type for the log table
 interface DisplayBillItem {
-  jmcItemId: string;
-  description: string;
-  unit: string;
-  rate: number;
-  billedQty: number;
-  totalAmount: number;
-  boqSlNo?: string;
-  executedQty?: string;
-  jmcEntryId?: string;
-  jmcNo?: string;
+    jmcItemId: string;
+    description: string;
+    unit: string;
+    rate: number;
+    billedQty: number;
+    totalAmount: number;
+    boqSlNo?: string;
+    executedQty?: string;
+    jmcEntryId?: string;
+    jmcNo?: string;
 }
 
-interface DisplayBill {
+// A base structure for any item in the log
+interface DisplayBillBase {
   id: string;
   type: 'Regular' | 'Retention' | 'Proforma';
   date: string;
@@ -111,12 +109,10 @@ interface DisplayBill {
   subcontractorId: string;
   subcontractorName: string;
   workOrderNo: string;
-  billNo: string;
+  billNo: string; // Will hold proformaNo for proforma bills
   netPayable: number;
   items: DisplayBillItem[];
   isRetentionBill: boolean;
-  retentionAmount?: number;
-  totalDeductions?: number;
 
   // Optional workflow fields
   status?: string;
@@ -126,6 +122,11 @@ interface DisplayBill {
   history?: ActionLog[];
   deadline?: Timestamp | null;
 }
+
+// A discriminated union would be ideal, but for simplicity we'll use partials
+// This says a DisplayBill is the base shape, plus *either* Bill or ProformaBill partial properties
+type DisplayBill = DisplayBillBase & Partial<Bill> & Partial<ProformaBill>;
+
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -300,16 +301,12 @@ export default function BillLogPage() {
           'N/A',
         netPayable: b.netPayable || 0,
         items: (b.items || []).map((i) => ({
-          jmcItemId: i.jmcItemId,
-          description: i.description,
-          unit: i.unit,
-          rate: parseFloat(i.rate) || 0,
-          billedQty: parseFloat(i.billedQty) || 0,
-          totalAmount: parseFloat(i.totalAmount) || 0,
-          boqSlNo: i.boqSlNo,
-          executedQty: i.executedQty,
-          jmcEntryId: i.jmcEntryId,
-          jmcNo: i.jmcNo,
+            jmcItemId: i.jmcItemId,
+            description: i.description,
+            unit: i.unit,
+            rate: parseFloat(i.rate) || 0,
+            billedQty: parseFloat(i.billedQty) || 0,
+            totalAmount: parseFloat(i.totalAmount) || 0,
         })),
       };
     });
@@ -330,17 +327,16 @@ export default function BillLogPage() {
           subcontractors.find((s) => s.id === p.subcontractorId)?.legalName ||
           'N/A',
         items: (p.items || []).map((i) => ({
-          description: i.description,
-          unit: i.unit,
-          rate: parseFloat(i.rate) || 0,
-          billedQty: i.billedQty || 0,
-          totalAmount: parseFloat(i.totalAmount) || 0,
-          // Add placeholders for BillItem fields
           jmcItemId: '',
           jmcEntryId: '',
           jmcNo: '',
           boqSlNo: '',
           executedQty: '',
+          description: i.description,
+          unit: i.unit,
+          rate: parseFloat(i.rate) || 0,
+          billedQty: i.billedQty || 0,
+          totalAmount: parseFloat(i.totalAmount) || 0,
         })),
       };
     });
@@ -449,7 +445,7 @@ export default function BillLogPage() {
 
   const handleDeleteBill = async (billToDelete: DisplayBill) => {
     const collectionName = billToDelete.type === 'Proforma' ? 'proformaBills' : 'bills';
-    const projectId = allBills.find(b => b.id === billToDelete.id)?.projectId || allProformaBills.find(p => p.id === billToDelete.id)?.projectId;
+    const projectId = billToDelete.projectId;
 
     if (!projectId) {
       toast({
@@ -488,7 +484,7 @@ export default function BillLogPage() {
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
     const collectionName = (currentBill as any).proformaNo ? 'proformaBills' : 'bills';
-    const projectId = allBills.find(b => b.id === taskId)?.projectId || allProformaBills.find(p => p.id === taskId)?.projectId;
+    const projectId = currentBill.projectId;
 
     if(!projectId) {
        toast({ title: 'Action Failed', description: 'Could not determine project for this bill.', variant: 'destructive'});
@@ -672,7 +668,7 @@ export default function BillLogPage() {
                                 onSelect={(e) => {
                                   e.stopPropagation();
                                   router.push(
-                                    `/subcontractors-management/${projectSlug}/billing/edit/${bill.id}`,
+                                    `/subcontractors-management/${slugify(bill.projectName)}/billing/edit/${bill.id}`,
                                   );
                                 }}
                               >
