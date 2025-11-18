@@ -200,7 +200,7 @@ export default function BillingSummaryReport() {
     const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects, subcontractors: visibleSubs, years, months };
-  }, [filteredProjects, allWorkOrders, allSubcontractors, bills, proformaBills]);
+  }, [projects, allWorkOrders, allSubcontractors, bills, proformaBills, filteredProjects]);
   
   const filteredData = useMemo(() => {
     const visibleProjectIds = new Set(filteredProjects.map(p => p.id));
@@ -456,3 +456,5 @@ export default function BillingSummaryReport() {
     </>
   );
 }
+
+```
