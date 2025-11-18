@@ -174,12 +174,12 @@ export default function BillingSummaryReport() {
     setFilters(prev => ({...prev, [field]: value}));
   }
 
-  const { filteredBills, filteredProformas } = useMemo(() => {
-    const filterFn = (bill: Bill | ProformaBill) => {
-        const projectForBill = projects.find(p => p.id === bill.projectId);
-        const projectSlugForBill = projectForBill ? slugify(projectForBill.projectName) : '';
+  const { filteredBills, filteredProformas, filteredWorkOrders } = useMemo(() => {
+    const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
+    const targetProjectId = filters.project === 'all' ? null : projectMap.get(filters.project);
 
-        const projectMatch = filters.project === 'all' || projectSlugForBill === filters.project;
+    const filterFn = (bill: Bill | ProformaBill) => {
+        const projectMatch = !targetProjectId || bill.projectId === targetProjectId;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
         
         const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
@@ -191,16 +191,21 @@ export default function BillingSummaryReport() {
         return projectMatch && subMatch && yearMatch && monthMatch;
     };
     
+    const fb = bills.filter(filterFn);
+    const fp = proformaBills.filter(filterFn);
+    
+    const relevantWoIds = new Set([...fb.map(b => b.workOrderId), ...fp.map(p => p.workOrderId)]);
+    const fw = workOrders.filter(wo => relevantWoIds.has(wo.id));
+    
     return {
-      filteredBills: bills.filter(filterFn),
-      filteredProformas: proformaBills.filter(filterFn)
+      filteredBills: fb,
+      filteredProformas: fp,
+      filteredWorkOrders: fw,
     };
-}, [bills, proformaBills, filters, projects]);
+}, [bills, proformaBills, workOrders, filters, projects]);
 
   const summaryStats = useMemo(() => {
-    const relevantWorkOrderIds = new Set([...filteredBills.map(b => b.workOrderId), ...filteredProformas.map(p => p.workOrderId)]);
-    const relevantWorkOrders = workOrders.filter(wo => relevantWorkOrderIds.has(wo.id));
-    const totalWorkOrderValue = relevantWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
+    const totalWorkOrderValue = filteredWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
 
     const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
     const totalRetentionDeducted = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
@@ -212,7 +217,7 @@ export default function BillingSummaryReport() {
     const balanceToBeBilled = totalWorkOrderValue - totalBilled;
 
     return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance, balanceToBeBilled };
-  }, [filteredBills, filteredProformas, workOrders]);
+  }, [filteredBills, filteredProformas, filteredWorkOrders]);
   
    const workOrderSummary = useMemo(() => {
     if (isLoading) return [];
@@ -227,14 +232,7 @@ export default function BillingSummaryReport() {
       progress: number;
     }>();
 
-    const relevantProjectIds = filters.project === 'all' 
-      ? new Set(projects.map(p => p.id))
-      : new Set(projects.filter(p => slugify(p.projectName) === filters.project).map(p => p.id));
-
-    workOrders.forEach(wo => {
-      if (!relevantProjectIds.has(wo.projectId)) return;
-      if (filters.subcontractor !== 'all' && wo.subcontractorId !== filters.subcontractor) return;
-
+    filteredWorkOrders.forEach(wo => {
       woMap.set(wo.id, {
         woNo: wo.workOrderNo,
         subcontractorName: wo.subcontractorName,
@@ -270,17 +268,17 @@ export default function BillingSummaryReport() {
     });
 
     return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
-  }, [workOrders, filteredBills, filteredProformas, filters.project, filters.subcontractor, projects, isLoading]);
+  }, [filteredWorkOrders, filteredBills, filteredProformas, isLoading]);
   
   const filterOptions = useMemo(() => {
-    const combined = [...bills, ...proformaBills];
-    const visibleProjects = projects.filter(p => combined.some(b => b.projectId === p.id));
-    const visibleSubs = subcontractors.filter(s => combined.some(b => b.subcontractorId === s.id));
+    const combined = [...allBills, ...allProformaBills];
+    const visibleProjects = projects;
+    const visibleSubs = subcontractors;
     const years = [...new Set(combined.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, subcontractors]);
+  }, [allBills, allProformaBills, projects, subcontractors]);
   
    const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
@@ -319,7 +317,7 @@ export default function BillingSummaryReport() {
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
-                    <CardDescription>You do not have permission to view this page.</CardDescription>
+                    <CardDescription>You do not have permission to view reports.</CardDescription>
                 </CardHeader>
                 <CardContent className="flex justify-center p-8">
                     <ShieldAlert className="h-16 w-16 text-destructive" />
@@ -365,7 +363,7 @@ export default function BillingSummaryReport() {
                         <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Years</SelectItem>
-                            {filterOptions.years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                            {filterOptions.years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                         </SelectContent>
                     </Select>
                      <Select value={filters.month} onValueChange={(v) => handleFilterChange('month', v)}>
@@ -453,4 +451,3 @@ export default function BillingSummaryReport() {
     </>
   );
 }
-
