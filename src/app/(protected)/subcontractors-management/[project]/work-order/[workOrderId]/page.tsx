@@ -53,18 +53,8 @@ export default function WorkOrderDetailsPage() {
             setIsLoading(true);
 
             try {
-                // Query the collection group to find the document by its ID
-                const workOrdersQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '==', `projects/${projectSlug}/subcontractors/${workOrder?.subcontractorId}/workOrders/${workOrderId}`));
-                const workOrderSnapshot = await getDocs(workOrdersQuery);
-
-                let woDoc;
-                if (!workOrderSnapshot.empty) {
-                    woDoc = workOrderSnapshot.docs[0];
-                } else {
-                    // Fallback for deeply nested query issue
-                    const allWoSnapshot = await getDocs(collectionGroup(db, 'workOrders'));
-                    woDoc = allWoSnapshot.docs.find(doc => doc.id === workOrderId);
-                }
+                const allWoSnapshot = await getDocs(collectionGroup(db, 'workOrders'));
+                const woDoc = allWoSnapshot.docs.find(doc => doc.id === workOrderId);
 
                 if (!woDoc || !woDoc.exists()) {
                     toast({ title: 'Work Order not found', variant: 'destructive' });
