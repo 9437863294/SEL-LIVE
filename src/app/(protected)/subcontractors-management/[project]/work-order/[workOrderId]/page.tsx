@@ -52,7 +52,6 @@ export default function WorkOrderDetailsPage() {
 
             try {
                 // Find the WO first to get its project ID
-                const woQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '==', `projects/${projectSlug}/subcontractors/${workOrder?.subcontractorId}/workOrders/${workOrderId}`));
                 const allWoSnapshot = await getDocs(collectionGroup(db, 'workOrders'));
                 const woDoc = allWoSnapshot.docs.find(doc => doc.id === workOrderId);
 
@@ -71,16 +70,14 @@ export default function WorkOrderDetailsPage() {
 
                 // Fetch related data using the found projectId
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
-                    getDocs(collectionGroup(db, 'jmcEntries')), // Fetch all JMCs
+                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
                     getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
-                // Process JMCs - filter client-side
-                const jmcEntries = jmcSnap.docs
-                    .map(doc => doc.data() as JmcEntry)
-                    .filter(jmc => jmc.projectId === projectId);
+                // Process JMCs
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
