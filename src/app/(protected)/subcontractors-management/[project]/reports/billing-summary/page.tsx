@@ -185,6 +185,40 @@ export default function BillingSummaryReport() {
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
+  
+  const filterOptions = useMemo(() => {
+    const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
+    const targetProjectId = filters.project === 'all' ? null : projectMap.get(filters.project);
+    
+    const visibleProjects = projects; 
+
+    const relevantWorkOrders = targetProjectId 
+        ? workOrders.filter(wo => wo.projectId === targetProjectId)
+        : workOrders;
+    
+    const visibleSubcontractorIds = new Set(relevantWorkOrders.map(wo => wo.subcontractorId));
+    const visibleSubs = subcontractors.filter(s => visibleSubcontractorIds.has(s.id));
+
+    const combined = [...bills, ...proformaBills];
+    const yearSet = new Set<string>();
+    combined.forEach((b) => {
+      const rawDate =
+        'billDate' in b
+          ? (b as Bill).billDate
+          : (b as ProformaBill).date;
+      const d = toDateSafe(rawDate);
+      if (!d) return;
+      yearSet.add(getYear(d).toString());
+    });
+    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
+
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      value: i.toString(),
+      label: format(new Date(0, i), 'MMMM'),
+    }));
+
+    return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
+  }, [bills, proformaBills, projects, subcontractors, workOrders, filters.project]);
 
   const { filteredBills, filteredProformas, filteredWorkOrders } = useMemo(() => {
     const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
@@ -218,7 +252,6 @@ export default function BillingSummaryReport() {
 
   const summaryStats: SummaryStats = useMemo(() => {
     const totalWorkOrderValue = filteredWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
-
     const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
     const totalRetentionDeducted = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
     const totalRetentionClaimed = filteredBills.filter(b => b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
@@ -282,30 +315,7 @@ export default function BillingSummaryReport() {
     return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
   }, [filteredWorkOrders, filteredBills, filteredProformas, isLoading]);
   
-  const filterOptions = useMemo(() => {
-    const combined = [...bills, ...proformaBills];
-    const visibleProjects = projects;
-    const visibleSubs = subcontractors;
-    const yearSet = new Set<string>();
-    combined.forEach((b) => {
-      const rawDate =
-        'billDate' in b
-          ? (b as Bill).billDate
-          : (b as ProformaBill).date;
-      const d = toDateSafe(rawDate);
-      if (!d) return;
-      yearSet.add(getYear(d).toString());
-    });
-    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
 
-    const months = Array.from({ length: 12 }, (_, i) => ({
-      value: i.toString(),
-      label: format(new Date(0, i), 'MMMM'),
-    }));
-
-    return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, subcontractors]);
-  
    const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
@@ -350,7 +360,7 @@ export default function BillingSummaryReport() {
                 </CardContent>
             </Card>
         </div>
-    )
+    );
   }
 
 
