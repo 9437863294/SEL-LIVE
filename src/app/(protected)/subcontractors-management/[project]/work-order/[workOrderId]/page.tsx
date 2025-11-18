@@ -29,8 +29,6 @@ const getScope1 = (item: any): string => String(item?.scope1 || item?.['Scope 1'
 const getScope2 = (item: any): string => String(item?.scope2 || item?.['Scope 2'] || '').trim();
 const getBoqSlNo = (item: any): string => String(item?.boqSlNo ?? item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? '').trim();
 const compositeKey = (item: any) => `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-
 
 export default function WorkOrderDetailsPage() {
     const params = useParams();
@@ -53,6 +51,8 @@ export default function WorkOrderDetailsPage() {
             setIsLoading(true);
 
             try {
+                // Find the WO first to get its project ID
+                const woQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '==', `projects/${projectSlug}/subcontractors/${workOrder?.subcontractorId}/workOrders/${workOrderId}`));
                 const allWoSnapshot = await getDocs(collectionGroup(db, 'workOrders'));
                 const woDoc = allWoSnapshot.docs.find(doc => doc.id === workOrderId);
 
@@ -69,16 +69,18 @@ export default function WorkOrderDetailsPage() {
                     throw new Error("Work order is missing project information.");
                 }
 
-                // Fetch related data using the projectId from the found work order
+                // Fetch related data using the found projectId
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
-                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
+                    getDocs(collectionGroup(db, 'jmcEntries')), // Fetch all JMCs
                     getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
-                // Process the fetched data...
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
+                // Process JMCs - filter client-side
+                const jmcEntries = jmcSnap.docs
+                    .map(doc => doc.data() as JmcEntry)
+                    .filter(jmc => jmc.projectId === projectId);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
