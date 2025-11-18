@@ -29,6 +29,8 @@ const getScope1 = (item: any): string => String(item?.scope1 || item?.['Scope 1'
 const getScope2 = (item: any): string => String(item?.scope2 || item?.['Scope 2'] || '').trim();
 const getBoqSlNo = (item: any): string => String(item?.boqSlNo ?? item?.['BOQ SL No'] ?? item?.['SL. No.'] ?? '').trim();
 const compositeKey = (item: any) => `${getScope1(item)}_${getScope2(item)}_${getBoqSlNo(item)}`;
+const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
 
 export default function WorkOrderDetailsPage() {
     const params = useParams();
@@ -50,17 +52,35 @@ export default function WorkOrderDetailsPage() {
             if (!projectSlug || !workOrderId) return;
             
             try {
-                // Find the work order directly using a collectionGroup query
-                const woQuery = query(collectionGroup(db, 'workOrders'), where('__name__', 'matches', `/${workOrderId}$`));
-                const woSnapshot = await getDocs(woQuery);
+                // Find project first
+                const projectsQuery = query(collection(db, 'projects'));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
 
-                if (woSnapshot.empty) {
-                    toast({ title: 'Work Order not found', variant: 'destructive' });
+                if (!projectData) {
+                    throw new Error("Project not found");
+                }
+
+                // Fetch all work orders for the project
+                const allWorkOrdersInProject: WorkOrder[] = [];
+                const subcontractorsSnapshot = await getDocs(collection(db, 'projects', projectData.id, 'subcontractors'));
+                
+                for (const subDoc of subcontractorsSnapshot.docs) {
+                    const woSnapshot = await getDocs(collection(db, 'projects', projectData.id, 'subcontractors', subDoc.id, 'workOrders'));
+                    woSnapshot.forEach(woDoc => {
+                        if (woDoc.id === workOrderId) {
+                            allWorkOrdersInProject.push({ id: woDoc.id, ...woDoc.data() } as WorkOrder);
+                        }
+                    });
+                }
+                
+                const woData = allWorkOrdersInProject.find(wo => wo.id === workOrderId);
+
+                if (!woData) {
+                    toast({ title: 'Work Order not found in this project', variant: 'destructive' });
                     return notFound();
                 }
 
-                const woDocSnap = woSnapshot.docs[0];
-                const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
 
                 const projectId = woData.projectId;
@@ -69,16 +89,13 @@ export default function WorkOrderDetailsPage() {
                 }
 
                 // Now fetch all related data for that project
-                const [projectSnap, jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
-                    getDoc(doc(db, 'projects', projectId)),
+                const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
                     getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
                     getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
-
-                if (!projectSnap.exists()) throw new Error("Project not found");
-
+                
                 const allJmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 const jmcEntries = allJmcEntries.filter(jmc => jmc.woNo === woData.workOrderNo);
                 
