@@ -9,7 +9,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, writeBatch, serverTimestamp, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+  getDoc,
+  Timestamp,
+  writeBatch,
+  collectionGroup,
+} from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { WorkOrder, Project, Bill, Subcontractor, WorkflowStep, ActionLog } from '@/lib/types';
@@ -51,28 +63,33 @@ export default function CreateRetentionBillPage() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchProjectAndData = async () => {
         if (!projectSlug) return;
         
         const projectsQuery = query(collection(db, 'projects'));
         const projectSnap = await getDocs(projectsQuery);
-        const project = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        const project = projectSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+            .find(p => slugify(p.projectName) === projectSlug);
 
         if (!project) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             return;
         }
         setCurrentProject(project);
+        
+        const subsQuery = query(collectionGroup(db, 'subcontractors'));
+        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
 
-        const subsQuery = query(collection(db, 'projects', project.id, 'subcontractors'));
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-
-        const [subsSnap, billsSnap] = await Promise.all([ getDocs(subsQuery), getDocs(billsQuery) ]);
+        const [subsSnap, billsSnap] = await Promise.all([
+            getDocs(subsQuery),
+            getDocs(billsQuery),
+        ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
         setAllBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
     };
-    fetchData();
+    fetchProjectAndData();
   }, [projectSlug, toast]);
 
   const availableBills = useMemo(() => {
@@ -132,6 +149,7 @@ export default function CreateRetentionBillPage() {
           items: [],
           subtotal: totalRetentionAmount,
           gstType: 'manual',
+          gstPercentage: 0,
           gstAmount: 0,
           grossAmount: totalRetentionAmount,
           retentionType: 'manual',
@@ -171,6 +189,8 @@ export default function CreateRetentionBillPage() {
         newBillData.history = [initialLog];
 
 
+        if (!currentProject) throw new Error("Project ID is missing");
+        
         const newBillRef = doc(collection(db, 'projects', currentProject.id, 'bills'));
         batch.set(newBillRef, newBillData);
         
@@ -184,9 +204,9 @@ export default function CreateRetentionBillPage() {
         toast({ title: 'Retention Bill Created', description: 'The bill has been saved and retention statuses updated.' });
         router.push(`/subcontractors-management/${projectSlug}/billing`);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error creating retention bill: ", error);
-        toast({ title: 'Save Failed', description: 'An error occurred while saving the retention bill.', variant: 'destructive' });
+        toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the retention bill.', variant: 'destructive' });
     } finally {
         setIsSaving(false);
     }
