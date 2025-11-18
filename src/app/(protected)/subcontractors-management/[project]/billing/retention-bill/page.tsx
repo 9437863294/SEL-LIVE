@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Library } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Library, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -79,7 +79,7 @@ export default function CreateRetentionBillPage() {
         setCurrentProject(project);
         
         const subsQuery = query(collectionGroup(db, 'subcontractors'));
-        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
+        const billsQuery = query(collectionGroup(db, 'bills')); // Fetch all bills
 
         const [subsSnap, billsSnap] = await Promise.all([
             getDocs(subsQuery),
@@ -87,7 +87,13 @@ export default function CreateRetentionBillPage() {
         ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        setAllBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        
+        // Filter bills on the client
+        const projectBills = billsSnap.docs
+            .map(d => ({id: d.id, ...d.data()} as Bill))
+            .filter(bill => bill.projectId === project.id);
+            
+        setAllBills(projectBills);
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
