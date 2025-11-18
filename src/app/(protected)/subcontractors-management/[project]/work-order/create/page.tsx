@@ -27,6 +27,16 @@ const initialWorkOrderDetails = {
     subcontractorId: '',
 };
 
+const extractScope1 = (boqItem: BoqItem): string => {
+  const key = Object.keys(boqItem).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope1');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
+const extractScope2 = (boqItem: BoqItem): string => {
+  const key = Object.keys(boqItem).find(k => k.toLowerCase().replace(/\s+|\./g, '') === 'scope2');
+  return key ? String((boqItem as any)[key] ?? '') : '';
+};
+
 export default function CreateWorkOrderPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -130,7 +140,9 @@ export default function CreateWorkOrderPage() {
       description: String(boqItem.Description || boqItem.DESCRIPTION || ''),
       unit: String(boqItem.UNIT || boqItem.Unit || ''),
       rate: Number((boqItem as any)[rateKey] || 0),
-      boqSlNo: String(boqItem['BOQ SL No'] || '')
+      boqSlNo: String(boqItem['BOQ SL No'] || ''),
+      scope1: extractScope1(boqItem),
+      scope2: extractScope2(boqItem),
     };
     setItems(newItems);
   };
@@ -147,6 +159,8 @@ export default function CreateWorkOrderPage() {
               rate: Number((boqItem as any)[rateKey] || 0),
               totalAmount: 0,
               boqSlNo: String(boqItem['BOQ SL No'] || ''),
+              scope1: extractScope1(boqItem),
+              scope2: extractScope2(boqItem),
           };
       });
 

@@ -492,7 +492,7 @@ export default function JmcEntryPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/jmc`}>
+            <Link href={`/subcontractors-management/${projectSlug}/jmc`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
@@ -654,5 +654,6 @@ export default function JmcEntryPage() {
     </>
   );
 }
+
 
 
