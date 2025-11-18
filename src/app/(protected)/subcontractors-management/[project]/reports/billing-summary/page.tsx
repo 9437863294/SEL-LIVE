@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -124,8 +124,8 @@ export default function BillingSummaryReport() {
   const projectSlug = params.project as string;
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [bills, setAllBills] = useState<Bill[]>([]);
-  const [proformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
@@ -154,8 +154,8 @@ export default function BillingSummaryReport() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setAllSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
         setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setAllBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setAllProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
         
     } catch (error) {
         console.error('Error fetching bills: ', error);
@@ -190,7 +190,7 @@ export default function BillingSummaryReport() {
     const visibleSubcontractorIds = new Set(visibleWorkOrders.map(wo => wo.subcontractorId));
     const visibleSubs = allSubcontractors.filter(s => visibleSubcontractorIds.has(s.id));
 
-    const combinedBills = [...allBills, ...allProformaBills];
+    const combinedBills = [...bills, ...proformaBills];
     const yearSet = new Set<string>();
     combinedBills.forEach((b) => {
       const d = toDateSafe('billDate' in b ? b.billDate : b.date);
@@ -200,7 +200,7 @@ export default function BillingSummaryReport() {
     const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects, subcontractors: visibleSubs, years, months };
-  }, [filteredProjects, allWorkOrders, allSubcontractors, allBills, allProformaBills]);
+  }, [filteredProjects, allWorkOrders, allSubcontractors, bills, proformaBills]);
   
   const filteredData = useMemo(() => {
     const visibleProjectIds = new Set(filteredProjects.map(p => p.id));
@@ -217,14 +217,14 @@ export default function BillingSummaryReport() {
         return projectMatch && subMatch && yearMatch && monthMatch;
     };
     
-    const filteredBills = allBills.filter(filterFn);
-    const filteredProformas = allProformaBills.filter(filterFn);
+    const filteredBills = bills.filter(filterFn);
+    const filteredProformas = proformaBills.filter(filterFn);
     
     const relevantWoIds = new Set([...filteredBills.map(b => b.workOrderId), ...filteredProformas.map(p => p.workOrderId)]);
     const filteredWorkOrders = allWorkOrders.filter(wo => relevantWoIds.has(wo.id));
     
     return { filteredBills, filteredProformas, filteredWorkOrders };
-  }, [filters, allBills, allProformaBills, allWorkOrders, filteredProjects]);
+  }, [filters, bills, proformaBills, allWorkOrders, filteredProjects]);
 
 
   const summaryStats: SummaryStats = useMemo(() => {
