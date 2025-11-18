@@ -49,36 +49,35 @@ export default function WorkOrderLogPage() {
         const projectsSnapshot = await getDocs(projectsQuery);
         const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
         
-        let woQuery;
-
-        if (projectSlug === 'all') {
-          woQuery = query(collectionGroup(db, 'workOrders'));
-        } else {
-          const project = allProjects.find(p => slugify(p.projectName) === projectSlug);
-
-          if (!project) {
-            console.error("Project not found");
-            setIsLoading(false);
-            return;
-          }
-          setCurrentProject(project);
-          woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
+        let project: Project | undefined;
+        if (projectSlug !== 'all') {
+            project = allProjects.find(p => slugify(p.projectName) === projectSlug);
+            if (!project) {
+                console.error("Project not found");
+                setIsLoading(false);
+                return;
+            }
+            setCurrentProject(project);
         }
-        
-        const querySnapshot = await getDocs(woQuery);
-        const entries = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            const projectPath = doc.ref.parent.parent?.parent?.parent?.path;
-            const projectId = projectPath?.split('/').pop();
-            const project = allProjects.find(p => p.id === projectId);
 
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const querySnapshot = await getDocs(woQuery);
+        
+        let entries = querySnapshot.docs.map(doc => {
+            const data = doc.data();
             return { 
                 id: doc.id, 
                 ...data,
-                projectName: project?.projectName || 'Unknown',
-                projectSlug: project ? slugify(project.projectName) : '',
+                // Ensure we find the project name for each WO, especially in 'all' view
+                projectName: allProjects.find(p => p.id === data.projectId)?.projectName || 'Unknown',
+                projectSlug: allProjects.find(p => p.id === data.projectId) ? slugify(allProjects.find(p => p.id === data.projectId)!.projectName) : '',
             } as WorkOrder
         });
+
+        // If not viewing all, filter to the current project
+        if (projectSlug !== 'all' && project) {
+            entries = entries.filter(wo => wo.projectId === project.id);
+        }
 
         // Client-side sorting for all views to avoid index errors
         entries.sort((a,b) => {
