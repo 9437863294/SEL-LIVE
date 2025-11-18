@@ -103,7 +103,7 @@ export default function CreateBillPage() {
         }
         setCurrentProject(project);
 
-        const subsQuery = query(collection(db, 'projects', project.id, 'subcontractors'));
+        const subsQuery = query(collection(db, 'subcontractors'));
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
@@ -395,6 +395,12 @@ export default function CreateBillPage() {
     new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
     [advanceDeductions]
   );
+  
+  const subcontractorsWithWorkOrders = useMemo(() => {
+    if (!currentProject) return [];
+    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+  }, [allWorkOrders, subcontractors, currentProject]);
 
   return (
     <>
@@ -421,7 +427,7 @@ export default function CreateBillPage() {
                       <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
                           <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
@@ -672,5 +678,9 @@ export default function CreateBillPage() {
     </>
   );
 }
+
+    
+
+    
 
     
