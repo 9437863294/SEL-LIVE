@@ -119,7 +119,7 @@ interface DisplayBill {
   deadline?: Timestamp | null;
   retentionAmount?: number;
   totalDeductions?: number;
-  advanceDeductions?: { id: string; reference: string; amount: number }[];
+  advanceDeductions?: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number }[];
 }
 
 const slugify = (text: string) => {
@@ -209,54 +209,28 @@ export default function BillLogPage() {
   
       const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
   
-      const allSubcontractors: Subcontractor[] = [];
-      const subsQueryPromises = allProjects.map((p) =>
-        getDocs(collection(db, 'projects', p.id, 'subcontractors')),
-      );
-      const subsSnaps = await Promise.all(subsQueryPromises);
-      subsSnaps.forEach((snap: QuerySnapshot) => {
-        allSubcontractors.push(
-          ...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)),
-        );
-      });
-      setSubcontractors(allSubcontractors);
+      const subsQuery = query(collectionGroup(db, 'subcontractors'));
+      const woQuery = query(collectionGroup(db, 'workOrders'));
+      const billsQuery = query(collectionGroup(db, 'bills'));
+      const proformaQuery = query(collectionGroup(db, 'proformaBills'));
+
+      const [subsSnap, woSnap, billsSnapshot, proformaSnapshot] = await Promise.all([
+          getDocs(subsQuery),
+          getDocs(woQuery),
+          getDocs(billsQuery),
+          getDocs(proformaQuery),
+      ]);
       
-      const allWorkOrders: WorkOrder[] = [];
-      const woQueryPromises = allProjects.map((p) =>
-        getDocs(collectionGroup(db, 'workOrders')),
-      );
-      const woSnaps = await Promise.all(woQueryPromises);
-      woSnaps.forEach((snap) => {
-        allWorkOrders.push(
-          ...snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkOrder)),
-        );
-      });
-      setWorkOrders(allWorkOrders);
-  
-      let billEntries: Bill[] = [];
-      let proformaEntries: ProformaBill[] = [];
-  
-      if (currentProject) {
-        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', currentProject.id));
-        const proformaQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', currentProject.id));
-        const [billsSnapshot, proformaSnapshot] = await Promise.all([getDocs(billsQuery), getDocs(proformaQuery)]);
-        billEntries = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
-        proformaEntries = proformaSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProformaBill));
-      } else { // "all" projects
-        const billsSnapshot = await getDocs(collectionGroup(db, 'bills'));
-        billEntries = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
-        
-        const proformaSnapshot = await getDocs(collectionGroup(db, 'proformaBills'));
-        proformaEntries = proformaSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProformaBill));
-      }
+      setSubcontractors(subsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)));
+      setWorkOrders(woSnap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkOrder)));
+      setAllBills(billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill)));
+      setAllProformaBills(proformaSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProformaBill)));
       
       const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       if (workflowSnap.exists()) {
         setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
       }
   
-      setAllBills(billEntries);
-      setAllProformaBills(proformaEntries);
     } catch (error) {
       console.error('Error fetching bills: ', error);
       toast({
