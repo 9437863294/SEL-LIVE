@@ -183,8 +183,8 @@ export default function BillingSummaryReport() {
   }, [fetchBillingData]);
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
-    setFilters(prev => ({...prev, [field]: value}));
-  }
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
 
   const { filteredBills, filteredProformas, filteredWorkOrders } = useMemo(() => {
     const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
@@ -286,8 +286,22 @@ export default function BillingSummaryReport() {
     const combined = [...bills, ...proformaBills];
     const visibleProjects = projects;
     const visibleSubs = subcontractors;
-    const years = [...new Set(combined.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
-    const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
+    const yearSet = new Set<string>();
+    combined.forEach((b) => {
+      const rawDate =
+        'billDate' in b
+          ? (b as Bill).billDate
+          : (b as ProformaBill).date;
+      const d = toDateSafe(rawDate);
+      if (!d) return;
+      yearSet.add(getYear(d).toString());
+    });
+    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
+
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      value: i.toString(),
+      label: format(new Date(0, i), 'MMMM'),
+    }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
   }, [bills, proformaBills, projects, subcontractors]);
