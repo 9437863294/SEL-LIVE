@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,7 @@ const slugify = (text: string) => {
     .toString()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
+    .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
@@ -63,6 +63,7 @@ export default function EditBillPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { project: projectSlug, billId } = useParams() as { project: string; billId: string };
+  const advanceDeductionId = useId();
 
   const [bill, setBill] = useState<Bill | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -116,7 +117,7 @@ export default function EditBillPage() {
             setRetentionPercentage(billData.retentionPercentage ?? 5);
             setManualRetentionAmount(billData.retentionAmount || 0);
             setOtherDeduction(billData.otherDeduction || 0);
-            setAdvanceDeductions((billData.advanceDeductions || []).map(ad => ({...ad, id: crypto.randomUUID()})));
+            setAdvanceDeductions((billData.advanceDeductions || []).map(ad => ({...ad, id: `adv-${advanceDeductionId}-${Math.random()}`})));
 
             const woDocRef = doc(db, 'projects', billData.projectId, 'workOrders', billData.workOrderId);
             const woDocSnap = await getDoc(woDocRef);
