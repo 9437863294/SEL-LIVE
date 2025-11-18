@@ -19,12 +19,21 @@ import {
   Timestamp,
   runTransaction,
   arrayUnion,
+  collectionGroup,
 } from 'firebase/firestore';
-import type { Bill, WorkflowStep, ActionLog, Project, ProformaBill, ActionConfig } from '@/lib/types';
+import type {
+  Bill,
+  WorkflowStep,
+  ActionLog,
+  Project,
+  ProformaBill,
+  ActionConfig,
+} from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
+import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -33,7 +42,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -110,8 +118,8 @@ export default function BillStagePage() {
 
   const fetchTasks = useCallback(async () => {
     if (!userId || !stageId || !projectSlug) return;
-    setIsLoading(true);
 
+    setIsLoading(true);
     try {
       // 1) workflow + stage
       const workflowRef = doc(db, 'workflows', 'billing-workflow');
@@ -145,12 +153,21 @@ export default function BillStagePage() {
       setProjectId(pid);
 
       // 3) stage tasks + BOQ + bills (for cached project id)
+      const stageTasksQuery = query(
+          collectionGroup(db, 'bills'), 
+          where('currentStepId', '==', stageId)
+      );
+
       const [stageTasksSnap, proformaSnap] = await Promise.all([
-        getDocs(query(collection(db, 'projects', pid, 'bills'), where('currentStepId', '==', stageId))),
-        getDocs(query(collection(db, 'projects', pid, 'proformaBills'))),
+          getDocs(stageTasksQuery),
+          getDocs(query(collection(db, 'projects', pid, 'proformaBills'))),
       ]);
       
-      setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+      const projectTasks = stageTasksSnap.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) } as Bill))
+        .filter(task => task.projectId === pid);
+      
+      setTasks(projectTasks);
       setProformaBills(proformaSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as ProformaBill)));
 
     } catch (error: any) {
@@ -172,25 +189,31 @@ export default function BillStagePage() {
     return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [tasks, userId, stage]);
 
-  const handleAction = async (taskId: string, action: string, comment: string = '') => {
-    if (!workflow || !user || !userName || !stage || !projectId) return;
+  const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
+    const currentBill = selectedBill;
+    if (!workflow || !user || !userName || !stage || !projectSlug || !currentBill) return;
 
-    if (action === 'Edit') {
-        router.push(`/subcontractors-management/${projectSlug}/billing/edit/${taskId}`);
-        return;
+    const collectionName = (currentBill as any).proformaNo ? 'proformaBills' : 'bills';
+    const projectId = currentBill.projectId;
+
+    if(!projectId) {
+       toast({ title: 'Action Failed', description: 'Could not determine project for this bill.', variant: 'destructive'});
+       return;
     }
 
     setIsActionLoading(taskId);
     try {
-      const taskRef = doc(db, 'projects', projectId, 'bills', taskId);
+      const docRef = doc(db, 'projects', projectId, collectionName, taskId);
+
       await runTransaction(db, async (tx) => {
-        const taskDoc = await tx.get(taskRef);
+        const taskDoc = await tx.get(docRef);
         if (!taskDoc.exists()) throw new Error('Task document not found!');
-        const currentTaskData = taskDoc.data() as Bill;
+        const currentTaskData = taskDoc.data() as Bill | ProformaBill;
         
-        const newActionLog: ActionLog = { action, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
+        const actionName = typeof action === 'string' ? action : action.name;
+        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
         
-        let nextStep = workflow[workflow.findIndex(s => s.id === stage.id) + 1];
+        const nextStep = workflow[workflow.findIndex(s => s.id === stage.id) + 1];
         let newStatus: Bill['status'] = 'In Progress';
         let newStage = nextStep?.name || 'Completed';
         let newCurrentStepId: string | null = nextStep?.id || null;
@@ -200,9 +223,13 @@ export default function BillStagePage() {
         if (action === 'Approve' || action === 'Verified') {
             if (nextStep) {
                 const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
-                if (assignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
+                if (assignees.length === 0) {
+                  throw new Error(`No assignee for step: ${nextStep.name}`);
+                }
                 newAssignees = assignees;
-                newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
+                newDeadline = Timestamp.fromDate(
+                  await calculateDeadline(new Date(), nextStep.tat),
+                );
             } else {
                 newStatus = 'Completed';
             }
@@ -220,12 +247,18 @@ export default function BillStagePage() {
             deadline: newDeadline,
             history: arrayUnion(newActionLog),
         };
-        tx.update(taskRef, updateData);
+
+        tx.update(docRef, updateData);
       });
-      toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
+      toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
       await fetchTasks();
+      setIsViewOpen(false);
     } catch (error: any) {
-      toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Action Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
     } finally {
       setIsActionLoading(null);
     }
@@ -328,3 +361,4 @@ export default function BillStagePage() {
   );
 }
 
+    
