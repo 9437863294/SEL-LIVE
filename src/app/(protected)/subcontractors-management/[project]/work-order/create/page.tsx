@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, doc, serverTimestamp, getDoc, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, getDoc, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { WorkOrderItem, BoqItem, Subcontractor, Project, SerialNumberConfig } from '@/lib/types';
@@ -192,7 +192,8 @@ export default function CreateWorkOrderPage() {
         const subcontractorName = subcontractors.find(s => s.id === details.subcontractorId)?.legalName || 'Unknown';
         const totalAmount = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
         
-        const woCollectionRef = collection(db, 'projects', currentProject.id, 'workOrders');
+        const woCollectionRef = collection(db, 'projects', currentProject.id, 'subcontractors', details.subcontractorId, 'workOrders');
+        
         const workOrderData = {
             ...details,
             workOrderNo,
@@ -287,13 +288,18 @@ export default function CreateWorkOrderPage() {
                         {items.map((item, index) => {
                             const boqItem = boqItems.find(b => b.id === item.boqItemId);
                             const boqQty = boqItem ? boqItem['QTY'] : '';
-                            const rateKey = boqItem ? Object.keys(boqItem).find(k => k.toLowerCase().includes('rate')) : 'rate';
+                            const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                             const boqRate = boqItem && rateKey ? (boqItem as any)[rateKey] : 0;
 
                             return (
                                 <TableRow key={item.id}>
-                                    <TableCell>
-                                        <Input value={item.boqSlNo || ''} readOnly className="bg-muted min-w-[100px]"/>
+                                    <TableCell className="w-48">
+                                        <BoqItemSelector
+                                          boqItems={boqItems}
+                                          selectedSlNo={item.boqSlNo || null}
+                                          onSelect={(selectedBoqItem) => handleBoqItemSelect(index, selectedBoqItem)}
+                                          isLoading={false}
+                                        />
                                     </TableCell>
                                     <TableCell>
                                         <Input value={item.description} readOnly className="bg-muted min-w-[250px]"/>
