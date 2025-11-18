@@ -70,14 +70,16 @@ export default function WorkOrderDetailsPage() {
 
                 // Fetch related data using the found projectId
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
-                    getDocs(query(collectionGroup(db, 'jmcEntries'))),
-                    getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
-                    getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
+                    getDocs(collectionGroup(db, 'jmcEntries')),
+                    getDocs(collectionGroup(db, 'bills')),
+                    getDocs(collectionGroup(db, 'proformaBills')),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
                 // Process JMCs - client-side filter
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(entry => entry.projectId === projectId);
+                const jmcEntries = jmcSnap.docs
+                    .map(doc => doc.data() as JmcEntry)
+                    .filter(entry => entry.projectId === projectId);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
@@ -86,7 +88,9 @@ export default function WorkOrderDetailsPage() {
                     jmcCertifiedQtyMap.set(key, currentQty + (jmcItem.certifiedQty || 0));
                 });
                 
-                const bills = billsSnap.docs.map(doc => doc.data() as Bill);
+                const allBills = billsSnap.docs.map(doc => doc.data() as Bill);
+                const bills = allBills.filter(bill => bill.workOrderId === workOrderId);
+
                 const billedQtyMap = new Map<string, number>();
                 let totalBilledAmount = 0;
                 let totalAdvanceDeducted = 0;
@@ -104,7 +108,8 @@ export default function WorkOrderDetailsPage() {
                     });
                 });
                 
-                const proformaBills = proformaSnap.docs.map(doc => doc.data() as ProformaBill);
+                const allProformaBills = proformaSnap.docs.map(doc => doc.data() as ProformaBill);
+                const proformaBills = allProformaBills.filter(pb => pb.workOrderId === workOrderId);
                 const totalAdvanceTaken = proformaBills.reduce((sum, bill) => sum + bill.payableAmount, 0);
 
                 setFinancials({ totalAdvanceTaken, totalAdvanceDeducted, totalBilled: totalBilledAmount });
