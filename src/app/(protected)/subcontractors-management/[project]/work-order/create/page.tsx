@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, doc, serverTimestamp, getDoc, updateDoc, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, doc, serverTimestamp, getDoc, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { WorkOrderItem, BoqItem, Subcontractor, Project, SerialNumberConfig } from '@/lib/types';
@@ -67,16 +67,8 @@ export default function CreateWorkOrderPage() {
         }
         setCurrentProject(projectData);
         
-        const allSubcontractors: Subcontractor[] = [];
-        for (const proj of projectsSnapshot.docs) {
-            const subsSnap = await getDocs(collection(db, 'projects', proj.id, 'subcontractors'));
-            subsSnap.forEach(subDoc => {
-                allSubcontractors.push({ id: subDoc.id, ...subDoc.data() } as Subcontractor);
-            });
-        }
-        const uniqueSubcontractors = Array.from(new Map(allSubcontractors.map(s => [s.legalName, s])).values());
-        setSubcontractors(uniqueSubcontractors);
-
+        const subsSnap = await getDocs(collection(db, 'subcontractors'));
+        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
 
         const boqSnap = await getDocs(collection(db, 'projects', projectData.id, 'boqItems'));
         setBoqItems(boqSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItem)));

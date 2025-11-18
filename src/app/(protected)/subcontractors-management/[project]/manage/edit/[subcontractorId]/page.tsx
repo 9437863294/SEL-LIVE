@@ -12,8 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDoc, updateDoc, getDocs } from 'firebase/firestore';
-import type { Subcontractor, ContactPerson, Project } from '@/lib/types';
+import { collection, doc, getDoc, updateDoc } from 'firebase/firestore';
+import type { Subcontractor, ContactPerson } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -29,29 +29,16 @@ export default function EditSubcontractorPage() {
   const [formData, setFormData] = useState<Subcontractor | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   useEffect(() => {
     const fetchSubcontractor = async () => {
-      if (!projectSlug || !subcontractorId) return;
+      if (!subcontractorId) return;
       setIsLoading(true);
       try {
-        const projectsQuery = collection(db, 'projects');
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-
-        if (!projectData) {
-            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
-            return;
-        }
-        setCurrentProject(projectData);
-        
-        const subDocRef = doc(db, 'projects', projectData.id, 'subcontractors', subcontractorId);
+        const subDocRef = doc(db, 'subcontractors', subcontractorId);
         const subDocSnap = await getDoc(subDocRef);
         if (subDocSnap.exists()) {
           const data = { id: subDocSnap.id, ...subDocSnap.data() } as Subcontractor;
-          // Ensure contacts have unique client-side IDs
           const contactsWithIds = (data.contacts || []).map(c => ({...c, id: c.id || crypto.randomUUID()}));
           setFormData({...data, contacts: contactsWithIds});
         } else {
@@ -93,13 +80,13 @@ export default function EditSubcontractorPage() {
   };
   
   const handleUpdate = async () => {
-    if (!formData || !formData.legalName.trim() || !currentProject || !user) {
+    if (!formData || !formData.legalName.trim() || !user) {
       toast({ title: 'Validation Error', description: 'Legal Business Name is required.', variant: 'destructive' });
       return;
     }
     setIsSaving(true);
     try {
-      const subRef = doc(db, 'projects', currentProject.id, 'subcontractors', formData.id);
+      const subRef = doc(db, 'subcontractors', formData.id);
       const { id, ...dataToUpdate } = {
         ...formData,
         contacts: formData.contacts.map(({ id: contactId, ...rest }) => rest), // Remove client-side ID

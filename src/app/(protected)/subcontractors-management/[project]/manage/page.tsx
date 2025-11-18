@@ -1,5 +1,4 @@
 
-      
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -11,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, where, collectionGroup } from 'firebase/firestore';
 import type { Subcontractor, Project, ContactPerson, WorkOrder, Bill, ProformaBill } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -58,17 +57,15 @@ export default function ManageSubcontractorsPage() {
       const projectsSnapshot = await getDocs(projectsQuery);
       const project = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
 
-      if (!project) {
-        toast({ title: "Project not found", variant: "destructive" });
-        return;
+      if (project) {
+        setCurrentProject(project);
       }
-      setCurrentProject(project);
-
+      
       const [subsSnap, woSnap, billsSnap, proformaSnap] = await Promise.all([
-        getDocs(collection(db, 'projects', project.id, 'subcontractors')),
-        getDocs(collection(db, 'projects', project.id, 'workOrders')),
-        getDocs(collection(db, 'projects', project.id, 'bills')),
-        getDocs(collection(db, 'projects', project.id, 'proformaBills')),
+        getDocs(collection(db, 'subcontractors')),
+        getDocs(collectionGroup(db, 'workOrders')),
+        getDocs(collectionGroup(db, 'bills')),
+        getDocs(collectionGroup(db, 'proformaBills')),
       ]);
 
       const subsData = subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor));
@@ -100,9 +97,8 @@ export default function ManageSubcontractorsPage() {
 
 
   const handleDelete = async (id: string) => {
-    if (!currentProject) return;
     try {
-      await deleteDoc(doc(db, 'projects', currentProject.id, 'subcontractors', id));
+      await deleteDoc(doc(db, 'subcontractors', id));
       toast({ title: 'Success', description: 'Subcontractor deleted.'});
       fetchData();
     } catch (error) {
@@ -210,7 +206,7 @@ export default function ManageSubcontractorsPage() {
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex items-center gap-2">
               <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-              <h1 className="text-xl font-bold">Manage Subcontractors</h1>
+              <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
           </div>
           <Card>
               <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
@@ -386,5 +382,3 @@ export default function ManageSubcontractorsPage() {
     </div>
   );
 }
-
-    

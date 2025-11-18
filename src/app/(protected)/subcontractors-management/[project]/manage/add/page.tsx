@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,9 +20,8 @@ import { logUserActivity } from '@/lib/activity-logger';
 
 const initialContact: Omit<ContactPerson, 'id'> = { type: 'Project', name: '', title: '', mobile: '', email: '' };
 
-const initialFormState: Omit<Subcontractor, 'id' | 'attachments'> = {
+const initialFormState: Omit<Subcontractor, 'id' | 'attachments' | 'projectId'> = {
   status: 'Active',
-  projectId: '',
   legalName: '',
   dbaName: '',
   registeredAddress: '',
@@ -37,42 +35,13 @@ const initialFormState: Omit<Subcontractor, 'id' | 'attachments'> = {
   contacts: [{ ...initialContact, id: crypto.randomUUID() }],
 };
 
-const slugify = (text: string) => {
-    if (!text) return '';
-    return text.toString().toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-')
-      .replace(/^-+/, '')
-      .replace(/-+$/, '');
-}
-
 export default function AddSubcontractorPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
-  const [formData, setFormData] = useState<Omit<Subcontractor, 'id' | 'attachments'>>(initialFormState);
+  const [formData, setFormData] = useState<Omit<Subcontractor, 'id' | 'attachments' | 'projectId'>>(initialFormState);
   const [isSaving, setIsSaving] = useState(false);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
-
-  useEffect(() => {
-    const fetchProject = async () => {
-        if(!projectSlug) return;
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-        setCurrentProject(projectData || null);
-    }
-    fetchProject();
-  }, [projectSlug]);
-  
-  useEffect(() => {
-      if(currentProject) {
-          setFormData(prev => ({...prev, projectId: currentProject.id}));
-      }
-  }, [currentProject]);
-
 
   const handleFormChange = (field: keyof Omit<Subcontractor, 'id'|'attachments'|'contacts'|'projectId'>, value: string) => {
     setFormData(prev => ({...prev, [field]: value}));
@@ -101,8 +70,8 @@ export default function AddSubcontractorPage() {
       toast({ title: 'Validation Error', description: 'Legal Business Name is required.', variant: 'destructive' });
       return;
     }
-    if (!currentProject || !user) {
-        toast({ title: 'Error', description: 'Project or user information is missing.', variant: 'destructive' });
+    if (!user) {
+        toast({ title: 'Error', description: 'User information is missing.', variant: 'destructive' });
         return;
     }
 
@@ -113,7 +82,7 @@ export default function AddSubcontractorPage() {
     
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'projects', currentProject.id, 'subcontractors'), dataToSave);
+      await addDoc(collection(db, 'subcontractors'), dataToSave);
       toast({ title: 'Success', description: 'New subcontractor added.' });
       router.push(`/subcontractors-management/${projectSlug}/manage`);
     } catch (error) {
