@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -83,7 +83,7 @@ export default function CreateBillPage() {
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: `adv-${useId()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
 
   useEffect(() => {
@@ -282,13 +282,13 @@ export default function CreateBillPage() {
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+        setAdvanceDeductions([{ id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -643,7 +643,7 @@ export default function CreateBillPage() {
                         <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
                     </div>
                     <Separator />
-                    <div className="flex justify-between items-center font-semibold">
+                    <div className="flex justify-between font-semibold">
                         <span>Gross Amount</span>
                         <span>{formatCurrency(financials.grossAmount)}</span>
                     </div>
