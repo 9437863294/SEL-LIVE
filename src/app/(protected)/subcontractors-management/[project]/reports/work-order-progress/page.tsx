@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query } from 'firebase/firestore';
+import { collection, getDocs, query, where, collectionGroup } from 'firebase/firestore';
 import type { WorkOrder, Bill, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,8 +25,8 @@ const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -58,8 +58,8 @@ export default function WorkOrderProgressReport() {
                     return;
                 }
                 
-                const woQuery = query(collection(db, 'projects', projectData.id, 'workOrders'));
-                const billsQuery = query(collection(db, 'projects', projectData.id, 'bills'));
+                const woQuery = query(collectionGroup(db, 'workOrders'), where('projectId', '==', projectData.id));
+                const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', projectData.id));
 
                 const [woSnap, billsSnap] = await Promise.all([
                     getDocs(woQuery),
@@ -69,9 +69,18 @@ export default function WorkOrderProgressReport() {
                 setWorkOrders(woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder)));
                 setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)));
 
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error fetching report data:", error);
-                toast({ title: "Error", description: "Failed to load report data.", variant: "destructive" });
+                 if (error.code === 'failed-precondition') {
+                    toast({
+                        title: 'Database Index Required',
+                        description: "The query for this report requires a custom index. Please create it in the Firebase console for the collection group.",
+                        variant: 'destructive',
+                        duration: 10000,
+                    });
+                } else {
+                    toast({ title: "Error", description: "Failed to load report data.", variant: "destructive" });
+                }
             } finally {
                 setIsLoading(false);
             }
@@ -81,7 +90,7 @@ export default function WorkOrderProgressReport() {
 
     const enrichedWorkOrders = useMemo(() => {
         return workOrders.map(wo => {
-            const woBills = bills.filter(bill => bill.workOrderId === wo.id);
+            const woBills = bills.filter(bill => bill.workOrderId === wo.id && !bill.isRetentionBill);
             const totalBilled = woBills.reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
             const progress = wo.totalAmount > 0 ? (totalBilled / wo.totalAmount) * 100 : 0;
             return {
