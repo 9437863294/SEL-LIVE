@@ -153,23 +153,20 @@ export default function BillStagePage() {
       setProjectId(pid);
 
       // 3) stage tasks + BOQ + bills (for cached project id)
-      const stageTasksQuery = query(
-          collectionGroup(db, 'bills'), 
-          where('currentStepId', '==', stageId)
-      );
+      const allBillsSnapshot = await getDocs(collectionGroup(db, 'bills'));
+      const allProformasSnapshot = await getDocs(collectionGroup(db, 'proformaBills'));
 
-      const [stageTasksSnap, proformaSnap] = await Promise.all([
-          getDocs(stageTasksQuery),
-          getDocs(query(collection(db, 'projects', pid, 'proformaBills'))),
-      ]);
-      
-      const projectTasks = stageTasksSnap.docs
+      const filteredBills = allBillsSnapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) } as Bill))
-        .filter(task => task.projectId === pid);
-      
-      setTasks(projectTasks);
-      setProformaBills(proformaSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as ProformaBill)));
+        .filter(task => task.projectId === pid && task.currentStepId === stageId);
 
+      const filteredProformas = allProformasSnapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill))
+        .filter(task => task.projectId === pid && task.currentStepId === stageId);
+
+      setTasks(filteredBills);
+      setProformaBills(filteredProformas);
+      
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
       router.back();
@@ -220,7 +217,7 @@ export default function BillStagePage() {
         let newAssignees: string[] = [];
         let newDeadline: Timestamp | null = null;
         
-        if (action === 'Approve' || action === 'Verified') {
+        if (action === 'Approve' || action === 'Verify') {
             if (nextStep) {
                 const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
                 if (assignees.length === 0) {
@@ -298,7 +295,12 @@ export default function BillStagePage() {
                       {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -333,11 +335,13 @@ export default function BillStagePage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-          </Link>
-          <h1 className="text-2xl font-bold">{stage?.name || 'Billing Stage'}</h1>
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
+              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+            </Link>
+            <h1 className="text-2xl font-bold">{stage?.name || 'Billing Stage'}</h1>
+          </div>
         </div>
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2">
