@@ -64,17 +64,10 @@ export default function ManageSubcontractorsPage() {
       const subsSnap = await getDocs(collection(db, 'subcontractors'));
       const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor));
 
-      const woQuery = project
-          ? query(collectionGroup(db, 'workOrders'), where('projectId', '==', project.id))
-          : query(collectionGroup(db, 'workOrders'));
-      
-      const billsQuery = project
-          ? query(collectionGroup(db, 'bills'), where('projectId', '==', project.id))
-          : query(collectionGroup(db, 'bills'));
-
-      const proformaQuery = project
-          ? query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id))
-          : query(collectionGroup(db, 'proformaBills'));
+      // Fetch all data without server-side filtering
+      const woQuery = query(collectionGroup(db, 'workOrders'));
+      const billsQuery = query(collectionGroup(db, 'bills'));
+      const proformaQuery = query(collectionGroup(db, 'proformaBills'));
 
       const [woSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(woQuery),
@@ -82,18 +75,26 @@ export default function ManageSubcontractorsPage() {
           getDocs(proformaQuery),
       ]);
       
-      const woData = woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder));
-      const subcontractorIdsWithWorkOrders = new Set(woData.map(wo => wo.subcontractorId));
-      
-      // Filter subcontractors based on whether they have work orders in the current project
-      const relevantSubcontractors = project
-        ? allSubs.filter(sub => subcontractorIdsWithWorkOrders.has(sub.id))
-        : allSubs;
+      const allWorkOrders = woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder));
+      const allBillsData = billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
+      const allProformaData = proformaSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill));
 
-      setSubcontractors(relevantSubcontractors);
-      setWorkOrders(woData);
-      setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)));
-      setProformaBills(proformaSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill)));
+      // Client-side filtering
+      if (project) {
+        const projectWorkOrders = allWorkOrders.filter(wo => wo.projectId === project.id);
+        const subcontractorIdsWithWorkOrders = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
+        const relevantSubcontractors = allSubs.filter(sub => subcontractorIdsWithWorkOrders.has(sub.id));
+        
+        setSubcontractors(relevantSubcontractors);
+        setWorkOrders(projectWorkOrders);
+        setBills(allBillsData.filter(b => b.projectId === project.id));
+        setProformaBills(allProformaData.filter(p => p.projectId === project.id));
+      } else { // "all" projects view
+        setSubcontractors(allSubs);
+        setWorkOrders(allWorkOrders);
+        setBills(allBillsData);
+        setProformaBills(allProformaData);
+      }
 
     } catch (error: any) {
       console.error("Error fetching data:", error);
