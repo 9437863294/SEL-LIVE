@@ -21,7 +21,7 @@ const slugify = (text: string) => {
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/--+/g, '-')
+    .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -68,7 +68,6 @@ export default function WorkOrderLogPage() {
             return { 
                 id: doc.id, 
                 ...data,
-                // Ensure we find the project name for each WO, especially in 'all' view
                 projectName: allProjects.find(p => p.id === data.projectId)?.projectName || 'Unknown',
                 projectSlug: allProjects.find(p => p.id === data.projectId) ? slugify(allProjects.find(p => p.id === data.projectId)!.projectName) : '',
             } as WorkOrder
