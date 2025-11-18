@@ -686,7 +686,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
-
-    
