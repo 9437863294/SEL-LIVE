@@ -37,6 +37,8 @@ import {
   arrayUnion,
   getDoc,
   QuerySnapshot,
+  collectionGroup,
+  where,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -204,7 +206,9 @@ export default function BillLogPage() {
         (doc) => ({ id: doc.id, ...doc.data() } as Project),
       );
       setProjects(allProjects);
-
+  
+      const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
+  
       const allSubcontractors: Subcontractor[] = [];
       const subsQueryPromises = allProjects.map((p) =>
         getDocs(collection(db, 'projects', p.id, 'subcontractors')),
@@ -219,7 +223,7 @@ export default function BillLogPage() {
       
       const allWorkOrders: WorkOrder[] = [];
       const woQueryPromises = allProjects.map((p) =>
-        getDocs(collection(db, 'projects', p.id, 'workOrders')),
+        getDocs(collectionGroup(db, 'workOrders')),
       );
       const woSnaps = await Promise.all(woQueryPromises);
       woSnaps.forEach((snap) => {
@@ -228,34 +232,29 @@ export default function BillLogPage() {
         );
       });
       setWorkOrders(allWorkOrders);
-
-      const billEntries: Bill[] = [];
-      const proformaEntries: ProformaBill[] = [];
-
-      for (const project of allProjects) {
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaQuery = query(
-          collection(db, 'projects', project.id, 'proformaBills'),
-        );
-
-        const [billsSnapshot, proformaSnapshot] = await Promise.all([
-          getDocs(billsQuery),
-          getDocs(proformaQuery),
-        ]);
-
-        billsSnapshot.forEach((doc) =>
-          billEntries.push({ id: doc.id, ...(doc.data() as Omit<Bill, 'id'>) })
-        );
-        proformaSnapshot.forEach((doc) =>
-          proformaEntries.push({ id: doc.id, ...(doc.data() as Omit<ProformaBill, 'id'>) })
-        );
+  
+      let billEntries: Bill[] = [];
+      let proformaEntries: ProformaBill[] = [];
+  
+      if (currentProject) {
+        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', currentProject.id));
+        const proformaQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', currentProject.id));
+        const [billsSnapshot, proformaSnapshot] = await Promise.all([getDocs(billsQuery), getDocs(proformaQuery)]);
+        billEntries = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
+        proformaEntries = proformaSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProformaBill));
+      } else { // "all" projects
+        const billsSnapshot = await getDocs(collectionGroup(db, 'bills'));
+        billEntries = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
+        
+        const proformaSnapshot = await getDocs(collectionGroup(db, 'proformaBills'));
+        proformaEntries = proformaSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProformaBill));
       }
       
       const workflowSnap = await getDoc(doc(db, 'workflows', 'billing-workflow'));
       if (workflowSnap.exists()) {
         setWorkflow(workflowSnap.data().steps as WorkflowStep[]);
       }
-
+  
       setAllBills(billEntries);
       setAllProformaBills(proformaEntries);
     } catch (error) {
@@ -267,7 +266,7 @@ export default function BillLogPage() {
       });
     }
     setIsLoading(false);
-  }, [toast]);
+  }, [toast, projectSlug]);
 
   useEffect(() => {
     fetchBills();
@@ -334,8 +333,10 @@ export default function BillLogPage() {
     );
 
     const filterFn = (bill: DisplayBill) => {
-      const projectMatch =
-        filters.project === 'all' || slugify(bill.projectName || '') === filters.project;
+      const projectForBill = projects.find(p => p.id === bill.projectId);
+      const projectSlugForBill = projectForBill ? slugify(projectForBill.projectName) : '';
+
+      const projectMatch = filters.project === 'all' || projectSlugForBill === filters.project;
       const subMatch =
         filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
       const sortDate = bill.sortDate;
