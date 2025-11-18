@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
@@ -83,7 +83,18 @@ export default function CreateBillPage() {
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: `adv-${useId()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
+  
+  // Custom hook for generating unique IDs for client-side lists
+  const useUniqueId = (prefix: string) => {
+    const id = useId();
+    return `${prefix}-${id}`;
+  };
+
+  useEffect(() => {
+    // Initialize advance deductions with a unique ID
+    setAdvanceDeductions([{ id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+  }, []);
 
 
   useEffect(() => {
@@ -104,17 +115,18 @@ export default function CreateBillPage() {
         setCurrentProject(project);
 
         const subsQuery = query(collection(db, 'subcontractors'));
-        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        
+        const woQuery = query(collectionGroup(db, 'workOrders'), where('projectId', '==', project.id));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', project.id));
+        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
+        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
           getDocs(woQuery),
-          getDocs(jmcQuery),
-          getDocs(billsQuery),
-          getDocs(proformaBillsQuery)
+          getDocs(jmcSnap),
+          getDocs(billsSnap),
+          getDocs(proformaSnap)
         ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
@@ -678,9 +690,5 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
-
-    
 
     
