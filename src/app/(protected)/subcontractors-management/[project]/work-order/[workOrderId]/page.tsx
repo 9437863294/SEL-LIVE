@@ -70,14 +70,14 @@ export default function WorkOrderDetailsPage() {
 
                 // Fetch related data using the found projectId
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
-                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
+                    getDocs(query(collectionGroup(db, 'jmcEntries'))),
                     getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
-                // Process JMCs
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
+                // Process JMCs - client-side filter
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(entry => entry.projectId === projectId);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
