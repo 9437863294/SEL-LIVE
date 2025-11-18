@@ -89,29 +89,31 @@ export default function CreateProformaPage() {
         }
         setCurrentProject(project);
 
-        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
-        const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
-        const subsQuery = query(collection(db, 'subcontractors'));
+        const subsQuery = query(collectionGroup(db, 'subcontractors'));
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
+        const billsQuery = query(collectionGroup(db, 'bills'));
+        const proformaQuery = query(collectionGroup(db, 'proformaBills'));
+        const boqQuery = query(collectionGroup(db, 'boqItems'));
 
-
-        const [woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap, subsSnap] = await Promise.all([
-          getDocs(woQuery),
-          getDocs(jmcQuery),
-          getDocs(billsQuery),
-          getDocs(boqQuery),
-          getDocs(proformaQuery),
-          getDocs(subsQuery),
+        const [subsSnap, woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap] = await Promise.all([
+            getDocs(subsQuery),
+            getDocs(woQuery),
+            getDocs(jmcQuery),
+            getDocs(billsQuery),
+            getDocs(boqQuery),
+            getDocs(proformaQuery),
         ]);
 
-        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
-        setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        
+        const projectWorkOrders = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)).filter(wo => wo.projectId === project.id);
+        setWorkOrders(projectWorkOrders);
+        
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
+        setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(pb => pb.projectId === project.id));
+        setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)).filter(boq => boq.projectSlug === projectSlug));
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
@@ -510,4 +512,5 @@ export default function CreateProformaPage() {
       />
     </>
   );
-}
+
+    
