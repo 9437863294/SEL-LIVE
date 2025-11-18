@@ -48,15 +48,25 @@ export default function WorkOrderDetailsPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const fetchWorkOrder = async () => {
-            if (!projectSlug || !workOrderId) return;
-            
-            try {
-                const workOrdersQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '>', `projects/`), where('__name__', '<', `projects/~`));
-                const workOrdersSnapshot = await getDocs(workOrdersQuery);
-                const woDoc = workOrdersSnapshot.docs.find(doc => doc.id === workOrderId);
+        const fetchWorkOrderDetails = async () => {
+            if (!workOrderId) return;
+            setIsLoading(true);
 
-                if (!woDoc) {
+            try {
+                // Query the collection group to find the document by its ID
+                const workOrdersQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '==', `projects/${projectSlug}/subcontractors/${workOrder?.subcontractorId}/workOrders/${workOrderId}`));
+                const workOrderSnapshot = await getDocs(workOrdersQuery);
+
+                let woDoc;
+                if (!workOrderSnapshot.empty) {
+                    woDoc = workOrderSnapshot.docs[0];
+                } else {
+                    // Fallback for deeply nested query issue
+                    const allWoSnapshot = await getDocs(collectionGroup(db, 'workOrders'));
+                    woDoc = allWoSnapshot.docs.find(doc => doc.id === workOrderId);
+                }
+
+                if (!woDoc || !woDoc.exists()) {
                     toast({ title: 'Work Order not found', variant: 'destructive' });
                     return notFound();
                 }
@@ -69,14 +79,15 @@ export default function WorkOrderDetailsPage() {
                     throw new Error("Work order is missing project information.");
                 }
 
-                // Now fetch all related data for that project
+                // Fetch related data using the projectId from the found work order
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
                     getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
                     getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
-                
+
+                // Process the fetched data...
                 const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
@@ -130,7 +141,6 @@ export default function WorkOrderDetailsPage() {
                     };
                 });
                 setEnrichedItems(enriched);
-
             } catch (error) {
                 console.error("Error fetching work order:", error);
                 toast({ title: "Error", description: "Failed to load work order details.", variant: "destructive" });
@@ -139,8 +149,9 @@ export default function WorkOrderDetailsPage() {
             }
         };
         
-        fetchWorkOrder();
-    }, [projectSlug, workOrderId, toast, notFound]);
+        fetchWorkOrderDetails();
+    }, [projectSlug, workOrderId, toast]);
+
 
     const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
     const formatDate = (date: any) => date?.toDate ? format(date.toDate(), 'dd MMM, yyyy') : 'N/A';
@@ -155,7 +166,15 @@ export default function WorkOrderDetailsPage() {
     }
     
     if (!workOrder) {
-        return <p>Work Order not found.</p>;
+        return (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <h2 className="text-2xl font-semibold">Work Order Not Found</h2>
+            <p className="text-muted-foreground mt-2">The requested work order could not be located.</p>
+            <Button asChild className="mt-4">
+              <Link href={`/subcontractors-management/${projectSlug}/work-order`}>Back to Work Orders</Link>
+            </Button>
+          </div>
+        );
     }
     
     const progressPercentage = workOrder.totalAmount > 0 ? (financials.totalBilled / workOrder.totalAmount) * 100 : 0;
