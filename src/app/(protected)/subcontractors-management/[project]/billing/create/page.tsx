@@ -112,10 +112,10 @@ export default function CreateBillPage() {
 
         const subsQuery = query(collection(db, 'subcontractors'));
         
-        const woQuery = query(collectionGroup(db, 'workOrders'), where('projectId', '==', project.id));
-        const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', project.id));
-        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
-        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id));
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
+        const billsQuery = query(collectionGroup(db, 'bills'));
+        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
@@ -126,10 +126,10 @@ export default function CreateBillPage() {
         ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)).filter(wo => wo.projectId === project.id));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(pb => pb.projectId === project.id));
     };
     fetchProjectAndWorkOrders();
   }, [projectSlug, toast]);
@@ -385,9 +385,9 @@ export default function CreateBillPage() {
         toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
         router.push(`/subcontractors-management/${projectSlug}/billing`);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error creating bill: ", error);
-        toast({ title: 'Save Failed', description: 'An error occurred while saving the bill.', variant: 'destructive' });
+        toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the bill.', variant: 'destructive' });
     } finally {
         setIsSaving(false);
     }
@@ -395,7 +395,7 @@ export default function CreateBillPage() {
   
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
+    if(isNaN(num)) return formatCurrency(0);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
