@@ -120,7 +120,7 @@ const formatCurrency = (amount: number) => {
 export default function BillingSummaryReport() {
   const { toast } = useToast();
   const params = useParams();
-  const { user, users } = useAuth();
+  const { user } = useAuth();
   const projectSlug = params.project as string;
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
@@ -298,7 +298,7 @@ export default function BillingSummaryReport() {
       { title: 'Net Advance Balance', value: formatCurrency(summaryStats.netAdvance), icon: Wallet },
   ];
   
-  if (isAuthLoading || (isLoading && canViewPage)) {
+  if (isAuthLoading) {
     return (
         <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
