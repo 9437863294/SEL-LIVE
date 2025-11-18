@@ -50,34 +50,36 @@ export default function WorkOrderDetailsPage() {
             if (!projectSlug || !workOrderId) return;
             
             try {
-                const projectsQuery = query(collection(db, 'projects'));
-                const projectsSnapshot = await getDocs(projectsQuery);
-                const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+                // Find the work order directly using a collectionGroup query
+                const woQuery = query(collectionGroup(db, 'workOrders'), where('__name__', 'matches', `/${workOrderId}$`));
+                const woSnapshot = await getDocs(woQuery);
 
-                if (!projectData) {
-                    toast({ title: 'Project not found', variant: 'destructive' });
-                    return notFound();
-                }
-                
-                const woDocRef = doc(db, 'projects', projectData.id, 'workOrders', workOrderId);
-                const woDocSnap = await getDoc(woDocRef);
-
-                if (!woDocSnap.exists()) {
+                if (woSnapshot.empty) {
                     toast({ title: 'Work Order not found', variant: 'destructive' });
                     return notFound();
                 }
-                
+
+                const woDocSnap = woSnapshot.docs[0];
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
-                
-                const [jmcGroupSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDocs(collectionGroup(db, 'jmcEntries')),
-                    getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
-                    getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
+
+                const projectId = woData.projectId;
+                if (!projectId) {
+                    throw new Error("Work order is missing project information.");
+                }
+
+                // Now fetch all related data for that project
+                const [projectSnap, jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
+                    getDoc(doc(db, 'projects', projectId)),
+                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', projectId))),
+                    getDocs(query(collection(db, 'projects', projectId, 'bills'), where('workOrderId', '==', workOrderId))),
+                    getDocs(query(collection(db, 'projects', projectId, 'proformaBills'), where('workOrderId', '==', workOrderId))),
+                    getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
-                const allJmcEntries = jmcGroupSnap.docs.map(doc => doc.data() as JmcEntry);
+                if (!projectSnap.exists()) throw new Error("Project not found");
+
+                const allJmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 const jmcEntries = allJmcEntries.filter(jmc => jmc.woNo === woData.workOrderNo);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
@@ -110,16 +112,10 @@ export default function WorkOrderDetailsPage() {
 
                 setFinancials({ totalAdvanceTaken, totalAdvanceDeducted, totalBilled: totalBilledAmount });
 
-                const boqItemIds = woData.items.map(item => item.boqItemId).filter(Boolean);
                 const boqItemsMap = new Map<string, BoqItem>();
-
-                if (boqItemIds.length > 0) {
-                    const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
-                    const boqSnapshot = await getDocs(boqQuery);
-                    boqSnapshot.forEach(doc => {
-                        boqItemsMap.set(doc.id, {id: doc.id, ...doc.data()} as BoqItem);
-                    });
-                }
+                 boqSnap.forEach(doc => {
+                    boqItemsMap.set(doc.id, {id: doc.id, ...doc.data()} as BoqItem);
+                });
                 
                 const enriched = woData.items.map(item => {
                     const boqItem = boqItemsMap.get(item.boqItemId);
@@ -146,7 +142,6 @@ export default function WorkOrderDetailsPage() {
             }
         };
         
-        setIsLoading(true);
         fetchWorkOrder();
     }, [projectSlug, workOrderId, toast, notFound]);
 
