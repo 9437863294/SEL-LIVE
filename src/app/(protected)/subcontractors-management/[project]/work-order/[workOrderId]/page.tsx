@@ -52,35 +52,16 @@ export default function WorkOrderDetailsPage() {
             if (!projectSlug || !workOrderId) return;
             
             try {
-                // Find project first
-                const projectsQuery = query(collection(db, 'projects'));
-                const projectsSnapshot = await getDocs(projectsQuery);
-                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+                const workOrdersQuery = query(collectionGroup(db, 'workOrders'), where('__name__', '>', `projects/`), where('__name__', '<', `projects/~`));
+                const workOrdersSnapshot = await getDocs(workOrdersQuery);
+                const woDoc = workOrdersSnapshot.docs.find(doc => doc.id === workOrderId);
 
-                if (!projectData) {
-                    throw new Error("Project not found");
-                }
-
-                // Fetch all work orders for the project
-                const allWorkOrdersInProject: WorkOrder[] = [];
-                const subcontractorsSnapshot = await getDocs(collection(db, 'projects', projectData.id, 'subcontractors'));
-                
-                for (const subDoc of subcontractorsSnapshot.docs) {
-                    const woSnapshot = await getDocs(collection(db, 'projects', projectData.id, 'subcontractors', subDoc.id, 'workOrders'));
-                    woSnapshot.forEach(woDoc => {
-                        if (woDoc.id === workOrderId) {
-                            allWorkOrdersInProject.push({ id: woDoc.id, ...woDoc.data() } as WorkOrder);
-                        }
-                    });
-                }
-                
-                const woData = allWorkOrdersInProject.find(wo => wo.id === workOrderId);
-
-                if (!woData) {
-                    toast({ title: 'Work Order not found in this project', variant: 'destructive' });
+                if (!woDoc) {
+                    toast({ title: 'Work Order not found', variant: 'destructive' });
                     return notFound();
                 }
 
+                const woData = { id: woDoc.id, ...woDoc.data() } as WorkOrder;
                 setWorkOrder(woData);
 
                 const projectId = woData.projectId;
@@ -96,11 +77,10 @@ export default function WorkOrderDetailsPage() {
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
                 
-                const allJmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
-                const jmcEntries = allJmcEntries.filter(jmc => jmc.woNo === woData.workOrderNo);
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
-                jmcEntries.flatMap(entry => entry.items).forEach(jmcItem => {
+                jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
                     const key = compositeKey(jmcItem);
                     const currentQty = jmcCertifiedQtyMap.get(key) || 0;
                     jmcCertifiedQtyMap.set(key, currentQty + (jmcItem.certifiedQty || 0));
