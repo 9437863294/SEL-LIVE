@@ -124,8 +124,8 @@ export default function BillingSummaryReport() {
   const projectSlug = params.project as string;
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [allBills, setAllBills] = useState<Bill[]>([]);
-  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
+  const [bills, setAllBills] = useState<Bill[]>([]);
+  const [proformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
@@ -162,24 +162,53 @@ export default function BillingSummaryReport() {
         toast({ title: 'Error', description: 'Failed to load bill data.', variant: 'destructive' });
     }
     setIsLoading(false);
-}, [toast]);
+  }, [toast]);
   
   useEffect(() => {
     fetchBillingData();
   }, [fetchBillingData]);
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
+    setFilters(prev => {
+        const next = { ...prev, [field]: value };
+        if (field === 'project') {
+            next.subcontractor = 'all'; // Reset sub when project changes
+        }
+        return next;
+    });
   };
+
+  const filteredProjects = useMemo(() => {
+    if (filters.project === 'all') return projects;
+    return projects.filter(p => slugify(p.projectName) === filters.project);
+  }, [projects, filters.project]);
+
+  const filterOptions = useMemo(() => {
+    const visibleProjectIds = new Set(filteredProjects.map(p => p.id));
+    
+    const visibleWorkOrders = allWorkOrders.filter(wo => visibleProjectIds.has(wo.projectId));
+    const visibleSubcontractorIds = new Set(visibleWorkOrders.map(wo => wo.subcontractorId));
+    const visibleSubs = allSubcontractors.filter(s => visibleSubcontractorIds.has(s.id));
+
+    const combinedBills = [...allBills, ...allProformaBills];
+    const yearSet = new Set<string>();
+    combinedBills.forEach((b) => {
+      const d = toDateSafe('billDate' in b ? b.billDate : b.date);
+      if (d) yearSet.add(getYear(d).toString());
+    });
+    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
+    const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
+
+    return { projects, subcontractors: visibleSubs, years, months };
+  }, [filteredProjects, allWorkOrders, allSubcontractors, allBills, allProformaBills]);
   
   const filteredData = useMemo(() => {
-    const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
-    const targetProjectId = filters.project === 'all' ? null : projectMap.get(filters.project);
+    const visibleProjectIds = new Set(filteredProjects.map(p => p.id));
 
     const filterFn = (bill: Bill | ProformaBill) => {
-        const projectMatch = !targetProjectId || bill.projectId === targetProjectId;
+        const projectMatch = filters.project === 'all' || visibleProjectIds.has(bill.projectId);
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
+        const sortDate = toDateSafe('billDate' in bill ? bill.billDate : bill.date);
         if (!sortDate) return false;
         
         const yearMatch = filters.year === 'all' || getYear(sortDate).toString() === filters.year;
@@ -195,23 +224,7 @@ export default function BillingSummaryReport() {
     const filteredWorkOrders = allWorkOrders.filter(wo => relevantWoIds.has(wo.id));
     
     return { filteredBills, filteredProformas, filteredWorkOrders };
-  }, [filters, allBills, allProformaBills, allWorkOrders, projects]);
-
-
-  const filterOptions = useMemo(() => {
-    const { filteredWorkOrders } = filteredData;
-    const visibleSubcontractorIds = new Set(filteredWorkOrders.map(wo => wo.subcontractorId));
-    const visibleSubs = allSubcontractors.filter(s => visibleSubcontractorIds.has(s.id));
-    const yearSet = new Set<string>();
-    [...allBills, ...allProformaBills].forEach((b) => {
-      const d = toDateSafe('billDate' in b ? b.billDate : b.date);
-      if (d) yearSet.add(getYear(d).toString());
-    });
-    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
-    const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
-
-    return { projects, subcontractors: visibleSubs, years, months };
-  }, [projects, allSubcontractors, allBills, allProformaBills, filteredData]);
+  }, [filters, allBills, allProformaBills, allWorkOrders, filteredProjects]);
 
 
   const summaryStats: SummaryStats = useMemo(() => {
@@ -319,8 +332,7 @@ export default function BillingSummaryReport() {
         </div>
     );
   }
-
-
+  
   return (
       <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
