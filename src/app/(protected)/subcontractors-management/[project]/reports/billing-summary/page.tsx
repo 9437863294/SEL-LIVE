@@ -61,14 +61,26 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-interface StepWiseReportData {
-    [stepName: string]: {
-        [userName: string]: {
-            total: number;
-            completed: number;
-            rejected: number;
-        }
-    }
+interface SummaryStats {
+    totalWorkOrderValue: number;
+    totalBilled: number;
+    balanceToBeBilled: number;
+    totalRetentionDeducted: number;
+    totalRetentionClaimed: number;
+    retentionBalance: number;
+    totalAdvance: number;
+    totalAdvanceRecovered: number;
+    netAdvance: number;
+}
+
+interface WorkOrderSummary {
+    woNo: string;
+    subcontractorName: string;
+    woValue: number;
+    totalBilled: number;
+    advanceTaken: number;
+    advanceDeducted: number;
+    progress: number;
 }
 
 function stripId<T extends object>(obj: T & { id?: any }): Omit<T, 'id'> {
@@ -204,7 +216,7 @@ export default function BillingSummaryReport() {
     };
 }, [bills, proformaBills, workOrders, filters, projects]);
 
-  const summaryStats = useMemo(() => {
+  const summaryStats: SummaryStats = useMemo(() => {
     const totalWorkOrderValue = filteredWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
 
     const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
@@ -216,10 +228,10 @@ export default function BillingSummaryReport() {
     const netAdvance = totalAdvance - totalAdvanceRecovered;
     const balanceToBeBilled = totalWorkOrderValue - totalBilled;
 
-    return { totalWorkOrderValue, totalBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance, balanceToBeBilled };
+    return { totalWorkOrderValue, totalBilled, balanceToBeBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
   }, [filteredBills, filteredProformas, filteredWorkOrders]);
   
-   const workOrderSummary = useMemo(() => {
+   const workOrderSummary: WorkOrderSummary[] = useMemo(() => {
     if (isLoading) return [];
     
     const woMap = new Map<string, {
@@ -271,14 +283,14 @@ export default function BillingSummaryReport() {
   }, [filteredWorkOrders, filteredBills, filteredProformas, isLoading]);
   
   const filterOptions = useMemo(() => {
-    const combined = [...allBills, ...allProformaBills];
+    const combined = [...bills, ...proformaBills];
     const visibleProjects = projects;
     const visibleSubs = subcontractors;
     const years = [...new Set(combined.map(b => getYear(toDateSafe((b as Bill).billDate || (b as ProformaBill).date)!)?.toString()))].filter(Boolean).sort((a,b) => parseInt(b) - parseInt(a));
     const months = Array.from({length: 12}, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
-  }, [allBills, allProformaBills, projects, subcontractors]);
+  }, [bills, proformaBills, projects, subcontractors]);
   
    const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
