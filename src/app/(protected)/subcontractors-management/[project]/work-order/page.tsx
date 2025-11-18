@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, collectionGroup, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -45,11 +45,11 @@ export default function WorkOrderLogPage() {
       setIsLoading(true);
 
       try {
-        let woQuery;
-        
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
         const allProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        
+        let woQuery;
 
         if (projectSlug === 'all') {
           woQuery = query(collectionGroup(db, 'workOrders'));
@@ -68,7 +68,8 @@ export default function WorkOrderLogPage() {
         const querySnapshot = await getDocs(woQuery);
         const entries = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            const projectId = doc.ref.parent.parent?.id;
+            const projectPath = doc.ref.parent.parent?.parent?.parent?.path;
+            const projectId = projectPath?.split('/').pop();
             const project = allProjects.find(p => p.id === projectId);
 
             return { 
