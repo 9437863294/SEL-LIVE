@@ -61,27 +61,43 @@ export default function ManageSubcontractorsPage() {
         setCurrentProject(project);
       }
       
-      const [subsSnap, woSnap, billsSnap, proformaSnap] = await Promise.all([
-        getDocs(collection(db, 'subcontractors')),
-        getDocs(collectionGroup(db, 'workOrders')),
-        getDocs(collectionGroup(db, 'bills')),
-        getDocs(collectionGroup(db, 'proformaBills')),
+      const subsSnap = await getDocs(collection(db, 'subcontractors'));
+      const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor));
+
+      const woQuery = project
+          ? query(collectionGroup(db, 'workOrders'), where('projectId', '==', project.id))
+          : query(collectionGroup(db, 'workOrders'));
+      
+      const billsQuery = project
+          ? query(collectionGroup(db, 'bills'), where('projectId', '==', project.id))
+          : query(collectionGroup(db, 'bills'));
+
+      const proformaQuery = project
+          ? query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id))
+          : query(collectionGroup(db, 'proformaBills'));
+
+      const [woSnap, billsSnap, proformaSnap] = await Promise.all([
+          getDocs(woQuery),
+          getDocs(billsQuery),
+          getDocs(proformaQuery),
       ]);
-
-      const subsData = subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor));
-      setSubcontractors(subsData);
-
+      
       const woData = woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder));
-      setWorkOrders(woData);
+      const subcontractorIdsWithWorkOrders = new Set(woData.map(wo => wo.subcontractorId));
       
-      const billsData = billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
-      setBills(billsData);
-      
-      const proformaData = proformaSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill));
-      setProformaBills(proformaData);
+      // Filter subcontractors based on whether they have work orders in the current project
+      const relevantSubcontractors = project
+        ? allSubs.filter(sub => subcontractorIdsWithWorkOrders.has(sub.id))
+        : allSubs;
 
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
+      setSubcontractors(relevantSubcontractors);
+      setWorkOrders(woData);
+      setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)));
+      setProformaBills(proformaSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill)));
+
+    } catch (error: any) {
+      console.error("Error fetching data:", error);
+      toast({ title: 'Error', description: error.message || 'Failed to fetch data.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -204,14 +220,14 @@ export default function ManageSubcontractorsPage() {
   if (!canViewPage) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-6 flex items-center gap-2">
-              <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-              <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
-          </div>
-          <Card>
-              <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-              <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
-          </Card>
+        <div className="mb-6 flex items-center gap-2">
+            <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
+        </Card>
       </div>
     );
   }
