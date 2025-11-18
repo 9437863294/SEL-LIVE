@@ -68,7 +68,7 @@ export default function WorkOrderDetailsPage() {
                     throw new Error("Work order is missing project information.");
                 }
 
-                // Fetch related data using the found projectId
+                // Fetch related data without filters
                 const [jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
                     getDocs(collectionGroup(db, 'jmcEntries')),
                     getDocs(collectionGroup(db, 'bills')),
@@ -76,10 +76,11 @@ export default function WorkOrderDetailsPage() {
                     getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
                 ]);
 
-                // Process JMCs - client-side filter
-                const jmcEntries = jmcSnap.docs
-                    .map(doc => doc.data() as JmcEntry)
-                    .filter(entry => entry.projectId === projectId);
+                // Client-side filtering
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(entry => entry.projectId === projectId);
+                const allBills = billsSnap.docs.map(doc => doc.data() as Bill);
+                const bills = allBills.filter(bill => bill.workOrderId === workOrderId);
+                const proformaBills = proformaSnap.docs.map(doc => doc.data() as ProformaBill).filter(pb => pb.workOrderId === workOrderId);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items || []).forEach(jmcItem => {
@@ -87,9 +88,6 @@ export default function WorkOrderDetailsPage() {
                     const currentQty = jmcCertifiedQtyMap.get(key) || 0;
                     jmcCertifiedQtyMap.set(key, currentQty + (jmcItem.certifiedQty || 0));
                 });
-                
-                const allBills = billsSnap.docs.map(doc => doc.data() as Bill);
-                const bills = allBills.filter(bill => bill.workOrderId === workOrderId);
 
                 const billedQtyMap = new Map<string, number>();
                 let totalBilledAmount = 0;
@@ -107,15 +105,12 @@ export default function WorkOrderDetailsPage() {
                         billedQtyMap.set(item.jmcItemId, currentQty + (parseFloat(item.billedQty) || 0));
                     });
                 });
-                
-                const allProformaBills = proformaSnap.docs.map(doc => doc.data() as ProformaBill);
-                const proformaBills = allProformaBills.filter(pb => pb.workOrderId === workOrderId);
-                const totalAdvanceTaken = proformaBills.reduce((sum, bill) => sum + bill.payableAmount, 0);
 
+                const totalAdvanceTaken = proformaBills.reduce((sum, bill) => sum + bill.payableAmount, 0);
                 setFinancials({ totalAdvanceTaken, totalAdvanceDeducted, totalBilled: totalBilledAmount });
 
                 const boqItemsMap = new Map<string, BoqItem>();
-                 boqSnap.forEach(doc => {
+                boqSnap.forEach(doc => {
                     boqItemsMap.set(doc.id, {id: doc.id, ...doc.data()} as BoqItem);
                 });
                 
@@ -259,3 +254,4 @@ export default function WorkOrderDetailsPage() {
         </div>
     );
 }
+
