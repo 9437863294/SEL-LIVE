@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -48,8 +48,7 @@ export default function WorkOrderDetailsPage() {
     useEffect(() => {
         const fetchWorkOrder = async () => {
             if (!projectSlug || !workOrderId) return;
-            setIsLoading(true);
-
+            
             try {
                 const projectsQuery = query(collection(db, 'projects'));
                 const projectsSnapshot = await getDocs(projectsQuery);
@@ -72,15 +71,13 @@ export default function WorkOrderDetailsPage() {
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
                 
-                const jmcGroupQuery = query(collectionGroup(db, 'jmcEntries'));
-                
                 const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDocs(jmcGroupQuery),
+                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('woNo', '==', woData.workOrderNo))),
                     getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
 
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry).filter(jmc => jmc.woNo === woData.workOrderNo);
+                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items).forEach(jmcItem => {
@@ -116,7 +113,6 @@ export default function WorkOrderDetailsPage() {
                 const boqItemsMap = new Map<string, BoqItem>();
 
                 if (boqItemIds.length > 0) {
-                    // Fetch all BOQ items for the project once
                     const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
                     const boqSnapshot = await getDocs(boqQuery);
                     boqSnapshot.forEach(doc => {
@@ -256,4 +252,3 @@ export default function WorkOrderDetailsPage() {
         </div>
     );
 }
-
