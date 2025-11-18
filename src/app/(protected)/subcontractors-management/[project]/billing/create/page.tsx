@@ -85,16 +85,12 @@ export default function CreateBillPage() {
   
   const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
   
-  // Custom hook for generating unique IDs for client-side lists
-  const useUniqueId = (prefix: string) => {
-    const id = useId();
-    return `${prefix}-${id}`;
-  };
+  const uniqueId = useId();
 
   useEffect(() => {
     // Initialize advance deductions with a unique ID
-    setAdvanceDeductions([{ id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
-  }, []);
+    setAdvanceDeductions([{ id: `adv-${uniqueId}-0`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+  }, [uniqueId]);
 
 
   useEffect(() => {
@@ -124,9 +120,9 @@ export default function CreateBillPage() {
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
           getDocs(woQuery),
-          getDocs(jmcSnap),
-          getDocs(billsSnap),
-          getDocs(proformaSnap)
+          getDocs(jmcQuery),
+          getDocs(billsQuery),
+          getDocs(proformaBillsQuery)
         ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
@@ -294,13 +290,13 @@ export default function CreateBillPage() {
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: `adv-${uniqueId}-${prev.length}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: `adv-${crypto.randomUUID()}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+        setAdvanceDeductions([{ id: `adv-${uniqueId}-0`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -690,5 +686,7 @@ export default function CreateBillPage() {
     </>
   );
 }
+
+    
 
     
