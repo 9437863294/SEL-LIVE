@@ -124,8 +124,8 @@ export default function BillingSummaryReport() {
   const projectSlug = params.project as string;
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
@@ -154,8 +154,8 @@ export default function BillingSummaryReport() {
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setAllSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
         setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setAllBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setAllProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
         
     } catch (error) {
         console.error('Error fetching bills: ', error);
