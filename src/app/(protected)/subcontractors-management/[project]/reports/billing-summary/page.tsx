@@ -132,47 +132,39 @@ export default function BillingSummaryReport() {
   const fetchBillingData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const projectsQuery = query(collection(db, 'projects'));
-      const projectSnap = await getDocs(projectsQuery);
-      const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-      setProjects(allProjects);
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectSnap = await getDocs(projectsQuery);
+        const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        setProjects(allProjects);
 
-      const allSubcontractors: Subcontractor[] = [];
-      const allWorkOrders: WorkOrder[] = [];
-      
-      const subAndWoPromises = allProjects.map(p => Promise.all([
-          getDocs(collection(db, 'projects', p.id, 'subcontractors')),
-          getDocs(collection(db, 'projects', p.id, 'workOrders')),
-      ]));
-      
-      const results = await Promise.all(subAndWoPromises);
-
-      results.forEach(([subsSnap, woSnap]) => {
-        allSubcontractors.push(...subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        allWorkOrders.push(...woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-      });
-
-      setSubcontractors(allSubcontractors);
-      setWorkOrders(allWorkOrders);
-
-      const billsSnapshot = await getDocs(collectionGroup(db, 'bills'));
-      const billEntries = billsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
-      setBills(billEntries);
-      
-      const proformaSnapshot = await getDocs(collectionGroup(db, 'proformaBills'));
-      const proformaEntries = proformaSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ProformaBill));
-      setProformaBills(proformaEntries);
-
+        const allSubcontractors: Subcontractor[] = [];
+        const subsQueryPromises = allProjects.map((p) => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
+        const subsSnaps = await Promise.all(subsQueryPromises);
+        subsSnaps.forEach((snap) => {
+            allSubcontractors.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)));
+        });
+        setSubcontractors(allSubcontractors);
+        
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const billsQuery = query(collectionGroup(db, 'bills'));
+        const proformaQuery = query(collectionGroup(db, 'proformaBills'));
+        
+        const [woSnap, billsSnap, proformaSnap] = await Promise.all([
+            getDocs(woQuery),
+            getDocs(billsQuery),
+            getDocs(proformaQuery),
+        ]);
+        
+        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        
     } catch (error) {
-      console.error('Error fetching bills: ', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load bill data.',
-        variant: 'destructive',
-      });
+        console.error('Error fetching bills: ', error);
+        toast({ title: 'Error', description: 'Failed to load bill data.', variant: 'destructive' });
     }
     setIsLoading(false);
-  }, [toast]);
+}, [toast, projectSlug]);
   
   useEffect(() => {
     fetchBillingData();
@@ -461,3 +453,4 @@ export default function BillingSummaryReport() {
     </>
   );
 }
+
