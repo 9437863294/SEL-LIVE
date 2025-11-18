@@ -124,12 +124,11 @@ export default function BillingSummaryReport() {
   const projectSlug = params.project as string;
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
+  const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [allProformaBills, setAllProformaBills] = useState<ProformaBill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
-  const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
+  const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
+  const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [filters, setFilters] = useState({
@@ -144,39 +143,26 @@ export default function BillingSummaryReport() {
   const fetchBillingData = useCallback(async () => {
     setIsLoading(true);
     try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectSnap = await getDocs(projectsQuery);
-        const allProjects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-        setProjects(allProjects);
-
-        const allSubcontractors: Subcontractor[] = [];
-        const subsQueryPromises = allProjects.map((p) => getDocs(collection(db, 'projects', p.id, 'subcontractors')));
-        const subsSnaps = await Promise.all(subsQueryPromises);
-        subsSnaps.forEach((snap) => {
-            allSubcontractors.push(...snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subcontractor)));
-        });
-        setSubcontractors(allSubcontractors);
-        
-        const woQuery = query(collectionGroup(db, 'workOrders'));
-        const billsQuery = query(collectionGroup(db, 'bills'));
-        const proformaQuery = query(collectionGroup(db, 'proformaBills'));
-        
-        const [woSnap, billsSnap, proformaSnap] = await Promise.all([
-            getDocs(woQuery),
-            getDocs(billsQuery),
-            getDocs(proformaQuery),
+        const [projectsSnap, subsSnap, woSnap, billsSnap, proformaSnap] = await Promise.all([
+            getDocs(collection(db, 'projects')),
+            getDocs(collectionGroup(db, 'subcontractors')),
+            getDocs(collectionGroup(db, 'workOrders')),
+            getDocs(collectionGroup(db, 'bills')),
+            getDocs(collectionGroup(db, 'proformaBills')),
         ]);
         
-        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+        setAllSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
+        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setAllBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setAllProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
         
     } catch (error) {
         console.error('Error fetching bills: ', error);
         toast({ title: 'Error', description: 'Failed to load bill data.', variant: 'destructive' });
     }
     setIsLoading(false);
-}, [toast, projectSlug]);
+}, [toast]);
   
   useEffect(() => {
     fetchBillingData();
@@ -186,48 +172,13 @@ export default function BillingSummaryReport() {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
   
-  const filterOptions = useMemo(() => {
-    const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
-    const targetProjectId = filters.project === 'all' ? null : projectMap.get(filters.project);
-    
-    const visibleProjects = projects; 
-
-    const relevantWorkOrders = targetProjectId 
-        ? workOrders.filter(wo => wo.projectId === targetProjectId)
-        : workOrders;
-    
-    const visibleSubcontractorIds = new Set(relevantWorkOrders.map(wo => wo.subcontractorId));
-    const visibleSubs = subcontractors.filter(s => visibleSubcontractorIds.has(s.id));
-
-    const combined = [...bills, ...proformaBills];
-    const yearSet = new Set<string>();
-    combined.forEach((b) => {
-      const rawDate =
-        'billDate' in b
-          ? (b as Bill).billDate
-          : (b as ProformaBill).date;
-      const d = toDateSafe(rawDate);
-      if (!d) return;
-      yearSet.add(getYear(d).toString());
-    });
-    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
-
-    const months = Array.from({ length: 12 }, (_, i) => ({
-      value: i.toString(),
-      label: format(new Date(0, i), 'MMMM'),
-    }));
-
-    return { projects: visibleProjects, subcontractors: visibleSubs, years, months };
-  }, [bills, proformaBills, projects, subcontractors, workOrders, filters.project]);
-
-  const { filteredBills, filteredProformas, filteredWorkOrders } = useMemo(() => {
+  const filteredData = useMemo(() => {
     const projectMap = new Map(projects.map(p => [slugify(p.projectName), p.id]));
     const targetProjectId = filters.project === 'all' ? null : projectMap.get(filters.project);
 
     const filterFn = (bill: Bill | ProformaBill) => {
         const projectMatch = !targetProjectId || bill.projectId === targetProjectId;
         const subMatch = filters.subcontractor === 'all' || bill.subcontractorId === filters.subcontractor;
-        
         const sortDate = toDateSafe((bill as Bill).billDate || (bill as ProformaBill).date);
         if (!sortDate) return false;
         
@@ -237,20 +188,35 @@ export default function BillingSummaryReport() {
         return projectMatch && subMatch && yearMatch && monthMatch;
     };
     
-    const fb = bills.filter(filterFn);
-    const fp = proformaBills.filter(filterFn);
+    const filteredBills = allBills.filter(filterFn);
+    const filteredProformas = allProformaBills.filter(filterFn);
     
-    const relevantWoIds = new Set([...fb.map(b => b.workOrderId), ...fp.map(p => p.workOrderId)]);
-    const fw = workOrders.filter(wo => relevantWoIds.has(wo.id));
+    const relevantWoIds = new Set([...filteredBills.map(b => b.workOrderId), ...filteredProformas.map(p => p.workOrderId)]);
+    const filteredWorkOrders = allWorkOrders.filter(wo => relevantWoIds.has(wo.id));
     
-    return {
-      filteredBills: fb,
-      filteredProformas: fp,
-      filteredWorkOrders: fw,
-    };
-}, [bills, proformaBills, workOrders, filters, projects]);
+    return { filteredBills, filteredProformas, filteredWorkOrders };
+  }, [filters, allBills, allProformaBills, allWorkOrders, projects]);
+
+
+  const filterOptions = useMemo(() => {
+    const { filteredWorkOrders } = filteredData;
+    const visibleSubcontractorIds = new Set(filteredWorkOrders.map(wo => wo.subcontractorId));
+    const visibleSubs = allSubcontractors.filter(s => visibleSubcontractorIds.has(s.id));
+    const yearSet = new Set<string>();
+    [...allBills, ...allProformaBills].forEach((b) => {
+      const d = toDateSafe('billDate' in b ? b.billDate : b.date);
+      if (d) yearSet.add(getYear(d).toString());
+    });
+    const years = Array.from(yearSet).sort((a, b) => parseInt(b) - parseInt(a));
+    const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
+
+    return { projects, subcontractors: visibleSubs, years, months };
+  }, [projects, allSubcontractors, allBills, allProformaBills, filteredData]);
+
 
   const summaryStats: SummaryStats = useMemo(() => {
+    const { filteredBills, filteredProformas, filteredWorkOrders } = filteredData;
+
     const totalWorkOrderValue = filteredWorkOrders.reduce((sum, wo) => sum + (wo.totalAmount || 0), 0);
     const totalBilled = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.netPayable || 0), 0);
     const totalRetentionDeducted = filteredBills.filter(b => !b.isRetentionBill).reduce((sum, bill) => sum + (bill.retentionAmount || 0), 0);
@@ -262,20 +228,12 @@ export default function BillingSummaryReport() {
     const balanceToBeBilled = totalWorkOrderValue - totalBilled;
 
     return { totalWorkOrderValue, totalBilled, balanceToBeBilled, totalRetentionDeducted, totalRetentionClaimed, retentionBalance, totalAdvance, totalAdvanceRecovered, netAdvance };
-  }, [filteredBills, filteredProformas, filteredWorkOrders]);
+  }, [filteredData]);
   
    const workOrderSummary: WorkOrderSummary[] = useMemo(() => {
-    if (isLoading) return [];
+    const { filteredBills, filteredProformas, filteredWorkOrders } = filteredData;
     
-    const woMap = new Map<string, {
-      woNo: string;
-      subcontractorName: string;
-      woValue: number;
-      totalBilled: number;
-      advanceTaken: number;
-      advanceDeducted: number;
-      progress: number;
-    }>();
+    const woMap = new Map<string, WorkOrderSummary>();
 
     filteredWorkOrders.forEach(wo => {
       woMap.set(wo.id, {
@@ -313,10 +271,9 @@ export default function BillingSummaryReport() {
     });
 
     return Array.from(woMap.values()).filter(s => s.woValue > 0 || s.totalBilled > 0 || s.advanceTaken > 0);
-  }, [filteredWorkOrders, filteredBills, filteredProformas, isLoading]);
-  
+  }, [filteredData]);
 
-   const statsToDisplay = [
+  const statsToDisplay = [
       { title: 'Total Work Order Value', value: formatCurrency(summaryStats.totalWorkOrderValue), icon: FileText },
       { title: 'Total Billed', value: formatCurrency(summaryStats.totalBilled), icon: Receipt },
       { title: 'Balance To Be Billed', value: formatCurrency(summaryStats.balanceToBeBilled), icon: Wallet },
@@ -487,3 +444,5 @@ export default function BillingSummaryReport() {
     </>
   );
 }
+```
+
