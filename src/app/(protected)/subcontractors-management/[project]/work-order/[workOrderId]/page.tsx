@@ -71,13 +71,14 @@ export default function WorkOrderDetailsPage() {
                 const woData = { id: woDocSnap.id, ...woDocSnap.data() } as WorkOrder;
                 setWorkOrder(woData);
                 
-                const [jmcSnap, billsSnap, proformaSnap] = await Promise.all([
-                    getDocs(query(collectionGroup(db, 'jmcEntries'), where('woNo', '==', woData.workOrderNo))),
+                const [jmcGroupSnap, billsSnap, proformaSnap] = await Promise.all([
+                    getDocs(collectionGroup(db, 'jmcEntries')),
                     getDocs(query(collection(db, 'projects', projectData.id, 'bills'), where('workOrderId', '==', workOrderId))),
                     getDocs(query(collection(db, 'projects', projectData.id, 'proformaBills'), where('workOrderId', '==', workOrderId))),
                 ]);
 
-                const jmcEntries = jmcSnap.docs.map(doc => doc.data() as JmcEntry);
+                const allJmcEntries = jmcGroupSnap.docs.map(doc => doc.data() as JmcEntry);
+                const jmcEntries = allJmcEntries.filter(jmc => jmc.woNo === woData.workOrderNo);
                 
                 const jmcCertifiedQtyMap = new Map<string, number>();
                 jmcEntries.flatMap(entry => entry.items).forEach(jmcItem => {
@@ -144,9 +145,10 @@ export default function WorkOrderDetailsPage() {
                 setIsLoading(false);
             }
         };
-
+        
+        setIsLoading(true);
         fetchWorkOrder();
-    }, [projectSlug, workOrderId, toast]);
+    }, [projectSlug, workOrderId, toast, notFound]);
 
     const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
     const formatDate = (date: any) => date?.toDate ? format(date.toDate(), 'dd MMM, yyyy') : 'N/A';
