@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem, WorkflowStep, ActionLog } from '@/lib/types';
+import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -22,12 +22,12 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ShieldAlert } from 'lucide-react';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Timestamp } from 'firebase/firestore';
 
 const initialBillDetails = {
     proformaNo: '',
     date: new Date().toISOString().split('T')[0],
     workOrderId: '',
+    subcontractorId: '',
 };
 
 const slugify = (text: string) => {
@@ -66,6 +66,7 @@ export default function CreateProformaPage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [existingProformaBills, setExistingProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   
   const [payablePercentage, setPayablePercentage] = useState<number>(100);
   const [approvalCopy, setApprovalCopy] = useState<File | null>(null);
@@ -73,7 +74,7 @@ export default function CreateProformaPage() {
 
 
   useEffect(() => {
-    const fetchProjectAndWorkOrders = async () => {
+    const fetchProjectAndData = async () => {
         if (!projectSlug) return;
         
         const projectsQuery = query(collection(db, 'projects'));
@@ -83,7 +84,6 @@ export default function CreateProformaPage() {
             .find(p => slugify(p.projectName) === projectSlug);
 
         if (!project) {
-            console.error("Project not found from slug:", projectSlug);
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             return;
         }
@@ -94,13 +94,16 @@ export default function CreateProformaPage() {
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
         const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
+        const subsQuery = query(collection(db, 'subcontractors'));
 
-        const [woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap] = await Promise.all([
+
+        const [woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap, subsSnap] = await Promise.all([
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(boqQuery),
           getDocs(proformaQuery),
+          getDocs(subsQuery),
         ]);
 
         setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
@@ -108,10 +111,31 @@ export default function CreateProformaPage() {
         setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
         setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
         setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
+        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
     };
-    fetchProjectAndWorkOrders();
+    fetchProjectAndData();
   }, [projectSlug, toast]);
   
+  const filteredWorkOrders = useMemo(() => {
+    if (!details.subcontractorId) return [];
+    return workOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
+  }, [details.subcontractorId, workOrders]);
+
+  const subcontractorsWithWorkOrders = useMemo(() => {
+      const subIdsWithWo = new Set(workOrders.map(wo => wo.subcontractorId));
+      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+  }, [workOrders, subcontractors]);
+
+  const handleSubcontractorChange = (subcontractorId: string) => {
+    setDetails(prev => ({
+        ...prev,
+        subcontractorId,
+        workOrderId: '', // Reset work order when subcontractor changes
+    }));
+    setSelectedWorkOrder(null);
+    setItems([]);
+  };
+
   useEffect(() => {
       const wo = workOrders.find(w => w.id === details.workOrderId);
       setSelectedWorkOrder(wo || null);
@@ -339,11 +363,24 @@ export default function CreateProformaPage() {
           <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
+                      <Label htmlFor="subcontractorId">Subcontractor</Label>
+                      <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
+                          <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
+                          <SelectContent>
+                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="space-y-2">
                       <Label htmlFor="workOrderId">Work Order No</Label>
-                      <Select value={details.workOrderId} onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}>
+                      <Select 
+                        value={details.workOrderId} 
+                        onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
+                        disabled={!details.subcontractorId}
+                      >
                           <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
                           <SelectContent>
-                              {workOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                              {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
