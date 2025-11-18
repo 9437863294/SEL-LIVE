@@ -58,16 +58,16 @@ export default function WorkOrderProgressReport() {
                     return;
                 }
                 
-                const woQuery = query(collectionGroup(db, 'workOrders'), where('projectId', '==', projectData.id));
-                const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', projectData.id));
+                const woQuery = query(collectionGroup(db, 'workOrders'));
+                const billsQuery = query(collectionGroup(db, 'bills'));
 
                 const [woSnap, billsSnap] = await Promise.all([
                     getDocs(woQuery),
                     getDocs(billsQuery),
                 ]);
 
-                setWorkOrders(woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder)));
-                setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)));
+                setWorkOrders(woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder)).filter(wo => wo.projectId === projectData.id));
+                setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)).filter(b => b.projectId === projectData.id));
 
             } catch (error: any) {
                 console.error("Error fetching report data:", error);
