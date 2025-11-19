@@ -83,12 +83,11 @@ export default function SubcontractorsProjectDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isAllProjectsView = projectSlugParam === 'all';
+  const isAllProjectsView = projectSlugParam === 'all' || !projectSlugParam;
 
   const safeCan = useCallback(
     (action: string, resource: string, scope?: string) => {
       if (isAuthLoading) return false;
-      // For 'all' view, don't pass a specific scope unless it's a general permission
       const scopeToCheck = isAllProjectsView && resource.includes('.') ? undefined : scope;
       return typeof can === 'function' ? can(action, resource, scopeToCheck) : false;
     },
