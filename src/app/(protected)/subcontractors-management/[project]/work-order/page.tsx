@@ -20,8 +20,8 @@ const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -65,11 +65,12 @@ export default function WorkOrderLogPage() {
         
         let entries = querySnapshot.docs.map(doc => {
             const data = doc.data();
+            const projectForWo = allProjects.find(p => p.id === data.projectId);
             return { 
                 id: doc.id, 
                 ...data,
-                projectName: allProjects.find(p => p.id === data.projectId)?.projectName || 'Unknown',
-                projectSlug: allProjects.find(p => p.id === data.projectId) ? slugify(allProjects.find(p => p.id === data.projectId)!.projectName) : '',
+                projectName: projectForWo?.projectName || 'Unknown',
+                projectSlug: projectForWo ? slugify(projectForWo.projectName) : '',
             } as WorkOrder
         });
 
@@ -206,3 +207,5 @@ export default function WorkOrderLogPage() {
     </div>
   );
 }
+
+    

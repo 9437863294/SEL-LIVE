@@ -22,8 +22,8 @@ const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
@@ -89,7 +89,7 @@ export default function ManageSubcontractorsPage() {
         setWorkOrders(projectWorkOrders);
         setBills(allBillsData.filter(b => b.projectId === project.id));
         setProformaBills(allProformaData.filter(p => p.projectId === project.id));
-      } else { // "all" projects view
+      } else { // "all" projects view (not implemented on this page, but good practice)
         setSubcontractors(allSubs);
         setWorkOrders(allWorkOrders);
         setBills(allBillsData);
@@ -230,7 +230,7 @@ export default function ManageSubcontractorsPage() {
             <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
         </Card>
       </div>
-    );
+    )
   }
 
   return (
@@ -399,3 +399,5 @@ export default function ManageSubcontractorsPage() {
     </div>
   );
 }
+
+    
