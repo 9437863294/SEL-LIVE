@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useId } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, Upload } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ShieldAlert } from 'lucide-react';
@@ -46,6 +47,15 @@ type EnrichedBillItem = BillItem & {
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
 };
+
+type AdvanceDeductionItem = {
+    id: string;
+    reference: string; // ProformaBill ID
+    deductionType: 'amount' | 'percentage';
+    deductionValue: number; // Holds the raw amount or percentage
+    amount: number; // Holds the final calculated deduction amount
+};
+
 
 export default function CreateProformaPage() {
   const { toast } = useToast();
@@ -340,7 +350,7 @@ export default function CreateProformaPage() {
   
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
+    if(isNaN(num)) return formatCurrency(0);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
@@ -512,5 +522,4 @@ export default function CreateProformaPage() {
       />
     </>
   );
-
-    
+}
