@@ -72,8 +72,8 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle as ShadDialogTitle,
-  DialogDescription as ShadDialogDescription,
+  DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
@@ -87,6 +87,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
 
 
 // Unified Display types
@@ -842,11 +843,11 @@ export default function BillLogPage() {
 
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
         <DialogContent>
-          <ShadDialogHeader>
-            <ShadDialogTitle>
+          <DialogHeader>
+            <DialogTitle>
               Deduction Details for Bill {selectedBill?.billNo}
-            </ShadDialogTitle>
-          </ShadDialogHeader>
+            </DialogTitle>
+          </DialogHeader>
           <div className="py-4 space-y-2">
             <div className="flex justify-between">
                 <span className="text-muted-foreground">Retention Amount</span>
