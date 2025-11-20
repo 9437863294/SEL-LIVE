@@ -207,5 +207,3 @@ export default function WorkOrderLogPage() {
     </div>
   );
 }
-
-    
