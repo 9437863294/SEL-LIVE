@@ -190,7 +190,7 @@ export default function BillingSummaryReport() {
     const visibleSubcontractorIds = new Set(visibleWorkOrders.map(wo => wo.subcontractorId));
     const visibleSubs = allSubcontractors.filter(s => visibleSubcontractorIds.has(s.id));
 
-    const combinedBills = [...bills, ...proformaBills];
+    const combinedBills = [...allBills, ...allProformaBills];
     const yearSet = new Set<string>();
     combinedBills.forEach((b) => {
       const d = toDateSafe('billDate' in b ? b.billDate : b.date);
@@ -200,7 +200,7 @@ export default function BillingSummaryReport() {
     const months = Array.from({ length: 12 }, (_, i) => ({ value: i.toString(), label: format(new Date(0, i), 'MMMM') }));
 
     return { projects, subcontractors: visibleSubs, years, months };
-  }, [projects, allWorkOrders, allSubcontractors, bills, proformaBills, filteredProjects]);
+  }, [allBills, allProformaBills, projects, allWorkOrders, allSubcontractors, filteredProjects]);
   
   const filteredData = useMemo(() => {
     const visibleProjectIds = new Set(filteredProjects.map(p => p.id));
@@ -217,14 +217,14 @@ export default function BillingSummaryReport() {
         return projectMatch && subMatch && yearMatch && monthMatch;
     };
     
-    const filteredBills = bills.filter(filterFn);
-    const filteredProformas = proformaBills.filter(filterFn);
+    const filteredBills = allBills.filter(filterFn);
+    const filteredProformas = allProformaBills.filter(filterFn);
     
     const relevantWoIds = new Set([...filteredBills.map(b => b.workOrderId), ...filteredProformas.map(p => p.workOrderId)]);
     const filteredWorkOrders = allWorkOrders.filter(wo => relevantWoIds.has(wo.id));
     
     return { filteredBills, filteredProformas, filteredWorkOrders };
-  }, [filters, bills, proformaBills, allWorkOrders, filteredProjects]);
+  }, [filters, allBills, allProformaBills, allWorkOrders, filteredProjects]);
 
 
   const summaryStats: SummaryStats = useMemo(() => {
