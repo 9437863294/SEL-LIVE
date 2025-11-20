@@ -73,6 +73,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle as ShadDialogTitle,
+  DialogDescription as ShadDialogDescription,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
@@ -118,6 +119,7 @@ interface DisplayBill {
   history?: ActionLog[];
   deadline?: Timestamp | null;
   retentionAmount?: number;
+  otherDeduction?: number;
   totalDeductions?: number;
   advanceDeductions?: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number }[];
 }
@@ -442,7 +444,7 @@ export default function BillLogPage() {
     return map[action] ?? `${action.toLowerCase()}ed`;
   };
 
-  const handleAction = async (taskId: string, action: string, comment: string = '') => {
+  const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
     const currentBill = selectedBill || selectedProformaBill;
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
@@ -462,21 +464,12 @@ export default function BillLogPage() {
         const taskDoc = await tx.get(docRef);
         if (!taskDoc.exists()) throw new Error('Task document not found!');
         const currentTaskData = taskDoc.data() as Bill | ProformaBill;
-
-        const currentStep = workflow.find((s) => s.id === currentTaskData.currentStepId);
-        if (!currentStep) throw new Error('Current workflow step not found!');
-
-        const newActionLog: ActionLog = {
-          action,
-          comment,
-          userId: user.id,
-          userName: user.name,
-          timestamp: Timestamp.now(),
-          stepName: currentStep.name,
-        };
-
+        
+        const actionName = typeof action === 'string' ? action : action.name;
+        const newActionLog: ActionLog = { action: actionName, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentTaskData.stage || '' };
+        
         const nextStep =
-          workflow[workflow.findIndex((s) => s.id === currentStep.id) + 1];
+          workflow[workflow.findIndex((s) => s.id === currentTaskData.currentStepId) + 1];
 
         let newStatus: Bill['status'] = 'In Progress';
         let newStage = nextStep?.name || 'Completed';
@@ -485,37 +478,36 @@ export default function BillLogPage() {
         let newDeadline: Timestamp | null = null;
 
         if (action === 'Approve' || action === 'Verify') {
-          if (nextStep) {
-            const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
-            if (assignees.length === 0) {
-              throw new Error(`No assignee for step: ${nextStep.name}`);
+            if (nextStep) {
+                const assignees = await getAssigneeForStep(nextStep, currentTaskData as any);
+                if (assignees.length === 0) {
+                  throw new Error(`No assignee for step: ${nextStep.name}`);
+                }
+                newAssignees = assignees;
+                newDeadline = Timestamp.fromDate(
+                  await calculateDeadline(new Date(), nextStep.tat),
+                );
+            } else {
+                newStatus = 'Completed';
             }
-            newAssignees = assignees;
-            newDeadline = Timestamp.fromDate(
-              await calculateDeadline(new Date(), nextStep.tat),
-            );
-          } else {
-            newStatus = 'Completed';
-          }
         } else if (action === 'Reject') {
-          newStage = 'Rejected';
-          newStatus = 'Rejected';
-          newCurrentStepId = null;
+            newStage = 'Rejected';
+            newStatus = 'Rejected';
+            newCurrentStepId = null;
         }
 
         const updateData: any = {
-          status: newStatus,
-          stage: newStage,
-          currentStepId: newCurrentStepId,
-          assignees: newAssignees,
-          deadline: newDeadline,
-          history: arrayUnion(newActionLog),
+            status: newStatus,
+            stage: newStage,
+            currentStepId: newCurrentStepId,
+            assignees: newAssignees,
+            deadline: newDeadline,
+            history: arrayUnion(newActionLog),
         };
 
         tx.update(docRef, updateData);
       });
-
-      toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
+      toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
       await fetchBills();
       setIsViewOpen(false);
     } catch (error: any) {
@@ -850,36 +842,52 @@ export default function BillLogPage() {
 
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
         <DialogContent>
-          <DialogHeader>
+          <ShadDialogHeader>
             <ShadDialogTitle>
-              Advance Deductions for Bill {selectedBill?.billNo}
+              Deduction Details for Bill {selectedBill?.billNo}
             </ShadDialogTitle>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Proforma Bill No.</TableHead>
-                <TableHead className="text-right">Deducted Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
-                const proforma = allProformaBills.find(
-                  (p: ProformaBill) => p.id === deduction.reference,
-                );
-                return (
-                  <TableRow key={index}>
-                    <TableCell>
-                      {proforma?.proformaNo || deduction.reference}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(deduction.amount)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          </ShadDialogHeader>
+          <div className="py-4 space-y-2">
+            <div className="flex justify-between">
+                <span className="text-muted-foreground">Retention Amount</span>
+                <span>{formatCurrency(selectedBill?.retentionAmount || 0)}</span>
+            </div>
+            <div className="flex justify-between">
+                <span className="text-muted-foreground">Other Deductions</span>
+                <span>{formatCurrency(selectedBill?.otherDeduction || 0)}</span>
+            </div>
+            <Separator className="my-2" />
+            <h4 className="font-semibold pt-2">Advance Deductions</h4>
+            {(selectedBill?.advanceDeductions || []).length > 0 ? (
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>Proforma Bill No.</TableHead>
+                        <TableHead className="text-right">Deducted Amount</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {(selectedBill?.advanceDeductions || []).map((deduction, index) => {
+                            const proforma = allProformaBills.find(
+                                (p: ProformaBill) => p.id === deduction.reference,
+                            );
+                            return (
+                                <TableRow key={index}>
+                                <TableCell>
+                                    {proforma?.proformaNo || deduction.reference}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {formatCurrency(deduction.amount)}
+                                </TableCell>
+                                </TableRow>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
+            ) : (
+                <p className="text-sm text-muted-foreground">No advance deductions for this bill.</p>
+            )}
+          </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
