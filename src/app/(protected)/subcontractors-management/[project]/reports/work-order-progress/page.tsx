@@ -66,15 +66,18 @@ export default function WorkOrderProgressReport() {
                     getDocs(billsQuery),
                 ]);
 
-                setWorkOrders(woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder)).filter(wo => wo.projectId === projectData.id));
-                setBills(billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)).filter(b => b.projectId === projectData.id));
+                const allWorkOrders = woSnap.docs.map(d => ({ id: d.id, ...d.data() } as WorkOrder));
+                const allBills = billsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bill));
+                
+                setWorkOrders(allWorkOrders.filter(wo => wo.projectId === projectData.id));
+                setBills(allBills.filter(b => b.projectId === projectData.id));
 
             } catch (error: any) {
                 console.error("Error fetching report data:", error);
                  if (error.code === 'failed-precondition') {
                     toast({
                         title: 'Database Index Required',
-                        description: "The query for this report requires a custom index. Please create it in the Firebase console for the collection group.",
+                        description: "The query for this report requires a custom index. Please check the Firebase console for the collection group.",
                         variant: 'destructive',
                         duration: 10000,
                     });
