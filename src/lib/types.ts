@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -1059,5 +1058,3 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
-
-

@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -89,7 +88,7 @@ export default function EmployeeSalaryPage() {
   }
 
   const formatCurrency = (amount: number | undefined) => {
-    if (typeof amount !== 'number') return 'N/A';
+    if (typeof amount !== 'number' || isNaN(amount)) return 'N/A';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -174,8 +173,8 @@ export default function EmployeeSalaryPage() {
                     <TableCell>{emp.name}</TableCell>
                     <TableCell>{emp.department}</TableCell>
                     <TableCell>{emp.designation}</TableCell>
-                    <TableCell>{formatCurrency((emp as any).grossSalary)}</TableCell>
-                    <TableCell>{formatCurrency((emp as any).netSalary)}</TableCell>
+                    <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
+                    <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
                   </TableRow>
                 ))
               ) : (
@@ -190,4 +189,3 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
-
