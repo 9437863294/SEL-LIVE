@@ -775,6 +775,8 @@ export interface Employee {
   department: string;
   designation: string;
   status: 'Active' | 'Inactive';
+  grossSalary?: number;
+  netSalary?: number;
 }
 
 export interface EmployeePosition {
@@ -1057,4 +1059,5 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
+
 

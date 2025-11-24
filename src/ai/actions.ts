@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import { suggestModuleTags as suggestModuleTagsFlow, type SuggestModuleTagsInput, type SuggestModuleTagsOutput } from './flows/suggest-module-tags';
@@ -7,6 +8,7 @@ import { syncGreytHR as syncGreytHRFlow, type SyncGreytHRInput, type SyncGreytHR
 import { syncGreytHRCategories as syncGreytHRCategoriesFlow, type SyncCategoriesOutput } from './flows/sync-categories-flow';
 import { getAllEmployeePositions as getAllEmployeePositionsFlow, type GetAllEmployeePositionsInput, type GetAllEmployeePositionsOutput } from './flows/get-all-employee-positions-flow';
 import { createExpenseRequest as createExpenseRequestFlow, type CreateExpenseRequestInput, type CreateExpenseRequestOutput } from './flows/create-expense-request-flow';
+import { syncSalary as syncSalaryFlow, type SyncSalaryInput, type SyncSalaryOutput } from './flows/sync-salary-flow';
 
 export async function suggestModuleTags(input: SuggestModuleTagsInput): Promise<SuggestModuleTagsOutput> {
   return await suggestModuleTagsFlow(input);
@@ -30,4 +32,8 @@ export async function getAllEmployeePositions(input: GetAllEmployeePositionsInpu
 
 export async function createExpenseRequest(input: CreateExpenseRequestInput): Promise<CreateExpenseRequestOutput> {
     return await createExpenseRequestFlow(input);
+}
+
+export async function syncSalary(input: SyncSalaryInput): Promise<SyncSalaryOutput> {
+    return await syncSalaryFlow(input);
 }
