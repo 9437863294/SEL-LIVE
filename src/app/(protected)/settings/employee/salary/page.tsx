@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,10 +13,8 @@ import type { Employee } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { syncSalary } from '@/ai';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { format, startOfMonth } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { format, getYear, startOfMonth } from 'date-fns';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
@@ -25,55 +22,43 @@ export default function EmployeeSalaryPage() {
   const [displayedEmployees, setDisplayedEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState<Date>(startOfMonth(new Date()));
+
+  const currentYear = getYear(new Date());
+  const currentMonth = new Date().getMonth(); // 0-11
+
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
 
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
 
-  const fetchEmployees = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const q = query(collection(db, 'employees'));
-      const querySnapshot = await getDocs(q);
-      const employeesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      // Initially, we can show all employees or none. Let's show none until a sync.
-      setDisplayedEmployees([]);
-    } catch (error) {
-      console.error("Error fetching employees:", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch employees.',
-        variant: 'destructive',
-      });
-    } finally {
-        setIsLoading(false);
-    }
-  }, [toast]);
-  
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (canView) {
-      // Don't fetch all employees initially anymore
+    if (!isAuthLoading && !canView) {
+      setIsLoading(false);
+    } else if (!isAuthLoading && canView) {
+      // Don't fetch anything by default, wait for user to sync
       setIsLoading(false);
     }
-  }, [isAuthLoading, canView, fetchEmployees]);
-  
+  }, [isAuthLoading, canView]);
+
   const handleSync = async () => {
     if (!canSync) {
         toast({ title: "Permission Denied", description: "You don't have permission to sync salaries.", variant: "destructive" });
         return;
     }
     setIsSyncing(true);
-    setIsLoading(true); // Show skeleton while syncing
+    setIsLoading(true);
     try {
-        const monthString = format(selectedMonth, 'yyyy-MM-01');
+        // Construct the first day of the selected month
+        const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
+        const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
+        
         const result = await syncSalary({ month: monthString });
         if (result.success) {
             toast({
                 title: 'Sync Successful',
                 description: result.message,
             });
-            // Set the table data to only the employees returned from the sync
             setDisplayedEmployees(result.employees || []);
         } else {
             throw new Error(result.message);
@@ -84,7 +69,7 @@ export default function EmployeeSalaryPage() {
             description: error.message || 'An unknown error occurred.',
             variant: 'destructive',
         });
-        setDisplayedEmployees([]); // Clear table on error
+        setDisplayedEmployees([]);
     } finally {
         setIsSyncing(false);
         setIsLoading(false);
@@ -98,6 +83,18 @@ export default function EmployeeSalaryPage() {
       currency: 'INR',
     }).format(amount);
   };
+  
+  const yearOptions = useMemo(() => {
+      const startYear = currentYear - 5;
+      return Array.from({ length: 10 }, (_, i) => startYear + i).reverse();
+  }, [currentYear]);
+
+  const monthOptions = useMemo(() => {
+      return Array.from({ length: 12 }, (_, i) => ({
+          value: i,
+          label: format(new Date(2000, i), 'MMMM'),
+      }));
+  }, []);
 
   if (isAuthLoading) {
       return (
@@ -127,28 +124,26 @@ export default function EmployeeSalaryPage() {
           </div>
         </div>
          <div className="flex items-center gap-2">
-            <Popover>
-                <PopoverTrigger asChild>
-                    <Button
-                        variant={"outline"}
-                        className={cn(
-                            "w-[240px] justify-start text-left font-normal",
-                            !selectedMonth && "text-muted-foreground"
-                        )}
-                        >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedMonth ? format(selectedMonth, "MMMM yyyy") : <span>Select a month</span>}
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                    <Calendar
-                        mode="single"
-                        selected={selectedMonth}
-                        onSelect={(date) => date && setSelectedMonth(date)}
-                        initialFocus
-                    />
-                </PopoverContent>
-            </Popover>
+            <Select value={String(selectedYear)} onValueChange={(val) => setSelectedYear(Number(val))}>
+                <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {yearOptions.map(year => (
+                        <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+            <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
+                <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {monthOptions.map(month => (
+                        <SelectItem key={month.value} value={String(month.value)}>{month.label}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
             <Button onClick={handleSync} disabled={isSyncing || !canSync}>
                 {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Sync Salary
