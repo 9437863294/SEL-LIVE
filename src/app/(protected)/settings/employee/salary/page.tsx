@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -20,7 +21,7 @@ export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const [displayedEmployees, setDisplayedEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Used for initial page load
   const [isSyncing, setIsSyncing] = useState(false);
 
   const currentYear = getYear(new Date());
@@ -36,8 +37,7 @@ export default function EmployeeSalaryPage() {
     if (!isAuthLoading && !canView) {
       setIsLoading(false);
     } else if (!isAuthLoading && canView) {
-      // Don't fetch anything by default, wait for user to sync
-      setIsLoading(false);
+      setIsLoading(false); // Don't fetch anything by default
     }
   }, [isAuthLoading, canView]);
 
@@ -47,9 +47,9 @@ export default function EmployeeSalaryPage() {
         return;
     }
     setIsSyncing(true);
-    setIsLoading(true);
+    setDisplayedEmployees([]); // Clear previous results
+    
     try {
-        // Construct the first day of the selected month
         const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
         const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
         
@@ -72,7 +72,6 @@ export default function EmployeeSalaryPage() {
         setDisplayedEmployees([]);
     } finally {
         setIsSyncing(false);
-        setIsLoading(false);
     }
   }
 
@@ -165,7 +164,7 @@ export default function EmployeeSalaryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isSyncing ? (
                 Array.from({length: 5}).map((_, i) => (
                     <TableRow key={i}>
                         <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
