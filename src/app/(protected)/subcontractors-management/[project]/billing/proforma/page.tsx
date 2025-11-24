@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, getDoc, Timestamp } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, ProformaBill, Bill, BoqItem, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
@@ -99,12 +99,12 @@ export default function CreateProformaPage() {
         }
         setCurrentProject(project);
 
-        const subsQuery = query(collectionGroup(db, 'subcontractors'));
-        const woQuery = query(collectionGroup(db, 'workOrders'));
-        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
-        const billsQuery = query(collectionGroup(db, 'bills'));
-        const proformaQuery = query(collectionGroup(db, 'proformaBills'));
-        const boqQuery = query(collectionGroup(db, 'boqItems'));
+        const subsQuery = query(collection(db, 'subcontractors'));
+        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
+        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, boqSnap, proformaSnap] = await Promise.all([
             getDocs(subsQuery),
@@ -116,14 +116,11 @@ export default function CreateProformaPage() {
         ]);
 
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        
-        const projectWorkOrders = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)).filter(wo => wo.projectId === project.id);
-        setWorkOrders(projectWorkOrders);
-        
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
-        setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(pb => pb.projectId === project.id));
-        setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)).filter(boq => boq.projectSlug === projectSlug));
+        setWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
+        setExistingProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
@@ -306,6 +303,7 @@ export default function CreateProformaPage() {
         payableAmount: financials.payableAmount,
         createdAt: serverTimestamp(),
         projectId: currentProject?.id || '',
+        projectName: currentProject?.projectName || '',
         status: 'Pending',
         stage: firstStep.name,
         currentStepId: firstStep.id,
