@@ -61,30 +61,46 @@ async function getGreytHRToken(): Promise<string> {
     }
 }
 
-async function fetchSalaryData(token: string, domain: string, month: string): Promise<any[]> {
-    const url = `https://api.greythr.com/payroll/v2/employees/salary/statement/${month}`;
-    
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            "ACCESS-TOKEN": token,
-            "x-greythr-domain": domain,
-        },
-    });
+async function fetchAllSalaryData(token: string, domain: string, month: string): Promise<any[]> {
+    let allData: any[] = [];
+    let page = 1;
+    const size = 100; // Fetch 100 records per page
 
-    if (response.status === 404) {
-        // If the API returns Not Found, it means no data for that month.
-        // Return an empty array to be handled gracefully.
-        return [];
-    }
-    
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch salary statement: ${response.statusText} - ${errorText}`);
-    }
+    while (true) {
+        const url = `https://api.greythr.com/payroll/v2/employees/salary/statement/${month}?page=${page}&size=${size}`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                "ACCESS-TOKEN": token,
+                "x-greythr-domain": domain,
+            },
+        });
 
-    const json = await response.json();
-    return json.data || [];
+        if (response.status === 404) {
+            // No data for this month, which is a valid scenario.
+            // If it happens on the first page, return empty. Otherwise, we're done.
+            if (page === 1) return [];
+            break;
+        }
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch salary statement: ${response.statusText} - ${errorText}`);
+        }
+
+        const json = await response.json();
+        const data = json.data || [];
+        
+        if (data.length > 0) {
+            allData = allData.concat(data);
+            page++;
+        } else {
+            // No more data to fetch
+            break;
+        }
+    }
+    return allData;
 }
 
 const syncSalaryFlow = ai.defineFlow(
@@ -97,7 +113,7 @@ const syncSalaryFlow = ai.defineFlow(
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
     
-    const salaryData = await fetchSalaryData(token, domain, month);
+    const salaryData = await fetchAllSalaryData(token, domain, month);
 
     if (salaryData.length === 0) {
         return { success: true, message: 'No salary data found for the selected month.', updatedCount: 0, employees: [] };
