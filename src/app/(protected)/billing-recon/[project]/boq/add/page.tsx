@@ -205,13 +205,13 @@ export default function AddBoqItemPage() {
 
   // 🔒 Stable memo (ref-based, no JSON.stringify)
   const optionsCache = useMemo(() => {
-    const map = new Map<keyof typeof boqItem, string[]>();
-    const fields = Object.keys(initialBoqItem) as (keyof typeof boqItem)[];
+    const map = new Map<keyof typeof initialBoqItem, string[]>();
+    const fields = Object.keys(initialBoqItem) as (keyof typeof initialBoqItem)[];
     for (const k of fields) {
       const seen = new Set<string>();
       const opts: string[] = [];
       for (const item of existingBoqItems) {
-        const raw = (item[k] as string) || '';
+        const raw = String((item[k] as any) ?? '');
         const t = raw.trim();
         const l = t.toLowerCase();
         if (t && !seen.has(l)) { seen.add(l); opts.push(t); }
