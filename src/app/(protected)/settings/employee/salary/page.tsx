@@ -18,6 +18,21 @@ import { format, getYear, startOfMonth } from 'date-fns';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+const salaryComponents = [
+    'BASIC',
+    'HRA',
+    'CONVEYANCE',
+    'PROFESSIONAL DEVELOPMENT ALLOWANCE',
+    'TOTAL DEDUCTIONS',
+    'PF',
+    'PROF TAX',
+    'INSURANCE_DEDUCTION',
+    'SALARY MASTER',
+    'NET PAY',
+    'GROSS'
+];
 
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
@@ -84,6 +99,11 @@ export default function EmployeeSalaryPage() {
     }).format(amount);
   };
   
+  const getSalaryComponentValue = (details: SalaryDetail[], description: string) => {
+    const item = details.find(d => d.description === description);
+    return item ? item.amount : 0;
+  };
+  
   const yearOptions = useMemo(() => {
       const startYear = currentYear - 5;
       return Array.from({ length: 10 }, (_, i) => startYear + i).reverse();
@@ -122,7 +142,7 @@ export default function EmployeeSalaryPage() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/settings/employee">
@@ -165,83 +185,49 @@ export default function EmployeeSalaryPage() {
       
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12"></TableHead>
-                <TableHead>Employee ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Gross Salary</TableHead>
-                <TableHead>Net Salary</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isSyncing ? (
-                Array.from({length: 5}).map((_, i) => (
-                    <TableRow key={i}>
-                        <TableCell colSpan={5}><Skeleton className="h-6 w-full" /></TableCell>
-                    </TableRow>
-                ))
-              ) : displayedEmployees.length > 0 ? (
-                displayedEmployees.map(emp => (
-                  <Fragment key={emp.employeeId}>
-                    <TableRow onClick={() => toggleRowExpansion(emp.employeeId)} className="cursor-pointer">
+          <ScrollArea className="h-[calc(100vh-20rem)] w-full">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="w-[200px]">Employee</TableHead>
+                  <TableHead>Gross Salary</TableHead>
+                  <TableHead>Net Salary</TableHead>
+                  {salaryComponents.map(comp => <TableHead key={comp}>{comp}</TableHead>)}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isSyncing ? (
+                  Array.from({length: 5}).map((_, i) => (
+                      <TableRow key={i}>
+                          <TableCell colSpan={salaryComponents.length + 3}><Skeleton className="h-6 w-full" /></TableCell>
+                      </TableRow>
+                  ))
+                ) : displayedEmployees.length > 0 ? (
+                  displayedEmployees.map(emp => (
+                    <TableRow key={emp.employeeId}>
                       <TableCell>
-                         <Button size="icon" variant="ghost">
-                            {expandedRows.has(emp.employeeId) ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
-                         </Button>
+                        <div className="font-medium">{emp.name}</div>
+                        <div className="text-sm text-muted-foreground">{emp.employeeId}</div>
                       </TableCell>
-                      <TableCell>{emp.employeeId}</TableCell>
-                      <TableCell>{emp.name}</TableCell>
                       <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
                       <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
+                      {salaryComponents.map(comp => (
+                        <TableCell key={comp}>{formatCurrency(getSalaryComponentValue(emp.salaryDetails || [], comp))}</TableCell>
+                      ))}
                     </TableRow>
-                    {expandedRows.has(emp.employeeId) && (
-                        <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            <TableCell colSpan={5} className="p-0">
-                                <div className="p-4">
-                                    <h4 className="font-semibold mb-2 ml-2">Salary Breakdown</h4>
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Component</TableHead>
-                                                <TableHead>Type</TableHead>
-                                                <TableHead className="text-right">Amount</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {(emp.salaryDetails || []).map((detail, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell>{detail.description}</TableCell>
-                                                    <TableCell>
-                                                        <Badge variant={detail.type === 'INCOME' ? 'secondary' : 'destructive'}>
-                                                            {detail.type}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">{formatCurrency(detail.amount)}</TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    )}
-                  </Fragment>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
-                    No salary data to display. Please select a month and sync.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={salaryComponents.length + 3} className="h-24 text-center">
+                      No salary data to display. Please select a month and sync.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         </CardContent>
       </Card>
     </div>
   );
 }
-
-  

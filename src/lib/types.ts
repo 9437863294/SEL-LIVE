@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -217,6 +218,7 @@ export const permissionModules = {
     'Sync': ['Sync from GreytHR'],
     'Categories': ['View'],
     'Position Details': ['View'],
+    'Salary': ['View', 'Sync'],
   },
   'Settings': {
     'View Module': [],
