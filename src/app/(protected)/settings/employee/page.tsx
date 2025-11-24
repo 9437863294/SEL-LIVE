@@ -13,6 +13,7 @@ import {
   Tags,
   DownloadCloud,
   Briefcase,
+  IndianRupee,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,12 @@ const employeeSettingsItemsBase = [
     text: 'Employee Position Details',
     description: 'Get position details for an employee.',
     href: '/settings/employee/position-details'
+  },
+  { 
+    icon: IndianRupee,
+    text: 'Employee Salary',
+    description: 'View and manage employee salary details.',
+    href: '/settings/employee/salary'
   },
   { 
     icon: FileText, 
