@@ -72,7 +72,8 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
     const allCategoryTypes = [
         "cat::Department", "cat::Designation", "cat::Grade", "cat::Location",
         "cat::Company", "cat::Project Name", "cat::Project Division", 
-        "cat::Cost Center", "cat::COST CENTER CODE", "cat::Shift", "cat::EMPLOYEE TYPE"
+        "cat::Cost Center", "cat::COST CENTER CODE", "cat::Shift", "cat::EMPLOYEE TYPE",
+        "cat::category" // Make sure to fetch the category type mapping itself
     ];
     
     const body = JSON.stringify(allCategoryTypes);
@@ -93,31 +94,14 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
     }
 
     const categoriesData = await response.json();
-    const categoryMap = new Map<number, string>();
-
-    // The lov endpoint returns a map where keys are "cat::CategoryName"
-    // and values are arrays of [id, name, ...]. We also need a way to map
-    // the category ID (e.g., 1 for Department) to its name ("Department").
-    // Let's create a temporary map for that.
     const categoryIdToNameMap = new Map<number, string>();
+    
+    // The "cat::category" endpoint returns a list of [id, name] pairs.
+    // Example: [[1, "Department"], [2, "Designation"], ...]
     if (categoriesData['cat::category']) {
         categoriesData['cat::category'].forEach((cat: [number, string, any]) => {
-             // Reconstruct the key format used in the main positions response
-            const key = `cat::${cat[1]}`;
-            // The API for positions uses just the ID (e.g. 1), not the key ('cat::Department')
-            // So we need to know that ID 1 is "Department".
             categoryIdToNameMap.set(cat[0], cat[1]);
         });
-    }
-
-    // Now, populate the main map with value IDs to value names.
-    // E.g., for "cat::Department", we map department ID (e.g., 29) to name ("Development").
-    for (const catType of allCategoryTypes) {
-        if (categoriesData[catType]) {
-            categoriesData[catType].forEach((item: [number, string, any]) => {
-                categoryMap.set(item[0], item[1]);
-            });
-        }
     }
     
     return categoryIdToNameMap;
