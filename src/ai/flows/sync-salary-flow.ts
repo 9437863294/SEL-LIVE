@@ -11,6 +11,13 @@ import { z } from 'zod';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, getDocs, query, where, doc } from 'firebase/firestore';
 
+const EmployeeSalaryDataSchema = z.object({
+  employeeId: z.string(),
+  name: z.string(),
+  grossSalary: z.number(),
+  netSalary: z.number(),
+});
+
 const SyncSalaryInputSchema = z.object({
   month: z.string().describe('The month to sync salaries for, in YYYY-MM-01 format.'),
 });
@@ -20,6 +27,7 @@ const SyncSalaryOutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
   updatedCount: z.number(),
+  employees: z.array(EmployeeSalaryDataSchema).optional(),
 });
 export type SyncSalaryOutput = z.infer<typeof SyncSalaryOutputSchema>;
 
@@ -93,21 +101,19 @@ const syncSalaryFlow = ai.defineFlow(
     const salaryData = await fetchSalaryData(token, domain, month);
 
     if (salaryData.length === 0) {
-        return { success: true, message: 'No salary data found for the selected month.', updatedCount: 0 };
+        return { success: true, message: 'No salary data found for the selected month.', updatedCount: 0, employees: [] };
     }
 
-    const employeesByNo: Record<string, { grossSalary: number; netSalary: number }> = {};
+    const employeesByNo: Record<string, { name: string; grossSalary: number; netSalary: number }> = {};
 
     salaryData.forEach(item => {
         const empNo = item.employeeNo;
         if (!employeesByNo[empNo]) {
-            employeesByNo[empNo] = { grossSalary: 0, netSalary: 0 };
+            employeesByNo[empNo] = { name: item.employeeName, grossSalary: 0, netSalary: 0 };
         }
         if (item.itemName === 'INCOME' && item.description === 'GROSS') {
             employeesByNo[empNo].grossSalary = item.amount;
-        }
-        // Initialize netSalary with grossSalary, deductions will be added (as they are negative)
-        if (item.itemName === 'INCOME' && item.description === 'GROSS') {
+            // Initialize netSalary with grossSalary, deductions will be added (as they are negative)
             employeesByNo[empNo].netSalary = item.amount;
         }
     });
@@ -144,10 +150,18 @@ const syncSalaryFlow = ai.defineFlow(
 
     await batch.commit();
 
+    const employeesToReturn = Object.entries(employeesByNo).map(([empNo, data]) => ({
+        employeeId: empNo,
+        name: data.name,
+        grossSalary: data.grossSalary,
+        netSalary: data.netSalary,
+    }));
+
     return { 
         success: true, 
         message: `Successfully synced salaries. ${updatedCount} employee records updated.`,
         updatedCount: updatedCount,
+        employees: employeesToReturn,
     };
   }
 );
