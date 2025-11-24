@@ -1,5 +1,4 @@
 
-
 'use server';
 
 /**
@@ -104,27 +103,18 @@ const syncSalaryFlow = ai.defineFlow(
         return { success: true, message: 'No salary data found for the selected month.', updatedCount: 0, employees: [] };
     }
 
-    const employeesByNo: Record<string, { name: string; grossSalary: number; netSalary: number }> = {};
+    const employeesByNo: Record<string, { name: string; grossSalary: number; totalDeductions: number }> = {};
 
     salaryData.forEach(item => {
         const empNo = item.employeeNo;
         if (!employeesByNo[empNo]) {
-            employeesByNo[empNo] = { name: item.employeeName, grossSalary: 0, netSalary: 0 };
+            employeesByNo[empNo] = { name: item.employeeName, grossSalary: 0, totalDeductions: 0 };
         }
         if (item.itemName === 'INCOME' && item.description === 'GROSS') {
             employeesByNo[empNo].grossSalary = item.amount;
-            // Initialize netSalary with grossSalary, deductions will be added (as they are negative)
-            employeesByNo[empNo].netSalary = item.amount;
         }
-    });
-
-    // Now, iterate again to add all deductions.
-    // The "TOTAL DEDUCTIONS" item from GreytHR is a negative value.
-    salaryData.forEach(item => {
-        const empNo = item.employeeNo;
-        if (employeesByNo[empNo] && item.itemName === 'DEDUCT' && item.description === 'TOTAL DEDUCTIONS') {
-            // Add the negative deduction amount to the gross salary
-            employeesByNo[empNo].netSalary += item.amount;
+        if (item.type === 'DEDUCT') {
+            employeesByNo[empNo].totalDeductions += item.amount;
         }
     });
     
@@ -134,28 +124,33 @@ const syncSalaryFlow = ai.defineFlow(
     // Use a batch to update Firestore efficiently
     const batch = writeBatch(db);
 
+    const employeesToReturn: { employeeId: string; name: string; grossSalary: number; netSalary: number }[] = [];
+
     for (const empNo in employeesByNo) {
+        const salaryInfo = employeesByNo[empNo];
+        const netSalary = salaryInfo.grossSalary - salaryInfo.totalDeductions;
+        
+        employeesToReturn.push({
+            employeeId: empNo,
+            name: salaryInfo.name,
+            grossSalary: salaryInfo.grossSalary,
+            netSalary: netSalary,
+        });
+        
         const q = query(employeesRef, where('employeeId', '==', empNo));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
             const docToUpdate = querySnapshot.docs[0];
             batch.update(docToUpdate.ref, {
-                grossSalary: employeesByNo[empNo].grossSalary,
-                netSalary: employeesByNo[empNo].netSalary,
+                grossSalary: salaryInfo.grossSalary,
+                netSalary: netSalary,
             });
             updatedCount++;
         }
     }
 
     await batch.commit();
-
-    const employeesToReturn = Object.entries(employeesByNo).map(([empNo, data]) => ({
-        employeeId: empNo,
-        name: data.name,
-        grossSalary: data.grossSalary,
-        netSalary: data.netSalary,
-    }));
 
     return { 
         success: true, 
