@@ -86,10 +86,11 @@ async function fetchPage(url: string, token: string, domain: string, page: numbe
 
 async function fetchAllPages(url: string, token: string, domain: string) {
     let page = 1;
-    const size = 100;
+    const size = 100; // Increased page size for fewer calls
     let allData: any[] = [];
+    let hasMore = true;
   
-    while (true) {
+    while (hasMore) {
         const paginatedUrl = `${url}?page=${page}&size=${size}&state=CURRENT`;
         const response = await fetch(paginatedUrl, {
             method: 'GET',
@@ -109,9 +110,10 @@ async function fetchAllPages(url: string, token: string, domain: string) {
         
         if (data.length > 0) {
             allData = allData.concat(data);
+            hasMore = json.pages.hasNext;
             page++;
         } else {
-            break;
+            hasMore = false;
         }
     }
     return allData;
@@ -129,6 +131,7 @@ async function fetchCategoryMappings(token: string, domain: string): Promise<Map
         let designation = 'N/A';
         if (emp.categoryList) {
             for (const category of emp.categoryList) {
+                // The category object from this endpoint has "category" as name and "value" as value name
                 if (category.category === 'Department') {
                     department = category.value;
                 }
@@ -156,18 +159,21 @@ const syncGreytHRFlow = ai.defineFlow(
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
-    const [employeePageJson, categoryMappings] = await Promise.all([
-      fetchPage(employeesUrl, token, domain, page, pageSize),
-      fetchCategoryMappings(token, domain),
-    ]);
-    
+    // Fetch a specific page of employees
+    const employeePageJson = await fetchPage(employeesUrl, token, domain, page, pageSize);
     const employeeData = employeePageJson.data || [];
-    const hasNextPage = employeeData.length > 0;
+    const hasNextPage = employeePageJson.pages.hasNext || false;
 
+    // Fetch all category mappings for enrichment. This is a one-time operation per flow execution.
+    const categoryMappings = await fetchCategoryMappings(token, domain);
+
+    // Filter and map only the current page of employees
     const filteredData = employeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
     const employeesToReturn = filteredData.map((empData: any) => {
+        // Use the mappings to find department and designation
         const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
+        
         return {
             employeeId: empData.employeeNo,
             name: empData.name,
