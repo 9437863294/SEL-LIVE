@@ -100,17 +100,27 @@ const syncSalaryFlow = ai.defineFlow(
         if (item.itemName === 'INCOME' && item.description === 'GROSS') {
             employeesByNo[empNo].grossSalary = item.amount;
         }
-        if (item.type === 'DEDUCT') {
-            employeesByNo[empNo].netSalary -= item.amount;
+        // Initialize netSalary with grossSalary, deductions will be added (as they are negative)
+        if (item.itemName === 'INCOME' && item.description === 'GROSS') {
+            employeesByNo[empNo].netSalary = item.amount;
         }
     });
 
-    Object.keys(employeesByNo).forEach(empNo => {
-        employeesByNo[empNo].netSalary += employeesByNo[empNo].grossSalary;
+    // Now, iterate again to add all deductions.
+    // The "TOTAL DEDUCTIONS" item from GreytHR is a negative value.
+    salaryData.forEach(item => {
+        const empNo = item.employeeNo;
+        if (employeesByNo[empNo] && item.itemName === 'DEDUCT' && item.description === 'TOTAL DEDUCTIONS') {
+            // Add the negative deduction amount to the gross salary
+            employeesByNo[empNo].netSalary += item.amount;
+        }
     });
     
     const employeesRef = collection(db, 'employees');
     let updatedCount = 0;
+
+    // Use a batch to update Firestore efficiently
+    const batch = writeBatch(db);
 
     for (const empNo in employeesByNo) {
         const q = query(employeesRef, where('employeeId', '==', empNo));
@@ -118,15 +128,15 @@ const syncSalaryFlow = ai.defineFlow(
 
         if (!querySnapshot.empty) {
             const docToUpdate = querySnapshot.docs[0];
-            const batch = writeBatch(db);
             batch.update(docToUpdate.ref, {
                 grossSalary: employeesByNo[empNo].grossSalary,
                 netSalary: employeesByNo[empNo].netSalary,
             });
-            await batch.commit();
             updatedCount++;
         }
     }
+
+    await batch.commit();
 
     return { 
         success: true, 
