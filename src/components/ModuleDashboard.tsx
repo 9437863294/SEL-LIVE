@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -23,6 +24,7 @@ const moduleIcons: Record<string, string> = {
   'Insurance': 'Shield',
   'Store & Stock Management': 'Package',
   'Subcontractors Management': 'Users',
+  'Employee': 'User',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -38,6 +40,7 @@ const moduleDescriptions: Record<string, string> = {
     'Insurance': 'Manage insurance policies and claims.',
     'Store & Stock Management': 'Manage inventory and stock levels.',
     'Subcontractors Management': 'Manage subcontractors, work orders, and billing.',
+    'Employee': 'Manage employee information and records.',
 }
 
 export default function ModuleDashboard() {
@@ -128,3 +131,4 @@ export default function ModuleDashboard() {
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -210,6 +211,13 @@ export const permissionModules = {
     'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
     'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
+  },
+   'Employee': {
+    'View Module': [],
+    'Manage': ['View', 'Add', 'Edit', 'Delete'],
+    'Sync': ['Sync from GreytHR'],
+    'Categories': ['View'],
+    'Position Details': ['View'],
   },
   'Settings': {
     'View Module': [],
@@ -1049,3 +1057,4 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
+

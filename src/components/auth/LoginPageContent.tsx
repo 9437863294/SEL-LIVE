@@ -395,7 +395,7 @@ export function LoginPageContent() {
         className="relative flex min-h-screen items-center justify-center bg-cover bg-center p-4"
         style={{
           backgroundImage:
-            "url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Frm378-062.jpg?alt=media&token=91cf2e4f-e362-4a09-a283-a6ae2d64b55f')",
+            "url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2F1744115358081.jpg?alt=media&token=3352f270-d899-4d18-bd83-b40a052e3061')",
         }}
       >
         <div className="absolute inset-0 bg-black/30" />
