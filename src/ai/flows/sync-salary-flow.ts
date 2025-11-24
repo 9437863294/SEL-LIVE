@@ -65,6 +65,12 @@ async function fetchSalaryData(token: string, domain: string, month: string): Pr
         },
     });
 
+    if (response.status === 404) {
+        // If the API returns Not Found, it means no data for that month.
+        // Return an empty array to be handled gracefully.
+        return [];
+    }
+    
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Failed to fetch salary statement: ${response.statusText} - ${errorText}`);
