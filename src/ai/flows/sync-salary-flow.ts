@@ -9,12 +9,19 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, getDocs, query, where, doc } from 'firebase/firestore';
+import type { SalaryDetail } from '@/lib/types';
 
 const EmployeeSalaryDataSchema = z.object({
   employeeId: z.string(),
   name: z.string(),
   grossSalary: z.number(),
   netSalary: z.number(),
+  salaryDetails: z.array(z.object({
+    itemName: z.string(),
+    description: z.string(),
+    amount: z.number(),
+    type: z.string(),
+  })),
 });
 
 const SyncSalaryInputSchema = z.object({
@@ -119,38 +126,43 @@ const syncSalaryFlow = ai.defineFlow(
         return { success: true, message: 'No salary data found for the selected month.', updatedCount: 0, employees: [] };
     }
 
-    const employeesByNo: Record<string, { name: string; grossSalary: number; totalDeductions: number }> = {};
+    const employeesDataMap: Record<string, { name: string; details: SalaryDetail[] }> = {};
 
     salaryData.forEach(item => {
         const empNo = item.employeeNo;
-        if (!employeesByNo[empNo]) {
-            employeesByNo[empNo] = { name: item.employeeName, grossSalary: 0, totalDeductions: 0 };
+        if (!employeesDataMap[empNo]) {
+            employeesDataMap[empNo] = { name: item.employeeName, details: [] };
         }
-        if (item.itemName === 'INCOME' && item.description === 'GROSS') {
-            employeesByNo[empNo].grossSalary = item.amount;
-        }
-        if (item.type === 'DEDUCT') {
-            employeesByNo[empNo].totalDeductions += item.amount;
-        }
+        employeesDataMap[empNo].details.push({
+            itemName: item.itemName,
+            description: item.description,
+            amount: item.amount,
+            type: item.type,
+        });
     });
     
     const employeesRef = collection(db, 'employees');
     let updatedCount = 0;
 
-    // Use a batch to update Firestore efficiently
     const batch = writeBatch(db);
 
-    const employeesToReturn: { employeeId: string; name: string; grossSalary: number; netSalary: number }[] = [];
+    const employeesToReturn: z.infer<typeof EmployeeSalaryDataSchema>[] = [];
 
-    for (const empNo in employeesByNo) {
-        const salaryInfo = employeesByNo[empNo];
-        const netSalary = salaryInfo.grossSalary - salaryInfo.totalDeductions;
+    for (const empNo in employeesDataMap) {
+        const empData = employeesDataMap[empNo];
+        const gross = empData.details.find(d => d.description === 'GROSS' && d.type === 'INCOME')?.amount || 0;
+        const totalDeductions = empData.details
+            .filter(d => d.type === 'DEDUCT')
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        const netSalary = gross - totalDeductions;
         
         employeesToReturn.push({
             employeeId: empNo,
-            name: salaryInfo.name,
-            grossSalary: salaryInfo.grossSalary,
+            name: empData.name,
+            grossSalary: gross,
             netSalary: netSalary,
+            salaryDetails: empData.details,
         });
         
         const q = query(employeesRef, where('employeeId', '==', empNo));
@@ -159,8 +171,9 @@ const syncSalaryFlow = ai.defineFlow(
         if (!querySnapshot.empty) {
             const docToUpdate = querySnapshot.docs[0];
             batch.update(docToUpdate.ref, {
-                grossSalary: salaryInfo.grossSalary,
+                grossSalary: gross,
                 netSalary: netSalary,
+                salaryDetails: empData.details,
             });
             updatedCount++;
         }
@@ -181,3 +194,5 @@ const syncSalaryFlow = ai.defineFlow(
 export async function syncSalary(input: SyncSalaryInput): Promise<SyncSalaryOutput> {
   return syncSalaryFlow(input);
 }
+
+  

@@ -1,31 +1,34 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Loader2, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, Calendar as CalendarIcon, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
-import type { Employee } from '@/lib/types';
+import type { Employee, SalaryDetail } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { syncSalary } from '@/ai';
 import { format, getYear, startOfMonth } from 'date-fns';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const [displayedEmployees, setDisplayedEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(false); // Used for initial page load
+  const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const currentYear = getYear(new Date());
-  const currentMonth = new Date().getMonth(); // 0-11
+  const currentMonth = new Date().getMonth();
 
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
@@ -36,8 +39,6 @@ export default function EmployeeSalaryPage() {
   useEffect(() => {
     if (!isAuthLoading && !canView) {
       setIsLoading(false);
-    } else if (!isAuthLoading && canView) {
-      setIsLoading(false); // Don't fetch anything by default
     }
   }, [isAuthLoading, canView]);
 
@@ -47,7 +48,7 @@ export default function EmployeeSalaryPage() {
         return;
     }
     setIsSyncing(true);
-    setDisplayedEmployees([]); // Clear previous results
+    setDisplayedEmployees([]);
     
     try {
         const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
@@ -94,6 +95,18 @@ export default function EmployeeSalaryPage() {
           label: format(new Date(2000, i), 'MMMM'),
       }));
   }, []);
+
+  const toggleRowExpansion = (employeeId: string) => {
+    setExpandedRows(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(employeeId)) {
+            newSet.delete(employeeId);
+        } else {
+            newSet.add(employeeId);
+        }
+        return newSet;
+    });
+  };
 
   if (isAuthLoading) {
       return (
@@ -155,10 +168,9 @@ export default function EmployeeSalaryPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12"></TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Designation</TableHead>
                 <TableHead>Gross Salary</TableHead>
                 <TableHead>Net Salary</TableHead>
               </TableRow>
@@ -167,19 +179,55 @@ export default function EmployeeSalaryPage() {
               {isSyncing ? (
                 Array.from({length: 5}).map((_, i) => (
                     <TableRow key={i}>
-                        <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
+                        <TableCell colSpan={5}><Skeleton className="h-6 w-full" /></TableCell>
                     </TableRow>
                 ))
               ) : displayedEmployees.length > 0 ? (
                 displayedEmployees.map(emp => (
-                  <TableRow key={emp.employeeId}>
-                    <TableCell>{emp.employeeId}</TableCell>
-                    <TableCell>{emp.name}</TableCell>
-                    <TableCell>{emp.department || 'N/A'}</TableCell>
-                    <TableCell>{emp.designation || 'N/A'}</TableCell>
-                    <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
-                    <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
-                  </TableRow>
+                  <Fragment key={emp.employeeId}>
+                    <TableRow onClick={() => toggleRowExpansion(emp.employeeId)} className="cursor-pointer">
+                      <TableCell>
+                         <Button size="icon" variant="ghost">
+                            {expandedRows.has(emp.employeeId) ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                         </Button>
+                      </TableCell>
+                      <TableCell>{emp.employeeId}</TableCell>
+                      <TableCell>{emp.name}</TableCell>
+                      <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
+                      <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
+                    </TableRow>
+                    {expandedRows.has(emp.employeeId) && (
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            <TableCell colSpan={5} className="p-0">
+                                <div className="p-4">
+                                    <h4 className="font-semibold mb-2 ml-2">Salary Breakdown</h4>
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Component</TableHead>
+                                                <TableHead>Type</TableHead>
+                                                <TableHead className="text-right">Amount</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {(emp.salaryDetails || []).map((detail, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell>{detail.description}</TableCell>
+                                                    <TableCell>
+                                                        <Badge variant={detail.type === 'INCOME' ? 'secondary' : 'destructive'}>
+                                                            {detail.type}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right">{formatCurrency(detail.amount)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    )}
+                  </Fragment>
                 ))
               ) : (
                 <TableRow>
@@ -195,3 +243,5 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
+
+  

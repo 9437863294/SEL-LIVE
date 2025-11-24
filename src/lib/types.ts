@@ -765,6 +765,13 @@ export interface LcEntry {
   lcCopyUrl?: string;
 }
 
+export type SalaryDetail = {
+  itemName: string;
+  description: string;
+  amount: number;
+  type: 'INCOME' | 'DEDUCT' | 'Others';
+};
+
 export interface Employee {
   id: string;
   employeeId: string;
@@ -776,6 +783,7 @@ export interface Employee {
   status: 'Active' | 'Inactive';
   grossSalary?: number;
   netSalary?: number;
+  salaryDetails?: SalaryDetail[];
 }
 
 export interface EmployeePosition {
@@ -1058,3 +1066,5 @@ export interface WorkOrderItem {
   totalAmount: number;
   boqSlNo?: string;
 }
+
+  
