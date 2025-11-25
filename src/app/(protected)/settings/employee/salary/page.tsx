@@ -24,7 +24,6 @@ const salaryComponents = [
     'BASIC',
     'HRA',
     'CONVEYANCE',
-    'PROFESSIONAL DEVELOPMENT ALLOWANCE',
     'TOTAL DEDUCTIONS',
     'PF',
     'PROF TAX',
@@ -99,7 +98,8 @@ export default function EmployeeSalaryPage() {
     }).format(amount);
   };
   
-  const getSalaryComponentValue = (details: SalaryDetail[], description: string) => {
+  const getSalaryComponentValue = (details: SalaryDetail[] | undefined, description: string): number => {
+    if (!details) return 0;
     const item = details.find(d => d.description === description);
     return item ? item.amount : 0;
   };
@@ -212,7 +212,7 @@ export default function EmployeeSalaryPage() {
                       <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
                       <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
                       {salaryComponents.map(comp => (
-                        <TableCell key={comp}>{formatCurrency(getSalaryComponentValue(emp.salaryDetails || [], comp))}</TableCell>
+                        <TableCell key={comp}>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, comp))}</TableCell>
                       ))}
                     </TableRow>
                   ))
