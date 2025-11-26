@@ -324,6 +324,7 @@ export default function JmcLogPage() {
                 ) : jmcEntries.length > 0 ? (
                   jmcEntries.map((entry) => {
                     const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
+                    const docUrl = entry.certifiedJmcAttachment?.url;
                     return (
                       <TableRow key={entry.id}>
                         <TableCell className="font-medium">{entry.jmcNo ?? '-'}</TableCell>
@@ -350,10 +351,10 @@ export default function JmcLogPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex gap-1 justify-end">
-                            {entry.certifiedJmcAttachment?.url ? (
+                           <div className="flex gap-1 justify-end">
+                            {docUrl ? (
                                 <Button asChild variant="outline" size="sm" className="h-8">
-                                  <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer">
+                                  <a href={docUrl} target="_blank" rel="noopener noreferrer">
                                     <FileIcon className="mr-2 h-4 w-4" /> View Doc
                                   </a>
                                 </Button>
