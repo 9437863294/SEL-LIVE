@@ -1,9 +1,8 @@
-
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Eye, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, File as FileIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,17 +11,24 @@ import {
   collection,
   getDocs,
   orderBy,
-  query as fsQuery,
+  query,
   deleteDoc,
   doc,
   getDoc,
   Timestamp,
-  where,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { MvacEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project } from '@/lib/types';
+import type {
+  MvacEntry,
+  WorkflowStep,
+  ActionLog,
+  BoqItem,
+  Bill,
+  Project,
+  Attachment,
+} from '@/lib/types';
 import ViewMvacEntryDialog from '@/components/billing-recon/ViewMvacEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -64,10 +70,20 @@ function formatCurrency(amount: number) {
   }
 }
 
+type CertifiedAttachment = {
+  name: string;
+  url: string;
+  size: number;
+  contentType?: string | null;
+  uploadedAt: string;
+};
+
 type EnrichedMvacEntry = MvacEntry & {
   stageDates: Record<string, string>;
+  certifiedMvacAttachment?: Attachment | null;
   totalAmount: number;
   certifiedValue: number;
+  certifiedAttachments?: CertifiedAttachment[];
 };
 
 /* pick the latest approving action per step */
@@ -117,67 +133,89 @@ export default function MvacLogPage() {
     return { total, certified };
   };
 
-  const buildStageDates = (steps: WorkflowStep[], history: ActionLog[] = []) => {
-    const map: Record<string, string> = {};
+  const getStageDetails = (steps: WorkflowStep[], history: ActionLog[] = []) => {
+    const stageDates: Record<string, string> = {};
+
+    // Find the latest approval action with attachment (if any)
+    const latestApprovalWithAttachment = (history || [])
+      .filter((h) => APPROVE_ACTIONS.has(h.action) && h.attachment)
+      .sort(
+        (a, b) =>
+          toDateSafe(b.timestamp)!.getTime() - toDateSafe(a.timestamp)!.getTime()
+      )[0];
+
+    const certifiedMvacAttachment = latestApprovalWithAttachment?.attachment ?? null;
+
     for (const step of steps) {
       const logsForStep = history.filter(
         (h) => h.stepName === step.name && APPROVE_ACTIONS.has(h.action)
       );
-      if (logsForStep.length) {
-        // latest completion for the step
-        const latest = logsForStep.reduce((a, b) => {
-          const da = toDateSafe(a.timestamp) ?? new Date(0);
-          const db = toDateSafe(b.timestamp) ?? new Date(0);
-          return db > da ? b : a;
-        });
-        const d = toDateSafe(latest.timestamp);
-        map[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+      if (logsForStep.length > 0) {
+        const latestLog = logsForStep.sort(
+          (a, b) =>
+            toDateSafe(b.timestamp)!.getTime() - toDateSafe(a.timestamp)!.getTime()
+        )[0];
+        const d = toDateSafe(latestLog.timestamp);
+        stageDates[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
       } else {
-        map[step.name] = '-';
+        stageDates[step.name] = '-';
       }
     }
-    return map;
+    return { stageDates, certifiedMvacAttachment };
   };
 
   const fetchAll = useCallback(async () => {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const slugify = (text: string) =>
+        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Project))
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
       if (!projectData) {
-        throw new Error("Project not found");
+        throw new Error('Project not found');
       }
       const projectId = projectData.id;
-      
+
       const workflowRef = doc(db, 'workflows', 'mvac-workflow');
       const [workflowSnap, boqSnap, billsSnap, mvacSnap] = await Promise.all([
         getDoc(workflowRef),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'boqItems'))),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'bills'))),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'mvacEntries'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
+        getDocs(query(collection(db, 'projects', projectId, 'bills'))),
+        getDocs(query(collection(db, 'projects', projectId, 'mvacEntries'), orderBy('createdAt', 'desc'))),
       ]);
 
-      const steps = (workflowSnap.exists() ? (workflowSnap.data().steps as WorkflowStep[]) : []) ?? [];
+      const steps =
+        (workflowSnap.exists() ? (workflowSnap.data().steps as WorkflowStep[]) : []) ?? [];
       setWorkflowSteps(steps);
 
       setBoqItems(
-        boqSnap.docs.map((d) => ({ id: d.id, ...(stripId(d.data() as any)) } as BoqItem))
+        boqSnap.docs.map(
+          (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as BoqItem)
+        )
       );
       setBills(
-        billsSnap.docs.map((d) => ({ id: d.id, ...(stripId(d.data() as any)) } as Bill))
+        billsSnap.docs.map(
+          (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as Bill)
+        )
       );
 
       const entries: EnrichedMvacEntry[] = mvacSnap.docs.map((d) => {
-        const raw = d.data() as MvacEntry & { createdAt?: any; id?: string };
+        const raw = d.data() as MvacEntry & {
+          createdAt?: any;
+          id?: string;
+          certifiedAttachments?: CertifiedAttachment[];
+        };
         const data = stripId(raw);
         const { total, certified } = computeTotals((data as any).items);
-        const stageDates = buildStageDates(steps, (data as any).history as ActionLog[]);
+        const { stageDates, certifiedMvacAttachment } = getStageDetails(
+          steps,
+          (data as any).history as ActionLog[]
+        );
 
         return {
           id: d.id,
@@ -186,6 +224,8 @@ export default function MvacLogPage() {
           totalAmount: total,
           certifiedValue: certified,
           stageDates,
+          certifiedMvacAttachment,
+          certifiedAttachments: (data as any).certifiedAttachments || [],
         };
       });
 
@@ -247,15 +287,16 @@ export default function MvacLogPage() {
   const handleDelete = async (entry: EnrichedMvacEntry) => {
     if (!projectSlug) return;
     try {
-      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const slugify = (text: string) =>
+        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Project))
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
       if (!projectData) {
-        throw new Error("Project not found");
+        throw new Error('Project not found');
       }
 
       await deleteDoc(doc(db, 'projects', projectData.id, 'mvacEntries', entry.id!));
@@ -272,7 +313,7 @@ export default function MvacLogPage() {
     }
   };
 
-  const skeletonCols = 8 + (workflowSteps?.length || 0);
+  const skeletonCols = 9 + (workflowSteps?.length || 0);
 
   return (
     <>
@@ -295,7 +336,7 @@ export default function MvacLogPage() {
           {/* Make the wide table scroll horizontally inside the card */}
           <CardContent className="p-0 overflow-x-auto">
             {/* Give the table a sensible min width so columns don’t squish */}
-            <Table className="min-w-[1000px]">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-nowrap">MVAC No.</TableHead>
@@ -325,8 +366,18 @@ export default function MvacLogPage() {
                 ) : mvacEntries.length > 0 ? (
                   mvacEntries.map((entry) => {
                     const mvacDate = toDateSafe((entry as any).mvacDate) ?? toDateSafe(entry.createdAt);
+
+                    // Prefer workflow approval attachment, fallback to first certifiedAttachments
+                    const docUrl =
+                      entry.certifiedMvacAttachment?.url ||
+                      (Array.isArray(entry.certifiedAttachments) && entry.certifiedAttachments[0]?.url);
+
                     return (
-                      <TableRow key={entry.id}>
+                      <TableRow
+                        key={entry.id}
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => handleViewDetails(entry)}
+                      >
                         <TableCell className="font-medium">{entry.mvacNo ?? '-'}</TableCell>
                         <TableCell>{mvacDate ? format(mvacDate, 'dd MMM, yyyy') : '-'}</TableCell>
 
@@ -352,15 +403,24 @@ export default function MvacLogPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleViewDetails(entry)}
-                              aria-label="View"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            {/* Action button: ONLY for opening uploaded doc */}
+                            {docUrl ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8"
+                                asChild
+                                onClick={(e) => e.stopPropagation()} // don't trigger row click
+                              >
+                                <a href={docUrl} target="_blank" rel="noopener noreferrer">
+                                  <FileIcon className="mr-2 h-4 w-4" /> View Doc
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button variant="outline" size="sm" className="h-8" disabled onClick={(e) => e.stopPropagation()}>
+                                <FileIcon className="mr-2 h-4 w-4" /> No Doc
+                              </Button>
+                            )}
 
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -369,22 +429,21 @@ export default function MvacLogPage() {
                                   size="icon"
                                   className="text-destructive h-8 w-8"
                                   aria-label="Delete"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </AlertDialogTrigger>
-                              <AlertDialogContent>
+                              <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete MVAC entry?</AlertDialogTitle>
+                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                   <AlertDialogDescription>
                                     This will permanently delete MVAC {entry.mvacNo}. This action cannot be undone.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDelete(entry)}>
-                                    Delete
-                                  </AlertDialogAction>
+                                  <AlertDialogAction onClick={() => handleDelete(entry)}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>

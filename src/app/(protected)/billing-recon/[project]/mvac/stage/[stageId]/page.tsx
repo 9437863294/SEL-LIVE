@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -43,6 +42,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { UpdateMvacCertifiedQtyDialog } from '@/components/billing-recon/UpdateMvacCertifiedQtyDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { format, subDays } from 'date-fns';
 
 /* -------- helpers -------- */
 function formatINR(n?: number) {
@@ -135,6 +146,10 @@ export default function StagePage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
 
+  // Completion dialog state
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [completionDate, setCompletionDate] = useState<Date | undefined>(new Date());
+
   const fetchTasks = useCallback(async () => {
     if (!userId || !stageId || !projectSlug) return;
 
@@ -158,14 +173,14 @@ export default function StagePage() {
       }
       setStage(currentStage);
 
-      // 2) project by slug (cache id)
+      // 2) project by slug (cache id) — safe access to projectName
       const projectsQueryRef = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQueryRef);
       const slugify = (text: string) =>
-        text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;
@@ -234,16 +249,26 @@ export default function StagePage() {
     setIsVerifyOpen(true);
   };
 
+  const openCompleteDialog = (task: MvacEntry) => {
+    setSelectedMvac(task);
+    setCompletionDate(new Date());
+    setIsCompleteDialogOpen(true);
+  };
+
   const handleAction = async (
     taskId: string,
     action: string | ActionConfig,
     comment: string = '',
-    updatedItems?: any[],
+    extra?: any[] | Date, // allow items[] or a Date override
   ) => {
     if (!workflow || !userId || !userName || !stage || !projectSlug || !projectId) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
     setIsActionLoading(taskId);
+
+    // interpret extra
+    const updatedItems = Array.isArray(extra) ? extra : undefined;
+    const completionDateOverride = extra instanceof Date ? extra : undefined;
 
     try {
       const taskRef = doc(db, 'projects', projectId, 'mvacEntries', taskId);
@@ -308,7 +333,7 @@ export default function StagePage() {
           comment,
           userId,
           userName,
-          timestamp: Timestamp.now(),
+          timestamp: completionDateOverride ? Timestamp.fromDate(completionDateOverride) : Timestamp.now(),
           stepName: stage.name,
         };
 
@@ -340,6 +365,7 @@ export default function StagePage() {
     } finally {
       setIsActionLoading(null);
       setIsVerifyOpen(false);
+      setIsCompleteDialogOpen(false);
     }
   };
 
@@ -409,6 +435,7 @@ export default function StagePage() {
                                 const actionName = typeof action === 'string' ? action : action.name;
                                 const wantsVerify = isVerifyAction(actionName);
                                 const isUpdateQty = actionName === 'Update Certified Qty';
+                                const isComplete = actionName === 'Complete';
                                 return (
                                   <DropdownMenuItem
                                     key={actionName}
@@ -419,6 +446,8 @@ export default function StagePage() {
                                         handleVerifyClick(entry);
                                       } else if (isUpdateQty) {
                                         handleUpdateQtyClick(entry);
+                                      } else if (isComplete) {
+                                        openCompleteDialog(entry);
                                       } else {
                                         handleAction(entry.id!, action);
                                       }
@@ -479,6 +508,59 @@ export default function StagePage() {
         </Tabs>
       </div>
 
+      {/* Complete dialog with custom date */}
+      <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
+        <DialogContent className="sm:max-w-sm w-full">
+          <DialogHeader>
+            <DialogTitle>Confirm Completion</DialogTitle>
+            <DialogDescription>
+              Please select the date this task was completed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-start font-normal">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {completionDate ? format(completionDate, 'PPP') : 'Select date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent>
+                <Calendar
+                  mode="single"
+                  selected={completionDate}
+                  onSelect={setCompletionDate}
+                  disabled={{
+                    after: new Date(),
+                    before: subDays(new Date(), 7),
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              onClick={() =>
+                selectedMvac &&
+                handleAction(
+                  selectedMvac.id,
+                  'Complete',
+                  'Task marked as complete.',
+                  completionDate
+                )
+              }
+              disabled={!completionDate}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ViewMvacEntryDialog
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
@@ -502,5 +584,3 @@ export default function StagePage() {
     </>
   );
 }
-
-    

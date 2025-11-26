@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
@@ -83,11 +83,11 @@ export default function CreateBillPage() {
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
 
 
   useEffect(() => {
-    const fetchProjectAndWorkOrders = async () => {
+    const fetchProjectAndData = async () => {
         if (!projectSlug) return;
         
         const projectsQuery = query(collection(db, 'projects'));
@@ -103,11 +103,11 @@ export default function CreateBillPage() {
         }
         setCurrentProject(project);
 
-        const subsQuery = query(collection(db, 'projects', project.id, 'subcontractors'));
-        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        const subsQuery = query(collectionGroup(db, 'subcontractors'));
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
+        const billsQuery = query(collectionGroup(db, 'bills'));
+        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
@@ -116,14 +116,21 @@ export default function CreateBillPage() {
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
+        
+        const allSubs = subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor));
+        const allWos = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
+        
+        const projectWorkOrders = allWos.filter(wo => wo.projectId === project.id);
+        const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
+        
+        setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
+        setAllWorkOrders(projectWorkOrders);
 
-        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(p => p.projectId === project.id));
     };
-    fetchProjectAndWorkOrders();
+    fetchProjectAndData();
   }, [projectSlug, toast]);
   
   const filteredWorkOrders = useMemo(() => {
@@ -377,9 +384,9 @@ export default function CreateBillPage() {
         toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
         router.push(`/subcontractors-management/${projectSlug}/billing`);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error creating bill: ", error);
-        toast({ title: 'Save Failed', description: 'An error occurred while saving the bill.', variant: 'destructive' });
+        toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the bill.', variant: 'destructive' });
     } finally {
         setIsSaving(false);
     }
@@ -387,7 +394,7 @@ export default function CreateBillPage() {
   
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return amount;
+    if(isNaN(num)) return formatCurrency(0);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   }
 
@@ -395,7 +402,7 @@ export default function CreateBillPage() {
     new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
     [advanceDeductions]
   );
-
+  
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -637,7 +644,7 @@ export default function CreateBillPage() {
                         <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
                     </div>
                     <Separator />
-                    <div className="flex justify-between items-center font-semibold">
+                    <div className="flex justify-between font-semibold">
                         <span>Gross Amount</span>
                         <span>{formatCurrency(financials.grossAmount)}</span>
                     </div>
@@ -672,7 +679,5 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
 
     
