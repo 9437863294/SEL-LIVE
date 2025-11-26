@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -83,7 +84,7 @@ export default function CreateBillPage() {
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
 
   useEffect(() => {
@@ -121,9 +122,8 @@ export default function CreateBillPage() {
         const allWos = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
         
         const projectWorkOrders = allWos.filter(wo => wo.projectId === project.id);
-        const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         
-        setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
+        setSubcontractors(allSubs);
         setAllWorkOrders(projectWorkOrders);
 
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
@@ -139,8 +139,8 @@ export default function CreateBillPage() {
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-    const subcontractorIdsInWorkOrders = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-    return subcontractors.filter(sub => subcontractorIdsInWorkOrders.has(sub.id));
+    const subIdsWithProjectWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+    return subcontractors.filter(sub => subIdsWithProjectWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
@@ -300,7 +300,7 @@ export default function CreateBillPage() {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([]);
+        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -350,7 +350,7 @@ export default function CreateBillPage() {
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
             otherDeduction: financials.otherDeduction,
-            advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0),
+            advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0).map(({id, ...rest}) => rest), // remove client-side id
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
@@ -626,7 +626,7 @@ export default function CreateBillPage() {
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
                             </div>
-                            <div className="space-y-2">
+                             <div className="space-y-2">
                                 <Label htmlFor="otherDeduction">Other Deductions</Label>
                                 <Input
                                     id="otherDeduction"
@@ -684,3 +684,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
