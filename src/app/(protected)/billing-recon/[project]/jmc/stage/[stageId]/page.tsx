@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import {
   collection,
   query,
@@ -217,7 +217,7 @@ export default function StagePage() {
         text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .find((p) => slugify((p as any).projectName || '') === projectSlug);
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;
@@ -664,48 +664,3 @@ export default function StagePage() {
     </>
   );
 }
-
-```
-- src/app/api/auth/[[...genkit]]/route.ts:
-```ts
-
-import {genkit} from '@/ai/genkit';
-import {nextJSHandler} from '@genkit-ai/next';
-
-export const POST = nextJSHandler();
-
-```
-- src/hooks/use-auth.ts:
-```ts
-
-'use client';
-import { useContext } from 'react';
-import { AuthContext } from '@/components/auth/AuthProvider';
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-```
-- tsconfig.patch.json:
-```json
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true
-  }
-}
-```
