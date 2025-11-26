@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, Download, Trash2, File as FileIcon } from 'lucide-react';
+import { ArrowLeft, View, Download, Trash2, File as FileIcon, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -326,7 +326,7 @@ export default function JmcLogPage() {
                   jmcEntries.map((entry) => {
                     const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
                     return (
-                      <TableRow key={entry.id}>
+                      <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
                         <TableCell className="font-medium">{entry.jmcNo ?? '-'}</TableCell>
                         <TableCell>{jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-'}</TableCell>
 
@@ -337,7 +337,7 @@ export default function JmcLogPage() {
                         <TableCell className="text-center">
                             {entry.certifiedJmcAttachment ? (
                                 <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                                    <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer">
+                                    <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
                                         <FileIcon className="h-4 w-4" />
                                     </a>
                                 </Button>
@@ -366,7 +366,7 @@ export default function JmcLogPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleViewDetails(entry)}
+                              onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}
                               aria-label="View"
                             >
                               <Eye className="h-4 w-4" />
@@ -379,11 +379,12 @@ export default function JmcLogPage() {
                                   size="icon"
                                   className="text-destructive h-8 w-8"
                                   aria-label="Delete"
+                                  onClick={e => e.stopPropagation()}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </AlertDialogTrigger>
-                              <AlertDialogContent>
+                              <AlertDialogContent onClick={e => e.stopPropagation()}>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                   <AlertDialogDescription>
@@ -419,7 +420,7 @@ export default function JmcLogPage() {
       <ViewJmcEntryDialog
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
-        jmcEntry={selectedEntry as any}
+        jmcEntry={selectedEntry}
         boqItems={boqItems}
         bills={bills}
         isEditMode={false}
@@ -428,6 +429,3 @@ export default function JmcLogPage() {
     </>
   );
 }
-
-
-    
