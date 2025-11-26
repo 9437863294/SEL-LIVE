@@ -8,17 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  orderBy,
-  query as fsQuery,
-  deleteDoc,
-  doc,
-  getDoc,
-  Timestamp,
-  where,
-} from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -151,7 +141,7 @@ export default function JmcLogPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
       const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
@@ -166,9 +156,9 @@ export default function JmcLogPage() {
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const [workflowSnap, boqSnap, billsSnap, jmcSnap] = await Promise.all([
         getDoc(workflowRef),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'boqItems'))),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'bills'))),
-        getDocs(fsQuery(collection(db, 'projects', projectId, 'jmcEntries'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
+        getDocs(query(collection(db, 'projects', projectId, 'bills'))),
+        getDocs(query(collection(db, 'projects', projectId, 'jmcEntries'), orderBy('createdAt', 'desc'))),
       ]);
 
       const steps = (workflowSnap.exists() ? (workflowSnap.data().steps as WorkflowStep[]) : []) ?? [];
@@ -256,7 +246,7 @@ export default function JmcLogPage() {
   const handleDelete = async (entry: EnrichedJmcEntry) => {
     if (!projectSlug) return;
     try {
-      const projectsQuery = fsQuery(collection(db, 'projects'));
+      const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
       const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
@@ -395,7 +385,7 @@ export default function JmcLogPage() {
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete JMC entry?</AlertDialogTitle>
+                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                   <AlertDialogDescription>
                                     This will permanently delete JMC {entry.jmcNo}. This action cannot be undone.
                                   </AlertDialogDescription>
@@ -439,3 +429,5 @@ export default function JmcLogPage() {
   );
 }
 
+
+    
