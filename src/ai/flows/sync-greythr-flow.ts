@@ -179,7 +179,7 @@ const syncGreytHRFlow = ai.defineFlow(
         const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
         
         return {
-            employeeId: empData.employeeNo,
+            employeeId: empData.employeeId,
             name: empData.name,
             email: empData.email || '',
             phone: empData.mobile || '',

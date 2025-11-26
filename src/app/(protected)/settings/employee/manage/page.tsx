@@ -119,7 +119,7 @@ export default function ManageEmployeePage() {
     return employees.filter(emp => {
       const departmentFilter = filters.department === 'unassigned' ? !emp.department : emp.department === filters.department;
       return (
-        (debouncedEmployeeId === '' || emp.employeeId.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
+        (debouncedEmployeeId === '' || emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
         (debouncedName === '' || emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
         (filters.department === 'all' || departmentFilter) &&
         (filters.status === 'all' || emp.status === filters.status)
@@ -507,7 +507,7 @@ export default function ManageEmployeePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                  <div className="space-y-2">
                     <Label htmlFor="editEmployeeId">Employee ID</Label>
-                    <Input id="editEmployeeId" value={editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeId: e.target.value})} />
+                    <Input id="editEmployeeId" value={editingEmployee.employeeNo || editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeNo: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editName">Name</Label>
