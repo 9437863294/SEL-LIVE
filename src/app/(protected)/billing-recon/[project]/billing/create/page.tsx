@@ -138,6 +138,11 @@ export default function CreateBillPage() {
       return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
   }, [allWorkOrders, details.subcontractorId]);
 
+  const subcontractorsWithWorkOrders = useMemo(() => {
+    const subcontractorIdsInWorkOrders = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+    return subcontractors.filter(sub => subcontractorIdsInWorkOrders.has(sub.id));
+  }, [allWorkOrders, subcontractors]);
+
   const handleSubcontractorChange = (subcontractorId: string) => {
     setDetails(prev => ({
         ...prev,
@@ -254,7 +259,7 @@ export default function CreateBillPage() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
+  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: string | number) => {
     setAdvanceDeductions(prev => {
         return prev.map(adv => {
             if (adv.id !== id) return adv;
@@ -295,7 +300,7 @@ export default function CreateBillPage() {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+        setAdvanceDeductions([]);
     }
   };
 
@@ -428,7 +433,7 @@ export default function CreateBillPage() {
                       <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
                           <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
@@ -621,7 +626,7 @@ export default function CreateBillPage() {
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
                             </div>
-                             <div className="space-y-2">
+                            <div className="space-y-2">
                                 <Label htmlFor="otherDeduction">Other Deductions</Label>
                                 <Input
                                     id="otherDeduction"
@@ -679,5 +684,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    

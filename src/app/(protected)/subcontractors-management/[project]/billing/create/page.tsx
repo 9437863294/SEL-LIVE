@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect, useMemo, useId } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
@@ -85,13 +84,6 @@ export default function CreateBillPage() {
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
   
   const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
-  
-  const uniqueId = useId();
-
-  useEffect(() => {
-    // Initialize advance deductions with a unique ID
-    setAdvanceDeductions([{ id: `adv-${uniqueId}-0`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
-  }, [uniqueId]);
 
 
   useEffect(() => {
@@ -111,11 +103,11 @@ export default function CreateBillPage() {
         }
         setCurrentProject(project);
 
-        const subsQuery = query(collection(db, 'subcontractors'));
-        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
-        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
-        const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        const subsQuery = query(collectionGroup(db, 'subcontractors'));
+        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
+        const billsQuery = query(collectionGroup(db, 'bills'));
+        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
@@ -124,12 +116,19 @@ export default function CreateBillPage() {
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
+        
+        const allSubs = subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor));
+        const allWos = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
+        
+        const projectWorkOrders = allWos.filter(wo => wo.projectId === project.id);
+        const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
+        
+        setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
+        setAllWorkOrders(projectWorkOrders);
 
-        setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
-        setAllWorkOrders(woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder)));
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)));
+        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
+        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(p => p.projectId === project.id));
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
@@ -290,13 +289,13 @@ export default function CreateBillPage() {
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: `adv-${uniqueId}-${prev.length}`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
         setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: `adv-${uniqueId}-0`, reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -404,12 +403,6 @@ export default function CreateBillPage() {
     [advanceDeductions]
   );
   
-  const subcontractorsWithWorkOrders = useMemo(() => {
-    if (!currentProject) return [];
-    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
-  }, [allWorkOrders, subcontractors, currentProject]);
-
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -435,7 +428,7 @@ export default function CreateBillPage() {
                       <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
                           <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
@@ -686,3 +679,5 @@ export default function CreateBillPage() {
     </>
   );
 }
+
+    
