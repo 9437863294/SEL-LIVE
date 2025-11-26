@@ -16,7 +16,8 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, getDoc, doc } from 'firebase/firestore';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
@@ -25,6 +26,7 @@ export default function EmployeePositionDetailsPage() {
   const [allPositions, setAllPositions] = useState<EmployeePosition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
 
   const [filters, setFilters] = useState({
     employeeId: '',
@@ -41,6 +43,13 @@ export default function EmployeePositionDetailsPage() {
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map(doc => doc.data() as EmployeePosition);
         setAllPositions(data);
+        
+        const settingsDoc = await getDoc(doc(db, 'settings', 'employeePositionSync'));
+        if (settingsDoc.exists()) {
+            const syncTime = settingsDoc.data().lastSynced;
+            setLastSynced(formatDistanceToNow(new Date(syncTime), { addSuffix: true }));
+        }
+
     } catch (error: any) {
         console.error("Error fetching positions from Firestore:", error);
         if (error.code === 'failed-precondition') {
@@ -161,10 +170,17 @@ export default function EmployeePositionDetailsPage() {
                 <p className="text-muted-foreground">Browse position details for all employees from GreytHR.</p>
             </div>
         </div>
-        <Button onClick={handleSync} disabled={isSyncing || !canSync}>
-            {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Sync from GreytHR
-        </Button>
+         <div className="flex items-center gap-2">
+            {lastSynced && (
+              <p className="text-sm text-muted-foreground">
+                Last synced: {lastSynced}
+              </p>
+            )}
+            <Button onClick={handleSync} disabled={isSyncing || !canSync}>
+                {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Sync from GreytHR
+            </Button>
+        </div>
       </div>
       
        <Card className="mb-4">
@@ -259,4 +275,3 @@ export default function EmployeePositionDetailsPage() {
     </div>
   );
 }
-

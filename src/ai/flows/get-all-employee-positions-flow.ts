@@ -150,6 +150,9 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
 
         await batch.commit();
 
+        // Update last sync time
+        await setDoc(doc(db, 'settings', 'employeePositionSync'), { lastSynced: new Date().toISOString() });
+
         return { 
             success: true, 
             message: `Successfully synced ${transformedData.length} employee position records.`,
