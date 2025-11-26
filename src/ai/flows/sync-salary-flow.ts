@@ -8,8 +8,8 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where, doc } from 'firebase/firestore';
-import type { SalaryDetail } from '@/lib/types';
+import { collection, writeBatch, getDocs, query, where, doc, getDoc, setDoc } from 'firebase/firestore';
+import type { SalaryDetail, Employee } from '@/lib/types';
 
 const EmployeeSalaryDataSchema = z.object({
   employeeId: z.string(),

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Loader2, Calendar as CalendarIcon, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,6 @@ const salaryComponents = [
     'INSURANCE_DEDUCTION',
     'SALARY MASTER',
     'NET PAY',
-    'GROSS'
 ];
 
 export default function EmployeeSalaryPage() {
