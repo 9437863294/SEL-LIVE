@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp, where, collectionGroup } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -303,7 +303,6 @@ export default function JmcLogPage() {
                       {step.name}
                     </TableHead>
                   ))}
-                   <TableHead className="whitespace-nowrap text-center">View</TableHead>
                   <TableHead className="whitespace-nowrap">JMC Value</TableHead>
                   <TableHead className="whitespace-nowrap">Certified Value</TableHead>
                   <TableHead className="whitespace-nowrap">Stage</TableHead>
@@ -332,16 +331,6 @@ export default function JmcLogPage() {
                         {workflowSteps.map((step) => (
                           <TableCell key={step.id}>{entry.stageDates[step.name] ?? '-'}</TableCell>
                         ))}
-                        
-                        <TableCell className="text-center">
-                            {entry.certifiedJmcAttachment ? (
-                                <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                                    <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-                                        <FileIcon className="h-4 w-4" />
-                                    </a>
-                                </Button>
-                            ) : '-'}
-                        </TableCell>
 
                         <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
                         <TableCell>{formatCurrency(entry.certifiedValue)}</TableCell>
@@ -361,10 +350,10 @@ export default function JmcLogPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
-                             <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8"
                                 onClick={(e) => { 
                                   e.stopPropagation(); 
                                   if (entry.certifiedJmcAttachment?.url) {
@@ -375,7 +364,15 @@ export default function JmcLogPage() {
                                 }}
                                 aria-label="View"
                               >
-                                {entry.certifiedJmcAttachment?.url ? <FileIcon className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                {entry.certifiedJmcAttachment?.url ? (
+                                    <>
+                                        <FileIcon className="mr-2 h-4 w-4" /> View Doc
+                                    </>
+                                ) : (
+                                     <>
+                                        <Eye className="mr-2 h-4 w-4" /> View Details
+                                    </>
+                                )}
                               </Button>
 
                             <AlertDialog>
@@ -435,4 +432,5 @@ export default function JmcLogPage() {
     </>
   );
 }
+
     
