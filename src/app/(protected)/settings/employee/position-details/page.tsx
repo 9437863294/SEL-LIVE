@@ -1,9 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, RefreshCw, ShieldAlert, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw, ShieldAlert, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -16,8 +17,20 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, getDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, getDoc, doc, writeBatch } from 'firebase/firestore';
 import { formatDistanceToNow } from 'date-fns';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
@@ -26,6 +39,7 @@ export default function EmployeePositionDetailsPage() {
   const [allPositions, setAllPositions] = useState<EmployeePosition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
 
   const [filters, setFilters] = useState({
@@ -35,6 +49,8 @@ export default function EmployeePositionDetailsPage() {
   
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
+  const canDelete = can('Delete', 'Settings.Employee Management');
+
 
   const fetchPositionsFromDb = useCallback(async () => {
     setIsLoading(true);
@@ -84,6 +100,31 @@ export default function EmployeePositionDetailsPage() {
       setIsSyncing(false);
     }
   };
+  
+  const handleClearAndResync = async () => {
+    setIsDeleting(true);
+    try {
+      // Step 1: Delete all existing documents
+      const positionsRef = collection(db, 'employeePositions');
+      const snapshot = await getDocs(positionsRef);
+      if(!snapshot.empty) {
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+      toast({ title: 'Cleared', description: `${snapshot.size} records deleted. Starting fresh sync...`});
+      
+      // Step 2: Trigger a new sync
+      await handleSync();
+
+    } catch (error: any) {
+        toast({ title: 'Error', description: `Failed to clear and resync: ${error.message}`, variant: 'destructive'});
+    } finally {
+        setIsDeleting(false);
+    }
+  }
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -168,7 +209,26 @@ export default function EmployeePositionDetailsPage() {
                 Last synced: {lastSynced}
               </p>
             )}
-            <Button onClick={handleSync} disabled={isSyncing || !canSync}>
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={isSyncing || isDeleting || !canDelete}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Clear & Resync
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete all existing position data and fetch it again from GreytHR. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleClearAndResync}>Confirm</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <Button onClick={handleSync} disabled={isSyncing || isDeleting || !canSync}>
                 {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Sync from GreytHR
             </Button>
@@ -206,7 +266,7 @@ export default function EmployeePositionDetailsPage() {
             Clear Filters
           </Button>
         </CardContent>
-      </Card>
+       </Card>
 
 
       <Card>
@@ -224,7 +284,7 @@ export default function EmployeePositionDetailsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isLoading || isDeleting ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
