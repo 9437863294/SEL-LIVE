@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -164,11 +163,11 @@ export default function ManageEmployeePage() {
   const handleSelectChange = (field: keyof typeof newEmployee, value: string) => {
     setNewEmployee(prev => ({ ...prev, [field]: value as any }));
   };
-
+  
   const resetAddDialog = () => {
     setNewEmployee(initialNewEmployeeState);
     setIsAddDialogOpen(false);
-  };
+  }
 
   const handleAddEmployee = async () => {
     if (!newEmployee.employeeId.trim() || !newEmployee.name.trim()) {
@@ -428,6 +427,9 @@ export default function ManageEmployeePage() {
                   <TableHead>Phone</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Designation</TableHead>
+                  <TableHead>Date of Join</TableHead>
+                  <TableHead>Date of Birth</TableHead>
+                  <TableHead>Gender</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -443,6 +445,9 @@ export default function ManageEmployeePage() {
                       <TableCell><Skeleton className="h-5 w-28" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell className="text-right space-x-2">
                          <Skeleton className="h-8 w-16 inline-block" />
@@ -461,12 +466,15 @@ export default function ManageEmployeePage() {
                             disabled={!canDelete}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{emp.employeeId}</TableCell>
+                      <TableCell className="font-medium">{emp.employeeNo || emp.employeeId}</TableCell>
                       <TableCell>{emp.name}</TableCell>
                       <TableCell>{emp.email}</TableCell>
                       <TableCell>{emp.phone}</TableCell>
                       <TableCell>{emp.department || 'N/A'}</TableCell>
                       <TableCell>{emp.designation || 'N/A'}</TableCell>
+                      <TableCell>{emp.dateOfJoin}</TableCell>
+                      <TableCell>{emp.dateOfBirth}</TableCell>
+                      <TableCell>{emp.gender}</TableCell>
                       <TableCell>{emp.status}</TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
@@ -476,7 +484,7 @@ export default function ManageEmployeePage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center h-24">
+                    <TableCell colSpan={12} className="text-center h-24">
                       No employees found.
                     </TableCell>
                   </TableRow>

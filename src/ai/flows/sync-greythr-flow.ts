@@ -13,11 +13,16 @@ import { collection, writeBatch, getDocs, query, where, doc, setDoc } from 'fire
 const EmployeeDataSchema = z.object({
     employeeId: z.string(),
     name: z.string(),
-    email: z.string(),
-    phone: z.string(),
-    department: z.string(),
-    designation: z.string(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    department: z.string().optional(),
+    designation: z.string().optional(),
     status: z.string(),
+    employeeNo: z.string().optional(),
+    dateOfJoin: z.string().optional().nullable(),
+    leavingDate: z.string().optional().nullable(),
+    dateOfBirth: z.string().optional().nullable(),
+    gender: z.string().optional(),
 });
 
 const SyncGreytHRInputSchema = z.object({
@@ -171,7 +176,6 @@ const syncGreytHRFlow = ai.defineFlow(
     const filteredData = employeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
     
     const employeesToReturn = filteredData.map((empData: any) => {
-        // Use the mappings to find department and designation
         const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
         
         return {
@@ -182,6 +186,11 @@ const syncGreytHRFlow = ai.defineFlow(
             department: cats.department,
             designation: cats.designation,
             status: empData.status === 'Active' ? 'Active' : 'Inactive',
+            employeeNo: empData.employeeNo,
+            dateOfJoin: empData.dateOfJoin || null,
+            leavingDate: empData.leavingDate || null,
+            dateOfBirth: empData.dateOfBirth || null,
+            gender: empData.gender || '',
         };
     });
 

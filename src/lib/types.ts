@@ -785,6 +785,11 @@ export interface Employee {
   grossSalary?: number;
   netSalary?: number;
   salaryDetails?: SalaryDetail[];
+  dateOfJoin?: string | null;
+  leavingDate?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string;
+  employeeNo?: string;
 }
 
 export interface EmployeePosition {
