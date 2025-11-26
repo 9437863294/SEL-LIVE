@@ -36,12 +36,16 @@ function useDebounce(value: string, delay: number) {
 
 const initialNewEmployeeState = {
   employeeId: '',
+  employeeNo: '',
   name: '',
   email: '',
   phone: '',
   department: '',
   designation: '',
   status: 'Active' as 'Active' | 'Inactive',
+  dateOfJoin: '',
+  dateOfBirth: '',
+  gender: '',
 };
 
 export default function ManageEmployeePage() {
@@ -170,10 +174,10 @@ export default function ManageEmployeePage() {
   }
 
   const handleAddEmployee = async () => {
-    if (!newEmployee.employeeId.trim() || !newEmployee.name.trim()) {
+    if (!newEmployee.employeeNo.trim() || !newEmployee.name.trim()) {
       toast({
         title: 'Validation Error',
-        description: 'Employee ID and Name cannot be empty.',
+        description: 'Employee No and Name cannot be empty.',
         variant: 'destructive',
       });
       return;
@@ -315,35 +319,16 @@ export default function ManageEmployeePage() {
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
-                    <Label htmlFor="addEmployeeId">Employee ID</Label>
-                    <Input id="addEmployeeId" value={newEmployee.employeeId} onChange={(e) => handleInputChange('employeeId', e.target.value)} />
+                    <Label htmlFor="addEmployeeNo">Employee No</Label>
+                    <Input id="addEmployeeNo" value={newEmployee.employeeNo} onChange={(e) => handleInputChange('employeeNo', e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="addName">Name</Label>
                     <Input id="addName" value={newEmployee.name} onChange={(e) => handleInputChange('name', e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="addEmail">Email</Label>
-                    <Input id="addEmail" type="email" value={newEmployee.email} onChange={(e) => handleInputChange('email', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addPhone">Phone Number</Label>
-                    <Input id="addPhone" value={newEmployee.phone} onChange={(e) => handleInputChange('phone', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addDepartment">Department</Label>
-                    <Select value={newEmployee.department} onValueChange={(value) => handleSelectChange('department', value)}>
-                        <SelectTrigger id="addDepartment"><SelectValue placeholder="Select Department" /></SelectTrigger>
-                        <SelectContent>
-                            {departments.map(dept => (
-                              <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addDesignation">Designation</Label>
-                    <Input id="addDesignation" value={newEmployee.designation} onChange={(e) => handleInputChange('designation', e.target.value)} />
+                    <Label htmlFor="addDateOfJoin">Date of Join</Label>
+                    <Input id="addDateOfJoin" type="date" value={newEmployee.dateOfJoin} onChange={(e) => handleInputChange('dateOfJoin', e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="addStatus">Status</Label>
@@ -369,22 +354,12 @@ export default function ManageEmployeePage() {
             <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-4">
               <div className="relative w-full sm:w-auto">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search Employee ID..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
+                  <Input placeholder="Search Employee No..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
               </div>
               <div className="relative w-full sm:w-auto">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input placeholder="Search Name..." className="pl-8 w-full sm:w-48" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
               </div>
-              <Select value={filters.department} onValueChange={value => handleFilterChange('department', value)}>
-                  <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="All Departments" />
-                  </SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="all">All Departments</SelectItem>
-                      {departments.map(dept => <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>)}
-                      <SelectItem value="unassigned">Unassigned</SelectItem>
-                  </SelectContent>
-              </Select>
               <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
                   <SelectTrigger className="w-full sm:w-48">
                       <SelectValue placeholder="All Statuses" />
@@ -415,7 +390,7 @@ export default function ManageEmployeePage() {
                 <TableRow>
                   <TableHead className="w-[50px]">
                      <Checkbox
-                          checked={selectedEmployeeIds.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
+                          checked={filteredEmployees.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
                           onCheckedChange={(checked) => handleSelectAll(!!checked)}
                           aria-label="Select all"
                           disabled={!canDelete}
@@ -434,7 +409,7 @@ export default function ManageEmployeePage() {
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
@@ -495,31 +470,16 @@ export default function ManageEmployeePage() {
                     <Input id="editEmployeeId" value={editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeId: e.target.value})} />
                 </div>
                 <div className="space-y-2">
+                    <Label htmlFor="editEmployeeNo">Employee No</Label>
+                    <Input id="editEmployeeNo" value={editingEmployee.employeeNo} onChange={(e) => setEditingEmployee({...editingEmployee, employeeNo: e.target.value})} />
+                </div>
+                <div className="space-y-2">
                     <Label htmlFor="editName">Name</Label>
                     <Input id="editName" value={editingEmployee.name} onChange={(e) => setEditingEmployee({...editingEmployee, name: e.target.value})} />
                 </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editEmail">Email</Label>
-                    <Input id="editEmail" type="email" value={editingEmployee.email} onChange={(e) => setEditingEmployee({...editingEmployee, email: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editPhone">Phone Number</Label>
-                    <Input id="editPhone" value={editingEmployee.phone} onChange={(e) => setEditingEmployee({...editingEmployee, phone: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editDepartment">Department</Label>
-                    <Select value={editingEmployee.department} onValueChange={(value) => setEditingEmployee({...editingEmployee, department: value})}>
-                        <SelectTrigger id="editDepartment"><SelectValue placeholder="Select Department" /></SelectTrigger>
-                        <SelectContent>
-                            {departments.map(dept => (
-                              <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editDesignation">Designation</Label>
-                    <Input id="editDesignation" value={editingEmployee.designation} onChange={(e) => setEditingEmployee({...editingEmployee, designation: e.target.value})} />
+                 <div className="space-y-2">
+                    <Label htmlFor="editDateOfJoin">Date of Join</Label>
+                    <Input id="editDateOfJoin" type="date" value={editingEmployee.dateOfJoin || ''} onChange={(e) => setEditingEmployee({...editingEmployee, dateOfJoin: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editStatus">Status</Label>
