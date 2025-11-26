@@ -192,7 +192,5 @@ const syncSalaryFlow = ai.defineFlow(
 
 
 export async function syncSalary(input: SyncSalaryInput): Promise<SyncSalaryOutput> {
-  return syncSalaryFlow(input);
+  return await syncSalaryFlow(input);
 }
-
-  
