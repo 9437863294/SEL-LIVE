@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project, Attachment } from '@/lib/types';
-import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
+import ViewJmcEntryDialog from '@/components/subcontractors-management/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -75,7 +75,6 @@ export default function JmcLogPage() {
   const { user } = useAuth();
   const params = useParams();
   const projectSlug = params.project as string;
-
   const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -362,15 +361,22 @@ export default function JmcLogPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => { e.stopPropagation(); handleViewDetails(entry); }}
-                              aria-label="View"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                             <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  if (entry.certifiedJmcAttachment?.url) {
+                                    window.open(entry.certifiedJmcAttachment.url, '_blank');
+                                  } else {
+                                    handleViewDetails(entry);
+                                  }
+                                }}
+                                aria-label="View"
+                              >
+                                {entry.certifiedJmcAttachment?.url ? <FileIcon className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </Button>
 
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -429,3 +435,5 @@ export default function JmcLogPage() {
     </>
   );
 }
+
+    
