@@ -3,7 +3,14 @@
 
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, View, Download, Trash2, File as FileIcon, Eye } from 'lucide-react';
+import {
+  ArrowLeft,
+  View,
+  Download,
+  Trash2,
+  File as FileIcon,
+  Eye,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -109,29 +116,23 @@ export default function JmcLogPage() {
 
   const getStageDetails = (steps: WorkflowStep[], history: ActionLog[] = []) => {
     const stageDates: Record<string, string> = {};
-    let certifiedJmcAttachment: Attachment | undefined = undefined;
+    
+    // Find the latest attachment from any approval action in the history
+    const latestApprovalWithAttachment = (history || [])
+        .filter(h => APPROVE_ACTIONS.has(h.action) && h.attachment)
+        .sort((a, b) => toDateSafe(b.timestamp)!.getTime() - toDateSafe(a.timestamp)!.getTime())[0];
+        
+    const certifiedJmcAttachment = latestApprovalWithAttachment?.attachment;
 
     for (const step of steps) {
-      const logsForStep = history.filter(
-        (h) => h.stepName === step.name && APPROVE_ACTIONS.has(h.action)
-      );
-      if (logsForStep.length) {
-        // latest completion for the step
-        const latest = logsForStep.reduce((a, b) => {
-          const da = toDateSafe(a.timestamp) ?? new Date(0);
-          const db = toDateSafe(b.timestamp) ?? new Date(0);
-          return db > da ? b : a;
-        });
-        const d = toDateSafe(latest.timestamp);
-        stageDates[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
-
-        // Specifically find the attachment for "Certified JMC"
-        if (step.name === 'Certified JMC' && latest.attachment) {
-            certifiedJmcAttachment = latest.attachment;
+        const logsForStep = history.filter(h => h.stepName === step.name && APPROVE_ACTIONS.has(h.action));
+        if (logsForStep.length > 0) {
+            const latestLog = logsForStep.sort((a,b) => toDateSafe(b.timestamp)!.getTime() - toDateSafe(a.timestamp)!.getTime())[0];
+            const d = toDateSafe(latestLog.timestamp);
+            stageDates[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+        } else {
+            stageDates[step.name] = '-';
         }
-      } else {
-        stageDates[step.name] = '-';
-      }
     }
     return { stageDates, certifiedJmcAttachment };
   };
@@ -324,7 +325,7 @@ export default function JmcLogPage() {
                   jmcEntries.map((entry) => {
                     const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
                     return (
-                      <TableRow key={entry.id} onClick={() => handleViewDetails(entry)} className="cursor-pointer">
+                      <TableRow key={entry.id}>
                         <TableCell className="font-medium">{entry.jmcNo ?? '-'}</TableCell>
                         <TableCell>{jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-'}</TableCell>
 
@@ -350,30 +351,17 @@ export default function JmcLogPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8"
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  if (entry.certifiedJmcAttachment?.url) {
-                                    window.open(entry.certifiedJmcAttachment.url, '_blank');
-                                  } else {
-                                    handleViewDetails(entry);
-                                  }
-                                }}
-                                aria-label="View"
-                              >
-                                {entry.certifiedJmcAttachment?.url ? (
-                                    <>
-                                        <FileIcon className="mr-2 h-4 w-4" /> View Doc
-                                    </>
-                                ) : (
-                                     <>
-                                        <Eye className="mr-2 h-4 w-4" /> View Details
-                                    </>
-                                )}
+                            {entry.certifiedJmcAttachment?.url ? (
+                                <Button asChild variant="outline" size="sm" className="h-8">
+                                  <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer">
+                                    <FileIcon className="mr-2 h-4 w-4" /> View Doc
+                                  </a>
+                                </Button>
+                            ) : (
+                               <Button variant="outline" size="sm" className="h-8" onClick={() => handleViewDetails(entry)} aria-label="View">
+                                <Eye className="mr-2 h-4 w-4" /> View Details
                               </Button>
+                            )}
 
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
