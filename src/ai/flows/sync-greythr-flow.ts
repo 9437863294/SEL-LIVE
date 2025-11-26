@@ -103,10 +103,8 @@ const syncGreytHRFlow = ai.defineFlow(
     const employeePageJson = await fetchPage(employeesUrl, token, domain, page, pageSize);
     const employeeData = employeePageJson.data || [];
     const hasNextPage = employeePageJson.pages.hasNext || false;
-
-    const filteredData = employeeData.filter((employee: any) => employee.employeeNo);
     
-    const employeesToReturn = filteredData.map((empData: any) => ({
+    const employeesToReturn = employeeData.map((empData: any) => ({
         employeeId: String(empData.employeeId),
         name: empData.name,
         email: empData.email || '',
@@ -163,10 +161,8 @@ const syncAllGreytHRFlow = ai.defineFlow(
             hasNext = false; // Stop on error
         }
     }
-
-    const filteredData = allEmployees.filter((employee: any) => employee.employeeNo);
     
-    const employeesToSave = filteredData.map((empData: any) => ({
+    const employeesToSave = allEmployees.map((empData: any) => ({
         employeeId: String(empData.employeeId),
         name: empData.name,
         email: empData.email || '',
