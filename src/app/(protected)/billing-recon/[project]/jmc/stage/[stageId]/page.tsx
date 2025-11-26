@@ -75,6 +75,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { UpdateCertifiedQtyDialog } from '@/components/billing-recon/UpdateCertifiedQtyDialog';
 import {
   Dialog,
+  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -334,8 +335,8 @@ export default function StagePage() {
     try {
       const taskRef = doc(db, 'projects', projectId, 'jmcEntries', taskId);
 
-      await runTransaction(db, async (tx) => {
-        const preSnap = await tx.get(taskRef);
+      await runTransaction(db, async (transaction) => {
+        const preSnap = await transaction.get(taskRef);
         if (!preSnap.exists()) throw new Error('Task document not found!');
         const preData = preSnap.data() as JmcEntry;
 
@@ -421,7 +422,7 @@ export default function StagePage() {
           version: (preData as any).version ? (preData as any).version + 1 : 1,
         };
 
-        tx.update(taskRef, updateData);
+        transaction.update(taskRef, updateData);
       });
 
       toast({
