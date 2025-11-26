@@ -15,8 +15,6 @@ const EmployeeDataSchema = z.object({
     name: z.string(),
     email: z.string().optional(),
     phone: z.string().optional(),
-    department: z.string().optional(),
-    designation: z.string().optional(),
     status: z.string(),
     employeeNo: z.string().optional(),
     dateOfJoin: z.string().optional().nullable(),
@@ -113,8 +111,6 @@ const syncGreytHRFlow = ai.defineFlow(
         name: empData.name,
         email: empData.email || '',
         phone: empData.mobile || '',
-        department: 'N/A', // These fields require another API call.
-        designation: 'N/A', // They are handled in a separate, more comprehensive sync.
         status: empData.status === 'Active' ? 'Active' : 'Inactive',
         employeeNo: empData.employeeNo,
         dateOfJoin: empData.dateOfJoin || null,
@@ -175,8 +171,6 @@ const syncAllGreytHRFlow = ai.defineFlow(
         name: empData.name,
         email: empData.email || '',
         phone: empData.mobile || '',
-        department: 'N/A',
-        designation: 'N/A',
         status: empData.status === 'Active' ? 'Active' : 'Inactive',
         employeeNo: empData.employeeNo,
         dateOfJoin: empData.dateOfJoin || null,

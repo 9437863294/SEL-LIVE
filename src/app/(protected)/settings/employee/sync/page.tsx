@@ -20,10 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 type FetchedEmployee = {
   employeeId: string;
   name: string;
-  email: string;
-  phone: string;
-  department: string;
-  designation: string;
+  email?: string;
+  phone?: string;
   status: string;
   employeeNo?: string;
   dateOfJoin?: string | null;
