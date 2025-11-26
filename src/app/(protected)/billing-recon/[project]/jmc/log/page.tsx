@@ -432,5 +432,3 @@ export default function JmcLogPage() {
     </>
   );
 }
-
-    
