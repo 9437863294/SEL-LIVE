@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import type { WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -74,11 +74,7 @@ function MvacCard({ item }: MvacCardProps) {
   );
 
   if (isDisabled) {
-    return (
-      <div className="h-full" title="You don't have permission for this" tabIndex={-1}>
-        {card}
-      </div>
-    );
+    return <div className="h-full">{card}</div>;
   }
 
   return (
@@ -106,67 +102,38 @@ export default function MvacPage() {
   /* ---------- permission checks ---------- */
   const canViewModule = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('View', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('View', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
 
   const canCreate = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('Create MVAC Entry', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('Create MVAC Entry', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
 
   const canViewLog = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('View Log', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('View Log', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
   
   const canManageSubcontractors = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('Manage Subcontractors', 'Subcontractors Management');
-    } catch {
-      return false;
-    }
+    return can('Manage Subcontractors', 'Subcontractors Management');
   }, [authIsLoading, can]);
 
   const canViewReports = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('View Reports', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('View Reports', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
 
   const canViewSettings = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      return can('View Settings', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('View Settings', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
 
   const canViewStages = useMemo(() => {
     if (authIsLoading) return false;
-    try {
-      // Broad view permission for stages
-      return can('View', 'Billing Recon.MVAC');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+    return can('View', 'Billing Recon.MVAC', projectSlug);
+  }, [authIsLoading, can, projectSlug]);
 
   /* ---------- fetch workflow ---------- */
   useEffect(() => {
@@ -343,5 +310,3 @@ export default function MvacPage() {
     </div>
   );
 }
-
-    
