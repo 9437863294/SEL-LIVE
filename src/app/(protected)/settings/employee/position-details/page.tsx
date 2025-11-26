@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon, ShieldAlert, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -13,7 +13,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import type { EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
@@ -23,6 +24,11 @@ export default function EmployeePositionDetailsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+
+  const [filters, setFilters] = useState({
+    employeeId: '',
+    category: 'all',
+  });
   
   const canView = can('View', 'Settings.Employee Management');
 
@@ -54,6 +60,42 @@ export default function EmployeePositionDetailsPage() {
       setIsLoading(false);
     }
   };
+
+  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({ employeeId: '', category: 'all' });
+  };
+  
+  const uniqueCategories = useMemo(() => {
+    const categories = new Set<string>();
+    positions.forEach(pos => {
+      pos.categoryList.forEach(cat => {
+        if(cat.category) categories.add(cat.category);
+      });
+    });
+    return Array.from(categories).sort();
+  }, [positions]);
+
+  const filteredPositions = useMemo(() => {
+    return positions.map(pos => {
+        // Filter the categoryList within each position
+        const filteredCategoryList = pos.categoryList.filter(cat => {
+            const categoryMatch = filters.category === 'all' || cat.category === filters.category;
+            return categoryMatch;
+        });
+
+        return { ...pos, categoryList: filteredCategoryList };
+    }).filter(pos => {
+        // Then, filter the positions themselves
+        const employeeIdMatch = filters.employeeId === '' || String(pos.employeeId).includes(filters.employeeId);
+        
+        // Keep the position if it matches the employee ID and still has categories after filtering
+        return employeeIdMatch && pos.categoryList.length > 0;
+    });
+  }, [positions, filters]);
 
 
   if (isAuthLoading) {
@@ -102,6 +144,40 @@ export default function EmployeePositionDetailsPage() {
             </div>
         </div>
       </div>
+      
+       <Card className="mb-4">
+        <CardContent className="p-4 flex flex-col md:flex-row gap-4">
+          <div className="relative flex-grow">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search Employee ID..."
+              className="pl-8"
+              value={filters.employeeId}
+              onChange={(e) => handleFilterChange('employeeId', e.target.value)}
+            />
+          </div>
+          <Select
+            value={filters.category}
+            onValueChange={(value) => handleFilterChange('category', value)}
+          >
+            <SelectTrigger className="w-full md:w-[240px]">
+              <SelectValue placeholder="Filter by Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {uniqueCategories.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="secondary" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardContent className="p-0">
@@ -128,11 +204,11 @@ export default function EmployeePositionDetailsPage() {
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                   </TableRow>
                 ))
-              ) : positions.length > 0 ? (
-                positions.map(pos => (
+              ) : filteredPositions.length > 0 ? (
+                filteredPositions.map(pos => (
                    <Fragment key={pos.employeeId}>
                     {pos.categoryList.map((cat, index) => (
-                      <TableRow key={cat.id}>
+                      <TableRow key={`${pos.employeeId}-${cat.id}`}>
                         {index === 0 && (
                           <TableCell rowSpan={pos.categoryList.length} className="font-medium align-top">
                             {pos.employeeId}
@@ -150,7 +226,7 @@ export default function EmployeePositionDetailsPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center h-24">
-                    No position details found.
+                    No position details found for the current filters.
                   </TableCell>
                 </TableRow>
               )}
