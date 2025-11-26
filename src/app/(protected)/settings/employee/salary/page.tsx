@@ -19,19 +19,6 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-const salaryComponents = [
-    'GROSS',
-    'NET PAY',
-    'BASIC',
-    'HRA',
-    'CONVEYANCE',
-    'TOTAL DEDUCTIONS',
-    'PF',
-    'PROF TAX',
-    'INSURANCE_DEDUCTION',
-    'SALARY MASTER',
-];
-
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -127,6 +114,11 @@ export default function EmployeeSalaryPage() {
 
   const getSalaryComponentValue = (details: SalaryDetail[] | undefined, description: string): number => {
     if (!details) return 0;
+    if (description === 'TOTAL DEDUCTIONS') {
+        return details
+            .filter(d => d.type === 'DEDUCT')
+            .reduce((sum, item) => sum + item.amount, 0);
+    }
     const item = details.find(d => d.description === description);
     return item ? item.amount : 0;
   };
@@ -224,36 +216,33 @@ export default function EmployeeSalaryPage() {
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableHead className="w-[200px] sticky left-0 bg-background z-20">Employee</TableHead>
+                  <TableHead className="w-[120px]">Employee ID</TableHead>
+                  <TableHead className="w-[250px]">Name</TableHead>
                   <TableHead>Gross Salary</TableHead>
+                  <TableHead>Total Deductions</TableHead>
                   <TableHead>Net Salary</TableHead>
-                  {salaryComponents.map(comp => <TableHead key={comp}>{comp}</TableHead>)}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading || isSyncing ? (
                   Array.from({length: 5}).map((_, i) => (
                       <TableRow key={i}>
-                          <TableCell colSpan={salaryComponents.length + 3}><Skeleton className="h-6 w-full" /></TableCell>
+                          <TableCell colSpan={5}><Skeleton className="h-6 w-full" /></TableCell>
                       </TableRow>
                   ))
                 ) : filteredEmployees.length > 0 ? (
                   filteredEmployees.map(emp => (
                     <TableRow key={emp.employeeId}>
-                      <TableCell className="font-medium sticky left-0 bg-background z-20">
-                          <div className="font-bold">{emp.name}</div>
-                          <div className="text-xs text-muted-foreground">{emp.employeeId}</div>
-                      </TableCell>
+                      <TableCell>{emp.employeeId}</TableCell>
+                      <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
+                      <TableCell>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
                       <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
-                      {salaryComponents.map(comp => (
-                        <TableCell key={comp}>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, comp))}</TableCell>
-                      ))}
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={salaryComponents.length + 3} className="h-24 text-center">
+                    <TableCell colSpan={5} className="h-24 text-center">
                       No salary data to display. Please select a month and sync.
                     </TableCell>
                   </TableRow>
