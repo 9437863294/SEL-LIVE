@@ -8,8 +8,9 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where, doc, getDoc, setDoc } from 'firebase/firestore';
-import type { SalaryDetail, Employee } from '@/lib/types';
+import { collection, writeBatch, getDocs, query, where, doc, getDoc, setDoc, addDoc } from 'firebase/firestore';
+import type { SalaryDetail, Employee, SalarySyncLog } from '@/lib/types';
+import { format, subDays } from 'date-fns';
 
 const EmployeeSalaryDataSchema = z.object({
   employeeId: z.string(),
@@ -85,8 +86,6 @@ async function fetchAllSalaryData(token: string, domain: string, month: string):
         });
 
         if (response.status === 404) {
-            // No data for this month, which is a valid scenario.
-            // If it happens on the first page, return empty. Otherwise, we're done.
             if (page === 1) return [];
             break;
         }
@@ -103,7 +102,6 @@ async function fetchAllSalaryData(token: string, domain: string, month: string):
             allData = allData.concat(data);
             page++;
         } else {
-            // No more data to fetch
             break;
         }
     }
@@ -119,6 +117,24 @@ const syncSalaryFlow = ai.defineFlow(
   async ({ month }) => {
     const token = await getGreytHRToken();
     const domain = "siddhartha.greythr.com";
+    const monthStr = format(new Date(month), 'yyyy-MM');
+
+    const syncLogRef = doc(db, 'salarySyncLogs', monthStr);
+    const syncLogSnap = await getDoc(syncLogRef);
+    const lastSynced = syncLogSnap.exists() ? (syncLogSnap.data() as SalarySyncLog).lastSynced.toDate() : null;
+    const oneDayAgo = subDays(new Date(), 1);
+
+    if (lastSynced && lastSynced > oneDayAgo) {
+      const q = query(collection(db, 'employees'), where('salaryMonth', '==', monthStr));
+      const querySnapshot = await getDocs(q);
+      const employeesFromDb = querySnapshot.docs.map(doc => doc.data() as Employee);
+      return {
+        success: true,
+        message: 'Data is recent. Loaded from database.',
+        updatedCount: 0,
+        employees: employeesFromDb,
+      };
+    }
     
     const salaryData = await fetchAllSalaryData(token, domain, month);
 
@@ -143,7 +159,6 @@ const syncSalaryFlow = ai.defineFlow(
     
     const employeesRef = collection(db, 'employees');
     let updatedCount = 0;
-
     const batch = writeBatch(db);
 
     const employeesToReturn: z.infer<typeof EmployeeSalaryDataSchema>[] = [];
@@ -157,23 +172,34 @@ const syncSalaryFlow = ai.defineFlow(
 
         const netSalary = gross - totalDeductions;
         
-        employeesToReturn.push({
+        const salaryPayload = {
             employeeId: empNo,
             name: empData.name,
             grossSalary: gross,
             netSalary: netSalary,
             salaryDetails: empData.details,
-        });
+            salaryMonth: monthStr,
+        };
+        employeesToReturn.push(salaryPayload);
         
         const q = query(employeesRef, where('employeeId', '==', empNo));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
             const docToUpdate = querySnapshot.docs[0];
-            batch.update(docToUpdate.ref, {
-                grossSalary: gross,
-                netSalary: netSalary,
-                salaryDetails: empData.details,
+            batch.update(docToUpdate.ref, salaryPayload);
+            updatedCount++;
+        } else {
+            // If employee does not exist, create a new document
+            const newDocRef = doc(employeesRef);
+            batch.set(newDocRef, {
+                // You might need to add other default employee fields here
+                department: '',
+                designation: '',
+                email: '',
+                phone: '',
+                status: 'Active',
+                ...salaryPayload,
             });
             updatedCount++;
         }
@@ -181,9 +207,11 @@ const syncSalaryFlow = ai.defineFlow(
 
     await batch.commit();
 
+    await setDoc(syncLogRef, { lastSynced: new Date() });
+
     return { 
         success: true, 
-        message: `Successfully synced salaries. ${updatedCount} employee records updated.`,
+        message: `Successfully synced salaries. ${updatedCount} employee records created/updated.`,
         updatedCount: updatedCount,
         employees: employeesToReturn,
     };
