@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, View, Download, Trash2, File as FileIcon, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project, Attachment } from '@/lib/types';
-import ViewJmcEntryDialog from '@/components/subcontractors-management/ViewJmcEntryDialog';
+import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -435,5 +435,4 @@ export default function JmcLogPage() {
     </>
   );
 }
-
     
