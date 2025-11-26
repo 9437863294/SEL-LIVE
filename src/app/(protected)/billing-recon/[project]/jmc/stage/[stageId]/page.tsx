@@ -1,12 +1,30 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Loader2,
+  MoreHorizontal,
+  Eye,
+  FileIcon,
+  Trash2,
+  Calendar as CalendarIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -18,6 +36,8 @@ import {
   Timestamp,
   runTransaction,
   arrayUnion,
+  collectionGroup,
+  deleteDoc,
 } from 'firebase/firestore';
 import type {
   JmcEntry,
@@ -40,10 +60,69 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { UpdateCertifiedQtyDialog } from '@/components/billing-recon/UpdateCertifiedQtyDialog';
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { format, subDays, startOfDay } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { logUserActivity } from '@/lib/activity-logger';
 
 /* -------- helpers -------- */
+function toDateSafe(value: any): Date | null {
+  if (!value) return null;
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (value?.seconds) return new Date(value.seconds * 1000);
+  return null;
+}
+
+function humanDate(value: any) {
+  const d = toDateSafe(value);
+  if (!d) return '—';
+  return d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function pastTense(action: string) {
+  const map: Record<string, string> = {
+    Approve: 'approved',
+    Verify: 'verified',
+    Complete: 'completed',
+    Reject: 'rejected',
+    Revert: 'reverted',
+  };
+  return map[action] ?? `${action.toLowerCase()}ed`;
+}
+
 function formatINR(n?: number) {
   const v = Number.isFinite(n as number) ? (n as number) : 0;
   try {
@@ -56,43 +135,6 @@ function formatINR(n?: number) {
     return `₹${v.toFixed(2)}`;
   }
 }
-
-function toDateSafe(value: any): Date | null {
-  if (!value) return null;
-  if (value instanceof Timestamp) return value.toDate();
-  if (value instanceof Date) return value;
-  if (typeof value === 'number') return new Date(value);
-  if (typeof value === 'string') {
-    const d = new Date(value);
-    return isNaN(+d) ? null : d;
-  }
-  if (value?.seconds) return new Date(value.seconds * 1000);
-  return null;
-}
-
-function humanDate(value: any) {
-  const d = toDateSafe(value);
-  if (!d) return '-';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function pastTense(action: string) {
-  const map: Record<string, string> = {
-    Approve: 'approved',
-    Verify: 'verified',
-    Verified: 'verified',
-    Complete: 'completed',
-    Reject: 'rejected',
-    Revert: 'reverted',
-  };
-  return map[action] ?? `${action.toLowerCase()}ed`;
-}
-
-const isVerifyAction = (name: string) => name === 'Verify' || name === 'Verified';
 
 function computeTotalAmount(entry: JmcEntry | undefined): number {
   if (!entry) return 0;
@@ -132,7 +174,10 @@ export default function StagePage() {
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
+  const [projectId, setProjectId] = useState<string | null>(null);
+
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [completionDate, setCompletionDate] = useState<Date | undefined>(new Date());
 
   const fetchTasks = useCallback(async () => {
     if (!userId || !stageId || !projectSlug) return;
@@ -143,7 +188,11 @@ export default function StagePage() {
       const workflowRef = doc(db, 'workflows', 'jmc-workflow');
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
-        toast({ title: 'Error', description: 'Workflow not found.', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Workflow not found.',
+          variant: 'destructive',
+        });
         router.back();
         return;
       }
@@ -151,7 +200,11 @@ export default function StagePage() {
       setWorkflow(steps);
       const currentStage = steps.find((s) => s.id === stageId);
       if (!currentStage) {
-        toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Workflow stage not found.',
+          variant: 'destructive',
+        });
         router.back();
         return;
       }
@@ -172,17 +225,38 @@ export default function StagePage() {
 
       // 3) stage tasks + BOQ + bills (for cached project id)
       const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'projects', pid, 'jmcEntries'), where('currentStepId', '==', stageId))),
+        getDocs(
+          query(
+            collection(db, 'projects', pid, 'jmcEntries'),
+            where('currentStepId', '==', stageId)
+          )
+        ),
         getDocs(query(collection(db, 'projects', pid, 'boqItems'))),
         getDocs(query(collection(db, 'projects', pid, 'bills'))),
       ]);
 
-      setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-      setBoqItems(boqSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)));
-      setBills(billsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-    } catch (error) {
-      console.error('Error fetching tasks for stage:', error);
-      toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
+      setTasks(
+        stageTasksSnap.docs.map(
+          (d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)
+        )
+      );
+      setBoqItems(
+        boqSnap.docs.map(
+          (d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)
+        )
+      );
+      setBills(
+        billsSnap.docs.map(
+          (d) => ({ id: d.id, ...(d.data() as any) } as Bill)
+        )
+      );
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+      router.back();
     } finally {
       setIsLoading(false);
     }
@@ -193,16 +267,22 @@ export default function StagePage() {
   }, [fetchTasks]);
 
   const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!userId || !stage) return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
+    if (!userId || !stage)
+      return { pendingTasks: [] as JmcEntry[], completedTasks: [] as JmcEntry[] };
 
     const myPending = tasks.filter(
-      (t) => (t.assignees ?? []).includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected',
+      (t) =>
+        (t.assignees ?? []).includes(userId) &&
+        t.status !== 'Completed' &&
+        t.status !== 'Rejected'
     );
 
     const myCompleted = tasks.filter(
       (t) =>
         !myPending.some((pt) => pt.id === t.id) &&
-        (t.history ?? []).some((h) => h.stepName === stage.name && h.userId === userId),
+        (t.history ?? []).some(
+          (h) => h.stepName === stage.name && h.userId === userId
+        )
     );
 
     return { pendingTasks: myPending, completedTasks: myCompleted };
@@ -233,13 +313,20 @@ export default function StagePage() {
     setIsVerifyOpen(true);
   };
 
+  const openCompleteDialog = (task: JmcEntry) => {
+    setSelectedJmc(task);
+    setCompletionDate(new Date());
+    setIsCompleteDialogOpen(true);
+  };
+
   const handleAction = async (
     taskId: string,
     action: string | ActionConfig,
     comment: string = '',
-    updatedItems?: any[],
+    completionDateOverride?: Date
   ) => {
-    if (!workflow || !userId || !userName || !stage || !projectSlug || !projectId) return;
+    if (!workflow || !userId || !userName || !stage || !projectSlug || !projectId)
+      return;
 
     const actionName = typeof action === 'string' ? action : action.name;
     setIsActionLoading(taskId);
@@ -259,7 +346,12 @@ export default function StagePage() {
         let newAssignees: string[] = preData.assignees || [];
         let newDeadline: Timestamp | null = preData.deadline ?? null;
 
-        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Verify'].includes(actionName);
+        const isCompletionAction = [
+          'Approve',
+          'Complete',
+          'Verified',
+          'Verify',
+        ].includes(actionName);
 
         if (isCompletionAction) {
           const idx = workflow.findIndex((s) => s.id === stage.id);
@@ -270,13 +362,16 @@ export default function StagePage() {
               ...preData,
               createdAt: toDateSafe(preData.createdAt)?.toISOString() ?? new Date().toISOString(),
               deadline: toDateSafe(preData.deadline)?.toISOString() ?? null,
-              jmcDate: toDateSafe((preData as any).jmcDate)?.toISOString() ?? new Date().toISOString(),
+              jmcDate: toDateSafe(preData.jmcDate)?.toISOString() ?? new Date().toISOString(),
               history: (preData.history || []).map((h) => ({
                 ...h,
                 timestamp: toDateSafe(h.timestamp)?.toISOString() ?? new Date().toISOString(),
               })),
             };
-            const computedAssignees = await getAssigneeForStep(nextStep, serializableData as any);
+            const computedAssignees = await getAssigneeForStep(
+              nextStep,
+              serializableData as any
+            );
             if (!computedAssignees || computedAssignees.length === 0) {
               throw new Error(`Could not find assignee for step: ${nextStep.name}`);
             }
@@ -300,6 +395,9 @@ export default function StagePage() {
           newCurrentStepId = null;
           newAssignees = [];
           newDeadline = null;
+        } else {
+          newAssignees = preData.assignees || [];
+          newDeadline = preData.deadline ?? null;
         }
 
         const newActionLog: ActionLog = {
@@ -307,7 +405,9 @@ export default function StagePage() {
           comment,
           userId,
           userName,
-          timestamp: Timestamp.now(),
+          timestamp: completionDateOverride
+            ? Timestamp.fromDate(completionDateOverride)
+            : Timestamp.now(),
           stepName: stage.name,
         };
 
@@ -321,14 +421,13 @@ export default function StagePage() {
           version: (preData as any).version ? (preData as any).version + 1 : 1,
         };
 
-        if (updatedItems) {
-          updateData.items = updatedItems;
-        }
-
         tx.update(taskRef, updateData);
       });
 
-      toast({ title: 'Success', description: `Task has been ${pastTense(actionName)}.` });
+      toast({
+        title: 'Success',
+        description: `Task has been ${pastTense(actionName)}.`,
+      });
       await fetchTasks();
     } catch (error: any) {
       toast({
@@ -339,6 +438,7 @@ export default function StagePage() {
     } finally {
       setIsActionLoading(null);
       setIsVerifyOpen(false);
+      setIsCompleteDialogOpen(false);
     }
   };
 
@@ -349,10 +449,14 @@ export default function StagePage() {
           <TableHeader>
             <TableRow>
               <TableHead className="whitespace-nowrap">JMC No.</TableHead>
-              <TableHead className="whitespace-nowrap">Date</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
+              <TableHead className="whitespace-nowrap">JMC Date</TableHead>
+              <TableHead className="text-right whitespace-nowrap">
+                Total Amount
+              </TableHead>
               <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+              <TableHead className="text-right whitespace-nowrap">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -366,7 +470,9 @@ export default function StagePage() {
               ))
             ) : data.length > 0 ? (
               data.map((entry) => {
-                const currentStep = workflow?.find((s) => s.id === entry.currentStepId);
+                const currentStep = workflow?.find(
+                  (s) => s.id === entry.currentStepId
+                );
                 const actions = Array.isArray(currentStep?.actions)
                   ? (currentStep!.actions as (string | ActionConfig)[])
                   : [];
@@ -378,11 +484,21 @@ export default function StagePage() {
                     onClick={() => handleViewDetails(entry)}
                     className="cursor-pointer"
                   >
-                    <TableCell className="whitespace-nowrap">{entry.jmcNo ?? '-'}</TableCell>
-                    <TableCell className="whitespace-nowrap">{humanDate((entry as any).jmcDate)}</TableCell>
-                    <TableCell className="text-right whitespace-nowrap">{formatINR(total)}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>
+                      {entry.jmcNo ?? '-'}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {humanDate(entry.jmcDate)}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      {formatINR(total)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <Badge
+                        variant={
+                          entry.status === 'Completed' ? 'default' : 'secondary'
+                        }
+                      >
                         {entry.status}
                       </Badge>
                     </TableCell>
@@ -402,22 +518,32 @@ export default function StagePage() {
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuContent
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             {type === 'pending' &&
                               actions.map((action) => {
-                                const actionName = typeof action === 'string' ? action : action.name;
-                                const wantsVerify = isVerifyAction(actionName);
+                                const actionName =
+                                  typeof action === 'string'
+                                    ? action
+                                    : action.name;
+                                const isVerify = actionName.toLowerCase().includes('verify');
                                 const isUpdateQty = actionName === 'Update Certified Qty';
+                                const isComplete = actionName === 'Complete';
+
                                 return (
                                   <DropdownMenuItem
                                     key={actionName}
                                     onSelect={(e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      if (wantsVerify) {
+                                      if (isVerify) {
                                         handleVerifyClick(entry);
                                       } else if (isUpdateQty) {
                                         handleUpdateQtyClick(entry);
+                                      } else if (isComplete) {
+                                        openCompleteDialog(entry);
                                       } else {
                                         handleAction(entry.id!, action);
                                       }
@@ -436,7 +562,7 @@ export default function StagePage() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24">
+                <TableCell colSpan={6} className="text-center h-24">
                   No {type} tasks found.
                 </TableCell>
               </TableRow>
@@ -478,6 +604,43 @@ export default function StagePage() {
         </Tabs>
       </div>
 
+      <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Confirm Completion</DialogTitle>
+                <DialogDescription>Please select the date this task was completed.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {completionDate ? format(completionDate, 'PPP') : 'Select date'}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                        <Calendar
+                            mode="single"
+                            selected={completionDate}
+                            onSelect={setCompletionDate}
+                            disabled={{ after: new Date(), before: subDays(new Date(), 7) }}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+            </div>
+            <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button 
+                  onClick={() => selectedJmc && handleAction(selectedJmc.id, 'Complete', 'Task marked as complete.', completionDate)}
+                  disabled={!completionDate}
+                >
+                  Confirm
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ViewJmcEntryDialog
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
@@ -501,3 +664,48 @@ export default function StagePage() {
     </>
   );
 }
+
+```
+- src/app/api/auth/[[...genkit]]/route.ts:
+```ts
+
+import {genkit} from '@/ai/genkit';
+import {nextJSHandler} from '@genkit-ai/next';
+
+export const POST = nextJSHandler();
+
+```
+- src/hooks/use-auth.ts:
+```ts
+
+'use client';
+import { useContext } from 'react';
+import { AuthContext } from '@/components/auth/AuthProvider';
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+```
+- tsconfig.patch.json:
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true
+  }
+}
+```

@@ -1,15 +1,12 @@
-
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  View,
   Download,
   Trash2,
   File as FileIcon,
-  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -387,10 +384,18 @@ export default function JmcLogPage() {
                       toDateSafe((entry as any).jmcDate) ??
                       toDateSafe(entry.createdAt);
 
-                    const docUrl = entry.certifiedJmcAttachment?.url;
+                    // Prefer workflow attachment, fallback to first certifiedAttachments
+                    const docUrl =
+                      entry.certifiedJmcAttachment?.url ||
+                      (Array.isArray(entry.certifiedAttachments) &&
+                        entry.certifiedAttachments[0]?.url);
 
                     return (
-                      <TableRow key={entry.id}>
+                      <TableRow
+                        key={entry.id}
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => handleViewDetails(entry)}
+                      >
                         <TableCell className="font-medium">
                           {entry.jmcNo ?? '-'}
                         </TableCell>
@@ -426,35 +431,33 @@ export default function JmcLogPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                           <div className="flex gap-1 justify-end">
+                          <div className="flex gap-1 justify-end">
+                            {/* Action button: ONLY for opening uploaded doc */}
                             {docUrl ? (
                               <Button
                                 variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
+                                size="sm"
+                                className="h-8"
                                 asChild
+                                onClick={(e) => e.stopPropagation()} // don't trigger row click
                               >
                                 <a
                                   href={docUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <FileIcon className="h-4 w-4" />
+                                  <FileIcon className="mr-2 h-4 w-4" /> View Doc
                                 </a>
                               </Button>
                             ) : (
                               <Button
                                 variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(entry);
-                                }}
-                                aria-label="View Details"
+                                size="sm"
+                                className="h-8"
+                                disabled
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                <Eye className="h-4 w-4" />
+                                <FileIcon className="mr-2 h-4 w-4" /> No Doc
                               </Button>
                             )}
 
