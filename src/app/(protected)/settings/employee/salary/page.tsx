@@ -217,9 +217,9 @@ export default function EmployeeSalaryPage() {
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead className="w-[120px]">Employee ID</TableHead>
-                  <TableHead className="w-[250px]">Name</TableHead>
+                  <TableHead>Name</TableHead>
                   <TableHead>Gross Salary</TableHead>
-                  <TableHead>Total Deductions</TableHead>
+                  <TableHead>TOTAL DEDUCTIONS</TableHead>
                   <TableHead>Net Salary</TableHead>
                 </TableRow>
               </TableHeader>

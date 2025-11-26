@@ -132,7 +132,13 @@ const syncSalaryFlow = ai.defineFlow(
         success: true,
         message: 'Data is recent. Loaded from database.',
         updatedCount: 0,
-        employees: employeesFromDb,
+        employees: employeesFromDb.map(e => ({
+            employeeId: e.employeeId,
+            name: e.name,
+            grossSalary: e.grossSalary || 0,
+            netSalary: e.netSalary || 0,
+            salaryDetails: e.salaryDetails || [],
+        })),
       };
     }
     
@@ -168,7 +174,7 @@ const syncSalaryFlow = ai.defineFlow(
         const gross = empData.details.find(d => d.description === 'GROSS' && d.type === 'INCOME')?.amount || 0;
         const totalDeductions = empData.details
             .filter(d => d.type === 'DEDUCT')
-            .reduce((sum, item) => sum + item.amount, 0);
+            .reduce((sum, item) => sum + Math.abs(item.amount), 0);
 
         const netSalary = gross - totalDeductions;
         
@@ -182,7 +188,7 @@ const syncSalaryFlow = ai.defineFlow(
         };
         employeesToReturn.push(salaryPayload);
         
-        const q = query(employeesRef, where('employeeId', '==', empNo));
+        const q = query(employeesRef, where('employeeId', '==', empNo), where('salaryMonth', '==', monthStr));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
@@ -190,10 +196,8 @@ const syncSalaryFlow = ai.defineFlow(
             batch.update(docToUpdate.ref, salaryPayload);
             updatedCount++;
         } else {
-            // If employee does not exist, create a new document
             const newDocRef = doc(employeesRef);
             batch.set(newDocRef, {
-                // You might need to add other default employee fields here
                 department: '',
                 designation: '',
                 email: '',
