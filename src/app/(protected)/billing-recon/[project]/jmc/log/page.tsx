@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Eye, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, View, Download, Trash2, File as FileIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -22,7 +22,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project, Attachment } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -66,6 +66,7 @@ function formatCurrency(amount: number) {
 
 type EnrichedJmcEntry = JmcEntry & {
   stageDates: Record<string, string>;
+  certifiedJmcAttachment?: Attachment;
   totalAmount: number;
   certifiedValue: number;
 };
@@ -117,8 +118,10 @@ export default function JmcLogPage() {
     return { total, certified };
   };
 
-  const buildStageDates = (steps: WorkflowStep[], history: ActionLog[] = []) => {
-    const map: Record<string, string> = {};
+  const getStageDetails = (steps: WorkflowStep[], history: ActionLog[] = []) => {
+    const stageDates: Record<string, string> = {};
+    let certifiedJmcAttachment: Attachment | undefined = undefined;
+
     for (const step of steps) {
       const logsForStep = history.filter(
         (h) => h.stepName === step.name && APPROVE_ACTIONS.has(h.action)
@@ -131,12 +134,17 @@ export default function JmcLogPage() {
           return db > da ? b : a;
         });
         const d = toDateSafe(latest.timestamp);
-        map[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+        stageDates[step.name] = d ? format(d, 'dd-MM-yyyy') : '-';
+
+        // Specifically find the attachment for "Certified JMC"
+        if (step.name === 'Certified JMC' && latest.attachment) {
+            certifiedJmcAttachment = latest.attachment;
+        }
       } else {
-        map[step.name] = '-';
+        stageDates[step.name] = '-';
       }
     }
-    return map;
+    return { stageDates, certifiedJmcAttachment };
   };
 
   const fetchAll = useCallback(async () => {
@@ -177,7 +185,7 @@ export default function JmcLogPage() {
         const raw = d.data() as JmcEntry & { createdAt?: any; id?: string };
         const data = stripId(raw);
         const { total, certified } = computeTotals((data as any).items);
-        const stageDates = buildStageDates(steps, (data as any).history as ActionLog[]);
+        const { stageDates, certifiedJmcAttachment } = getStageDetails(steps, (data as any).history as ActionLog[]);
 
         return {
           id: d.id,
@@ -186,6 +194,7 @@ export default function JmcLogPage() {
           totalAmount: total,
           certifiedValue: certified,
           stageDates,
+          certifiedJmcAttachment,
         };
       });
 
@@ -272,7 +281,7 @@ export default function JmcLogPage() {
     }
   };
 
-  const skeletonCols = 8 + (workflowSteps?.length || 0);
+  const skeletonCols = 9 + (workflowSteps?.length || 0);
 
   return (
     <>
@@ -295,7 +304,7 @@ export default function JmcLogPage() {
           {/* Make the wide table scroll horizontally inside the card */}
           <CardContent className="p-0 overflow-x-auto">
             {/* Give the table a sensible min width so columns don’t squish */}
-            <Table className="min-w-[1000px]">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-nowrap">JMC No.</TableHead>
@@ -305,6 +314,7 @@ export default function JmcLogPage() {
                       {step.name}
                     </TableHead>
                   ))}
+                   <TableHead className="whitespace-nowrap text-center">View</TableHead>
                   <TableHead className="whitespace-nowrap">JMC Value</TableHead>
                   <TableHead className="whitespace-nowrap">Certified Value</TableHead>
                   <TableHead className="whitespace-nowrap">Stage</TableHead>
@@ -333,6 +343,16 @@ export default function JmcLogPage() {
                         {workflowSteps.map((step) => (
                           <TableCell key={step.id}>{entry.stageDates[step.name] ?? '-'}</TableCell>
                         ))}
+                        
+                        <TableCell className="text-center">
+                            {entry.certifiedJmcAttachment ? (
+                                <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                                    <a href={entry.certifiedJmcAttachment.url} target="_blank" rel="noopener noreferrer">
+                                        <FileIcon className="h-4 w-4" />
+                                    </a>
+                                </Button>
+                            ) : '-'}
+                        </TableCell>
 
                         <TableCell>{formatCurrency(entry.totalAmount)}</TableCell>
                         <TableCell>{formatCurrency(entry.certifiedValue)}</TableCell>
@@ -418,3 +438,4 @@ export default function JmcLogPage() {
     </>
   );
 }
+
