@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, Fragment, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon, ShieldAlert, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw, ShieldAlert, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -15,15 +15,16 @@ import type { EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   
-  const [positions, setPositions] = useState<EmployeePosition[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
+  const [allPositions, setAllPositions] = useState<EmployeePosition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [filters, setFilters] = useState({
     employeeId: '',
@@ -31,33 +32,55 @@ export default function EmployeePositionDetailsPage() {
   });
   
   const canView = can('View', 'Settings.Employee Management');
+  const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
+
+  const fetchPositionsFromDb = useCallback(async () => {
+    setIsLoading(true);
+    try {
+        const q = query(collection(db, 'employeePositions'), orderBy('employeeId'));
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map(doc => doc.data() as EmployeePosition);
+        setAllPositions(data);
+    } catch (error: any) {
+        console.error("Error fetching positions from Firestore:", error);
+        if (error.code === 'failed-precondition') {
+             toast({
+                title: 'Database Index Required',
+                description: "This page requires a Firestore index on 'employeePositions(employeeId asc)'. Please create it in your Firebase console.",
+                variant: 'destructive',
+                duration: 10000,
+             });
+        }
+    } finally {
+        setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (isAuthLoading) return;
     if (canView) {
-      fetchPositions(1);
+      fetchPositionsFromDb();
     }
-  }, [isAuthLoading, canView]);
+  }, [isAuthLoading, canView, fetchPositionsFromDb]);
 
-  const fetchPositions = async (page: number) => {
-    setIsLoading(true);
+  const handleSync = async () => {
+    setIsSyncing(true);
     try {
-      const result = await getAllEmployeePositions({ page });
-      if (result.success && result.data) {
-        setPositions(result.data);
-        setCurrentPage(result.currentPage ?? 1);
-        setHasNextPage(result.hasNextPage ?? false);
+      const result = await getAllEmployeePositions({});
+      if (result.success) {
+        toast({ title: 'Sync Successful', description: result.message });
+        await fetchPositionsFromDb(); // Refresh data from Firestore
       } else {
         throw new Error(result.message);
       }
     } catch (error: any) {
       toast({
-        title: 'Fetch Failed',
-        description: error.message || 'Could not fetch position details.',
+        title: 'Sync Failed',
+        description: error.message || 'Could not sync position details.',
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      setIsSyncing(false);
     }
   };
 
@@ -71,31 +94,26 @@ export default function EmployeePositionDetailsPage() {
   
   const uniqueCategories = useMemo(() => {
     const categories = new Set<string>();
-    positions.forEach(pos => {
+    allPositions.forEach(pos => {
       pos.categoryList.forEach(cat => {
         if(cat.category) categories.add(cat.category);
       });
     });
     return Array.from(categories).sort();
-  }, [positions]);
+  }, [allPositions]);
 
   const filteredPositions = useMemo(() => {
-    return positions.map(pos => {
-        // Filter the categoryList within each position
+    return allPositions.map(pos => {
         const filteredCategoryList = pos.categoryList.filter(cat => {
             const categoryMatch = filters.category === 'all' || cat.category === filters.category;
             return categoryMatch;
         });
-
         return { ...pos, categoryList: filteredCategoryList };
     }).filter(pos => {
-        // Then, filter the positions themselves
         const employeeIdMatch = filters.employeeId === '' || String(pos.employeeId).includes(filters.employeeId);
-        
-        // Keep the position if it matches the employee ID and still has categories after filtering
         return employeeIdMatch && pos.categoryList.length > 0;
     });
-  }, [positions, filters]);
+  }, [allPositions, filters]);
 
 
   if (isAuthLoading) {
@@ -143,6 +161,10 @@ export default function EmployeePositionDetailsPage() {
                 <p className="text-muted-foreground">Browse position details for all employees from GreytHR.</p>
             </div>
         </div>
+        <Button onClick={handleSync} disabled={isSyncing || !canSync}>
+            {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Sync from GreytHR
+        </Button>
       </div>
       
        <Card className="mb-4">
@@ -181,8 +203,9 @@ export default function EmployeePositionDetailsPage() {
 
       <Card>
         <CardContent className="p-0">
+          <div className="max-h-[calc(100vh-22rem)] overflow-y-auto">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Position ID</TableHead>
@@ -205,9 +228,8 @@ export default function EmployeePositionDetailsPage() {
                   </TableRow>
                 ))
               ) : filteredPositions.length > 0 ? (
-                filteredPositions.map(pos => (
-                   <Fragment key={pos.employeeId}>
-                    {pos.categoryList.map((cat, index) => (
+                filteredPositions.flatMap(pos => 
+                    pos.categoryList.map((cat, index) => (
                       <TableRow key={`${pos.employeeId}-${cat.id}`}>
                         {index === 0 && (
                           <TableCell rowSpan={pos.categoryList.length} className="font-medium align-top">
@@ -220,42 +242,21 @@ export default function EmployeePositionDetailsPage() {
                         <TableCell>{cat.effectiveFrom}</TableCell>
                         <TableCell>{cat.effectiveTo || 'N/A'}</TableCell>
                       </TableRow>
-                    ))}
-                  </Fragment>
-                ))
+                    ))
+                )
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center h-24">
-                    No position details found for the current filters.
+                    No position details found. Please sync from GreytHR.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
-      <div className="flex items-center justify-end space-x-2 py-4">
-        <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchPositions(currentPage - 1)}
-            disabled={currentPage <= 1 || isLoading}
-        >
-            <ArrowLeftIcon className="mr-2 h-4 w-4" />
-            Previous
-        </Button>
-        <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchPositions(currentPage + 1)}
-            disabled={!hasNextPage || isLoading}
-        >
-            Next
-            <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
     </div>
   );
 }
 
-    

@@ -2,15 +2,18 @@
 'use server';
 
 /**
- * @fileOverview A flow to fetch all employee position details from GreytHR with pagination.
+ * @fileOverview A flow to fetch all employee position details from GreytHR and save to Firestore.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
+import { db } from '@/lib/firebase';
+import { collection, writeBatch, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
+
 
 const PositionDetailSchema = z.object({
     id: z.number(),
-    category: z.string(), // Changed to string to hold the name
+    category: z.string(),
     value: z.number(),
     effectiveFrom: z.string(),
     effectiveTo: z.string().nullable(),
@@ -21,8 +24,9 @@ const EmployeePositionSchema = z.object({
     categoryList: z.array(PositionDetailSchema),
 });
 
+// Input is now optional as we fetch all pages.
 const GetAllEmployeePositionsInputSchema = z.object({
-  page: z.number().optional().default(1),
+  page: z.number().optional().default(1), // Still accept a page for single-page refresh, but default flow fetches all
 });
 export type GetAllEmployeePositionsInput = z.infer<typeof GetAllEmployeePositionsInputSchema>;
 
@@ -30,8 +34,6 @@ const GetAllEmployeePositionsOutputSchema = z.object({
     success: z.boolean(),
     message: z.string(),
     data: z.array(EmployeePositionSchema).optional(),
-    hasNextPage: z.boolean().optional(),
-    currentPage: z.number().optional(),
 });
 export type GetAllEmployeePositionsOutput = z.infer<typeof GetAllEmployeePositionsOutputSchema>;
 
@@ -49,32 +51,20 @@ async function getGreytHRToken(): Promise<string> {
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            "Authorization": "Basic " + encodedCredentials
-        },
+        headers: { "Authorization": "Basic " + encodedCredentials },
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to get GreytHR token: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to get GreytHR token: ${response.statusText}`);
     }
 
     const json = await response.json();
-    if (json.access_token) {
-        return json.access_token;
-    } else {
-        throw new Error("Access Token not found in GreytHR response.");
-    }
+    return json.access_token;
 }
 
 async function fetchAllCategories(token: string, domain: string): Promise<Map<number, string>> {
     const url = "https://api.greythr.com/hr/v2/lov";
-    const allCategoryTypes = [
-        "cat::Department", "cat::Designation", "cat::Grade", "cat::Location",
-        "cat::Company", "cat::Project Name", "cat::Project Division", 
-        "cat::Cost Center", "cat::COST CENTER CODE", "cat::Shift", "cat::EMPLOYEE TYPE",
-        "cat::category" // Make sure to fetch the category type mapping itself
-    ];
+    const allCategoryTypes = ["cat::category"];
     
     const body = JSON.stringify(allCategoryTypes);
 
@@ -89,15 +79,12 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch all categories from LOV: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to fetch all categories from LOV: ${response.statusText}`);
     }
 
     const categoriesData = await response.json();
     const categoryIdToNameMap = new Map<number, string>();
     
-    // The "cat::category" endpoint returns a list of [id, name] pairs.
-    // Example: [[1, "Department"], [2, "Designation"], ...]
     if (categoriesData['cat::category']) {
         categoriesData['cat::category'].forEach((cat: [number, string, any]) => {
             categoryIdToNameMap.set(cat[0], cat[1]);
@@ -107,7 +94,6 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
     return categoryIdToNameMap;
 }
 
-
 const getAllEmployeePositionsFlow = ai.defineFlow(
   {
     name: 'getAllEmployeePositionsFlow',
@@ -115,52 +101,69 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
     outputSchema: GetAllEmployeePositionsOutputSchema,
   },
   async ({ page = 1 }) => {
-    const token = await getGreytHRToken();
-    const domain = "siddhartha.greythr.com";
-    const pageSize = 25;
-    
-    const url = `https://api.greythr.com/employee/v2/employees/categories?page=${page}&size=${pageSize}`;
-    
-    const [positionsResponse, categoryIdToNameMap] = await Promise.all([
-      fetch(url, {
-          method: 'GET',
-          headers: {
-              "ACCESS-TOKEN": token,
-              "x-greythr-domain": domain,
-          },
-      }),
-      fetchAllCategories(token, domain)
-    ]);
+    try {
+        const token = await getGreytHRToken();
+        const domain = "siddhartha.greythr.com";
+        const pageSize = 100; // Fetch in larger chunks
+        
+        const categoryIdToNameMap = await fetchAllCategories(token, domain);
+        
+        let allPositions: any[] = [];
+        let currentPage = 1;
+        let hasNextPage = true;
 
+        while(hasNextPage) {
+            const url = `https://api.greythr.com/employee/v2/employees/categories?page=${currentPage}&size=${pageSize}`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { "ACCESS-TOKEN": token, "x-greythr-domain": domain },
+            });
 
-    if (!positionsResponse.ok) {
-        const errorText = await positionsResponse.text();
-        throw new Error(`Failed to fetch position details: ${positionsResponse.statusText} - ${errorText}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch page ${currentPage}: ${response.statusText}`);
+            }
+
+            const json = await response.json();
+            const data = json.data || [];
+            allPositions = allPositions.concat(data);
+
+            hasNextPage = json.pages.hasNext;
+            currentPage++;
+        }
+
+        const transformedData = allPositions.map((empPos: any) => ({
+            ...empPos,
+            categoryList: empPos.categoryList.map((cat: any) => ({
+                ...cat,
+                category: categoryIdToNameMap.get(cat.category) || `ID: ${cat.category}`,
+            }))
+        }));
+
+        // Save to Firestore
+        const batch = writeBatch(db);
+        const positionsRef = collection(db, 'employeePositions');
+
+        transformedData.forEach(pos => {
+            const docRef = doc(positionsRef, String(pos.employeeId));
+            batch.set(docRef, pos);
+        });
+
+        await batch.commit();
+
+        return { 
+            success: true, 
+            message: `Successfully synced ${transformedData.length} employee position records.`,
+            data: transformedData,
+        };
+    } catch (error: any) {
+        console.error("Error in getAllEmployeePositionsFlow: ", error);
+        return {
+            success: false,
+            message: error.message,
+        };
     }
-
-    const json = await positionsResponse.json();
-    const positionsData = json.data || [];
-    const pageInfo = json.pages || {};
-    
-    const transformedData = positionsData.map((empPos: any) => ({
-      ...empPos,
-      categoryList: empPos.categoryList.map((cat: any) => ({
-        ...cat,
-        // Use the map to convert category ID (e.g., 1) to its name (e.g., "Department")
-        category: categoryIdToNameMap.get(cat.category) || `ID: ${cat.category}`,
-      }))
-    }));
-
-    return { 
-        success: true, 
-        message: 'Successfully fetched position details.',
-        data: transformedData,
-        hasNextPage: pageInfo.hasNext,
-        currentPage: page,
-    };
   }
 );
-
 
 export async function getAllEmployeePositions(input: GetAllEmployeePositionsInput): Promise<GetAllEmployeePositionsOutput> {
   return getAllEmployeePositionsFlow(input);
