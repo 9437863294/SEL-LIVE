@@ -89,68 +89,6 @@ async function fetchPage(url: string, token: string, domain: string, page: numbe
     return response.json();
 }
 
-async function fetchAllPages(url: string, token: string, domain: string) {
-    let page = 1;
-    const size = 100; // Increased page size for fewer calls
-    let allData: any[] = [];
-    let hasMore = true;
-  
-    while (hasMore) {
-        const paginatedUrl = `${url}?page=${page}&size=${size}&state=CURRENT`;
-        const response = await fetch(paginatedUrl, {
-            method: 'GET',
-            headers: {
-                "ACCESS-TOKEN": token,
-                "x-greythr-domain": domain,
-            },
-        });
-  
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to fetch data from ${url}: ${response.statusText} - ${errorText}`);
-        }
-  
-        const json = await response.json();
-        const data = json.data || [];
-        
-        if (data.length > 0) {
-            allData = allData.concat(data);
-            hasMore = json.pages.hasNext;
-            page++;
-        } else {
-            hasMore = false;
-        }
-    }
-    return allData;
-}
-
-
-async function fetchCategoryMappings(token: string, domain: string): Promise<Map<string, { department: string; designation: string }>> {
-    const categoriesUrl = "https://api.greythr.com/employee/v2/employees/categories";
-    const allCategories = await fetchAllPages(categoriesUrl, token, domain);
-
-    const categoryMappings = new Map<string, { department: string; designation: string }>();
-
-    allCategories.forEach((emp: any) => {
-        let department = 'N/A';
-        let designation = 'N/A';
-        if (emp.categoryList) {
-            for (const category of emp.categoryList) {
-                // The category object from this endpoint has "category" as name and "value" as value name
-                if (category.category === 'Department') {
-                    department = category.value;
-                }
-                if (category.category === 'Designation') {
-                    designation = category.value;
-                }
-            }
-        }
-        categoryMappings.set(emp.employeeId, { department, designation });
-    });
-    return categoryMappings;
-}
-
-
 const syncGreytHRFlow = ai.defineFlow(
   {
     name: 'syncGreytHRFlow',
@@ -164,42 +102,30 @@ const syncGreytHRFlow = ai.defineFlow(
     
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
-    // Fetch a specific page of employees
     const employeePageJson = await fetchPage(employeesUrl, token, domain, page, pageSize);
     const employeeData = employeePageJson.data || [];
     const hasNextPage = employeePageJson.pages.hasNext || false;
 
-    // Fetch all category mappings for enrichment. This is a one-time operation per flow execution.
-    const categoryMappings = await fetchCategoryMappings(token, domain);
-
-    // Filter and map only the current page of employees
-    const filteredData = employeeData.filter((employee: any) => employee.employeeNo && employee.employeeNo.startsWith("E"));
+    const filteredData = employeeData.filter((employee: any) => employee.employeeNo);
     
-    const employeesToReturn = filteredData.map((empData: any) => {
-        const cats = categoryMappings.get(empData.employeeId) || { department: 'N/A', designation: 'N/A' };
-        
-        return {
-            employeeId: String(empData.employeeId),
-            name: empData.name,
-            email: empData.email || '',
-            phone: empData.mobile || '',
-            department: cats.department,
-            designation: cats.designation,
-            status: empData.status === 'Active' ? 'Active' : 'Inactive',
-            employeeNo: empData.employeeNo,
-            dateOfJoin: empData.dateOfJoin || null,
-            leavingDate: empData.leavingDate || null,
-            dateOfBirth: empData.dateOfBirth || null,
-            gender: empData.gender || '',
-        };
-    });
-
-    const settingsRef = doc(db, 'settings', 'employeeSync');
-    await setDoc(settingsRef, { lastSynced: new Date().toISOString() }, { merge: true });
+    const employeesToReturn = filteredData.map((empData: any) => ({
+        employeeId: String(empData.employeeId),
+        name: empData.name,
+        email: empData.email || '',
+        phone: empData.mobile || '',
+        department: 'N/A', // These fields require another API call.
+        designation: 'N/A', // They are handled in a separate, more comprehensive sync.
+        status: empData.status === 'Active' ? 'Active' : 'Inactive',
+        employeeNo: empData.employeeNo,
+        dateOfJoin: empData.dateOfJoin || null,
+        leavingDate: empData.leavingDate || null,
+        dateOfBirth: empData.dateOfBirth || null,
+        gender: empData.gender || '',
+    }));
 
     return { 
         success: true, 
-        message: `Successfully fetched ${employeesToReturn.length} employees.`,
+        message: `Successfully fetched page ${page} with ${employeesToReturn.length} employees.`,
         employees: employeesToReturn,
         hasNextPage: hasNextPage,
         currentPage: page,
@@ -210,4 +136,76 @@ const syncGreytHRFlow = ai.defineFlow(
 
 export async function syncGreytHR(input: SyncGreytHRInput): Promise<SyncGreytHROutput> {
   return syncGreytHRFlow(input);
+}
+
+
+// New flow for syncing all employees
+const syncAllGreytHRFlow = ai.defineFlow(
+  {
+    name: 'syncAllGreytHRFlow',
+    outputSchema: SyncGreytHROutputSchema,
+  },
+  async () => {
+    const token = await getGreytHRToken();
+    const domain = "siddhartha.greythr.com";
+    const employeesUrl = "https://api.greythr.com/employee/v2/employees";
+    
+    let allEmployees: any[] = [];
+    let page = 1;
+    let hasNext = true;
+    const size = 100;
+
+    while(hasNext) {
+        try {
+            const pageJson = await fetchPage(employeesUrl, token, domain, page, size);
+            const data = pageJson.data || [];
+            allEmployees = allEmployees.concat(data);
+            hasNext = pageJson.pages.hasNext;
+            page++;
+        } catch (error) {
+            console.error(`Error fetching page ${page}:`, error);
+            hasNext = false; // Stop on error
+        }
+    }
+
+    const filteredData = allEmployees.filter((employee: any) => employee.employeeNo);
+    
+    const employeesToSave = filteredData.map((empData: any) => ({
+        employeeId: String(empData.employeeId),
+        name: empData.name,
+        email: empData.email || '',
+        phone: empData.mobile || '',
+        department: 'N/A',
+        designation: 'N/A',
+        status: empData.status === 'Active' ? 'Active' : 'Inactive',
+        employeeNo: empData.employeeNo,
+        dateOfJoin: empData.dateOfJoin || null,
+        leavingDate: empData.leavingDate || null,
+        dateOfBirth: empData.dateOfBirth || null,
+        gender: empData.gender || '',
+    }));
+
+    const batch = writeBatch(db);
+    const employeesRef = collection(db, 'employees');
+
+    employeesToSave.forEach(emp => {
+      // Use employeeId as the document ID for easy upserting
+      const docRef = doc(employeesRef, emp.employeeId);
+      batch.set(docRef, emp);
+    });
+
+    await batch.commit();
+
+    await setDoc(doc(db, 'settings', 'employeeSync'), { lastSynced: new Date().toISOString() });
+    
+    return {
+        success: true,
+        message: `Successfully synced ${employeesToSave.length} employees from all pages.`
+    }
+  }
+);
+
+
+export async function syncAllGreytHR(): Promise<SyncGreytHROutput> {
+  return syncAllGreytHRFlow();
 }

@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, doc, getDocs, query, where } from 'firebase/firestore';
-import { syncGreytHR } from '@/ai';
+import { syncGreytHR, syncAllGreytHR } from '@/ai';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -25,6 +25,11 @@ type FetchedEmployee = {
   department: string;
   designation: string;
   status: string;
+  employeeNo?: string;
+  dateOfJoin?: string | null;
+  leavingDate?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string;
 };
 
 export default function SyncEmployeePage() {
@@ -34,6 +39,7 @@ export default function SyncEmployeePage() {
   const [step, setStep] = useState<'initial' | 'fetched' | 'importing' | 'completed'>('initial');
   const [isFetching, setIsFetching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [fetchedEmployees, setFetchedEmployees] = useState<FetchedEmployee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [importProgress, setImportProgress] = useState(0);
@@ -68,6 +74,30 @@ export default function SyncEmployeePage() {
       });
     } finally {
       setIsFetching(false);
+    }
+  };
+  
+  const handleSyncAll = async () => {
+    setIsSyncingAll(true);
+    try {
+        const result = await syncAllGreytHR();
+         if (result.success) {
+            toast({
+              title: 'Full Sync Complete',
+              description: result.message,
+            });
+            window.dispatchEvent(new CustomEvent('greytHRSyncSuccess'));
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error: any) {
+        toast({
+            title: 'Full Sync Failed',
+            description: error.message,
+            variant: 'destructive',
+        });
+    } finally {
+        setIsSyncingAll(false);
     }
   };
 
@@ -187,14 +217,22 @@ export default function SyncEmployeePage() {
                 <CardTitle>Start Synchronization</CardTitle>
                 <CardDescription>Fetch the latest employee data from GreytHR to preview before importing.</CardDescription>
             </CardHeader>
-            <CardContent>
-                <Button onClick={() => handleFetch(1)} disabled={isFetching} size="lg">
+            <CardContent className="flex justify-center items-center gap-4">
+                <Button onClick={() => handleFetch(1)} disabled={isFetching || isSyncingAll} size="lg">
                     {isFetching ? (
                         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     ) : (
                         <DownloadCloud className="mr-2 h-5 w-5" />
                     )}
-                    Fetch from GreytHR
+                    Fetch Page by Page
+                </Button>
+                <Button onClick={handleSyncAll} disabled={isFetching || isSyncingAll} size="lg" variant="secondary">
+                     {isSyncingAll ? (
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    ) : (
+                        <DownloadCloud className="mr-2 h-5 w-5" />
+                    )}
+                    Sync All Employees
                 </Button>
             </CardContent>
         </Card>
@@ -226,17 +264,16 @@ export default function SyncEmployeePage() {
                                 />
                                 </TableHead>
                                 <TableHead>Employee ID</TableHead>
+                                <TableHead>Employee No</TableHead>
                                 <TableHead>Name</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Mobile</TableHead>
-                                <TableHead>Department</TableHead>
-                                <TableHead>Designation</TableHead>
+                                <TableHead>Date of Join</TableHead>
+                                <TableHead>Status</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                              {isFetching ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="h-24 text-center">
+                                    <TableCell colSpan={6} className="h-24 text-center">
                                         <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                     </TableCell>
                                 </TableRow>
@@ -250,16 +287,15 @@ export default function SyncEmployeePage() {
                                             />
                                         </TableCell>
                                         <TableCell>{emp.employeeId}</TableCell>
+                                        <TableCell>{emp.employeeNo}</TableCell>
                                         <TableCell>{emp.name}</TableCell>
-                                        <TableCell>{emp.email}</TableCell>
-                                        <TableCell>{emp.phone}</TableCell>
-                                        <TableCell>{emp.department}</TableCell>
-                                        <TableCell>{emp.designation}</TableCell>
+                                        <TableCell>{emp.dateOfJoin}</TableCell>
+                                        <TableCell>{emp.status}</TableCell>
                                     </TableRow>
                                 ))
                              ) : (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center h-24">No employees found in GreytHR.</TableCell>
+                                    <TableCell colSpan={6} className="text-center h-24">No employees found in GreytHR.</TableCell>
                                 </TableRow>
                              )}
                         </TableBody>
@@ -319,5 +355,3 @@ export default function SyncEmployeePage() {
     </div>
   );
 }
-
-    
