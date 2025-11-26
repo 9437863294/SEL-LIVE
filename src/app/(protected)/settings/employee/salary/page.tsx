@@ -20,6 +20,8 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const salaryComponents = [
+    'GROSS',
+    'NET PAY',
     'BASIC',
     'HRA',
     'CONVEYANCE',
@@ -28,8 +30,6 @@ const salaryComponents = [
     'PROF TAX',
     'INSURANCE_DEDUCTION',
     'SALARY MASTER',
-    'NET PAY',
-    'GROSS'
 ];
 
 export default function EmployeeSalaryPage() {
@@ -77,13 +77,13 @@ export default function EmployeeSalaryPage() {
         } else {
             setDisplayedEmployees([]);
         }
-        fetchLastSynced(monthStr);
+        await fetchLastSyncedTime(monthStr);
     } catch (e) {
         console.error(e);
         setDisplayedEmployees([]);
     }
     setIsLoading(false);
-  }, [fetchLastSynced]);
+  }, [fetchLastSyncedTime]);
 
   useEffect(() => {
     if (!isAuthLoading && canView) {
@@ -110,7 +110,7 @@ export default function EmployeeSalaryPage() {
                 description: result.message,
             });
             setDisplayedEmployees(result.employees || []);
-            fetchLastSynced(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
+            await fetchLastSyncedTime(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
         } else {
             throw new Error(result.message);
         }
@@ -266,4 +266,3 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
-
