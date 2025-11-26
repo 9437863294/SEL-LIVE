@@ -119,7 +119,7 @@ export default function ManageEmployeePage() {
     return employees.filter(emp => {
       const departmentFilter = filters.department === 'unassigned' ? !emp.department : emp.department === filters.department;
       return (
-        (debouncedEmployeeId === '' || emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
+        (debouncedEmployeeId === '' || emp.employeeId?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()) || emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
         (debouncedName === '' || emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
         (filters.department === 'all' || departmentFilter) &&
         (filters.status === 'all' || emp.status === filters.status)
@@ -421,6 +421,7 @@ export default function ManageEmployeePage() {
                           disabled={!canDelete}
                       />
                   </TableHead>
+                  <TableHead>Employee No</TableHead>
                   <TableHead>Employee ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
@@ -439,6 +440,7 @@ export default function ManageEmployeePage() {
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-48" /></TableCell>
@@ -466,7 +468,8 @@ export default function ManageEmployeePage() {
                             disabled={!canDelete}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{emp.employeeNo || emp.employeeId}</TableCell>
+                      <TableCell className="font-medium">{emp.employeeNo}</TableCell>
+                      <TableCell>{emp.employeeId}</TableCell>
                       <TableCell>{emp.name}</TableCell>
                       <TableCell>{emp.email}</TableCell>
                       <TableCell>{emp.phone}</TableCell>
@@ -484,7 +487,7 @@ export default function ManageEmployeePage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center h-24">
+                    <TableCell colSpan={13} className="text-center h-24">
                       No employees found.
                     </TableCell>
                   </TableRow>
@@ -507,7 +510,7 @@ export default function ManageEmployeePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                  <div className="space-y-2">
                     <Label htmlFor="editEmployeeId">Employee ID</Label>
-                    <Input id="editEmployeeId" value={editingEmployee.employeeNo || editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeNo: e.target.value})} />
+                    <Input id="editEmployeeId" value={editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeId: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="editName">Name</Label>
