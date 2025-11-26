@@ -20,7 +20,7 @@ const PositionDetailSchema = z.object({
 });
 
 const EmployeePositionSchema = z.object({
-    employeeId: z.number(),
+    employeeId: z.string(), // Changed to string
     categoryList: z.array(PositionDetailSchema),
 });
 
@@ -94,6 +94,37 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
     return categoryIdToNameMap;
 }
 
+async function getEmployeeIdMappings(token: string, domain: string): Promise<Map<number, string>> {
+  const url = "https://api.greythr.com/employee/v2/employees";
+  let page = 1;
+  const size = 200; // Fetch in larger chunks
+  let hasNext = true;
+  const mappings = new Map<number, string>();
+
+  while(hasNext) {
+    const paginatedUrl = `${url}?page=${page}&size=${size}`;
+    const response = await fetch(paginatedUrl, {
+      method: 'GET',
+      headers: { "ACCESS-TOKEN": token, "x-greythr-domain": domain },
+    });
+
+    if (!response.ok) break;
+
+    const json = await response.json();
+    const data = json.data || [];
+    data.forEach((emp: any) => {
+        if(emp.employeeId && emp.employeeNo) {
+            mappings.set(emp.employeeId, emp.employeeNo);
+        }
+    });
+
+    hasNext = json.pages.hasNext;
+    page++;
+  }
+  
+  return mappings;
+}
+
 const getAllEmployeePositionsFlow = ai.defineFlow(
   {
     name: 'getAllEmployeePositionsFlow',
@@ -107,6 +138,7 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
         const pageSize = 100; // Fetch in larger chunks
         
         const categoryIdToNameMap = await fetchAllCategories(token, domain);
+        const employeeIdMap = await getEmployeeIdMappings(token, domain);
         
         let allPositions: any[] = [];
         let currentPage = 1;
@@ -131,13 +163,16 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
             currentPage++;
         }
 
-        const transformedData = allPositions.map((empPos: any) => ({
+        const transformedData = allPositions.map((empPos: any) => {
+            const employeeNo = employeeIdMap.get(empPos.employeeId) || String(empPos.employeeId);
+            return {
             ...empPos,
+            employeeId: employeeNo, // Use the string employee number
             categoryList: empPos.categoryList.map((cat: any) => ({
                 ...cat,
                 category: categoryIdToNameMap.get(cat.category) || `ID: ${cat.category}`,
             }))
-        }));
+        }});
 
         // Save to Firestore
         const batch = writeBatch(db);

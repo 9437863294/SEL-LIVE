@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -789,7 +788,7 @@ export interface Employee {
 }
 
 export interface EmployeePosition {
-  employeeId: number;
+  employeeId: string; // Changed to string
   categoryList: PositionDetail[];
 }
 

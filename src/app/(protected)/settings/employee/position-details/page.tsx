@@ -39,7 +39,7 @@ export default function EmployeePositionDetailsPage() {
   const fetchPositionsFromDb = useCallback(async () => {
     setIsLoading(true);
     try {
-        const q = query(collection(db, 'employeePositions'), orderBy('employeeId'));
+        const q = query(collection(db, 'employeePositions'));
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map(doc => doc.data() as EmployeePosition);
         setAllPositions(data);
@@ -52,14 +52,6 @@ export default function EmployeePositionDetailsPage() {
 
     } catch (error: any) {
         console.error("Error fetching positions from Firestore:", error);
-        if (error.code === 'failed-precondition') {
-             toast({
-                title: 'Database Index Required',
-                description: "This page requires a Firestore index on 'employeePositions(employeeId asc)'. Please create it in your Firebase console.",
-                variant: 'destructive',
-                duration: 10000,
-             });
-        }
     } finally {
         setIsLoading(false);
     }
