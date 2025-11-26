@@ -39,7 +39,7 @@ export default function SyncEmployeePage() {
   const [isImporting, setIsImporting] = useState(false);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [fetchedEmployees, setFetchedEmployees] = useState<FetchedEmployee[]>([]);
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
   const [importProgress, setImportProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -49,7 +49,6 @@ export default function SyncEmployeePage() {
   const handleFetch = async (page = 1) => {
     setIsFetching(true);
     setFetchedEmployees([]);
-    setSelectedEmployeeIds([]);
     try {
       const result = await syncGreytHR({ page });
       if (result.success && result.employees) {
@@ -99,23 +98,34 @@ export default function SyncEmployeePage() {
     }
   };
 
-  const handleSelectAll = (checked: boolean) => {
+  const handleSelectAllOnPage = (checked: boolean) => {
+    const pageIds = fetchedEmployees.map(emp => emp.employeeId);
     if (checked) {
-      setSelectedEmployeeIds(fetchedEmployees.map(emp => emp.employeeId));
+      setSelectedEmployeeIds(prev => new Set([...prev, ...pageIds]));
     } else {
-      setSelectedEmployeeIds([]);
+      setSelectedEmployeeIds(prev => {
+        const newSet = new Set(prev);
+        pageIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
     }
   };
 
   const handleSelectEmployee = (id: string, checked: boolean) => {
-    setSelectedEmployeeIds(prev =>
-      checked ? [...prev, id] : prev.filter(empId => empId !== id)
-    );
+    setSelectedEmployeeIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
   };
   
   const employeesToImport = useMemo(() => {
-    return fetchedEmployees.filter(emp => selectedEmployeeIds.includes(emp.employeeId));
-  }, [fetchedEmployees, selectedEmployeeIds]);
+    return Array.from(selectedEmployeeIds);
+  }, [selectedEmployeeIds]);
 
   const handleImport = async () => {
     if (employeesToImport.length === 0) {
@@ -129,9 +139,13 @@ export default function SyncEmployeePage() {
 
     const employeesRef = collection(db, 'employees');
     let importedCount = 0;
+    
+    const allEmployeesToImport = await syncAllGreytHR();
+    const employeesDataToImport = allEmployeesToImport.employees?.filter(emp => selectedEmployeeIds.has(emp.employeeId)) || [];
 
-    for (let i = 0; i < employeesToImport.length; i++) {
-        const empData = employeesToImport[i];
+
+    for (let i = 0; i < employeesDataToImport.length; i++) {
+        const empData = employeesDataToImport[i];
         
         try {
             const q = query(employeesRef, where("employeeId", "==", empData.employeeId));
@@ -151,7 +165,7 @@ export default function SyncEmployeePage() {
              console.error(`Failed to import employee ${empData.employeeId}:`, error);
         }
         
-        setImportProgress(((i + 1) / employeesToImport.length) * 100);
+        setImportProgress(((i + 1) / employeesDataToImport.length) * 100);
     }
     
     // Dispatch event to notify other components of successful sync
@@ -244,8 +258,8 @@ export default function SyncEmployeePage() {
                         <CardTitle>Review & Select Employees</CardTitle>
                         <CardDescription>{fetchedEmployees.length} employees fetched. Select who to import.</CardDescription>
                     </div>
-                    <Button onClick={handleImport} disabled={employeesToImport.length === 0}>
-                        Import ({employeesToImport.length}) Selected
+                    <Button onClick={handleImport} disabled={selectedEmployeeIds.size === 0}>
+                        Import ({selectedEmployeeIds.size}) Selected
                     </Button>
                 </div>
             </CardHeader>
@@ -256,9 +270,9 @@ export default function SyncEmployeePage() {
                             <TableRow>
                                 <TableHead className="w-[50px]">
                                 <Checkbox
-                                    checked={fetchedEmployees.length > 0 && selectedEmployeeIds.length === fetchedEmployees.length}
-                                    onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                                    aria-label="Select all"
+                                    checked={fetchedEmployees.length > 0 && fetchedEmployees.every(emp => selectedEmployeeIds.has(emp.employeeId))}
+                                    onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
+                                    aria-label="Select all on this page"
                                 />
                                 </TableHead>
                                 <TableHead>Employee ID</TableHead>
@@ -280,7 +294,7 @@ export default function SyncEmployeePage() {
                                     <TableRow key={emp.employeeId}>
                                         <TableCell>
                                             <Checkbox
-                                                checked={selectedEmployeeIds.includes(emp.employeeId)}
+                                                checked={selectedEmployeeIds.has(emp.employeeId)}
                                                 onCheckedChange={(checked) => handleSelectEmployee(emp.employeeId, !!checked)}
                                             />
                                         </TableCell>
