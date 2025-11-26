@@ -306,7 +306,7 @@ export default function ManageEmployeePage() {
               Add Employee
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
+          <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>Add New Employee</DialogTitle>
               <DialogDescription>
@@ -457,8 +457,8 @@ export default function ManageEmployeePage() {
                         />
                       </TableCell>
                       <TableCell>{emp.employeeId}</TableCell>
-                      <TableCell className="font-medium">{emp.employeeNo}</TableCell>
-                      <TableCell>{emp.name}</TableCell>
+                      <TableCell>{emp.employeeNo}</TableCell>
+                      <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell>{emp.dateOfJoin}</TableCell>
                       <TableCell>{emp.status}</TableCell>
                       <TableCell className="text-right space-x-2">
@@ -542,3 +542,5 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
+
+    
