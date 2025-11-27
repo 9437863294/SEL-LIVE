@@ -276,7 +276,6 @@ export default function EmployeePositionDetailsPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <TableHead>Employee ID</TableHead>
-                <TableHead>Position ID</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Value</TableHead>
                 <TableHead>Effective From</TableHead>
@@ -288,7 +287,6 @@ export default function EmployeePositionDetailsPage() {
                 Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
@@ -304,7 +302,6 @@ export default function EmployeePositionDetailsPage() {
                             {pos.employeeId}
                           </TableCell>
                         )}
-                        <TableCell>{cat.id}</TableCell>
                         <TableCell><Badge>{cat.category}</Badge></TableCell>
                         <TableCell><Badge variant="secondary">{cat.value}</Badge></TableCell>
                         <TableCell>{cat.effectiveFrom}</TableCell>
@@ -314,7 +311,7 @@ export default function EmployeePositionDetailsPage() {
                 )
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={5} className="text-center h-24">
                     No position details found. Please sync from GreytHR.
                   </TableCell>
                 </TableRow>
