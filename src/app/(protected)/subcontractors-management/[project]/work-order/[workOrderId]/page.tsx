@@ -235,7 +235,7 @@ export default function WorkOrderDetailsPage() {
                                 {enrichedItems.map(item => (
                                     <TableRow key={item.id}>
                                         <TableCell>{item.boqSlNo}</TableCell>
-                                        <TableCell>{item.description}</TableCell>
+                                        <TableCell className="line-clamp-2">{item.description}</TableCell>
                                         <TableCell>{item.unit}</TableCell>
                                         <TableCell>{item.boqQty}</TableCell>
                                         <TableCell>{formatCurrency(parseFloat(item.boqRate))}</TableCell>
@@ -254,4 +254,3 @@ export default function WorkOrderDetailsPage() {
         </div>
     );
 }
-
