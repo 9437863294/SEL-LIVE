@@ -1,5 +1,4 @@
-
-
+// /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -10,26 +9,46 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+  getDoc,
+  Timestamp,
+  collectionGroup,
+} from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
+import type {
+  BillItem,
+  WorkOrder,
+  WorkOrderItem,
+  JmcEntry,
+  Project,
+  Bill,
+  ProformaBill,
+  WorkflowStep,
+  ActionLog,
+  Subcontractor,
+} from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// IMPORTANT: If your real selector component lives elsewhere, update this import path accordingly.
 import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
-const initialBillDetails = {
-    billNo: '',
-    billDate: new Date().toISOString().split('T')[0],
-    workOrderId: '',
-    subcontractorId: '',
-};
-
+/**
+ * Utilities & types
+ */
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
@@ -38,12 +57,22 @@ const slugify = (text: string) => {
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
-}
+};
+
+const makeUUID = () => {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+      // @ts-ignore
+      return (crypto as any).randomUUID();
+    }
+  } catch (e) { /* ignore */ }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+};
 
 type EnrichedBillItem = BillItem & {
-    orderQty: number;
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
+  orderQty: number;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
 };
 
 type AdvanceDeductionItem = {
@@ -54,6 +83,12 @@ type AdvanceDeductionItem = {
     amount: number; // Holds the final calculated deduction amount
 };
 
+const initialBillDetails = {
+  billNo: '',
+  billDate: new Date().toISOString().split('T')[0],
+  workOrderId: '',
+  subcontractorId: '',
+};
 
 export default function CreateBillPage() {
   const { toast } = useToast();
@@ -65,7 +100,7 @@ export default function CreateBillPage() {
   const [items, setItems] = useState<EnrichedBillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-  
+
   const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
@@ -74,7 +109,7 @@ export default function CreateBillPage() {
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
-  
+
   const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
   const [gstPercentage, setGstPercentage] = useState<number>(18);
   const [gstAmount, setGstAmount] = useState<number>(0);
@@ -83,9 +118,8 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
-  
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
 
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
 
   useEffect(() => {
     const fetchProjectAndData = async () => {
@@ -98,7 +132,6 @@ export default function CreateBillPage() {
             .find(p => slugify(p.projectName) === projectSlug);
 
         if (!project) {
-            console.error("Project not found from slug:", projectSlug);
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             return;
         }
@@ -114,7 +147,7 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsQuery),
+          getDocs(billsSnap),
           getDocs(proformaBillsQuery)
         ]);
         
@@ -122,8 +155,9 @@ export default function CreateBillPage() {
         const allWos = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
         
         const projectWorkOrders = allWos.filter(wo => wo.projectId === project.id);
+        const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         
-        setSubcontractors(allSubs);
+        setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
         setAllWorkOrders(projectWorkOrders);
 
         setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
@@ -132,15 +166,17 @@ export default function CreateBillPage() {
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
-  
+
   const filteredWorkOrders = useMemo(() => {
-      if (!details.subcontractorId) return [];
-      return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
+    if (!details.subcontractorId) {
+      return allWorkOrders;
+    }
+    return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-    const subIdsWithProjectWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-    return subcontractors.filter(sub => subIdsWithProjectWo.has(sub.id));
+      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
@@ -156,9 +192,7 @@ export default function CreateBillPage() {
   useEffect(() => {
       const wo = allWorkOrders.find(w => w.id === details.workOrderId);
       setSelectedWorkOrder(wo || null);
-      if(details.workOrderId) {
-        setItems([]); 
-      }
+      setItems([]); // reset items when WO changes
   }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
@@ -188,7 +222,7 @@ export default function CreateBillPage() {
     const { name, value } = e.target;
     setDetails(prev => ({ ...prev, [name]: value }));
   };
-  
+
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
       const newItems = [...items];
       const item = newItems[index];
@@ -259,7 +293,7 @@ export default function CreateBillPage() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: string | number) => {
+  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
     setAdvanceDeductions(prev => {
         return prev.map(adv => {
             if (adv.id !== id) return adv;
@@ -332,9 +366,17 @@ export default function CreateBillPage() {
         if(steps.length === 0) throw new Error('Billing workflow has no steps.');
         const firstStep = steps[0];
         
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
-            ...rest,
-            billedQty: rest.billedQty || '0',
+        const itemsToSave: BillItem[] = items.map(it => ({
+            jmcItemId: it.jmcItemId,
+            jmcEntryId: it.jmcEntryId,
+            jmcNo: it.jmcNo,
+            boqSlNo: it.boqSlNo,
+            description: it.description,
+            unit: it.unit,
+            rate: it.rate,
+            executedQty: it.executedQty,
+            billedQty: String(it.billedQty || '0'),
+            totalAmount: String(it.totalAmount || '0'),
         }));
 
         const billData: Omit<Bill, 'id'> = {
@@ -350,7 +392,15 @@ export default function CreateBillPage() {
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
             otherDeduction: financials.otherDeduction,
-            advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0).map(({id, ...rest}) => rest), // remove client-side id
+            advanceDeductions: advanceDeductions
+                .filter(adv => adv.reference && adv.amount > 0)
+                .map(adv => ({
+                    id: adv.id,
+                    reference: adv.reference,
+                    amount: adv.amount,
+                    deductionType: adv.deductionType,
+                    deductionValue: adv.deductionValue,
+                })),
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
@@ -384,6 +434,7 @@ export default function CreateBillPage() {
 
         if(!currentProject) throw new Error("Project ID is missing");
         
+        const billDocRef = doc(collection(db, 'projects', currentProject.id, 'bills'));
         await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
         
         toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
@@ -684,4 +735,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
