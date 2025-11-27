@@ -145,9 +145,9 @@ const syncAllGreytHRFlow = ai.defineFlow(
     const employeesUrl = "https://api.greythr.com/employee/v2/employees";
     
     let allEmployees: any[] = [];
-    let page = 1;
+    let page = 0; // APIs are often 0-indexed for pages
     let hasNext = true;
-    const size = 100;
+    const size = 2000; // Use a larger page size
 
     while(hasNext) {
         try {

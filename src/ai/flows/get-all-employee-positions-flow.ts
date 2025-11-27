@@ -96,8 +96,8 @@ async function fetchAllCategories(token: string, domain: string): Promise<Map<nu
 
 async function getEmployeeIdMappings(token: string, domain: string): Promise<Map<number, string>> {
   const url = "https://api.greythr.com/employee/v2/employees";
-  let page = 1;
-  const size = 200; // Fetch in larger chunks
+  let page = 0;
+  const size = 2000; // Fetch in larger chunks
   let hasNext = true;
   const mappings = new Map<number, string>();
 
@@ -131,17 +131,17 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
     inputSchema: GetAllEmployeePositionsInputSchema,
     outputSchema: GetAllEmployeePositionsOutputSchema,
   },
-  async ({ page = 1 }) => {
+  async ({ page = 0 }) => {
     try {
         const token = await getGreytHRToken();
         const domain = "siddhartha.greythr.com";
-        const pageSize = 100; // Fetch in larger chunks
+        const pageSize = 2000; // Fetch in larger chunks
         
         const categoryIdToNameMap = await fetchAllCategories(token, domain);
         const employeeIdMap = await getEmployeeIdMappings(token, domain);
         
         let allPositions: any[] = [];
-        let currentPage = 1;
+        let currentPage = 0;
         let hasNextPage = true;
 
         while(hasNextPage) {
