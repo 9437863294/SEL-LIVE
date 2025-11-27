@@ -13,20 +13,19 @@ import { collection, writeBatch, query, where, getDocs, doc, setDoc } from 'fire
 
 const PositionDetailSchema = z.object({
     id: z.number(),
-    category: z.string(),
-    value: z.number(),
+    category: z.string(), // This will now be the description like "Location"
+    value: z.string(), // This will now be the description like "HEAD OFFICE"
     effectiveFrom: z.string(),
     effectiveTo: z.string().nullable(),
 });
 
 const EmployeePositionSchema = z.object({
-    employeeId: z.string(), // Changed to string
+    employeeId: z.string(), // Keep as string for employeeNo
     categoryList: z.array(PositionDetailSchema),
 });
 
-// Input is now optional as we fetch all pages.
 const GetAllEmployeePositionsInputSchema = z.object({
-  page: z.number().optional().default(1), // Still accept a page for single-page refresh, but default flow fetches all
+  page: z.number().optional().default(1),
 });
 export type GetAllEmployeePositionsInput = z.infer<typeof GetAllEmployeePositionsInputSchema>;
 
@@ -62,42 +61,10 @@ async function getGreytHRToken(): Promise<string> {
     return json.access_token;
 }
 
-async function fetchAllCategories(token: string, domain: string): Promise<Map<number, string>> {
-    const url = "https://api.greythr.com/hr/v2/lov";
-    const allCategoryTypes = ["cat::category"];
-    
-    const body = JSON.stringify(allCategoryTypes);
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            "ACCESS-TOKEN": token,
-            "x-greythr-domain": domain,
-            "Content-Type": "application/json",
-        },
-        body: body,
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to fetch all categories from LOV: ${response.statusText}`);
-    }
-
-    const categoriesData = await response.json();
-    const categoryIdToNameMap = new Map<number, string>();
-    
-    if (categoriesData['cat::category']) {
-        categoriesData['cat::category'].forEach((cat: [number, string, any]) => {
-            categoryIdToNameMap.set(cat[0], cat[1]);
-        });
-    }
-    
-    return categoryIdToNameMap;
-}
-
 async function getEmployeeIdMappings(token: string, domain: string): Promise<Map<number, string>> {
   const url = "https://api.greythr.com/employee/v2/employees";
   let page = 0;
-  const size = 2000; // Fetch in larger chunks
+  const size = 2000;
   let hasNext = true;
   const mappings = new Map<number, string>();
 
@@ -131,13 +98,12 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
     inputSchema: GetAllEmployeePositionsInputSchema,
     outputSchema: GetAllEmployeePositionsOutputSchema,
   },
-  async ({ page = 0 }) => {
+  async () => {
     try {
         const token = await getGreytHRToken();
         const domain = "siddhartha.greythr.com";
-        const pageSize = 2000; // Fetch in larger chunks
+        const pageSize = 2000;
         
-        const categoryIdToNameMap = await fetchAllCategories(token, domain);
         const employeeIdMap = await getEmployeeIdMappings(token, domain);
         
         let allPositions: any[] = [];
@@ -145,7 +111,7 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
         let hasNextPage = true;
 
         while(hasNextPage) {
-            const url = `https://api.greythr.com/employee/v2/employees/categories?page=${currentPage}&size=${pageSize}`;
+            const url = `https://api.greythr.com/employee/v2/employees/categories?page=${currentPage}&size=${pageSize}&descRequired=true`;
             const response = await fetch(url, {
                 method: 'GET',
                 headers: { "ACCESS-TOKEN": token, "x-greythr-domain": domain },
@@ -166,13 +132,16 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
         const transformedData = allPositions.map((empPos: any) => {
             const employeeNo = employeeIdMap.get(empPos.employeeId) || String(empPos.employeeId);
             return {
-            ...empPos,
-            employeeId: employeeNo, // Use the string employee number
-            categoryList: empPos.categoryList.map((cat: any) => ({
-                ...cat,
-                category: categoryIdToNameMap.get(cat.category) || `ID: ${cat.category}`,
-            }))
-        }});
+                employeeId: employeeNo, // Use the string employee number
+                categoryList: empPos.categoryList.map((cat: any) => ({
+                    id: cat.id,
+                    category: cat.categoryDesc, // Use categoryDesc directly
+                    value: cat.valueDesc, // Use valueDesc directly
+                    effectiveFrom: cat.effectiveFrom,
+                    effectiveTo: cat.effectiveTo,
+                }))
+            };
+        });
 
         // Save to Firestore
         const batch = writeBatch(db);
@@ -191,7 +160,7 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
         return { 
             success: true, 
             message: `Successfully synced ${transformedData.length} employee position records.`,
-            data: transformedData,
+            data: transformedData as any,
         };
     } catch (error: any) {
         console.error("Error in getAllEmployeePositionsFlow: ", error);
