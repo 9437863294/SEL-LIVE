@@ -4,7 +4,7 @@
 
 import { suggestModuleTags as suggestModuleTagsFlow, type SuggestModuleTagsInput, type SuggestModuleTagsOutput } from './flows/suggest-module-tags';
 import { validateModuleContent as validateModuleContentFlow, type ValidateModuleContentInput, type ValidateModuleContentOutput } from './flows/validate-module-content';
-import { syncGreytHR as syncGreytHRFlow, syncAllGreytHR as syncAllGreytHRFlow, type SyncGreytHRInput, type SyncGreytHROutput } from './flows/sync-greythr-flow';
+import { syncAllGreytHR as syncAllGreytHRFlow, type SyncGreytHROutput } from './flows/sync-greythr-flow';
 import { syncGreytHRCategories as syncGreytHRCategoriesFlow, type SyncCategoriesOutput } from './flows/sync-categories-flow';
 import { getAllEmployeePositions as getAllEmployeePositionsFlow, type GetAllEmployeePositionsInput, type GetAllEmployeePositionsOutput } from './flows/get-all-employee-positions-flow';
 import { createExpenseRequest as createExpenseRequestFlow, type CreateExpenseRequestInput, type CreateExpenseRequestOutput } from './flows/create-expense-request-flow';
@@ -16,10 +16,6 @@ export async function suggestModuleTags(input: SuggestModuleTagsInput): Promise<
 
 export async function validateModuleContent(input: ValidateModuleContentInput): Promise<ValidateModuleContentOutput> {
     return await validateModuleContentFlow(input);
-}
-
-export async function syncGreytHR(input: SyncGreytHRInput): Promise<SyncGreytHROutput> {
-    return await syncGreytHRFlow(input);
 }
 
 export async function syncAllGreytHR(): Promise<SyncGreytHROutput> {

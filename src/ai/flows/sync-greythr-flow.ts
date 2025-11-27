@@ -8,7 +8,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where, doc, setDoc } from 'firebase/firestore';
+import { collection, writeBatch, doc, setDoc } from 'firebase/firestore';
 
 const EmployeeDataSchema = z.object({
     employeeId: z.string(),
@@ -23,17 +23,9 @@ const EmployeeDataSchema = z.object({
     gender: z.string().optional(),
 });
 
-const SyncGreytHRInputSchema = z.object({
-    page: z.number().optional().default(1),
-});
-export type SyncGreytHRInput = z.infer<typeof SyncGreytHRInputSchema>;
-
 const SyncGreytHROutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
-  employees: z.array(EmployeeDataSchema).optional(),
-  hasNextPage: z.boolean().optional(),
-  currentPage: z.number().optional(),
 });
 
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
@@ -87,53 +79,7 @@ async function fetchPage(url: string, token: string, domain: string, page: numbe
     return response.json();
 }
 
-const syncGreytHRFlow = ai.defineFlow(
-  {
-    name: 'syncGreytHRFlow',
-    inputSchema: SyncGreytHRInputSchema,
-    outputSchema: SyncGreytHROutputSchema,
-  },
-  async ({ page = 1 }) => {
-    const token = await getGreytHRToken();
-    const domain = "siddhartha.greythr.com";
-    const pageSize = 25;
-    
-    const employeesUrl = "https://api.greythr.com/employee/v2/employees";
-    
-    const employeePageJson = await fetchPage(employeesUrl, token, domain, page, pageSize);
-    const employeeData = employeePageJson.data || [];
-    const hasNextPage = employeePageJson.pages.hasNext || false;
-    
-    const employeesToReturn = employeeData.map((empData: any) => ({
-        employeeId: String(empData.employeeId),
-        name: empData.name,
-        email: empData.email || '',
-        phone: empData.mobile || '',
-        status: empData.status === 'Active' ? 'Active' : 'Inactive',
-        employeeNo: empData.employeeNo,
-        dateOfJoin: empData.dateOfJoin || null,
-        leavingDate: empData.leavingDate || null,
-        dateOfBirth: empData.dateOfBirth || null,
-        gender: empData.gender || '',
-    }));
-
-    return { 
-        success: true, 
-        message: `Successfully fetched page ${page} with ${employeesToReturn.length} employees.`,
-        employees: employeesToReturn,
-        hasNextPage: hasNextPage,
-        currentPage: page,
-    };
-  }
-);
-
-
-export async function syncGreytHR(input: SyncGreytHRInput): Promise<SyncGreytHROutput> {
-  return syncGreytHRFlow(input);
-}
-
-
-// New flow for syncing all employees
+// Flow for syncing all employees
 const syncAllGreytHRFlow = ai.defineFlow(
   {
     name: 'syncAllGreytHRFlow',
@@ -199,4 +145,3 @@ const syncAllGreytHRFlow = ai.defineFlow(
 export async function syncAllGreytHR(): Promise<SyncGreytHROutput> {
   return syncAllGreytHRFlow();
 }
-
