@@ -96,7 +96,7 @@ export default function CreateWorkOrderPage() {
         }
     };
     generatePreviewId();
-  }, []);
+  }, [projectSlug]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -185,6 +185,7 @@ export default function CreateWorkOrderPage() {
             const newIndex = config.startingIndex;
             const datePart = config.format ? format(new Date(), config.format.replace(/y/g, 'y').replace(/m/g, 'M').replace(/d/g, 'd')) : '';
             const newWoNo = `${config.prefix || ''}${datePart}${String(newIndex).padStart(4, '0')}${config.suffix || ''}`;
+            
             transaction.update(configDocRef, { startingIndex: newIndex + 1 });
             return newWoNo;
         });
@@ -192,7 +193,7 @@ export default function CreateWorkOrderPage() {
         const subcontractorName = subcontractors.find(s => s.id === details.subcontractorId)?.legalName || 'Unknown';
         const totalAmount = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
         
-        const woCollectionRef = collection(db, 'projects', currentProject.id, 'subcontractors', details.subcontractorId, 'workOrders');
+        const woCollectionRef = collection(db, 'projects', currentProject.id, 'workOrders');
         
         const workOrderData = {
             ...details,
@@ -302,13 +303,13 @@ export default function CreateWorkOrderPage() {
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <Input value={item.description} readOnly className="bg-muted min-w-[250px]"/>
+                                        <p className="line-clamp-2">{item.description}</p>
                                     </TableCell>
                                     <TableCell>
                                         <Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/>
                                     </TableCell>
                                     <TableCell>
-                                        <Input value={boqQty} readOnly className="bg-muted min-w-[100px]"/>
+                                        <Input value={boqQty as string} readOnly className="bg-muted min-w-[100px]"/>
                                     </TableCell>
                                     <TableCell>
                                         <Input value={boqRate} readOnly className="bg-muted min-w-[120px]"/>
