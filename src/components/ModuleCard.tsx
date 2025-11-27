@@ -60,6 +60,9 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
     if (moduleTitle === 'Subcontractors Management') {
       return '/subcontractors-management';
     }
+    if (moduleTitle === 'Employee') {
+      return '/settings/employee';
+    }
     return `/${slugify(moduleTitle)}`;
   };
 
