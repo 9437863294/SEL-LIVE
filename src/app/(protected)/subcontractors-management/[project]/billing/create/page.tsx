@@ -9,7 +9,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, runTransaction, getDoc, Timestamp, collectionGroup } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+  runTransaction,
+  getDoc,
+  Timestamp,
+  collectionGroup,
+} from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
@@ -104,7 +116,7 @@ export default function CreateBillPage() {
         setCurrentProject(project);
 
         const subsQuery = query(collectionGroup(db, 'subcontractors'));
-        const woQuery = query(collectionGroup(db, 'workOrders'));
+        const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
         const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
         const billsQuery = query(collectionGroup(db, 'bills'));
         const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'));
@@ -118,9 +130,8 @@ export default function CreateBillPage() {
         ]);
         
         const allSubs = subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor));
-        const allWos = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
+        const projectWorkOrders = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
         
-        const projectWorkOrders = allWos.filter(wo => wo.projectId === project.id);
         const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         
         setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
@@ -188,27 +199,27 @@ export default function CreateBillPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty);
+      const availableQty = parseFloat(item.executedQty as any);
       
       if(isNaN(billedQty) || billedQty < 0) {
-        item.billedQty = '';
-        item.totalAmount = '';
+        (item as any).billedQty = '';
+        (item as any).totalAmount = '';
       } else if (billedQty > availableQty) {
           toast({
               title: 'Quantity Exceeded',
               description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
               variant: 'destructive',
           });
-          item.billedQty = availableQty.toString();
+          (item as any).billedQty = availableQty.toString();
       } else {
-          item.billedQty = value;
+          (item as any).billedQty = value;
       }
       
-      const rate = parseFloat(item.rate);
-      if(!isNaN(rate) && item.billedQty) {
-          item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
+      const rate = parseFloat(item.rate as any);
+      if(!isNaN(rate) && (item as any).billedQty) {
+          (item as any).totalAmount = (parseFloat((item as any).billedQty) * rate).toFixed(2);
       } else {
-          item.totalAmount = '';
+          (item as any).totalAmount = '';
       }
 
       newItems[index] = item;
@@ -507,7 +518,8 @@ export default function CreateBillPage() {
                                         type="number" 
                                         value={item.billedQty}
                                         onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                        max={item.executedQty}
+                                        max={item.executedQty as any}
+                                        className="w-32"
                                       />
                                   </TableCell>
                                   <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
