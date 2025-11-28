@@ -1,5 +1,4 @@
 
-
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -92,8 +91,11 @@ type EnrichedSubItem = SubItem & {
 
 
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems' | 'jmcItemId' | 'jmcEntryId' | 'jmcNo'> & {
   id: string; // For client-side keying
+  jmcItemId: string;
+  jmcEntryId: string;
+  jmcNo: string;
   boqItemId: string;
   orderQty: number;
   jmcCertifiedQty: number;
@@ -180,9 +182,9 @@ export default function CreateBillPage() {
 
         const subsQuery = query(collectionGroup(db, 'subcontractors'));
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', project.id));
-        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
-        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id));
+        const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
+        const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
+        const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
 
         const [subsSnap, woSnap, jmcSnap, billsSnapResult, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
@@ -336,7 +338,7 @@ export default function CreateBillPage() {
 
     mainItem.subItems[subIndex] = subItem;
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
-    mainItem.billedQty = String(1); // Main item qty is now just a multiplier
+    mainItem.billedQty = '1';
 
     newItems[itemIndex] = mainItem;
     setItems(newItems);
@@ -363,14 +365,14 @@ export default function CreateBillPage() {
 
       return {
         id: makeUUID(),
-        jmcItemId: woItem.id,
+        jmcItemId: woItem.id || '',
         jmcEntryId: '', 
         jmcNo: '',
-        boqItemId: woItem.boqItemId,
+        boqItemId: woItem.boqItemId || '',
         boqSlNo: woItem.boqSlNo,
-        description: woItem.description,
-        unit: woItem.unit,
-        orderQty: woItem.orderQty,
+        description: woItem.description || '',
+        unit: woItem.unit || '',
+        orderQty: woItem.orderQty || 0,
         rate: String(woItem.rate),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
@@ -633,7 +635,7 @@ export default function CreateBillPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="billDate">Bill Date</Label>
-                <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
+                <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
               </div>
             </div>
           </CardContent>
@@ -877,3 +879,5 @@ export default function CreateBillPage() {
     </>
   );
 }
+
+    
