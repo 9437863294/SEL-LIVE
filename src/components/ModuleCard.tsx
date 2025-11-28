@@ -57,13 +57,36 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
   }
   
   const getHref = (moduleTitle: string) => {
-    if (moduleTitle === 'Subcontractors Management') {
-      return '/subcontractors-management';
+    switch (moduleTitle) {
+      case 'Subcontractors Management':
+        return '/subcontractors-management/all';
+      case 'Employee':
+        return '/settings/employee';
+      case 'Site Fund Requisition':
+        return '/site-fund-requisition';
+      case 'Daily Requisition':
+        return '/daily-requisition';
+      case 'Billing Recon':
+          return '/billing-recon';
+      case 'Bank Balance':
+          return '/bank-balance';
+      case 'Expenses':
+          return '/expenses';
+      case 'Settings':
+          return '/settings';
+      case 'Chat System':
+          return '/chat';
+      case 'Loan':
+          return '/loan';
+      case 'LC Module':
+          return '/lc-module';
+      case 'Insurance':
+          return '/insurance';
+      case 'Store & Stock Management':
+          return '/store-stock-management';
+      default:
+        return `/${slugify(moduleTitle)}`;
     }
-    if (moduleTitle === 'Employee') {
-      return '/settings/employee';
-    }
-    return `/${slugify(moduleTitle)}`;
   };
 
   const CardContentWrapper = ({ children }: { children: React.ReactNode }) => (
