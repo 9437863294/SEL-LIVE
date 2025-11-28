@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -379,8 +380,8 @@ export default function CreateWorkOrderPage() {
                                     <TableCell><p className="line-clamp-2" title={item.description}>{item.description}</p></TableCell>
                                     <TableCell><Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/></TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
-                                    <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className="min-w-[100px]" disabled={item.isBreakdown}/></TableCell>
-                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className="min-w-[120px]" disabled={item.isBreakdown}/></TableCell>
+                                    <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]", item.isBreakdown && "line-through")} disabled={item.isBreakdown}/></TableCell>
+                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "line-through")} disabled={item.isBreakdown}/></TableCell>
                                     <TableCell><Input value={formatCurrency(item.totalAmount)} readOnly className="bg-muted min-w-[150px]"/></TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -426,3 +427,5 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
+
+```
