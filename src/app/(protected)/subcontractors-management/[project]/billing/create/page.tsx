@@ -86,8 +86,11 @@ type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
 
 
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate'|'billedQty'|'totalAmount'|'executedQty'|'subItems'> & {
+type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
     id: string;
+    jmcItemId: string;
+    jmcEntryId: string;
+    jmcNo: string;
     isBreakdown: boolean;
     orderQty: number;
     jmcCertifiedQty: number;
@@ -348,21 +351,20 @@ export default function CreateBillPage() {
         .filter(bill => bill.workOrderId === details.workOrderId)
         .flatMap(bill => bill.items || [])
         .filter(billItem => billItem.jmcItemId === woItem.id)
-        .reduce((sum, item) => sum + item.billedQty, 0);
-
-      const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
-      const mainItemAvailableSets = woItem.orderQty - alreadyBilledForWoItem;
+        .reduce((sum, item) => sum + (item.billedQty || 0), 0);
+        
+      const availableForBilling = woItem.orderQty - alreadyBilledForWoItem;
 
       return {
         id: nanoid(),
         jmcItemId: woItem.id || '',
         jmcEntryId: '',
         jmcNo: '',
-        boqItemId: woItem.boqItemId || '',
+        boqItemId: woItem.boqItemId,
         boqSlNo: woItem.boqSlNo,
-        description: woItem.description || '',
-        unit: woItem.unit || '',
-        orderQty: woItem.orderQty || 0,
+        description: woItem.description,
+        unit: woItem.unit,
+        orderQty: woItem.orderQty,
         rate: String(woItem.rate),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
@@ -373,7 +375,7 @@ export default function CreateBillPage() {
         executedQty: String(woItem.orderQty),
         subItems: (woItem.subItems || []).map(si => {
           const subItemQtyPerSet = toNumber(si.quantity);
-          const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
+          const subItemAvailable = Math.max(0, availableForBilling * subItemQtyPerSet);
           return {
             ...si,
             id: nanoid(),
@@ -504,7 +506,7 @@ export default function CreateBillPage() {
           quantity: toNumber(rest.quantity),
           rate: toNumber(rest.rate),
           totalAmount: toNumber(rest.totalAmount),
-        })) as SubItem[],
+        })),
       }));
 
       const billData: Omit<Bill, 'id'> = {

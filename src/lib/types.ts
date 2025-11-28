@@ -481,6 +481,28 @@ export interface JmcEntry {
   history: ActionLog[];
 }
 
+export interface SubItem {
+  id: string;
+  slNo: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  rate: number;
+  totalAmount: number;
+}
+
+export interface WorkOrderItem {
+  id: string;
+  boqItemId: string;
+  description: string;
+  unit: string;
+  orderQty: number;
+  rate: number;
+  totalAmount: number;
+  boqSlNo: string;
+  subItems?: SubItem[];
+}
+
 export interface BillItem {
   jmcItemId: string;
   jmcEntryId: string;
@@ -495,6 +517,7 @@ export interface BillItem {
   totalAmount: number;
   subItems?: SubItem[];
 }
+
 
 export interface Bill {
   id: string;
@@ -1022,39 +1045,4 @@ export interface EnrichedLogItem extends InventoryLog {
   originalQuantity: number;
   issuedQuantity: number;
   balanceQuantity: number;
-}
-
-export interface SubItem {
-  id: string;
-  slNo: string;
-  name: string;
-  unit: string;
-  quantity: number;
-  rate: number;
-  totalAmount: number;
-}
-
-export interface WorkOrder {
-  id: string;
-  projectId: string;
-  workOrderNo: string;
-  date: string;
-  subcontractorId: string;
-  subcontractorName: string;
-  items: WorkOrderItem[];
-  totalAmount: number;
-  createdAt: Timestamp;
-  createdBy: string;
-}
-
-export interface WorkOrderItem {
-  id: string;
-  boqItemId: string;
-  description: string;
-  unit: string;
-  orderQty: number;
-  rate: number;
-  totalAmount: number;
-  boqSlNo: string;
-  subItems?: SubItem[];
 }
