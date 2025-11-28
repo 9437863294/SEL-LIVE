@@ -210,6 +210,22 @@ export default function CreateWorkOrderPage() {
   const addItem = () => {
     setItems([...items, { id: nanoid(), boqItemId: '', description: '', unit: '', orderQty: 0, rate: 0, totalAmount: 0, isBreakdown: false, subItems: [] }]);
   };
+  
+  const getItemDescription = (item: BoqItem | FabricationBomItem): string => {
+    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    for (const key of descriptionKeys) {
+      if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
+    }
+    if ((item as FabricationBomItem).section) {
+        return `${(item as FabricationBomItem).section}`;
+    }
+    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
+  };
+  
+  const getSlNo = (item: BoqItem): string => {
+    return String(item['Sl No'] || item['SL. No.'] || '');
+}
 
   const handleBoqItemSelect = (index: number, boqItem: BoqItem | null) => {
     if (!boqItem) return;
@@ -218,7 +234,7 @@ export default function CreateWorkOrderPage() {
     newItems[index] = {
       ...newItems[index],
       boqItemId: boqItem.id,
-      description: String(boqItem.Description || boqItem.DESCRIPTION || ''),
+      description: getItemDescription(boqItem),
       unit: String(boqItem.UNIT || boqItem.Unit || ''),
       rate: Number((boqItem as any)[rateKey] || 0),
       boqSlNo: String(boqItem['BOQ SL No'] || ''),
@@ -232,7 +248,7 @@ export default function CreateWorkOrderPage() {
           return {
               id: nanoid(),
               boqItemId: boqItem.id,
-              description: String(boqItem.Description || boqItem.DESCRIPTION || ''),
+              description: getItemDescription(boqItem),
               unit: String(boqItem.UNIT || boqItem.Unit || ''),
               orderQty: 0,
               rate: Number((boqItem as any)[rateKey] || 0),
@@ -452,73 +468,3 @@ export default function CreateWorkOrderPage() {
   );
 }
 
-```
-- src/components/ui/textarea.tsx:
-```tsx
-
-import * as React from "react"
-
-import { cn } from "@/lib/utils"
-
-export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
-
-const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => {
-    return (
-      <textarea
-        className={cn(
-          "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-          className
-        )}
-        ref={ref}
-        {...props}
-      />
-    )
-  }
-)
-Textarea.displayName = "Textarea"
-
-export { Textarea }
-
-```
-- src/hooks/use-local-storage.tsx:
-```tsx
-
-'use client';
-
-import { useState, useEffect } from 'react';
-
-function useLocalStorage<T>(key: string, initialValue: T) {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === 'undefined') {
-      return initialValue;
-    }
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.log(error);
-      return initialValue;
-    }
-  });
-
-  const setValue = (value: T | ((val: T) => T)) => {
-    try {
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  return [storedValue, setValue] as const;
-}
-
-export default useLocalStorage;
-
-```
