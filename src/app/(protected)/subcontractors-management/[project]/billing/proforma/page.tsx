@@ -229,7 +229,7 @@ export default function CreateProformaPage() {
         .filter((bill) => bill.workOrderId === details.workOrderId)
         .flatMap((bill) => bill.items)
         .filter((billItem) => billItem.jmcItemId === woItem.id)
-        .reduce((sum, item) => sum + parseFloat(item.billedQty as any || '0'), 0);
+        .reduce((sum, item) => sum + parseFloat((item.billedQty as any) || '0'), 0);
 
       const availableForBilling = woItem.orderQty - alreadyBilledForWoItem;
 
@@ -318,10 +318,8 @@ export default function CreateProformaPage() {
       let approvalCopyUrl: string | undefined = undefined;
       if (approvalCopy && exceedsLimit) {
         // TODO: upload approvalCopy to storage and set approvalCopyUrl
-        // approvalCopyUrl = await uploadFile(approvalCopy);
       }
 
-      // 🔴 IMPORTANT FIX: convert billedQty to number for ProformaBill.items
       const itemsToSave: (Omit<BillItem, 'billedQty'> & { billedQty: number })[] = items.map(
         ({ jmcCertifiedQty, alreadyBilledQty, boqQty, orderQty, ...rest }) => {
           const billedQtyNumber = parseFloat((rest as any).billedQty || '0');
@@ -498,7 +496,7 @@ export default function CreateProformaPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>BOQ Sl. No.</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead className="w-72">Description</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>BOQ Qty</TableHead>
                     <TableHead>Order Qty</TableHead>
@@ -515,7 +513,17 @@ export default function CreateProformaPage() {
                   {items.map((item, index) => (
                     <TableRow key={item.jmcItemId}>
                       <TableCell>{item.boqSlNo}</TableCell>
-                      <TableCell>{item.description}</TableCell>
+
+                      {/* Description – neatly clamped to 2 lines, full text on hover */}
+                      <TableCell className="max-w-[18rem] align-top py-2">
+                        <div
+                          className="line-clamp-2 text-sm leading-snug break-words"
+                          title={item.description}
+                        >
+                          {item.description}
+                        </div>
+                      </TableCell>
+
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>{item.boqQty}</TableCell>
                       <TableCell>{item.orderQty}</TableCell>
@@ -531,6 +539,7 @@ export default function CreateProformaPage() {
                           value={(item as any).billedQty}
                           onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
                           max={item.orderQty - item.alreadyBilledQty}
+                          className="w-24"
                         />
                       </TableCell>
                       <TableCell>{formatCurrency((item as any).totalAmount)}</TableCell>

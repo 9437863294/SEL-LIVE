@@ -96,6 +96,9 @@ export default function CreateWorkOrderPage() {
         }
     };
     generatePreviewId();
+    if(items.length === 0){
+        addItem();
+    }
   }, [projectSlug]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -303,7 +306,7 @@ export default function CreateWorkOrderPage() {
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <p className="line-clamp-2">{item.description}</p>
+                                        <p className="line-clamp-2" title={item.description}>{item.description}</p>
                                     </TableCell>
                                     <TableCell>
                                         <Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/>
