@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -26,7 +27,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type {
-  BillItem as OriginalBillItem,
   WorkOrder,
   WorkOrderItem,
   JmcEntry,
@@ -37,6 +37,7 @@ import type {
   ActionLog,
   Subcontractor,
   SubItem,
+  BillItem,
 } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -82,13 +83,12 @@ type EnrichedSubItem = SubItem & {
 };
 
 // UI-specific type for main items with string-based numbers
-type EnrichedBillItem = Omit<OriginalBillItem, 'rate' | 'totalAmount' | 'billedQty' | 'orderQty' | 'executedQty'> & {
-    id: string; // Client-side unique ID for react keys
-    orderQty: string;
-    rate: string;
-    totalAmount: string;
+type EnrichedBillItem = Omit<WorkOrderItem, 'subItems'> & {
+    jmcItemId: string;
+    jmcEntryId: string;
+    jmcNo: string;
     billedQty: string;
-    executedQty: string;
+    totalAmount: string;
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
     availableQty: number;
@@ -296,7 +296,7 @@ export default function CreateBillPage() {
             subItem.billedQty = value;
         }
 
-        const rate = parseFloat(subItem.rate);
+        const rate = parseFloat(subItem.rate as any);
         if (!isNaN(rate) && subItem.billedQty) {
             subItem.totalAmount = (parseFloat(subItem.billedQty) * rate).toFixed(2);
         } else {
@@ -330,20 +330,28 @@ export default function CreateBillPage() {
 
         return {
             ...woItem,
-            id: woItem.id, // Use the WorkOrderItem ID as the client-side key
             jmcItemId: woItem.id, // This links it back to the WorkOrderItem
-            jmcEntryId: '', // These are not known at this stage
-            jmcNo: '',      // These are not known at this stage
-            executedQty: String(availableForBilling),
+            jmcEntryId: '',
+            jmcNo: '',
+            availableQty: Math.max(0, availableForBilling),
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
-            availableQty: Math.max(0, availableForBilling),
-            orderQty: String(woItem.orderQty),
-            rate: String(woItem.rate),
-            totalAmount: '',
             billedQty: '',
+            totalAmount: '',
             isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-            subItems: (woItem.subItems || []).map(si => ({ ...si, id: makeUUID(), billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0 })),
+            subItems: (woItem.subItems || []).map(si => {
+              const subItemQtyPerSet = si.quantity;
+              const subItemAvailable = availableForBilling * subItemQtyPerSet;
+              return { 
+                ...si, 
+                id: makeUUID(), 
+                billedQty: '', 
+                totalAmount: '', 
+                jmcCertifiedQty: 0, 
+                alreadyBilledQty: 0,
+                availableQty: subItemAvailable,
+              };
+            }),
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
@@ -442,8 +450,13 @@ export default function CreateBillPage() {
             const { id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
             return {
                 ...rest,
+                jmcItemId: it.jmcItemId,
+                jmcEntryId: it.jmcEntryId,
+                jmcNo: it.jmcNo,
+                executedQty: it.executedQty,
                 billedQty: String(it.billedQty || '0'),
                 totalAmount: String(it.totalAmount || '0'),
+                rate: String(it.rate || '0'),
             };
         });
 
@@ -572,7 +585,7 @@ export default function CreateBillPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billDate">Bill Date</Label>
-                      <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
+                      <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
                   </div>
               </div>
           </CardContent>
@@ -807,3 +820,4 @@ export default function CreateBillPage() {
     </>
   );
 }
+
