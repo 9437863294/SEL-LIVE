@@ -1,9 +1,9 @@
-
+// /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,30 +17,39 @@ import {
   query,
   where,
   serverTimestamp,
-  runTransaction,
   getDoc,
   Timestamp,
   collectionGroup,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill, WorkflowStep, ActionLog, Subcontractor } from '@/lib/types';
+import type {
+  BillItem,
+  WorkOrder,
+  WorkOrderItem,
+  JmcEntry,
+  Project,
+  Bill,
+  ProformaBill,
+  WorkflowStep,
+  ActionLog,
+  Subcontractor,
+  SubItem,
+} from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// IMPORTANT: If your real selector component lives elsewhere, update this import path accordingly.
 import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
-const initialBillDetails = {
-    billNo: '',
-    billDate: new Date().toISOString().split('T')[0],
-    workOrderId: '',
-    subcontractorId: '',
-};
-
+/**
+ * Utilities & types
+ */
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
@@ -49,13 +58,36 @@ const slugify = (text: string) => {
     .replace(/\-\-+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '');
-}
+};
 
-type EnrichedBillItem = BillItem & {
-    orderQty: number;
+const makeUUID = () => {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+      // @ts-ignore
+      return (crypto as any).randomUUID();
+    }
+  } catch (e) { /* ignore */ }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+};
+
+type EnrichedSubItem = SubItem & {
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
+    availableQty: number;
+    billedQty: string;
+    totalAmount: string;
 };
+
+type EnrichedBillItem = Omit<WorkOrderItem, 'subItems'> & {
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
+    billedQty: string;
+    totalAmount: string;
+    isBreakdown: boolean;
+    subItems: EnrichedSubItem[];
+};
+
 
 type AdvanceDeductionItem = {
     id: string;
@@ -65,6 +97,12 @@ type AdvanceDeductionItem = {
     amount: number; // Holds the final calculated deduction amount
 };
 
+const initialBillDetails = {
+  billNo: '',
+  billDate: new Date().toISOString().split('T')[0],
+  workOrderId: '',
+  subcontractorId: '',
+};
 
 export default function CreateBillPage() {
   const { toast } = useToast();
@@ -76,7 +114,7 @@ export default function CreateBillPage() {
   const [items, setItems] = useState<EnrichedBillItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-  
+
   const [allWorkOrders, setAllWorkOrders] = useState<WorkOrder[]>([]);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
@@ -85,7 +123,8 @@ export default function CreateBillPage() {
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
-  
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
   const [gstType, setGstType] = useState<'percentage' | 'manual'>('percentage');
   const [gstPercentage, setGstPercentage] = useState<number>(18);
   const [gstAmount, setGstAmount] = useState<number>(0);
@@ -94,9 +133,8 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
-  
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
 
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
 
   useEffect(() => {
     const fetchProjectAndData = async () => {
@@ -109,7 +147,6 @@ export default function CreateBillPage() {
             .find(p => slugify(p.projectName) === projectSlug);
 
         if (!project) {
-            console.error("Project not found from slug:", projectSlug);
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });
             return;
         }
@@ -143,11 +180,18 @@ export default function CreateBillPage() {
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
-  
+
   const filteredWorkOrders = useMemo(() => {
-      if (!details.subcontractorId) return [];
-      return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
+    if (!details.subcontractorId) {
+      return allWorkOrders;
+    }
+    return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
   }, [allWorkOrders, details.subcontractorId]);
+
+  const subcontractorsWithWorkOrders = useMemo(() => {
+      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+  }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
     setDetails(prev => ({
@@ -162,9 +206,7 @@ export default function CreateBillPage() {
   useEffect(() => {
       const wo = allWorkOrders.find(w => w.id === details.workOrderId);
       setSelectedWorkOrder(wo || null);
-      if(details.workOrderId) {
-        setItems([]); 
-      }
+      setItems([]); // reset items when WO changes
   }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
@@ -194,32 +236,32 @@ export default function CreateBillPage() {
     const { name, value } = e.target;
     setDetails(prev => ({ ...prev, [name]: value }));
   };
-  
+
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty as any);
+      const availableQty = parseFloat(item.executedQty);
       
       if(isNaN(billedQty) || billedQty < 0) {
-        (item as any).billedQty = '';
-        (item as any).totalAmount = '';
+        item.billedQty = '';
+        item.totalAmount = '';
       } else if (billedQty > availableQty) {
           toast({
               title: 'Quantity Exceeded',
               description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
               variant: 'destructive',
           });
-          (item as any).billedQty = availableQty.toString();
+          item.billedQty = availableQty.toString();
       } else {
-          (item as any).billedQty = value;
+          item.billedQty = value;
       }
       
-      const rate = parseFloat(item.rate as any);
-      if(!isNaN(rate) && (item as any).billedQty) {
-          (item as any).totalAmount = (parseFloat((item as any).billedQty) * rate).toFixed(2);
+      const rate = parseFloat(String(item.rate));
+      if(!isNaN(rate) && item.billedQty) {
+          item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
       } else {
-          (item as any).totalAmount = '';
+          item.totalAmount = '';
       }
 
       newItems[index] = item;
@@ -243,19 +285,14 @@ export default function CreateBillPage() {
         const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
 
         return {
-            jmcItemId: woItem.id,
-            jmcEntryId: '',
-            jmcNo: '',
-            boqSlNo: woItem.boqSlNo || '',
-            description: woItem.description,
-            unit: woItem.unit,
-            rate: String(woItem.rate),
-            orderQty: woItem.orderQty,
+            ...woItem,
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
-            executedQty: String(Math.max(0, availableForBilling)),
+            availableQty: Math.max(0, availableForBilling),
             billedQty: '',
             totalAmount: '',
+            isBreakdown: woItem.subItems && woItem.subItems.length > 0,
+            subItems: (woItem.subItems || []).map(si => ({ ...si, billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0 })),
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
@@ -263,6 +300,18 @@ export default function CreateBillPage() {
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
+  };
+  
+  const toggleRowExpansion = (itemId: string) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
   };
 
   const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
@@ -338,9 +387,17 @@ export default function CreateBillPage() {
         if(steps.length === 0) throw new Error('Billing workflow has no steps.');
         const firstStep = steps[0];
         
-        const itemsToSave = items.map(({ jmcCertifiedQty, alreadyBilledQty, orderQty, ...rest }) => ({
-            ...rest,
-            billedQty: rest.billedQty || '0',
+        const itemsToSave: BillItem[] = items.map(it => ({
+            jmcItemId: it.id,
+            jmcEntryId: '',
+            jmcNo: '',
+            boqSlNo: it.boqSlNo || '',
+            description: it.description,
+            unit: it.unit,
+            rate: String(it.rate),
+            executedQty: String(it.executedQty || '0'),
+            billedQty: String(it.billedQty || '0'),
+            totalAmount: String(it.totalAmount || '0'),
         }));
 
         const billData: Omit<Bill, 'id'> = {
@@ -356,7 +413,15 @@ export default function CreateBillPage() {
             retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
             retentionAmount: financials.finalRetentionAmount,
             otherDeduction: financials.otherDeduction,
-            advanceDeductions: advanceDeductions.filter(adv => adv.reference && adv.amount > 0),
+            advanceDeductions: advanceDeductions
+                .filter(adv => adv.reference && adv.amount > 0)
+                .map(adv => ({
+                    id: adv.id,
+                    reference: adv.reference,
+                    amount: adv.amount,
+                    deductionType: adv.deductionType,
+                    deductionValue: adv.deductionValue,
+                })),
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
@@ -439,7 +504,7 @@ export default function CreateBillPage() {
                       <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
                           <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
                           <SelectContent>
-                              {subcontractors.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
                           </SelectContent>
                       </Select>
                   </div>
@@ -489,47 +554,86 @@ export default function CreateBillPage() {
                   <Table>
                       <TableHeader>
                           <TableRow>
+                              <TableHead></TableHead>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
-                              <TableHead>Unit</TableHead>
-                              <TableHead>Order Qty</TableHead>
-                              <TableHead>JMC Certified Qty</TableHead>
-                              <TableHead>Already Billed Qty</TableHead>
-                              <TableHead>Available for Billing</TableHead>
-                              <TableHead>Rate</TableHead>
+                              <TableHead>Available</TableHead>
                               <TableHead>Billed Qty</TableHead>
+                              <TableHead>Rate</TableHead>
                               <TableHead>Total Amount</TableHead>
                               <TableHead>Action</TableHead>
                           </TableRow>
                       </TableHeader>
                       <TableBody>
-                          {items.map((item, index) => (
-                              <TableRow key={item.jmcItemId}>
-                                  <TableCell>{item.boqSlNo}</TableCell>
-                                  <TableCell>{item.description}</TableCell>
-                                  <TableCell>{item.unit}</TableCell>
-                                  <TableCell>{item.orderQty}</TableCell>
-                                  <TableCell>{item.jmcCertifiedQty}</TableCell>
-                                  <TableCell>{item.alreadyBilledQty}</TableCell>
-                                  <TableCell className="font-semibold">{item.executedQty}</TableCell>
-                                  <TableCell>{formatCurrency(item.rate)}</TableCell>
-                                  <TableCell>
-                                      <Input 
-                                        type="number" 
-                                        value={item.billedQty}
-                                        onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                        max={item.executedQty as any}
-                                        className="w-32"
-                                      />
+                        {items.map((item, index) => (
+                           <Fragment key={item.id}>
+                            <TableRow>
+                                <TableCell>
+                                    {item.isBreakdown && (
+                                        <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
+                                            {expandedRows.has(item.id) ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                                        </Button>
+                                    )}
+                                </TableCell>
+                                <TableCell>{item.boqSlNo}</TableCell>
+                                <TableCell>{item.description}</TableCell>
+                                <TableCell className="font-semibold">{item.availableQty}</TableCell>
+                                <TableCell>
+                                    <Input 
+                                      type="number" 
+                                      value={item.billedQty}
+                                      onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
+                                      max={item.availableQty}
+                                      className="w-24"
+                                      disabled={item.isBreakdown}
+                                    />
+                                </TableCell>
+                                <TableCell>{formatCurrency(item.rate)}</TableCell>
+                                <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                                <TableCell>
+                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                </TableCell>
+                            </TableRow>
+                            {expandedRows.has(item.id) && item.isBreakdown && (
+                                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                  <TableCell colSpan={8} className="p-0">
+                                      <div className="p-4">
+                                          <h4 className="font-semibold mb-2 ml-2">Sub-Items Breakdown</h4>
+                                          <Table>
+                                              <TableHeader>
+                                                  <TableRow>
+                                                      <TableHead>Sl.No</TableHead>
+                                                      <TableHead>Description</TableHead>
+                                                      <TableHead>Qty/Set</TableHead>
+                                                      <TableHead>Billed Qty</TableHead>
+                                                  </TableRow>
+                                              </TableHeader>
+                                              <TableBody>
+                                                  {item.subItems.map((sub, subIndex) => (
+                                                      <TableRow key={sub.id}>
+                                                          <TableCell>{sub.slNo}</TableCell>
+                                                          <TableCell>{sub.name}</TableCell>
+                                                          <TableCell>{sub.quantity}</TableCell>
+                                                          <TableCell>
+                                                            <Input 
+                                                                type="number"
+                                                                className="w-24"
+                                                                value={sub.billedQty}
+                                                                // onChange={(e) => handleSubItemChange(index, subIndex, 'billedQty', e.target.value)}
+                                                            />
+                                                          </TableCell>
+                                                      </TableRow>
+                                                  ))}
+                                              </TableBody>
+                                          </Table>
+                                      </div>
                                   </TableCell>
-                                  <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
-                                  <TableCell>
-                                      <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
-                                          <Trash2 className="h-4 w-4 text-destructive" />
-                                      </Button>
-                                  </TableCell>
-                              </TableRow>
-                          ))}
+                                </TableRow>
+                            )}
+                          </Fragment>
+                        ))}
                       </TableBody>
                   </Table>
               </div>
@@ -691,5 +795,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
