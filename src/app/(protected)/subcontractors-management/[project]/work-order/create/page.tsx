@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -416,7 +415,8 @@ export default function CreateWorkOrderPage() {
                         <TableRow>
                             <TableHead className="w-12"></TableHead>
                             <TableHead>BOQ Sl.No</TableHead>
-                            <TableHead className="w-1/3">Description</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Unit</TableHead>
                             <TableHead>BOQ Qty</TableHead>
                             <TableHead>BOQ Rate</TableHead>
                             <TableHead>Break Down</TableHead>
@@ -452,6 +452,7 @@ export default function CreateWorkOrderPage() {
                                         />
                                     </TableCell>
                                     <TableCell><p className="line-clamp-2" title={item.description}>{item.description}</p></TableCell>
+                                    <TableCell>{item.unit}</TableCell>
                                     <TableCell>{boqItem ? (boqItem as any).QTY || 0 : 'N/A'}</TableCell>
                                     <TableCell>{formatCurrency(boqRate)}</TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
@@ -469,32 +470,32 @@ export default function CreateWorkOrderPage() {
                                                 <h4 className="font-semibold text-sm">Sub-Items (per 1 set of Main Item)</h4>
                                                 <Table>
                                                     <TableHeader>
-                                                        <TableRow>
-                                                            <TableHead>Sl. No.</TableHead>
-                                                            <TableHead>Name</TableHead>
-                                                            <TableHead>Unit</TableHead>
-                                                            <TableHead>Qty/Set</TableHead>
-                                                            <TableHead>Rate</TableHead>
-                                                            <TableHead>Total Amount</TableHead>
-                                                            <TableHead className="w-12"></TableHead>
-                                                        </TableRow>
+                                                      <TableRow>
+                                                        <TableHead>Sl. No.</TableHead>
+                                                        <TableHead>Name</TableHead>
+                                                        <TableHead>Unit</TableHead>
+                                                        <TableHead>Qty/Set</TableHead>
+                                                        <TableHead>Rate</TableHead>
+                                                        <TableHead>Total Amount</TableHead>
+                                                        <TableHead></TableHead>
+                                                      </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {item.subItems.map((sub, subIndex) => (
-                                                            <TableRow key={sub.id}>
-                                                                <TableCell><Input placeholder="Sl.No." value={sub.slNo} onChange={e => handleSubItemChange(index, subIndex, 'slNo', e.target.value)} /></TableCell>
-                                                                <TableCell><Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} /></TableCell>
-                                                                <TableCell><Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} /></TableCell>
-                                                                <TableCell><Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} /></TableCell>
-                                                                <TableCell><Input type="number" placeholder="Rate" value={sub.rate} onChange={e => handleSubItemChange(index, subIndex, 'rate', e.target.value)} /></TableCell>
-                                                                <TableCell><Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-background/50"/></TableCell>
-                                                                <TableCell>
-                                                                    <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
+                                                      {item.subItems.map((sub, subIndex) => (
+                                                        <TableRow key={sub.id}>
+                                                          <TableCell><Input placeholder="Sl.No." value={sub.slNo} onChange={e => handleSubItemChange(index, subIndex, 'slNo', e.target.value)} /></TableCell>
+                                                          <TableCell><Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} /></TableCell>
+                                                          <TableCell><Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} /></TableCell>
+                                                          <TableCell><Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} /></TableCell>
+                                                          <TableCell><Input type="number" placeholder="Rate" value={sub.rate} onChange={e => handleSubItemChange(index, subIndex, 'rate', e.target.value)} /></TableCell>
+                                                          <TableCell><Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-background/50"/></TableCell>
+                                                          <TableCell>
+                                                              <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                                          </TableCell>
+                                                        </TableRow>
+                                                      ))}
                                                     </TableBody>
-                                                </Table>
+                                                  </Table>
                                                 <Button variant="outline" size="sm" onClick={() => addSubItem(index)}><Plus className="mr-2 h-4 w-4"/> Add Sub-Item</Button>
                                             </div>
                                         </TableCell>
@@ -520,5 +521,3 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
-
-```)
