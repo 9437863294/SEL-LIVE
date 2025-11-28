@@ -305,6 +305,12 @@ export default function PrintJmcPage() {
 
   const getDisplayValue = (v: number | undefined) =>
     v === 0 ? 0 : v ?? '';
+    
+  const formatCurrency = (amount: string | number) => {
+    const num = parseFloat(String(amount));
+    if(isNaN(num)) return String(amount || '0');
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+  }
 
   if (isLoading) {
     return (
