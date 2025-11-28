@@ -80,7 +80,8 @@ const toNumber = (v: any) => {
 };
 
 // UI-specific type for sub-items with string inputs
-type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
+type EnrichedSubItem = SubItem & {
+  id: string; // Ensure ID for client-side keying
   billedQty: string;
   totalAmount: string;
   rate: string;
@@ -89,8 +90,9 @@ type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   availableQty: number;
 };
 
+
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems'> & {
   id: string; // For client-side keying
   boqItemId: string;
   orderQty: number;
@@ -182,13 +184,13 @@ export default function CreateBillPage() {
         const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
         const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id));
 
-        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+        const [subsSnap, woSnap, jmcSnap, billsSnapResult, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
-        ]) as [QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>];
+        ]);
 
         if (!mounted) return;
 
@@ -202,7 +204,7 @@ export default function CreateBillPage() {
         const jmcEntriesForProject = jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
         setJmcEntries(jmcEntriesForProject);
 
-        const billsForProject = billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
+        const billsForProject = billsSnapResult.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
         setBills(billsForProject);
         
         const proformasForProject = proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill));
