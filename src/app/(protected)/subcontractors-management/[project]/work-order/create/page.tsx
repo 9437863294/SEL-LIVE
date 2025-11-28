@@ -31,6 +31,7 @@ import type {
   Subcontractor,
   Project,
   SerialNumberConfig,
+  FabricationBomItem,
 } from '@/lib/types';
 import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { useParams, useRouter } from 'next/navigation';
@@ -43,11 +44,13 @@ import { Switch } from '@/components/ui/switch';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 
+
 // Add isBreakdown to UI-level type
-type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id'> & {
+type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id' | 'subItems'> & {
   id: string;
   isBreakdown: boolean;
-  subItems: SubItem[];
+  subItems: (SubItem & { id: string })[];
+  boqSlNo?: string;
 };
 
 
@@ -105,7 +108,7 @@ export default function CreateWorkOrderPage() {
         }
         setCurrentProject(projectData);
         
-        const subsSnap = await getDocs(collection(db, 'subcontractors'));
+        const subsSnap = await getDocs(query(collection(db, 'subcontractors'), where('status', '==', 'Active')));
         setSubcontractors(subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor)));
 
         const boqSnap = await getDocs(collection(db, 'projects', projectData.id, 'boqItems'));
@@ -159,14 +162,20 @@ export default function CreateWorkOrderPage() {
       (item as any)[field] = value;
     }
 
-    item.totalAmount = (item.orderQty || 0) * (item.rate || 0);
+    if (!item.isBreakdown) {
+      item.totalAmount = (item.orderQty || 0) * (item.rate || 0);
+    } else {
+      item.totalAmount = item.subItems.reduce((sum, si) => sum + ((si.quantity || 0) * (si.rate || 0)), 0) * (item.orderQty || 0);
+    }
+
     newItems[index] = item;
     setItems(newItems);
   };
   
   const handleSubItemChange = (itemIndex: number, subIndex: number, field: keyof SubItem, value: string | number) => {
     const newItems = [...items];
-    const subItem = newItems[itemIndex].subItems[subIndex];
+    const mainItem = newItems[itemIndex];
+    const subItem = mainItem.subItems[subIndex];
 
     if (field === 'quantity' || field === 'rate') {
       (subItem[field] as number) = Number(value) || 0;
@@ -176,8 +185,8 @@ export default function CreateWorkOrderPage() {
     
     subItem.totalAmount = (subItem.quantity || 0) * (subItem.rate || 0);
     
-    // Recalculate main item total from sub-items
-    newItems[itemIndex].totalAmount = newItems[itemIndex].subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0);
+    // Recalculate main item total from sub-items and main item's multiplier
+    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0) * (mainItem.orderQty || 0);
     
     setItems(newItems);
   };
@@ -192,7 +201,8 @@ export default function CreateWorkOrderPage() {
     const newItems = [...items];
     if(newItems[itemIndex].subItems.length > 1) {
         newItems[itemIndex].subItems = newItems[itemIndex].subItems.filter(si => si.id !== subItemId);
-        newItems[itemIndex].totalAmount = newItems[itemIndex].subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0);
+        // Recalculate main item total
+        newItems[itemIndex].totalAmount = newItems[itemIndex].subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0) * (newItems[itemIndex].orderQty || 0);
         setItems(newItems);
     }
   };
@@ -283,23 +293,15 @@ export default function CreateWorkOrderPage() {
             const woCollectionRef = collection(db, 'projects', currentProject.id, 'workOrders');
             const newWoRef = doc(woCollectionRef);
 
-            const itemsToSave = [];
-            for (const item of items) {
-                const { isBreakdown, ...itemData } = item;
-                if (isBreakdown && item.subItems.length > 0) {
-                    const subItemBatch = writeBatch(db);
-                    const subItemIds: string[] = [];
-                    for(const subItem of item.subItems) {
-                        const newSubItemRef = doc(collection(db, 'projects', currentProject.id, 'boqItems', item.boqItemId, 'sub_items'));
-                        subItemBatch.set(newSubItemRef, {...subItem, workOrderId: newWoRef.id});
-                        subItemIds.push(newSubItemRef.id);
-                    }
-                    await subItemBatch.commit();
-                    itemsToSave.push({ ...itemData, subItemIds });
-                } else {
-                    itemsToSave.push(itemData);
-                }
-            }
+            const itemsToSave = items.map(item => {
+                const { id, isBreakdown, subItems, ...rest } = item;
+                return {
+                    ...rest,
+                    id: nanoid(), // generate a new clean id for firestore
+                    totalAmount: item.totalAmount,
+                    subItems: item.isBreakdown ? item.subItems.map(({id: subId, ...subRest}) => ({...subRest, id: nanoid()})) : []
+                };
+            });
             
             const workOrderData = {
                 ...details,
@@ -372,11 +374,10 @@ export default function CreateWorkOrderPage() {
         <CardContent>
             <div className="overflow-x-auto">
                 <Table>
-                    <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead>BOQ Sl.No</TableHead><TableHead>Description</TableHead><TableHead>Unit</TableHead><TableHead>Break Down</TableHead><TableHead>Order Qty</TableHead><TableHead>Order Rate</TableHead><TableHead>Total Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead>BOQ Sl.No</TableHead><TableHead className="w-1/3">Description</TableHead><TableHead>Unit</TableHead><TableHead>Break Down</TableHead><TableHead>Order Qty</TableHead><TableHead>Order Rate</TableHead><TableHead>Total Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                     <TableBody>
                         {items.map((item, index) => {
                             const boqItem = boqItems.find(b => b.id === item.boqItemId);
-                            const boqQty = boqItem ? boqItem['QTY'] : '';
                             const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                             const boqRate = boqItem && rateKey ? (boqItem as any)[rateKey] : 0;
                             const isExpanded = expandedRows.has(item.id);
@@ -384,9 +385,11 @@ export default function CreateWorkOrderPage() {
                                 <Fragment key={item.id}>
                                 <TableRow>
                                     <TableCell>
-                                        <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
-                                            {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
-                                        </Button>
+                                        {item.isBreakdown && (
+                                            <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
+                                                {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                                            </Button>
+                                        )}
                                     </TableCell>
                                     <TableCell className="w-48">
                                         <BoqItemSelector
@@ -399,8 +402,8 @@ export default function CreateWorkOrderPage() {
                                     <TableCell><p className="line-clamp-2" title={item.description}>{item.description}</p></TableCell>
                                     <TableCell><Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/></TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
-                                    <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]", item.isBreakdown && "line-through")} disabled={item.isBreakdown}/></TableCell>
-                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "line-through")} disabled={item.isBreakdown}/></TableCell>
+                                    <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]")}/></TableCell>
+                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "line-through bg-muted")} disabled={item.isBreakdown}/></TableCell>
                                     <TableCell><Input value={formatCurrency(item.totalAmount)} readOnly className="bg-muted min-w-[150px]"/></TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -410,15 +413,17 @@ export default function CreateWorkOrderPage() {
                                     <TableRow className="bg-muted/30">
                                         <TableCell colSpan={9} className="p-2">
                                             <div className="p-2 space-y-2">
-                                                 <h4 className="font-semibold text-sm">Sub-Items</h4>
+                                                 <h4 className="font-semibold text-sm">Sub-Items (per 1 set of Main Item)</h4>
                                                 {item.subItems.map((sub, subIndex) => (
                                                     <div key={sub.id} className="grid grid-cols-6 gap-2 items-center">
-                                                        <Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} />
+                                                        <Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} className="col-span-2"/>
                                                         <Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} />
-                                                        <Input type="number" placeholder="Qty" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} />
+                                                        <Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} />
                                                         <Input type="number" placeholder="Rate" value={sub.rate} onChange={e => handleSubItemChange(index, subIndex, 'rate', e.target.value)} />
-                                                        <Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-muted/50" />
-                                                        <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                                        <div className="flex items-center gap-2">
+                                                            <Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-background/50" />
+                                                            <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                                 <Button variant="outline" size="sm" onClick={() => addSubItem(index)}><Plus className="mr-2 h-4 w-4"/> Add Sub-Item</Button>
@@ -446,3 +451,74 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
+
+```
+- src/components/ui/textarea.tsx:
+```tsx
+
+import * as React from "react"
+
+import { cn } from "@/lib/utils"
+
+export interface TextareaProps
+  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+
+const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, ...props }, ref) => {
+    return (
+      <textarea
+        className={cn(
+          "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        ref={ref}
+        {...props}
+      />
+    )
+  }
+)
+Textarea.displayName = "Textarea"
+
+export { Textarea }
+
+```
+- src/hooks/use-local-storage.tsx:
+```tsx
+
+'use client';
+
+import { useState, useEffect } from 'react';
+
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    if (typeof window === 'undefined') {
+      return initialValue;
+    }
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore =
+        value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  return [storedValue, setValue] as const;
+}
+
+export default useLocalStorage;
+
+```
