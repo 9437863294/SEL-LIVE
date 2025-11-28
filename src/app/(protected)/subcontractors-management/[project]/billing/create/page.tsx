@@ -80,11 +80,13 @@ type EnrichedSubItem = SubItem & {
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
     availableQty: number;
+    rate: number;
 };
 
 // UI-specific type for main items with string-based numbers
-type EnrichedBillItem = Omit<WorkOrderItem, 'subItems'> & {
-    jmcItemId: string;
+type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems'> & {
+    id: string; // A unique ID for the UI list
+    jmcItemId: string; // The original WorkOrderItem ID
     jmcEntryId: string;
     jmcNo: string;
     billedQty: string;
@@ -170,7 +172,7 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsQuery),
+          getDocs(billsSnap),
           getDocs(proformaBillsQuery)
         ]);
         
@@ -265,7 +267,7 @@ export default function CreateBillPage() {
           item.billedQty = value;
       }
       
-      const rate = parseFloat(item.rate);
+      const rate = item.rate;
       if(!isNaN(rate) && item.billedQty) {
           item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
       } else {
@@ -296,7 +298,7 @@ export default function CreateBillPage() {
             subItem.billedQty = value;
         }
 
-        const rate = parseFloat(subItem.rate as any);
+        const rate = subItem.rate;
         if (!isNaN(rate) && subItem.billedQty) {
             subItem.totalAmount = (parseFloat(subItem.billedQty) * rate).toFixed(2);
         } else {
@@ -304,10 +306,8 @@ export default function CreateBillPage() {
         }
     }
     
-    // Recalculate main item's total amount from its sub-items
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + parseFloat(si.totalAmount || '0'), 0).toFixed(2);
-    // The main item's billedQty should probably be a sum or representation too, for now it's just a display of the main multiplier
-    mainItem.billedQty = '1'; // Or however you want to represent a "set" being billed
+    mainItem.billedQty = '1'; 
 
     setItems(newItems);
   };
@@ -330,12 +330,13 @@ export default function CreateBillPage() {
 
         return {
             ...woItem,
+            id: makeUUID(),
             jmcItemId: woItem.id, // This links it back to the WorkOrderItem
             jmcEntryId: '',
             jmcNo: '',
-            availableQty: Math.max(0, availableForBilling),
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
+            availableQty: Math.max(0, availableForBilling),
             billedQty: '',
             totalAmount: '',
             isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
@@ -350,6 +351,7 @@ export default function CreateBillPage() {
                 jmcCertifiedQty: 0, 
                 alreadyBilledQty: 0,
                 availableQty: subItemAvailable,
+                rate: si.rate,
               };
             }),
         };
@@ -396,7 +398,6 @@ export default function CreateBillPage() {
                 newAdv.amount = Math.min(maxAmount, calculatedAmount);
             }
             
-            // Final check to prevent over-deduction
             if (newAdv.amount > maxAmount) {
                 newAdv.amount = maxAmount;
                  if(newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
@@ -446,14 +447,14 @@ export default function CreateBillPage() {
         if(steps.length === 0) throw new Error('Billing workflow has no steps.');
         const firstStep = steps[0];
         
-        const itemsToSave: OriginalBillItem[] = items.map(it => {
+        const itemsToSave: BillItem[] = items.map(it => {
             const { id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
             return {
                 ...rest,
                 jmcItemId: it.jmcItemId,
                 jmcEntryId: it.jmcEntryId,
                 jmcNo: it.jmcNo,
-                executedQty: it.executedQty,
+                executedQty: String(it.orderQty),
                 billedQty: String(it.billedQty || '0'),
                 totalAmount: String(it.totalAmount || '0'),
                 rate: String(it.rate || '0'),
@@ -585,7 +586,7 @@ export default function CreateBillPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="billDate">Bill Date</Label>
-                      <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
+                      <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
                   </div>
               </div>
           </CardContent>
@@ -611,6 +612,10 @@ export default function CreateBillPage() {
                               <TableHead></TableHead>
                               <TableHead>BOQ Sl. No.</TableHead>
                               <TableHead>Description</TableHead>
+                              <TableHead>Unit</TableHead>
+                              <TableHead>Order Qty</TableHead>
+                              <TableHead>JMC Certified Qty</TableHead>
+                              <TableHead>Already Billed Qty</TableHead>
                               <TableHead>Available</TableHead>
                               <TableHead>Billed Qty</TableHead>
                               <TableHead>Rate</TableHead>
@@ -631,6 +636,10 @@ export default function CreateBillPage() {
                                 </TableCell>
                                 <TableCell>{item.boqSlNo}</TableCell>
                                 <TableCell>{item.description}</TableCell>
+                                <TableCell>{item.unit}</TableCell>
+                                <TableCell>{item.orderQty}</TableCell>
+                                <TableCell>{item.jmcCertifiedQty}</TableCell>
+                                <TableCell>{item.alreadyBilledQty}</TableCell>
                                 <TableCell className="font-semibold">{item.availableQty}</TableCell>
                                 <TableCell>
                                     <Input 
@@ -652,7 +661,7 @@ export default function CreateBillPage() {
                             </TableRow>
                             {expandedRows.has(item.id) && item.isBreakdown && (
                                 <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                  <TableCell colSpan={8} className="p-0">
+                                  <TableCell colSpan={12} className="p-0">
                                       <div className="p-4">
                                           <h4 className="font-semibold mb-2 ml-2">Sub-Items Breakdown</h4>
                                           <Table>
@@ -815,9 +824,119 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items.map(i => ({...i, billedQty: i.billedQty, totalAmount: i.totalAmount, rate: String(i.rate)}))}
       />
     </>
   );
 }
 
+```
+- src/components/billing-recon/PrintBillDialog.tsx:
+```tsx
+// This file is intentionally left blank as it is being removed.
+// The print functionality has been moved to a dedicated page.
+
+```
+- src/components/billing-recon/PrintProformaBillDialog.tsx:
+```tsx
+// This file is intentionally left blank as it is being removed.
+// The print functionality has been moved to a dedicated page.
+
+```
+- src/app/api/auth/print-login/route.ts:
+```ts
+
+import { NextRequest, NextResponse } from 'next/server';
+import 'server-only';
+import { sign } from 'jsonwebtoken';
+
+// This is a simplified, insecure example.
+// In a real app, use a secure, single-use token system.
+const PRINT_PASSCODE = process.env.PRINT_PASSCODE || '1234';
+
+export async function POST(req: NextRequest) {
+  try {
+    const { code } = await req.json();
+
+    if (code !== PRINT_PASSCODE) {
+      return NextResponse.json({ message: 'Invalid passcode' }, { status: 401 });
+    }
+
+    // Passcode is correct, generate a short-lived token (e.g., 5 mins)
+    const token = sign({ printAuth: true }, process.env.JWT_SECRET || 'your-super-secret-key', {
+      expiresIn: '5m',
+    });
+
+    const res = NextResponse.json({ success: true });
+
+    // Set the token in a secure, httpOnly cookie
+    res.cookies.set('print-auth-token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 300, // 5 minutes
+      path: '/',
+    });
+
+    return res;
+  } catch (error) {
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+  }
+}
+
+```
+- src/middleware.ts:
+```ts
+
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { jwtVerify } from 'jose';
+
+// This function can be marked `async` if using `await` inside
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // This middleware is now a pass-through for most routes.
+  // All session and auth logic is now client-side.
+  
+  // Specific protection for print routes
+  if (pathname.includes('/print')) {
+    const tokenCookie = request.cookies.get('print-auth-token');
+    
+    if (!tokenCookie) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/print-auth';
+      url.searchParams.set('next', pathname);
+      return NextResponse.redirect(url);
+    }
+    
+    try {
+      // Verify the JWT. If it's invalid, it will throw.
+      await jwtVerify(
+        tokenCookie.value, 
+        new TextEncoder().encode(process.env.JWT_SECRET || 'your-super-secret-key')
+      );
+      // Token is valid, allow request to proceed
+      return NextResponse.next();
+    } catch (err) {
+      // Token is invalid or expired, redirect to auth page
+      const url = request.nextUrl.clone();
+      url.pathname = '/print-auth';
+      url.searchParams.set('next', pathname);
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Allow all other requests to pass through
+  return NextResponse.next();
+}
+
+export const config = {
+  // Only apply middleware to /print routes and a few others
+  // Exclude API routes, static files, and image optimization
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|login|print-auth).*)',
+    '/print-auth', // include the auth page itself if needed for some logic
+  ],
+}
+```
