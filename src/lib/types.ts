@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -484,6 +485,7 @@ export interface BillItem {
   jmcItemId: string;
   jmcEntryId: string;
   jmcNo: string;
+  boqItemId: string;
   boqSlNo: string;
   description: string;
   unit: string;
@@ -491,6 +493,7 @@ export interface BillItem {
   executedQty: number;
   billedQty: number;
   totalAmount: number;
+  subItems?: SubItem[];
 }
 
 export interface Bill {

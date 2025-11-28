@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -67,12 +68,17 @@ const toNumber = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// This needs to be a unique ID generation that works on client side
+const nanoid = () => crypto.randomUUID();
+
+
 // UI-specific type for sub-items with string inputs
-type EnrichedSubItem = SubItem & {
+type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   id: string; // Ensure ID for client-side keying
   billedQty: string;
   totalAmount: string;
   rate: string;
+  quantity: string;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
@@ -80,21 +86,19 @@ type EnrichedSubItem = SubItem & {
 
 
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems' | 'jmcItemId' > & {
-  id: string; // For client-side keying
-  jmcItemId: string;
-  boqItemId: string;
-  orderQty: number;
-  jmcCertifiedQty: number;
-  alreadyBilledQty: number;
-  availableQty: number;
-  isBreakdown: boolean;
-  subItems: EnrichedSubItem[];
-  // UI-specific string versions for inputs
-  billedQty: string;
-  totalAmount: string;
-  rate: string;
-  executedQty: string;
+type EnrichedBillItem = Omit<BillItem, 'rate'|'billedQty'|'totalAmount'|'executedQty'|'subItems'> & {
+    id: string;
+    isBreakdown: boolean;
+    orderQty: number;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
+    // UI state as strings
+    billedQty: string;
+    totalAmount: string;
+    rate: string;
+    executedQty: string;
+    subItems: EnrichedSubItem[];
 };
 
 
@@ -172,12 +176,12 @@ export default function CreateBillPage() {
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
 
-        const [subsSnap, woSnap, jmcSnap, billsSnapResult, proformaSnap] = await Promise.all([
+        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
-          getDocs(proformaSnap)
+          getDocs(proformaBillsQuery)
         ]);
 
         if (!mounted) return;
@@ -192,7 +196,7 @@ export default function CreateBillPage() {
         const jmcEntriesForProject = jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
         setJmcEntries(jmcEntriesForProject);
 
-        const billsForProject = billsSnapResult.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
+        const billsForProject = billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
         setBills(billsForProject);
         
         const proformasForProject = proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill));
@@ -352,10 +356,10 @@ export default function CreateBillPage() {
       return {
         id: nanoid(),
         jmcItemId: woItem.id || '',
-        jmcEntryId: '', 
+        jmcEntryId: '',
         jmcNo: '',
         boqItemId: woItem.boqItemId || '',
-        boqSlNo: woItem.boqSlNo || '',
+        boqSlNo: woItem.boqSlNo,
         description: woItem.description || '',
         unit: woItem.unit || '',
         orderQty: woItem.orderQty || 0,
@@ -368,7 +372,7 @@ export default function CreateBillPage() {
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
         executedQty: String(woItem.orderQty),
         subItems: (woItem.subItems || []).map(si => {
-          const subItemQtyPerSet = si.quantity;
+          const subItemQtyPerSet = toNumber(si.quantity);
           const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
           return {
             ...si,
@@ -379,6 +383,7 @@ export default function CreateBillPage() {
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
+            quantity: String(subItemQtyPerSet)
           };
         }),
       };
@@ -494,7 +499,12 @@ export default function CreateBillPage() {
         executedQty: toNumber(it.executedQty),
         billedQty: toNumber(it.billedQty),
         totalAmount: toNumber(it.totalAmount),
-        subItems: it.subItems?.map(({ id, ...rest }) => ({...rest}))
+        subItems: (it.subItems || []).map(({ id, ...rest }) => ({
+          ...rest,
+          quantity: toNumber(rest.quantity),
+          rate: toNumber(rest.rate),
+          totalAmount: toNumber(rest.totalAmount),
+        })) as SubItem[],
       }));
 
       const billData: Omit<Bill, 'id'> = {
@@ -624,7 +634,7 @@ export default function CreateBillPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="billDate">Bill Date</Label>
-                <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
+                <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
               </div>
             </div>
           </CardContent>
@@ -708,6 +718,7 @@ export default function CreateBillPage() {
                                     <TableHead>Sl.No</TableHead>
                                     <TableHead>Description</TableHead>
                                     <TableHead>Qty/Set</TableHead>
+                                    <TableHead>Available Qty</TableHead>
                                     <TableHead>Billed Qty</TableHead>
                                     <TableHead>Rate</TableHead>
                                     <TableHead>Total Amount</TableHead>
@@ -719,6 +730,7 @@ export default function CreateBillPage() {
                                       <TableCell>{sub.slNo}</TableCell>
                                       <TableCell>{sub.name}</TableCell>
                                       <TableCell>{sub.quantity}</TableCell>
+                                      <TableCell className="font-semibold">{sub.availableQty}</TableCell>
                                       <TableCell>
                                         <Input
                                           type="number"
