@@ -9,10 +9,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, query, where, serverTimestamp, getDoc, runTransaction, collectionGroup, writeBatch } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+  getDoc,
+  runTransaction,
+  collectionGroup,
+  writeBatch,
+} from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { WorkOrderItem as OriginalWorkOrderItem, SubItem, BoqItem, Subcontractor, Project, SerialNumberConfig } from '@/lib/types';
+import type {
+  WorkOrderItem as OriginalWorkOrderItem,
+  SubItem,
+  BoqItem,
+  Subcontractor,
+  Project,
+  SerialNumberConfig,
+} from '@/lib/types';
 import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -22,7 +41,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { nanoid } from 'nanoid';
-
+import { cn } from '@/lib/utils';
 
 // Add isBreakdown to UI-level type
 type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id'> & {
@@ -427,5 +446,3 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
-
-```
