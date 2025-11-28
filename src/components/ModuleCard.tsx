@@ -46,44 +46,34 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
   const canEdit = can('Edit', 'Module Hub');
   const canDelete = can('Delete', 'Module Hub');
 
-  const slugify = (text: string) => {
-    if (!text) return '';
-    return text.toString().toLowerCase()
-      .replace(/\s+/g, '-')           // Replace spaces with -
-      .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
-      .replace(/\-\-+/g, '-')         // Replace multiple - with single -
-      .replace(/^-+/, '')             // Trim - from start of text
-      .replace(/-+$/, '');            // Trim - from end of text
-  }
-  
   const getHref = (moduleTitle: string) => {
+    const slug = moduleTitle.toLowerCase().replace(/\s+/g, '-');
     switch (moduleTitle) {
       case 'Subcontractors Management':
         return '/subcontractors-management/all';
-      case 'Employee':
-        return '/settings/employee';
       case 'Site Fund Requisition':
         return '/site-fund-requisition';
       case 'Daily Requisition':
         return '/daily-requisition';
       case 'Billing Recon':
-          return '/billing-recon';
+        return '/billing-recon';
       case 'Bank Balance':
-          return '/bank-balance';
+        return '/bank-balance';
       case 'Expenses':
-          return '/expenses';
+        return '/expenses';
       case 'Settings':
-          return '/settings';
+        return '/settings';
       case 'Chat System':
-          return '/chat';
+        return '/chat';
       case 'Loan':
-          return '/loan';
+        return '/loan';
       case 'LC Module':
-          return '/lc-module';
+        return '/lc-module';
       case 'Insurance':
-          return '/insurance';
+        return '/insurance';
       case 'Store & Stock Management':
-          return '/store-stock-management';
+        return '/store-stock-management';
+      // Nested Settings Pages
       case 'User Management':
         return '/settings/user-management';
       case 'Role Management':
@@ -102,10 +92,14 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/settings/department';
       case 'Manage Project':
         return '/settings/project';
+      case 'Employee':
+        return '/settings/employee';
+      // Nested Expenses Settings
       case 'Manage Accounts':
         return '/settings/expenses/accounts';
       case 'Department-wise Serial Number':
         return '/settings/expenses/department-serial-no';
+      // Nested Insurance Settings
       case 'Policy Holders':
         return '/insurance/policy-holders';
       case 'Insurance Companies':
@@ -117,7 +111,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       case 'Help':
         return '/insurance/settings/help';
       default:
-        return `/${slugify(moduleTitle)}`;
+        return `/${slug}`;
     }
   };
 
