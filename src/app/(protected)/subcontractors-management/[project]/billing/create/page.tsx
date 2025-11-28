@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -20,6 +21,8 @@ import {
   getDoc,
   Timestamp,
   collectionGroup,
+  type DocumentData,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -70,20 +73,19 @@ const makeUUID = () => {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 };
 
-// Numeric helper
 const toNumber = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
+// Local UI-specific types that use strings for form inputs
 type EnrichedSubItem = SubItem & {
+  id: string; // Ensure client-side key
   billedQty: string;
   totalAmount: string;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
-  id: string;
-  rate: number;
 };
 
 type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
@@ -94,15 +96,15 @@ type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalA
   billedQty: string;
   totalAmount: string;
   rate: string;
-  orderQty: number;
+  orderQty: string;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
   isBreakdown: boolean;
   subItems: EnrichedSubItem[];
   boqItemId?: string;
+  executedQty: string; // Explicitly add missing property
 };
-
 
 type AdvanceDeductionItem = {
   id: string;
@@ -222,15 +224,15 @@ export default function CreateBillPage() {
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
     setDetails(prev => ({
-      ...prev,
-      subcontractorId,
-      workOrderId: '',
+        ...prev,
+        subcontractorId,
+        workOrderId: '',
     }));
     setSelectedWorkOrder(null);
     setItems([]);
@@ -274,7 +276,7 @@ export default function CreateBillPage() {
     const newItems = [...items];
     const item = { ...newItems[index] };
     const billedQtyNum = toNumber(value);
-    const availableQty = toNumber(item.availableQty);
+    const availableQty = item.availableQty;
 
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       item.billedQty = '';
@@ -313,7 +315,7 @@ export default function CreateBillPage() {
       subItem.billedQty = '';
       subItem.totalAmount = '';
     } else {
-      const availableQty = toNumber(subItem.availableQty);
+      const availableQty = subItem.availableQty;
       if (billedQtyNum > availableQty) {
         toast({ title: 'Quantity Exceeded', description: `Billed quantity for sub-item cannot exceed available quantity (${availableQty}).`, variant: 'destructive' });
         subItem.billedQty = String(availableQty);
@@ -351,7 +353,7 @@ export default function CreateBillPage() {
         .filter(bill => bill.workOrderId === details.workOrderId)
         .flatMap(bill => bill.items || [])
         .filter(billItem => billItem.jmcItemId === woItem.id)
-        .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+        .reduce((sum, item) => sum + item.billedQty, 0);
 
       const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
       const mainItemAvailableSets = woItem.orderQty - alreadyBilledForWoItem;
@@ -360,18 +362,19 @@ export default function CreateBillPage() {
         ...woItem,
         id: makeUUID(),
         jmcItemId: woItem.id,
-        jmcEntryId: '',
+        jmcEntryId: '', 
         jmcNo: '',
+        executedQty: String(woItem.orderQty),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
         availableQty: Math.max(0, availableForBilling),
         billedQty: '',
         totalAmount: '',
         rate: String(woItem.rate),
-        orderQty: woItem.orderQty,
+        orderQty: String(woItem.orderQty),
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
         subItems: (woItem.subItems || []).map(si => {
-          const subItemQtyPerSet = toNumber(si.quantity);
+          const subItemQtyPerSet = si.quantity;
           const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
           return {
             ...si,
@@ -485,21 +488,18 @@ export default function CreateBillPage() {
       if (steps.length === 0) throw new Error('Billing workflow has no steps.');
       const firstStep = steps[0];
 
-      const itemsToSave: BillItem[] = items.map(it => {
-        const {
-          id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest
-        } = it;
-        return {
-          ...rest,
+      const itemsToSave: BillItem[] = items.map(it => ({
           jmcItemId: it.jmcItemId,
           jmcEntryId: it.jmcEntryId,
           jmcNo: it.jmcNo,
-          executedQty: String(it.orderQty || '0'),
-          billedQty: String(it.billedQty || '0'),
-          totalAmount: String(it.totalAmount || '0'),
-          rate: String(it.rate || '0'),
-        };
-      });
+          boqSlNo: it.boqSlNo || '',
+          description: it.description,
+          unit: it.unit,
+          rate: toNumber(it.rate),
+          executedQty: toNumber(it.executedQty),
+          billedQty: toNumber(it.billedQty),
+          totalAmount: toNumber(it.totalAmount),
+      }));
 
       const billData: Omit<Bill, 'id'> = {
         ...details,
@@ -866,8 +866,9 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items as any}
       />
     </>
   );
 }
+

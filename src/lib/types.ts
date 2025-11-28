@@ -1,3 +1,4 @@
+
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -167,11 +168,6 @@ export const permissionModules = {
     'Add Loan': ['Create'],
     'Loan Details': ['View', 'Update EMI'],
     'Reports': ['View'],
-  },
-  'LC Module': {
-    'View Module': [],
-    'Dashboard': ['View', 'Create'],
-    'LC Details': ['View', 'Edit', 'Track Payments'],
   },
   'Insurance': {
     'View Module': [],
@@ -491,10 +487,10 @@ export interface BillItem {
   boqSlNo: string;
   description: string;
   unit: string;
-  rate: string;
-  executedQty: string;
-  billedQty: string;
-  totalAmount: string;
+  rate: number;
+  executedQty: number;
+  billedQty: number;
+  totalAmount: number;
 }
 
 export interface Bill {
