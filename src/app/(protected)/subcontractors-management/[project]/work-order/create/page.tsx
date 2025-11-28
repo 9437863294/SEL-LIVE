@@ -359,21 +359,21 @@ export default function CreateWorkOrderPage() {
 
   return (
     <>
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <Link href={`/subcontractors-management/${projectSlug}/work-order`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
             <h1 className="text-2xl font-bold">Create Work Order</h1>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+          </div>
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Work Order
-        </Button>
-      </div>
+          </Button>
+        </div>
 
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Work Order Details</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="mb-6">
+          <CardHeader><CardTitle>Work Order Details</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2"><Label htmlFor="workOrderNo">Work Order No.</Label><Input id="workOrderNo" value={previewWoNo} readOnly className="bg-muted" /></div>
             <div className="space-y-2"><Label htmlFor="date">Date</Label><Input id="date" name="date" type="date" value={details.date} onChange={handleDetailChange} /></div>
              <div className="space-y-2">
@@ -385,11 +385,11 @@ export default function CreateWorkOrderPage() {
                     </SelectContent>
                 </Select>
             </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
+        <Card>
+          <CardHeader>
              <div className="flex justify-between items-center">
                 <div>
                     <CardTitle>Work Order Items</CardTitle>
@@ -397,8 +397,8 @@ export default function CreateWorkOrderPage() {
                 </div>
                  <Button variant="outline" type="button" onClick={() => setIsBoqMultiSelectOpen(true)}><Library className="mr-2 h-4 w-4" /> Add Multiple Items</Button>
             </div>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
                 <Table>
                     <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead>BOQ Sl.No</TableHead><TableHead className="w-1/3">Description</TableHead><TableHead>Unit</TableHead><TableHead>Break Down</TableHead><TableHead>Order Qty</TableHead><TableHead>Order Rate</TableHead><TableHead>Total Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
@@ -492,189 +492,3 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
-
-```
-- src/hooks/use-auth.ts:
-```ts
-'use client';
-
-import { useEffect, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
-import type { User } from 'firebase/auth';
-
-export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  return { user, loading };
-}
-
-```
-- src/hooks/use-local-storage.ts:
-```ts
-"use client"
-
-import * as React from "react"
-
-export function useLocalStorage<T>(
-  key: string,
-  initialValue: T
-): [T, (value: T) => void] {
-  const [storedValue, setStoredValue] = React.useState<T>(initialValue)
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") {
-      setStoredValue(initialValue)
-    }
-
-    try {
-      const item = window.localStorage.getItem(key)
-      setStoredValue(item ? JSON.parse(item) : initialValue)
-    } catch (error) {
-      console.error(error)
-      setStoredValue(initialValue)
-    }
-  }, [initialValue, key])
-
-  const setValue = (value: T) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value
-      setStoredValue(valueToStore)
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore))
-      }
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  return [storedValue, setValue]
-}
-
-```
-- src/lib/theme-provider.tsx:
-```tsx
-'use client'
-
-import * as React from 'react';
-import { useAuth } from '@/components/auth/AuthProvider';
-
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  
-  React.useEffect(() => {
-    const root = window.document.documentElement;
-    
-    // Clear existing theme classes
-    root.classList.remove('theme-violet', 'theme-blue', 'theme-green', 'theme-orange', 'theme-red');
-    root.classList.remove('font-inter', 'font-roboto');
-
-    if (user?.theme) {
-      // Apply color theme
-      if (user.theme.color) {
-        root.classList.add(`theme-${user.theme.color}`);
-      }
-      
-      // Apply font theme
-      if(user.theme.font) {
-         root.classList.add(`font-${user.theme.font}`);
-      }
-    }
-    
-  }, [user]);
-
-  return <>{children}</>;
-}
-
-```
-- tailwind.config.js:
-```js
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: ["class"],
-  content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-	],
-  theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
-    extend: {
-      colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-      },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
-      },
-      keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-      },
-    },
-  },
-  plugins: [require("tailwindcss-animate")],
-}
-```
-
-My current directory is / and I'm looking for src/app/api/genkit/route.ts.
