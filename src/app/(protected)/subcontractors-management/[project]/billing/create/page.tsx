@@ -25,7 +25,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type {
-  BillItem,
+  BillItem as OriginalBillItem,
   WorkOrder,
   WorkOrderItem,
   JmcEntry,
@@ -163,21 +163,21 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsSnap),
+          getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
         
-        const allSubs = subsSnap.docs.map(d => ({id: d.id, ...d.data()} as Subcontractor));
-        const projectWorkOrders = woSnap.docs.map(d => ({id: d.id, ...d.data()} as WorkOrder));
+        const allSubs = subsSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as Subcontractor));
+        const projectWorkOrders = woSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as WorkOrder));
         
         const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         
         setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
         setAllWorkOrders(projectWorkOrders);
 
-        setJmcEntries(jmcSnap.docs.map(d => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
-        setBills(billsSnap.docs.map(d => ({id: d.id, ...d.data()} as Bill)).filter(b => b.projectId === project.id));
-        setProformaBills(proformaSnap.docs.map(d => ({id: d.id, ...d.data()} as ProformaBill)).filter(p => p.projectId === project.id));
+        setJmcEntries(jmcSnap.docs.map((d: any) => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as Bill)).filter((b: Bill) => b.projectId === project.id));
+        setProformaBills(proformaSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as ProformaBill)).filter((p: ProformaBill) => p.projectId === project.id));
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
@@ -242,7 +242,7 @@ export default function CreateBillPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(String(item.executedQty));
+      const availableQty = item.availableQty;
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
@@ -258,7 +258,7 @@ export default function CreateBillPage() {
           item.billedQty = value;
       }
       
-      const rate = parseFloat(String(item.rate));
+      const rate = item.rate;
       if(!isNaN(rate) && item.billedQty) {
           item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
       } else {
@@ -282,7 +282,7 @@ export default function CreateBillPage() {
         subItem.totalAmount = '';
     } else {
         subItem.billedQty = value;
-        const rate = parseFloat(String(subItem.rate));
+        const rate = subItem.rate;
         if (!isNaN(rate)) {
             subItem.totalAmount = (billedQty * rate).toFixed(2);
         } else {
@@ -319,7 +319,7 @@ export default function CreateBillPage() {
             availableQty: Math.max(0, availableForBilling),
             billedQty: '',
             totalAmount: '',
-            isBreakdown: woItem.subItems && woItem.subItems.length > 0,
+            isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
             subItems: (woItem.subItems || []).map(si => ({ ...si, billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0 })),
         };
       });
@@ -415,7 +415,7 @@ export default function CreateBillPage() {
         if(steps.length === 0) throw new Error('Billing workflow has no steps.');
         const firstStep = steps[0];
         
-        const itemsToSave: BillItem[] = items.map(it => ({
+        const itemsToSave: OriginalBillItem[] = items.map(it => ({
             jmcItemId: it.id,
             jmcEntryId: '',
             jmcNo: '',
@@ -423,7 +423,7 @@ export default function CreateBillPage() {
             description: it.description,
             unit: it.unit,
             rate: String(it.rate),
-            executedQty: String(it.executedQty || '0'),
+            executedQty: String(it.availableQty || '0'),
             billedQty: String(it.billedQty || '0'),
             totalAmount: String(it.totalAmount || '0'),
         }));
@@ -801,7 +801,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items.map(i => ({...i, jmcItemId: i.id} as BillItem))}
+        alreadyAddedItems={items.map(i => ({...i, jmcItemId: i.id} as OriginalBillItem))}
       />
     </>
   );

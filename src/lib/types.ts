@@ -486,7 +486,7 @@ export interface JmcEntry {
 }
 
 export interface BillItem {
-  jmcItemId: string; // e.g., `${jmcEntryId}-${jmcItemIndex}`
+  jmcItemId: string;
   jmcEntryId: string;
   jmcNo: string;
   boqSlNo: string;
@@ -1027,13 +1027,13 @@ export interface EnrichedLogItem extends InventoryLog {
 }
 
 export interface SubItem {
-    id: string;
-    slNo: string;
-    name: string;
-    unit: string;
-    quantity: number;
-    rate: number;
-    totalAmount: number;
+  id: string;
+  slNo: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  rate: number;
+  totalAmount: number;
 }
 
 export interface WorkOrder {
