@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
@@ -43,6 +44,7 @@ import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectD
 import { Switch } from '@/components/ui/switch';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 
 // Add isBreakdown to UI-level type
@@ -61,6 +63,7 @@ const initialWorkOrderDetails = {
 };
 
 const initialSubItemState: Omit<SubItem, 'id'> = {
+  slNo: '',
   name: '',
   unit: 'sqm',
   quantity: 0,
@@ -242,6 +245,7 @@ export default function CreateWorkOrderPage() {
       subItems: (boqItem.bom && boqItem.bom.length > 0)
         ? boqItem.bom.map(b => ({
             id: nanoid(),
+            slNo: b.markNo, // Use markNo as the serial number for sub-items
             name: `${getItemDescription(b)}`,
             unit: 'Kg',
             quantity: b.qtyPerSet,
@@ -444,6 +448,7 @@ export default function CreateWorkOrderPage() {
                                                 <Table>
                                                     <TableHeader>
                                                         <TableRow>
+                                                            <TableHead>Sl. No.</TableHead>
                                                             <TableHead>Name</TableHead>
                                                             <TableHead>Unit</TableHead>
                                                             <TableHead>Qty/Set</TableHead>
@@ -455,6 +460,7 @@ export default function CreateWorkOrderPage() {
                                                     <TableBody>
                                                         {item.subItems.map((sub, subIndex) => (
                                                             <TableRow key={sub.id}>
+                                                                <TableCell><Input placeholder="Sl.No." value={sub.slNo} onChange={e => handleSubItemChange(index, subIndex, 'slNo', e.target.value)} /></TableCell>
                                                                 <TableCell><Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} /></TableCell>
                                                                 <TableCell><Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} /></TableCell>
                                                                 <TableCell><Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} /></TableCell>
@@ -492,3 +498,4 @@ export default function CreateWorkOrderPage() {
     </>
   );
 }
+
