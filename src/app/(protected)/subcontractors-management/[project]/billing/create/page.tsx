@@ -80,7 +80,6 @@ type EnrichedSubItem = SubItem & {
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
     availableQty: number;
-    rate: number;
 };
 
 // UI-specific type for main items with string-based numbers
@@ -172,7 +171,7 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsSnap),
+          getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
         
@@ -331,7 +330,7 @@ export default function CreateBillPage() {
         return {
             ...woItem,
             id: makeUUID(),
-            jmcItemId: woItem.id, // This links it back to the WorkOrderItem
+            jmcItemId: woItem.id,
             jmcEntryId: '',
             jmcNo: '',
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
@@ -830,113 +829,3 @@ export default function CreateBillPage() {
   );
 }
 
-```
-- src/components/billing-recon/PrintBillDialog.tsx:
-```tsx
-// This file is intentionally left blank as it is being removed.
-// The print functionality has been moved to a dedicated page.
-
-```
-- src/components/billing-recon/PrintProformaBillDialog.tsx:
-```tsx
-// This file is intentionally left blank as it is being removed.
-// The print functionality has been moved to a dedicated page.
-
-```
-- src/app/api/auth/print-login/route.ts:
-```ts
-
-import { NextRequest, NextResponse } from 'next/server';
-import 'server-only';
-import { sign } from 'jsonwebtoken';
-
-// This is a simplified, insecure example.
-// In a real app, use a secure, single-use token system.
-const PRINT_PASSCODE = process.env.PRINT_PASSCODE || '1234';
-
-export async function POST(req: NextRequest) {
-  try {
-    const { code } = await req.json();
-
-    if (code !== PRINT_PASSCODE) {
-      return NextResponse.json({ message: 'Invalid passcode' }, { status: 401 });
-    }
-
-    // Passcode is correct, generate a short-lived token (e.g., 5 mins)
-    const token = sign({ printAuth: true }, process.env.JWT_SECRET || 'your-super-secret-key', {
-      expiresIn: '5m',
-    });
-
-    const res = NextResponse.json({ success: true });
-
-    // Set the token in a secure, httpOnly cookie
-    res.cookies.set('print-auth-token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 300, // 5 minutes
-      path: '/',
-    });
-
-    return res;
-  } catch (error) {
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
-  }
-}
-
-```
-- src/middleware.ts:
-```ts
-
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
-
-// This function can be marked `async` if using `await` inside
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // This middleware is now a pass-through for most routes.
-  // All session and auth logic is now client-side.
-  
-  // Specific protection for print routes
-  if (pathname.includes('/print')) {
-    const tokenCookie = request.cookies.get('print-auth-token');
-    
-    if (!tokenCookie) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/print-auth';
-      url.searchParams.set('next', pathname);
-      return NextResponse.redirect(url);
-    }
-    
-    try {
-      // Verify the JWT. If it's invalid, it will throw.
-      await jwtVerify(
-        tokenCookie.value, 
-        new TextEncoder().encode(process.env.JWT_SECRET || 'your-super-secret-key')
-      );
-      // Token is valid, allow request to proceed
-      return NextResponse.next();
-    } catch (err) {
-      // Token is invalid or expired, redirect to auth page
-      const url = request.nextUrl.clone();
-      url.pathname = '/print-auth';
-      url.searchParams.set('next', pathname);
-      return NextResponse.redirect(url);
-    }
-  }
-
-  // Allow all other requests to pass through
-  return NextResponse.next();
-}
-
-export const config = {
-  // Only apply middleware to /print routes and a few others
-  // Exclude API routes, static files, and image optimization
-  matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|login|print-auth).*)',
-    '/print-auth', // include the auth page itself if needed for some logic
-  ],
-}
-```
