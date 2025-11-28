@@ -106,7 +106,7 @@ export default function CreateWorkOrderPage() {
         const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
 
         if(!projectData) {
-            toast({ title: 'Project not found', variant: 'destructive'});
+            toast({ title: "Project not found", variant: 'destructive'});
             return;
         }
         setCurrentProject(projectData);
@@ -139,6 +139,7 @@ export default function CreateWorkOrderPage() {
             setPreviewWoNo('Error generating ID');
         }
     };
+
     generatePreviewId();
     if(items.length === 0){
         addItem();
@@ -405,13 +406,28 @@ export default function CreateWorkOrderPage() {
           <CardContent>
             <div className="overflow-x-auto">
                 <Table>
-                    <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead>BOQ Sl.No</TableHead><TableHead className="w-1/3">Description</TableHead><TableHead>Unit</TableHead><TableHead>Break Down</TableHead><TableHead>Order Qty</TableHead><TableHead>Order Rate</TableHead><TableHead>Total Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-12"></TableHead>
+                            <TableHead>BOQ Sl.No</TableHead>
+                            <TableHead className="w-1/3">Description</TableHead>
+                            <TableHead>Unit</TableHead>
+                            <TableHead>BOQ Qty</TableHead>
+                            <TableHead>BOQ Rate</TableHead>
+                            <TableHead>Break Down</TableHead>
+                            <TableHead>Order Qty</TableHead>
+                            <TableHead>Order Rate</TableHead>
+                            <TableHead>Total Amount</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                    </TableHeader>
                     <TableBody>
                         {items.map((item, index) => {
                             const boqItem = boqItems.find(b => b.id === item.boqItemId);
                             const rateKey = boqItem ? Object.keys(boqItem).find(key => key.toLowerCase().includes('rate')) || 'rate' : 'rate';
                             const boqRate = boqItem && rateKey ? (boqItem as any)[rateKey] : 0;
                             const isExpanded = expandedRows.has(item.id);
+                            
                             return (
                                 <Fragment key={item.id}>
                                 <TableRow>
@@ -432,6 +448,8 @@ export default function CreateWorkOrderPage() {
                                     </TableCell>
                                     <TableCell><p className="line-clamp-2" title={item.description}>{item.description}</p></TableCell>
                                     <TableCell><Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/></TableCell>
+                                    <TableCell>{boqItem ? (boqItem as any).QTY || 0 : 'N/A'}</TableCell>
+                                    <TableCell>{formatCurrency(boqRate)}</TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
                                     <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]")}/></TableCell>
                                     <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "bg-muted line-through")} disabled={item.isBreakdown}/></TableCell>
@@ -442,7 +460,7 @@ export default function CreateWorkOrderPage() {
                                 </TableRow>
                                 {isExpanded && item.isBreakdown && (
                                     <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                        <TableCell colSpan={9} className="p-0">
+                                        <TableCell colSpan={11} className="p-0">
                                             <div className="p-4 space-y-2">
                                                 <h4 className="font-semibold text-sm">Sub-Items (per 1 set of Main Item)</h4>
                                                 <Table>
