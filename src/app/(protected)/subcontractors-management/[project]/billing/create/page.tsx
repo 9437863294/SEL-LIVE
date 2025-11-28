@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -635,6 +636,8 @@ export default function CreateBillPage() {
                                                       <TableHead>Description</TableHead>
                                                       <TableHead>Qty/Set</TableHead>
                                                       <TableHead>Billed Qty</TableHead>
+                                                      <TableHead>Rate</TableHead>
+                                                      <TableHead>Total Amount</TableHead>
                                                   </TableRow>
                                               </TableHeader>
                                               <TableBody>
@@ -651,6 +654,8 @@ export default function CreateBillPage() {
                                                                 onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)}
                                                             />
                                                           </TableCell>
+                                                          <TableCell>{formatCurrency(sub.rate)}</TableCell>
+                                                          <TableCell>{formatCurrency(sub.totalAmount)}</TableCell>
                                                       </TableRow>
                                                   ))}
                                               </TableBody>
@@ -778,36 +783,15 @@ export default function CreateBillPage() {
                     </div>
                 </div>
                 <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">Subtotal</span>
-                        <span className="font-medium">{formatCurrency(financials.subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">GST</span>
-                        <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
-                    </div>
+                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
+                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
                     <Separator />
-                    <div className="flex justify-between font-semibold">
-                        <span>Gross Amount</span>
-                        <span>{formatCurrency(financials.grossAmount)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Retention</span>
-                        <span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Advance Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Other Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span>
-                    </div>
+                    <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
                      <Separator />
-                     <div className="flex justify-between items-center font-bold text-lg">
-                        <span>Net Payable Amount</span>
-                        <span>{formatCurrency(financials.netPayable)}</span>
-                    </div>
+                     <div className="flex justify-between items-center font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
                 </div>
             </CardContent>
         </Card>

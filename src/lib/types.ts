@@ -174,29 +174,6 @@ export const permissionModules = {
     'Dashboard': ['View', 'Create'],
     'LC Details': ['View', 'Edit', 'Track Payments'],
   },
-  'Store & Stock Management': {
-    'View Module': true,
-    'Settings': ['View', 'Manage Projects', 'Manage Units', 'Manage GRN Entry'],
-    'Projects': [
-      'View Dashboard',
-      'View Inventory',
-      'View Transactions',
-      'Stock In',
-      'Stock Out',
-      'Edit Transaction',
-      'Delete Transaction',
-      'View Conversions',
-      'Manage Conversions',
-      'View BOM',
-      'Manage BOM',
-      'View BOQ',
-      'Import BOQ',
-      'Add BOQ Item',
-      'View Reports',
-      'View Ageing Report',
-      'View AI Forecast',
-    ]
-  },
   'Insurance': {
     'View Module': [],
     'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],
@@ -1049,6 +1026,16 @@ export interface EnrichedLogItem extends InventoryLog {
   balanceQuantity: number;
 }
 
+export interface SubItem {
+    id: string;
+    slNo: string;
+    name: string;
+    unit: string;
+    quantity: number;
+    rate: number;
+    totalAmount: number;
+}
+
 export interface WorkOrder {
   id: string;
   projectId: string;
@@ -1071,6 +1058,5 @@ export interface WorkOrderItem {
   rate: number;
   totalAmount: number;
   boqSlNo?: string;
+  subItems?: SubItem[];
 }
-
-  
