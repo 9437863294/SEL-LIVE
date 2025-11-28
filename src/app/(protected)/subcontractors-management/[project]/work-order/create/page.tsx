@@ -238,6 +238,17 @@ export default function CreateWorkOrderPage() {
       unit: String(boqItem.UNIT || boqItem.Unit || ''),
       rate: Number((boqItem as any)[rateKey] || 0),
       boqSlNo: String(boqItem['BOQ SL No'] || ''),
+      isBreakdown: (boqItem.bom && boqItem.bom.length > 0) ? true : newItems[index].isBreakdown,
+      subItems: (boqItem.bom && boqItem.bom.length > 0)
+        ? boqItem.bom.map(b => ({
+            id: nanoid(),
+            name: `${getItemDescription(b)}`,
+            unit: 'Kg',
+            quantity: b.qtyPerSet,
+            rate: 0,
+            totalAmount: 0,
+          }))
+        : newItems[index].subItems,
     };
     setItems(newItems);
   };
@@ -419,29 +430,43 @@ export default function CreateWorkOrderPage() {
                                     <TableCell><Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/></TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
                                     <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]")}/></TableCell>
-                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "line-through bg-muted")} disabled={item.isBreakdown}/></TableCell>
+                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "bg-muted line-through")} disabled={item.isBreakdown}/></TableCell>
                                     <TableCell><Input value={formatCurrency(item.totalAmount)} readOnly className="bg-muted min-w-[150px]"/></TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                     </TableCell>
                                 </TableRow>
                                 {isExpanded && item.isBreakdown && (
-                                    <TableRow className="bg-muted/30">
-                                        <TableCell colSpan={9} className="p-2">
-                                            <div className="p-2 space-y-2">
-                                                 <h4 className="font-semibold text-sm">Sub-Items (per 1 set of Main Item)</h4>
-                                                {item.subItems.map((sub, subIndex) => (
-                                                    <div key={sub.id} className="grid grid-cols-6 gap-2 items-center">
-                                                        <Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} className="col-span-2"/>
-                                                        <Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} />
-                                                        <Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} />
-                                                        <Input type="number" placeholder="Rate" value={sub.rate} onChange={e => handleSubItemChange(index, subIndex, 'rate', e.target.value)} />
-                                                        <div className="flex items-center gap-2">
-                                                            <Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-background/50" />
-                                                            <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                        <TableCell colSpan={9} className="p-0">
+                                            <div className="p-4 space-y-2">
+                                                <h4 className="font-semibold text-sm">Sub-Items (per 1 set of Main Item)</h4>
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Name</TableHead>
+                                                            <TableHead>Unit</TableHead>
+                                                            <TableHead>Qty/Set</TableHead>
+                                                            <TableHead>Rate</TableHead>
+                                                            <TableHead>Total Amount</TableHead>
+                                                            <TableHead className="w-12"></TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {item.subItems.map((sub, subIndex) => (
+                                                            <TableRow key={sub.id}>
+                                                                <TableCell><Input placeholder="Name" value={sub.name} onChange={e => handleSubItemChange(index, subIndex, 'name', e.target.value)} /></TableCell>
+                                                                <TableCell><Input placeholder="Unit" value={sub.unit} onChange={e => handleSubItemChange(index, subIndex, 'unit', e.target.value)} /></TableCell>
+                                                                <TableCell><Input type="number" placeholder="Qty/Set" value={sub.quantity} onChange={e => handleSubItemChange(index, subIndex, 'quantity', e.target.value)} /></TableCell>
+                                                                <TableCell><Input type="number" placeholder="Rate" value={sub.rate} onChange={e => handleSubItemChange(index, subIndex, 'rate', e.target.value)} /></TableCell>
+                                                                <TableCell><Input value={formatCurrency(sub.totalAmount)} readOnly className="bg-background/50"/></TableCell>
+                                                                <TableCell>
+                                                                    <Button variant="ghost" size="icon" onClick={() => removeSubItem(index, sub.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                                 <Button variant="outline" size="sm" onClick={() => addSubItem(index)}><Plus className="mr-2 h-4 w-4"/> Add Sub-Item</Button>
                                             </div>
                                         </TableCell>
@@ -468,3 +493,188 @@ export default function CreateWorkOrderPage() {
   );
 }
 
+```
+- src/hooks/use-auth.ts:
+```ts
+'use client';
+
+import { useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import type { User } from 'firebase/auth';
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return { user, loading };
+}
+
+```
+- src/hooks/use-local-storage.ts:
+```ts
+"use client"
+
+import * as React from "react"
+
+export function useLocalStorage<T>(
+  key: string,
+  initialValue: T
+): [T, (value: T) => void] {
+  const [storedValue, setStoredValue] = React.useState<T>(initialValue)
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      setStoredValue(initialValue)
+    }
+
+    try {
+      const item = window.localStorage.getItem(key)
+      setStoredValue(item ? JSON.parse(item) : initialValue)
+    } catch (error) {
+      console.error(error)
+      setStoredValue(initialValue)
+    }
+  }, [initialValue, key])
+
+  const setValue = (value: T) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value
+      setStoredValue(valueToStore)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(key, JSON.stringify(valueToStore))
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  return [storedValue, setValue]
+}
+
+```
+- src/lib/theme-provider.tsx:
+```tsx
+'use client'
+
+import * as React from 'react';
+import { useAuth } from '@/components/auth/AuthProvider';
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  
+  React.useEffect(() => {
+    const root = window.document.documentElement;
+    
+    // Clear existing theme classes
+    root.classList.remove('theme-violet', 'theme-blue', 'theme-green', 'theme-orange', 'theme-red');
+    root.classList.remove('font-inter', 'font-roboto');
+
+    if (user?.theme) {
+      // Apply color theme
+      if (user.theme.color) {
+        root.classList.add(`theme-${user.theme.color}`);
+      }
+      
+      // Apply font theme
+      if(user.theme.font) {
+         root.classList.add(`font-${user.theme.font}`);
+      }
+    }
+    
+  }, [user]);
+
+  return <>{children}</>;
+}
+
+```
+- tailwind.config.js:
+```js
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: ["class"],
+  content: [
+    './pages/**/*.{ts,tsx}',
+    './components/**/*.{ts,tsx}',
+    './app/**/*.{ts,tsx}',
+    './src/**/*.{ts,tsx}',
+	],
+  theme: {
+    container: {
+      center: true,
+      padding: "2rem",
+      screens: {
+        "2xl": "1400px",
+      },
+    },
+    extend: {
+      colors: {
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      keyframes: {
+        "accordion-down": {
+          from: { height: 0 },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: 0 },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate")],
+}
+```
+
+My current directory is / and I'm looking for src/app/api/genkit/route.ts.
