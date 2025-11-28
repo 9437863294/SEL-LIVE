@@ -1,4 +1,3 @@
-
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -21,8 +20,6 @@ import {
   getDoc,
   Timestamp,
   collectionGroup,
-  WriteBatch,
-  writeBatch,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -73,38 +70,46 @@ const makeUUID = () => {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 };
 
-// UI-specific type for sub-items with string-based numbers
-type EnrichedSubItem = SubItem & {
-    billedQty: string;
-    totalAmount: string;
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
-    availableQty: number;
+// Numeric helper
+const toNumber = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 };
 
-// UI-specific type for main items with string-based numbers
-type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems'> & {
-    id: string; // A unique ID for the UI list
-    jmcItemId: string; // The original WorkOrderItem ID
-    jmcEntryId: string;
-    jmcNo: string;
-    billedQty: string;
-    totalAmount: string;
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
-    availableQty: number;
-    isBreakdown: boolean;
-    subItems: EnrichedSubItem[];
-    boqItemId: string; // from WorkOrderItem
+type EnrichedSubItem = SubItem & {
+  billedQty: string;
+  totalAmount: string;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
+  availableQty: number;
+  id: string;
+  rate: number;
+};
+
+type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
+  id: string; // UI id
+  jmcItemId: string;
+  jmcEntryId: string;
+  jmcNo: string;
+  billedQty: string;
+  totalAmount: string;
+  rate: string;
+  orderQty: number;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
+  availableQty: number;
+  isBreakdown: boolean;
+  subItems: EnrichedSubItem[];
+  boqItemId?: string;
 };
 
 
 type AdvanceDeductionItem = {
-    id: string;
-    reference: string; // ProformaBill ID
-    deductionType: 'amount' | 'percentage';
-    deductionValue: number; // Holds the raw amount or percentage
-    amount: number; // Holds the final calculated deduction amount
+  id: string;
+  reference: string; // ProformaBill ID
+  deductionType: 'amount' | 'percentage';
+  deductionValue: number; // raw amount or percentage
+  amount: number; // final calculated deduction amount
 };
 
 const initialBillDetails = {
@@ -143,29 +148,36 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([
+    { id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 },
+  ]);
 
   useEffect(() => {
+    let mounted = true;
     const fetchProjectAndData = async () => {
-        if (!projectSlug) return;
-        
+      if (!projectSlug) return;
+
+      try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectSnap = await getDocs(projectsQuery);
+        if (!mounted) return;
+
         const project = projectSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+          .map(d => ({ id: d.id, ...(d.data() as any) } as Project))
+          .find(p => slugify(p.projectName) === projectSlug);
 
         if (!project) {
-            toast({ title: "Error", description: "Project not found.", variant: "destructive" });
-            return;
+          toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+          return;
         }
+
         setCurrentProject(project);
 
         const subsQuery = query(collectionGroup(db, 'subcontractors'));
         const woQuery = query(collection(db, 'projects', project.id, 'workOrders'));
-        const jmcQuery = query(collectionGroup(db, 'jmcEntries'));
-        const billsQuery = query(collectionGroup(db, 'bills'));
-        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'));
+        const jmcQuery = query(collectionGroup(db, 'jmcEntries'), where('projectId', '==', project.id));
+        const billsQuery = query(collectionGroup(db, 'bills'), where('projectId', '==', project.id));
+        const proformaBillsQuery = query(collectionGroup(db, 'proformaBills'), where('projectId', '==', project.id));
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
@@ -174,71 +186,83 @@ export default function CreateBillPage() {
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
-        
-        const allSubs = subsSnap.docs.map((d) => ({id: d.id, ...d.data()} as Subcontractor));
-        const projectWorkOrders = woSnap.docs.map((d) => ({id: d.id, ...d.data()} as WorkOrder));
-        
+
+        if (!mounted) return;
+
+        const allSubs = subsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Subcontractor));
+        const projectWorkOrders = woSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WorkOrder));
+
         const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
-        
         setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
         setAllWorkOrders(projectWorkOrders);
+        
+        const jmcEntriesForProject = jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
+        setJmcEntries(jmcEntriesForProject);
 
-        setJmcEntries(jmcSnap.docs.map((d) => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
-        setBills(billsSnap.docs.map((d) => ({id: d.id, ...d.data()} as Bill)).filter((b) => b.projectId === project.id));
-        setProformaBills(proformaSnap.docs.map((d) => ({id: d.id, ...d.data()} as ProformaBill)).filter((p) => p.projectId === project.id));
+        const billsForProject = billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
+        setBills(billsForProject);
+        
+        const proformasForProject = proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill));
+        setProformaBills(proformasForProject);
+
+      } catch (err: any) {
+        console.error('Error fetching project data', err);
+        toast({ title: 'Error', description: err?.message || 'Failed to fetch project data', variant: 'destructive' });
+      }
     };
+
     fetchProjectAndData();
+
+    return () => { mounted = false; };
   }, [projectSlug, toast]);
 
   const filteredWorkOrders = useMemo(() => {
-    if (!details.subcontractorId) {
-      return allWorkOrders;
-    }
+    if (!details.subcontractorId) return allWorkOrders;
     return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
     setDetails(prev => ({
-        ...prev,
-        subcontractorId,
-        workOrderId: '', // Reset work order when subcontractor changes
+      ...prev,
+      subcontractorId,
+      workOrderId: '',
     }));
     setSelectedWorkOrder(null);
     setItems([]);
   };
 
   useEffect(() => {
-      const wo = allWorkOrders.find(w => w.id === details.workOrderId);
-      setSelectedWorkOrder(wo || null);
-      setItems([]); // reset items when WO changes
+    const wo = allWorkOrders.find(w => w.id === details.workOrderId) || null;
+    setSelectedWorkOrder(wo);
+    setItems([]);
   }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
     const deductedAmounts: Record<string, number> = {};
     bills.forEach(bill => {
-        (bill.advanceDeductions || []).forEach(deduction => {
-            deductedAmounts[deduction.reference] = (deductedAmounts[deduction.reference] || 0) + deduction.amount;
-        });
+      (bill.advanceDeductions || []).forEach(deduction => {
+        deductedAmounts[deduction.reference] = (deductedAmounts[deduction.reference] || 0) + (deduction.amount || 0);
+      });
     });
 
     const workOrderProformas = proformaBills.filter(proforma => proforma.workOrderId === details.workOrderId);
 
     return workOrderProformas
-        .map(proforma => {
-            const totalDeducted = deductedAmounts[proforma.id] || 0;
-            const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
-            return {
-                ...proforma,
-                totalDeducted,
-                remainingBalance,
-            };
-        })
-        .filter(proforma => proforma.remainingBalance > 0);
+      .map(proforma => {
+        const totalDeducted = deductedAmounts[proforma.id] || 0;
+        const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
+        return {
+          ...proforma,
+          totalDeducted,
+          remainingBalance,
+        };
+      })
+      .filter(proforma => (proforma.remainingBalance || 0) > 0);
   }, [proformaBills, bills, details.workOrderId]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -247,121 +271,129 @@ export default function CreateBillPage() {
   };
 
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
-      const newItems = [...items];
-      const item = newItems[index];
-      const billedQty = parseFloat(value);
-      const availableQty = item.availableQty;
-      
-      if(isNaN(billedQty) || billedQty < 0) {
-        item.billedQty = '';
-        item.totalAmount = '';
-      } else if (billedQty > availableQty) {
-          toast({
-              title: 'Quantity Exceeded',
-              description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
-              variant: 'destructive',
-          });
-          item.billedQty = String(availableQty);
-      } else {
-          item.billedQty = value;
-      }
-      
-      const rate = item.rate;
-      if(!isNaN(rate) && item.billedQty) {
-          item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
-      } else {
-          item.totalAmount = '';
-      }
+    const newItems = [...items];
+    const item = { ...newItems[index] };
+    const billedQtyNum = toNumber(value);
+    const availableQty = toNumber(item.availableQty);
 
-      newItems[index] = item;
-      setItems(newItems);
+    if (isNaN(billedQtyNum) || billedQtyNum < 0) {
+      item.billedQty = '';
+      item.totalAmount = '';
+    } else if (billedQtyNum > availableQty) {
+      toast({
+        title: 'Quantity Exceeded',
+        description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
+        variant: 'destructive',
+      });
+      item.billedQty = String(availableQty);
+    } else {
+      item.billedQty = String(billedQtyNum);
+    }
+
+    const rateNum = toNumber(item.rate);
+    if (!isNaN(rateNum) && item.billedQty) {
+      item.totalAmount = (toNumber(item.billedQty) * rateNum).toFixed(2);
+    } else {
+      item.totalAmount = '';
+    }
+
+    newItems[index] = item;
+    setItems(newItems);
   };
-  
+
   const handleSubItemChange = (itemIndex: number, subIndex: number, value: string) => {
     const newItems = [...items];
-    const mainItem = newItems[itemIndex];
+    const mainItem = { ...newItems[itemIndex] };
     if (!mainItem.isBreakdown || !mainItem.subItems) return;
 
-    const subItem = mainItem.subItems[subIndex];
-    const billedQty = parseFloat(value);
-    
-    if (isNaN(billedQty) || billedQty < 0) {
+    const subItem = { ...mainItem.subItems[subIndex] };
+    const billedQtyNum = toNumber(value);
+
+    if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       subItem.billedQty = '';
       subItem.totalAmount = '';
     } else {
-        const availableQty = subItem.availableQty;
-        if(billedQty > availableQty) {
-            toast({ title: 'Quantity Exceeded', description: `Billed quantity for sub-item cannot exceed available quantity (${availableQty}).`, variant: 'destructive'});
-            subItem.billedQty = String(availableQty);
-        } else {
-            subItem.billedQty = value;
-        }
+      const availableQty = toNumber(subItem.availableQty);
+      if (billedQtyNum > availableQty) {
+        toast({ title: 'Quantity Exceeded', description: `Billed quantity for sub-item cannot exceed available quantity (${availableQty}).`, variant: 'destructive' });
+        subItem.billedQty = String(availableQty);
+      } else {
+        subItem.billedQty = String(billedQtyNum);
+      }
 
-        const rate = subItem.rate;
-        if (!isNaN(rate) && subItem.billedQty) {
-            subItem.totalAmount = (parseFloat(subItem.billedQty) * rate).toFixed(2);
-        } else {
-            subItem.totalAmount = '';
-        }
+      const rateNum = toNumber(subItem.rate);
+      if (!isNaN(rateNum) && subItem.billedQty) {
+        subItem.totalAmount = (toNumber(subItem.billedQty) * rateNum).toFixed(2);
+      } else {
+        subItem.totalAmount = '';
+      }
     }
-    
-    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + parseFloat(si.totalAmount || '0'), 0).toFixed(2);
-    mainItem.billedQty = '1'; 
 
+    mainItem.subItems = mainItem.subItems.map((si, idx) => idx === subIndex ? subItem : si);
+    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
+    mainItem.billedQty = '1';
+
+    newItems[itemIndex] = mainItem;
     setItems(newItems);
   };
 
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
-      const newBillItems: EnrichedBillItem[] = selectedWoItems.map(woItem => {
-          
-        const totalJmcCertifiedForBoqItem = jmcEntries
-            .flatMap(jmc => jmc.items)
-            .filter(jmcItem => jmcItem.boqSlNo === woItem.boqSlNo)
-            .reduce((sum, item) => sum + (item.certifiedQty || 0), 0);
-        
-        const alreadyBilledForWoItem = bills
-            .filter(bill => bill.workOrderId === details.workOrderId)
-            .flatMap(bill => bill.items)
-            .filter(billItem => billItem.jmcItemId === woItem.id)
-            .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+    const existingJmcIds = new Set(items.map(i => i.jmcItemId));
+    const filteredAdd = selectedWoItems.filter(woItem => !existingJmcIds.has(woItem.id));
 
-        const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+    const newBillItems: EnrichedBillItem[] = filteredAdd.map(woItem => {
+      const totalJmcCertifiedForBoqItem = jmcEntries
+        .flatMap(jmc => jmc.items || [])
+        .filter(jmcItem => jmcItem.boqSlNo === woItem.boqSlNo)
+        .reduce((sum, item) => sum + (item.certifiedQty || 0), 0);
 
-        return {
-            ...woItem,
+      const alreadyBilledForWoItem = bills
+        .filter(bill => bill.workOrderId === details.workOrderId)
+        .flatMap(bill => bill.items || [])
+        .filter(billItem => billItem.jmcItemId === woItem.id)
+        .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+
+      const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
+      const mainItemAvailableSets = woItem.orderQty - alreadyBilledForWoItem;
+
+      return {
+        ...woItem,
+        id: makeUUID(),
+        jmcItemId: woItem.id,
+        jmcEntryId: '',
+        jmcNo: '',
+        jmcCertifiedQty: totalJmcCertifiedForBoqItem,
+        alreadyBilledQty: alreadyBilledForWoItem,
+        availableQty: Math.max(0, availableForBilling),
+        billedQty: '',
+        totalAmount: '',
+        rate: String(woItem.rate),
+        orderQty: woItem.orderQty,
+        isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
+        subItems: (woItem.subItems || []).map(si => {
+          const subItemQtyPerSet = toNumber(si.quantity);
+          const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
+          return {
+            ...si,
             id: makeUUID(),
-            jmcItemId: woItem.id,
-            jmcEntryId: '',
-            jmcNo: '',
-            jmcCertifiedQty: totalJmcCertifiedForBoqItem,
-            alreadyBilledQty: alreadyBilledForWoItem,
-            availableQty: Math.max(0, availableForBilling),
             billedQty: '',
             totalAmount: '',
-            isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-            subItems: (woItem.subItems || []).map(si => {
-              const subItemQtyPerSet = si.quantity;
-              const subItemAvailable = availableForBilling * subItemQtyPerSet;
-              return { 
-                ...si, 
-                id: makeUUID(), 
-                billedQty: '', 
-                totalAmount: '', 
-                jmcCertifiedQty: 0, 
-                alreadyBilledQty: 0,
-                availableQty: subItemAvailable,
-                rate: si.rate,
-              };
-            }),
-        };
-      });
-      setItems(prev => [...prev, ...newBillItems]);
-  }
+            jmcCertifiedQty: 0,
+            alreadyBilledQty: 0,
+            availableQty: subItemAvailable,
+            rate: si.rate,
+          } as EnrichedSubItem;
+        }),
+      };
+    });
+
+    setItems(prev => [...prev, ...newBillItems]);
+  };
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
-  
+
   const toggleRowExpansion = (itemId: string) => {
     setExpandedRows(prev => {
       const newSet = new Set(prev);
@@ -374,448 +406,459 @@ export default function CreateBillPage() {
     });
   };
 
-  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem, value: any) => {
+  const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem | 'reference' | 'deductionType' | 'deductionValue', value: any) => {
     setAdvanceDeductions(prev => {
-        return prev.map(adv => {
-            if (adv.id !== id) return adv;
-            
-            const newAdv = { ...adv, [field]: value };
-            
-            const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
-            const maxAmount = selectedProforma?.remainingBalance || 0;
-            
-            if (field === 'reference') {
-                newAdv.deductionType = 'amount';
-                newAdv.deductionValue = 0;
-                newAdv.amount = 0;
-            }
+      return prev.map(adv => {
+        if (adv.id !== id) return adv;
+        const newAdv = { ...adv };
 
-            if (newAdv.deductionType === 'amount') {
-                newAdv.amount = Math.min(maxAmount, Number(newAdv.deductionValue) || 0);
-            } else if (newAdv.deductionType === 'percentage') {
-                const calculatedAmount = maxAmount * (Number(newAdv.deductionValue) / 100);
-                newAdv.amount = Math.min(maxAmount, calculatedAmount);
-            }
-            
-            if (newAdv.amount > maxAmount) {
-                newAdv.amount = maxAmount;
-                 if(newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
-            }
+        if (field === 'reference') {
+          newAdv.reference = String(value || '');
+          newAdv.deductionType = 'amount';
+          newAdv.deductionValue = 0;
+          newAdv.amount = 0;
+        } else if (field === 'deductionType') {
+          newAdv.deductionType = value === 'percentage' ? 'percentage' : 'amount';
+        } else if (field === 'deductionValue') {
+          newAdv.deductionValue = toNumber(value);
+        } else if (field === 'amount') {
+          newAdv.amount = toNumber(value);
+        }
 
-            return newAdv;
-        });
+        const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
+        const maxAmount = selectedProforma?.remainingBalance || 0;
+
+        if (newAdv.deductionType === 'amount') {
+          newAdv.amount = Math.min(maxAmount, toNumber(newAdv.deductionValue));
+          newAdv.deductionValue = newAdv.amount;
+        } else { // percentage
+          const percent = toNumber(newAdv.deductionValue);
+          const calculated = (maxAmount * percent) / 100;
+          newAdv.amount = Math.min(maxAmount, calculated);
+        }
+
+        if (newAdv.amount > maxAmount) {
+          newAdv.amount = maxAmount;
+          if (newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
+        }
+
+        return newAdv;
+      });
     });
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
-        setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
+      setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-        setAdvanceDeductions([{ id: crypto.randomUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+      setAdvanceDeductions([{ id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
   const financials = useMemo(() => {
-    const subtotal = items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+    const subtotal = items.reduce((sum, item) => sum + toNumber(item.totalAmount || '0'), 0);
     const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
-    const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);
+    const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + toNumber(adv.amount || 0), 0);
     const grossAmount = subtotal + finalGstAmount;
     const totalDeductions = finalRetentionAmount + totalAdvanceDeduction + otherDeduction;
     const netPayable = grossAmount - totalDeductions;
     return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction, otherDeduction };
   }, [items, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, otherDeduction, advanceDeductions]);
 
-
   const handleSave = async () => {
     if (!user || !details.billNo || !selectedWorkOrder || items.length === 0) {
-        toast({ title: 'Missing Required Fields', description: 'Please fill in Bill No, select a Work Order, and add at least one item.', variant: 'destructive'});
-        return;
+      toast({ title: 'Missing Required Fields', description: 'Please fill in Bill No, select a Work Order, and add at least one item.', variant: 'destructive' });
+      return;
     }
     setIsSaving(true);
-    
+
     try {
-        const workflowRef = doc(db, 'workflows', 'billing-workflow');
-        const workflowSnap = await getDoc(workflowRef);
-        if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
-        
-        const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
-        if(steps.length === 0) throw new Error('Billing workflow has no steps.');
-        const firstStep = steps[0];
-        
-        const itemsToSave: BillItem[] = items.map(it => {
-            const { id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
-            return {
-                ...rest,
-                jmcItemId: it.jmcItemId,
-                jmcEntryId: it.jmcEntryId,
-                jmcNo: it.jmcNo,
-                executedQty: String(it.orderQty),
-                billedQty: String(it.billedQty || '0'),
-                totalAmount: String(it.totalAmount || '0'),
-                rate: String(it.rate || '0'),
-            };
-        });
+      const workflowRef = doc(db, 'workflows', 'billing-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
 
-        const billData: Omit<Bill, 'id'> = {
-            ...details,
-            workOrderNo: selectedWorkOrder.workOrderNo,
-            items: itemsToSave,
-            subtotal: financials.subtotal,
-            gstType,
-            gstPercentage: gstType === 'percentage' ? gstPercentage : null,
-            gstAmount: financials.finalGstAmount,
-            grossAmount: financials.grossAmount,
-            retentionType,
-            retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
-            retentionAmount: financials.finalRetentionAmount,
-            otherDeduction: financials.otherDeduction,
-            advanceDeductions: advanceDeductions
-                .filter(adv => adv.reference && adv.amount > 0)
-                .map(({id, ...rest}) => rest),
-            totalDeductions: financials.totalDeductions,
-            netPayable: financials.netPayable,
-            totalAmount: financials.netPayable,
-            createdAt: serverTimestamp() as Timestamp,
-            projectId: currentProject?.id || '',
-            status: 'Pending',
-            stage: firstStep.name,
-            currentStepId: firstStep.id,
-            assignees: [],
-            history: [],
+      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+      if (steps.length === 0) throw new Error('Billing workflow has no steps.');
+      const firstStep = steps[0];
+
+      const itemsToSave: BillItem[] = items.map(it => {
+        const {
+          id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest
+        } = it;
+        return {
+          ...rest,
+          jmcItemId: it.jmcItemId,
+          jmcEntryId: it.jmcEntryId,
+          jmcNo: it.jmcNo,
+          executedQty: String(it.orderQty || '0'),
+          billedQty: String(it.billedQty || '0'),
+          totalAmount: String(it.totalAmount || '0'),
+          rate: String(it.rate || '0'),
         };
-        
-        const tempForAssignment = { ...billData, amount: billData.netPayable, date: billData.billDate };
-        const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
-        if(!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
-        billData.assignees = assignees;
+      });
 
-        const deadline = await calculateDeadline(new Date(), firstStep.tat);
-        (billData as any).deadline = Timestamp.fromDate(deadline);
+      const billData: Omit<Bill, 'id'> = {
+        ...details,
+        workOrderNo: selectedWorkOrder.workOrderNo,
+        items: itemsToSave,
+        subtotal: financials.subtotal,
+        gstType,
+        gstPercentage: gstType === 'percentage' ? gstPercentage : null,
+        gstAmount: financials.finalGstAmount,
+        grossAmount: financials.grossAmount,
+        retentionType,
+        retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
+        retentionAmount: financials.finalRetentionAmount,
+        otherDeduction: financials.otherDeduction,
+        advanceDeductions: advanceDeductions
+          .filter(adv => adv.reference && adv.amount > 0)
+          .map(({ id, ...rest }) => rest),
+        totalDeductions: financials.totalDeductions,
+        netPayable: financials.netPayable,
+        totalAmount: financials.netPayable,
+        createdAt: serverTimestamp() as Timestamp,
+        projectId: currentProject?.id || '',
+        status: 'Pending',
+        stage: firstStep.name,
+        currentStepId: firstStep.id,
+        assignees: [],
+        history: [],
+      };
+      
+      const tempForAssignment = { ...billData, amount: billData.netPayable, date: billData.billDate };
+      const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
+      if (!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
+      billData.assignees = assignees;
 
-        const initialLog: ActionLog = {
-            action: 'Created',
-            comment: 'Bill created.',
-            userId: user.id,
-            userName: user.name,
-            timestamp: Timestamp.now(),
-            stepName: 'Creation',
-        };
-        billData.history = [initialLog];
+      const deadline = await calculateDeadline(new Date(), firstStep.tat);
+      (billData as any).deadline = Timestamp.fromDate(deadline);
 
+      const initialLog: ActionLog = {
+        action: 'Created',
+        comment: 'Bill created.',
+        userId: user.id,
+        userName: user.name,
+        timestamp: Timestamp.now(),
+        stepName: 'Creation',
+      };
+      billData.history = [initialLog];
 
-        if(!currentProject) throw new Error("Project ID is missing");
-        
-        await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
-        
-        toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
-        router.push(`/subcontractors-management/${projectSlug}/billing`);
+      if (!currentProject) throw new Error("Project ID is missing");
+      
+      await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+      
+      toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
+      router.push(`/subcontractors-management/${projectSlug}/billing`);
 
     } catch (error: any) {
-        console.error("Error creating bill: ", error);
-        toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the bill.', variant: 'destructive' });
+      console.error("Error creating bill: ", error);
+      toast({ title: 'Save Failed', description: error?.message || 'An error occurred while saving the bill.', variant: 'destructive' });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
-  
+
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if(isNaN(num)) return formatCurrency(0);
+    if (isNaN(num)) {
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(0);
+    }
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
-  }
+  };
 
-  const selectedAdvanceReferences = useMemo(() => 
-    new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
+  const selectedAdvanceReferences = useMemo(
+    () => new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
     [advanceDeductions]
   );
-  
+
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-              <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-                  <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">Bill Entry</h1>
+            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
+              <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">Bill Entry</h1>
           </div>
           <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save Bill
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save Bill
           </Button>
         </div>
 
         <Card className="mb-6">
           <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>
           <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                      <Label htmlFor="subcontractorId">Subcontractor</Label>
-                      <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
-                          <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
-                          <SelectContent>
-                              {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
-                          </SelectContent>
-                      </Select>
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="workOrderId">Work Order No</Label>
-                      <Select 
-                        value={details.workOrderId} 
-                        onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
-                        disabled={!details.subcontractorId}
-                      >
-                          <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
-                          <SelectContent>
-                              {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
-                          </SelectContent>
-                      </Select>
-                  </div>
-                   <div className="space-y-2">
-                      <Label>Subcontractor Name</Label>
-                      <Input value={selectedWorkOrder?.subcontractorName || ''} readOnly className="bg-muted"/>
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="billNo">Bill No</Label>
-                      <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="billDate">Bill Date</Label>
-                      <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="subcontractorId">Subcontractor</Label>
+                <Select value={details.subcontractorId} onValueChange={handleSubcontractorChange}>
+                  <SelectTrigger id="subcontractorId"><SelectValue placeholder="Select a Subcontractor" /></SelectTrigger>
+                  <SelectContent>
+                    {subcontractorsWithWorkOrders.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.legalName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="workOrderId">Work Order No</Label>
+                <Select
+                  value={details.workOrderId}
+                  onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
+                  disabled={!details.subcontractorId}
+                >
+                  <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
+                  <SelectContent>
+                    {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Subcontractor Name</Label>
+                <Input value={selectedWorkOrder?.subcontractorName || ''} readOnly className="bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="billNo">Bill No</Label>
+                <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="billDate">Bill Date</Label>
+                <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-               <div className="flex items-center justify-between">
-                  <div>
-                      <CardTitle>Bill Items</CardTitle>
-                      <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
-                  </div>
-                  <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
-                      <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
-                  </Button>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Bill Items</CardTitle>
+                <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
               </div>
+              <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+                <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-              <div className="overflow-x-auto">
-                  <Table>
-                      <TableHeader>
-                          <TableRow>
-                              <TableHead></TableHead>
-                              <TableHead>BOQ Sl. No.</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead>Unit</TableHead>
-                              <TableHead>Order Qty</TableHead>
-                              <TableHead>JMC Certified Qty</TableHead>
-                              <TableHead>Already Billed Qty</TableHead>
-                              <TableHead>Available</TableHead>
-                              <TableHead>Billed Qty</TableHead>
-                              <TableHead>Rate</TableHead>
-                              <TableHead>Total Amount</TableHead>
-                              <TableHead>Action</TableHead>
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {items.map((item, index) => (
-                           <Fragment key={item.id}>
-                            <TableRow>
-                                <TableCell>
-                                    {item.isBreakdown && (
-                                        <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
-                                            {expandedRows.has(item.id) ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
-                                        </Button>
-                                    )}
-                                </TableCell>
-                                <TableCell>{item.boqSlNo}</TableCell>
-                                <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.unit}</TableCell>
-                                <TableCell>{item.orderQty}</TableCell>
-                                <TableCell>{item.jmcCertifiedQty}</TableCell>
-                                <TableCell>{item.alreadyBilledQty}</TableCell>
-                                <TableCell className="font-semibold">{item.availableQty}</TableCell>
-                                <TableCell>
-                                    <Input 
-                                      type="number" 
-                                      value={item.billedQty}
-                                      onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                                      max={item.availableQty}
-                                      className="w-24"
-                                      disabled={item.isBreakdown}
-                                    />
-                                </TableCell>
-                                <TableCell>{formatCurrency(item.rate)}</TableCell>
-                                <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
-                                <TableCell>
-                                    <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                            {expandedRows.has(item.id) && item.isBreakdown && (
-                                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                  <TableCell colSpan={12} className="p-0">
-                                      <div className="p-4">
-                                          <h4 className="font-semibold mb-2 ml-2">Sub-Items Breakdown</h4>
-                                          <Table>
-                                              <TableHeader>
-                                                  <TableRow>
-                                                      <TableHead>Sl.No</TableHead>
-                                                      <TableHead>Description</TableHead>
-                                                      <TableHead>Qty/Set</TableHead>
-                                                      <TableHead>Billed Qty</TableHead>
-                                                      <TableHead>Rate</TableHead>
-                                                      <TableHead>Total Amount</TableHead>
-                                                  </TableRow>
-                                              </TableHeader>
-                                              <TableBody>
-                                                  {item.subItems.map((sub, subIndex) => (
-                                                      <TableRow key={sub.id}>
-                                                          <TableCell>{sub.slNo}</TableCell>
-                                                          <TableCell>{sub.name}</TableCell>
-                                                          <TableCell>{sub.quantity}</TableCell>
-                                                          <TableCell>
-                                                            <Input 
-                                                                type="number"
-                                                                className="w-24"
-                                                                value={sub.billedQty}
-                                                                onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)}
-                                                            />
-                                                          </TableCell>
-                                                          <TableCell>{formatCurrency(sub.rate)}</TableCell>
-                                                          <TableCell>{formatCurrency(sub.totalAmount)}</TableCell>
-                                                      </TableRow>
-                                                  ))}
-                                              </TableBody>
-                                          </Table>
-                                      </div>
-                                  </TableCell>
-                                </TableRow>
-                            )}
-                          </Fragment>
-                        ))}
-                      </TableBody>
-                  </Table>
-              </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead></TableHead>
+                    <TableHead>BOQ Sl. No.</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Order Qty</TableHead>
+                    <TableHead>JMC Certified Qty</TableHead>
+                    <TableHead>Already Billed Qty</TableHead>
+                    <TableHead>Available</TableHead>
+                    <TableHead>Billed Qty</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Total Amount</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item, index) => (
+                    <Fragment key={item.id}>
+                      <TableRow>
+                        <TableCell>
+                          {item.isBreakdown && (
+                            <Button size="icon" variant="ghost" onClick={() => toggleRowExpansion(item.id)}>
+                              {expandedRows.has(item.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell>{item.boqSlNo}</TableCell>
+                        <TableCell>{item.description}</TableCell>
+                        <TableCell>{item.unit}</TableCell>
+                        <TableCell>{item.orderQty}</TableCell>
+                        <TableCell>{item.jmcCertifiedQty}</TableCell>
+                        <TableCell>{item.alreadyBilledQty}</TableCell>
+                        <TableCell className="font-semibold">{item.availableQty}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={item.billedQty}
+                            onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
+                            max={item.availableQty}
+                            className="w-24"
+                            disabled={item.isBreakdown}
+                          />
+                        </TableCell>
+                        <TableCell>{formatCurrency(item.rate)}</TableCell>
+                        <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {expandedRows.has(item.id) && item.isBreakdown && (
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={12} className="p-0">
+                            <div className="p-4">
+                              <h4 className="font-semibold mb-2 ml-2">Sub-Items Breakdown</h4>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Sl.No</TableHead>
+                                    <TableHead>Description</TableHead>
+                                    <TableHead>Qty/Set</TableHead>
+                                    <TableHead>Billed Qty</TableHead>
+                                    <TableHead>Rate</TableHead>
+                                    <TableHead>Total Amount</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {item.subItems.map((sub, subIndex) => (
+                                    <TableRow key={sub.id}>
+                                      <TableCell>{sub.slNo}</TableCell>
+                                      <TableCell>{sub.name}</TableCell>
+                                      <TableCell>{sub.quantity}</TableCell>
+                                      <TableCell>
+                                        <Input
+                                          type="number"
+                                          className="w-24"
+                                          value={sub.billedQty}
+                                          onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)}
+                                        />
+                                      </TableCell>
+                                      <TableCell>{formatCurrency(sub.rate)}</TableCell>
+                                      <TableCell>{formatCurrency(sub.totalAmount)}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
         <Card className="mt-6">
-            <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                    <div>
-                        <Label>GST</Label>
-                        <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4 mt-2">
-                            <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="gst-percentage" /><Label htmlFor="gst-percentage">Percentage</Label></div>
-                            <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="gst-manual" /><Label htmlFor="gst-manual">Manual</Label></div>
-                        </RadioGroup>
-                        {gstType === 'percentage' ? (
-                            <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} /><span className="text-muted-foreground">%</span></div>
-                        ) : (
-                            <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
-                        )}
-                    </div>
-                     <Separator />
-                    <div>
-                        <Label>Deductions</Label>
-                        <div className="space-y-4 mt-2">
-                            <div className="space-y-2">
-                                <Label>Retention</Label>
-                                <RadioGroup value={retentionType} onValueChange={(v) => setRetentionType(v as any)} className="flex gap-4">
-                                    <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="ret-percentage" /><Label htmlFor="ret-percentage">Percentage</Label></div>
-                                    <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="ret-manual" /><Label htmlFor="ret-manual">Manual</Label></div>
-                                </RadioGroup>
-                                {retentionType === 'percentage' ? (
-                                    <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(parseFloat(e.target.value) || 0)} /><span className="text-muted-foreground">%</span></div>
-                                ) : (
-                                    <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Advance Deductions</Label>
-                                {advanceDeductions.map((adv) => {
-                                const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
-                                return (
-                                <Card key={adv.id} className="p-4 space-y-3">
-                                    <div className="flex items-start gap-2">
-                                        <div className="flex-grow space-y-2">
-                                            <Select
-                                                value={adv.reference}
-                                                onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select Proforma/Advance" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {availableProformaBills.map(proforma => (
-                                                        <SelectItem key={proforma.id} value={proforma.id} disabled={selectedAdvanceReferences.has(proforma.id) && proforma.id !== adv.reference}>
-                                                            {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType', v as any)} className="flex gap-4 pt-2">
-                                                <div className="flex items-center space-x-2"><RadioGroupItem value="amount" id={`adv-type-amount-${adv.id}`} /><Label htmlFor={`adv-type-amount-${adv.id}`}>Amount</Label></div>
-                                                <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id={`adv-type-percent-${adv.id}`} /><Label htmlFor={`adv-type-percent-${adv.id}`}>Percentage</Label></div>
-                                            </RadioGroup>
-                                            <div className="flex items-center gap-2">
-                                                <Input
-                                                    type="number"
-                                                    placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'}
-                                                    value={adv.deductionValue}
-                                                    onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue', e.target.value)}
-                                                />
-                                                {adv.deductionType === 'percentage' && <span className="text-muted-foreground">%</span>}
-                                            </div>
-                                        </div>
-                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
-                                    </div>
-                                    {selectedProforma && (
-                                    <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
-                                        <div className="flex justify-between"><span>Total Proforma Value:</span> <span>{formatCurrency(selectedProforma.payableAmount || 0)}</span></div>
-                                        <div className="flex justify-between"><span>Previously Deducted:</span> <span>{formatCurrency(selectedProforma.totalDeducted || 0)}</span></div>
-                                        <div className="flex justify-between font-medium"><span>Available Balance:</span> <span>{formatCurrency(selectedProforma.remainingBalance || 0)}</span></div>
-                                        <div className="flex justify-between font-bold"><span>Balance After Deduction:</span> <span>{formatCurrency((selectedProforma.remainingBalance || 0) - adv.amount)}</span></div>
-                                    </div>
-                                    )}
-                                </Card>
-                                )})}
-                                <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
-                                    <Plus className="mr-2 h-4 w-4" /> Add Advance
-                                </Button>
-                            </div>
-                             <div className="space-y-2">
-                                <Label htmlFor="otherDeduction">Other Deductions</Label>
+          <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div>
+                <Label>GST</Label>
+                <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4 mt-2">
+                  <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="gst-percentage" /><Label htmlFor="gst-percentage">Percentage</Label></div>
+                  <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="gst-manual" /><Label htmlFor="gst-manual">Manual</Label></div>
+                </RadioGroup>
+                {gstType === 'percentage' ? (
+                  <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(toNumber(e.target.value))} /><span className="text-muted-foreground">%</span></div>
+                ) : (
+                  <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(toNumber(e.target.value))} className="mt-2" />
+                )}
+              </div>
+              <Separator />
+              <div>
+                <Label>Deductions</Label>
+                <div className="space-y-4 mt-2">
+                  <div className="space-y-2">
+                    <Label>Retention</Label>
+                    <RadioGroup value={retentionType} onValueChange={(v) => setRetentionType(v as any)} className="flex gap-4">
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="ret-percentage" /><Label htmlFor="ret-percentage">Percentage</Label></div>
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="ret-manual" /><Label htmlFor="ret-manual">Manual</Label></div>
+                    </RadioGroup>
+                    {retentionType === 'percentage' ? (
+                      <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(toNumber(e.target.value))} /><span className="text-muted-foreground">%</span></div>
+                    ) : (
+                      <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(toNumber(e.target.value))} className="mt-2" />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Advance Deductions</Label>
+                    {advanceDeductions.map((adv) => {
+                      const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
+                      return (
+                        <Card key={adv.id} className="p-4 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <div className="flex-grow space-y-2">
+                              <Select
+                                value={adv.reference}
+                                onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select Proforma/Advance" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableProformaBills.map(proforma => (
+                                    <SelectItem key={proforma.id} value={proforma.id} disabled={selectedAdvanceReferences.has(proforma.id) && proforma.id !== adv.reference}>
+                                      {proforma.proformaNo} ({formatCurrency(proforma.remainingBalance)})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType', v)} className="flex gap-4 pt-2">
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="amount" id={`adv-type-amount-${adv.id}`} /><Label htmlFor={`adv-type-amount-${adv.id}`}>Amount</Label></div>
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id={`adv-type-percent-${adv.id}`} /><Label htmlFor={`adv-type-percent-${adv.id}`}>Percentage</Label></div>
+                              </RadioGroup>
+                              <div className="flex items-center gap-2">
                                 <Input
-                                    id="otherDeduction"
-                                    type="number"
-                                    placeholder="Enter other deductions"
-                                    value={otherDeduction}
-                                    onChange={(e) => setOtherDeduction(Number(e.target.value) || 0)}
+                                  type="number"
+                                  placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'}
+                                  value={adv.deductionValue}
+                                  onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue', e.target.value)}
                                 />
+                                {adv.deductionType === 'percentage' && <span className="text-muted-foreground">%</span>}
+                              </div>
                             </div>
-                        </div>
-                    </div>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          </div>
+                          {selectedProforma && (
+                            <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
+                              <div className="flex justify-between"><span>Total Proforma Value:</span> <span>{formatCurrency(selectedProforma.payableAmount || 0)}</span></div>
+                              <div className="flex justify-between"><span>Previously Deducted:</span> <span>{formatCurrency(selectedProforma.totalDeducted || 0)}</span></div>
+                              <div className="flex justify-between font-medium"><span>Available Balance:</span> <span>{formatCurrency(selectedProforma.remainingBalance || 0)}</span></div>
+                              <div className="flex justify-between font-bold"><span>Balance After Deduction:</span> <span>{formatCurrency((selectedProforma.remainingBalance || 0) - adv.amount)}</span></div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                    <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
+                      <Plus className="mr-2 h-4 w-4" /> Add Advance
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="otherDeduction">Other Deductions</Label>
+                    <Input
+                      id="otherDeduction"
+                      type="number"
+                      placeholder="Enter other deductions"
+                      value={otherDeduction}
+                      onChange={(e) => setOtherDeduction(toNumber(e.target.value))}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
-                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
-                    <Separator />
-                    <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
-                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
-                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
-                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
-                     <Separator />
-                     <div className="flex justify-between items-center font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
-                </div>
-            </CardContent>
+              </div>
+            </div>
+            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+              <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
+              <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
+              <Separator />
+              <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
+              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
+              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
+              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
+              <Separator />
+              <div className="flex justify-between items-center font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
+            </div>
+          </CardContent>
         </Card>
       </div>
       <WorkOrderItemSelectorDialog
@@ -823,9 +866,8 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items.map(i => ({...i, billedQty: i.billedQty, totalAmount: i.totalAmount, rate: String(i.rate)}))}
+        alreadyAddedItems={items}
       />
     </>
   );
 }
-
