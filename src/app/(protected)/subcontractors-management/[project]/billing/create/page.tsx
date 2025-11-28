@@ -1,4 +1,3 @@
-
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -16,18 +15,14 @@ import {
   getDocs,
   doc,
   query,
-  where,
   serverTimestamp,
   getDoc,
   Timestamp,
   collectionGroup,
-  type DocumentData,
-  type QuerySnapshot,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type {
-  WorkOrder,
   WorkOrderItem,
   JmcEntry,
   Project,
@@ -43,16 +38,22 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-// IMPORTANT: If your real selector component lives elsewhere, update this import path accordingly.
 import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
-
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 
 /**
- * Utilities & types
+ * Local WorkOrder shim — add to lib/types.ts later for long-term fix.
  */
+type WorkOrder = {
+  id: string;
+  workOrderNo: string;
+  subcontractorId: string;
+  subcontractorName?: string;
+};
+
+/** Utilities **/
 const slugify = (text: string) => {
   if (!text) return '';
   return text.toString().toLowerCase()
@@ -68,12 +69,17 @@ const toNumber = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const nanoid = () => crypto.randomUUID();
+const nanoid = () => {
+  try {
+    // @ts-ignore
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return (crypto as any).randomUUID();
+  } catch (e) { /* ignore */ }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+};
 
-
-// UI-specific type for sub-items with string inputs
-type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
-  id: string; // Ensure ID for client-side keying
+/** UI types (client-side enriched) **/
+type EnrichedSubItem = SubItem & {
+  id: string;
   billedQty: string;
   totalAmount: string;
   rate: string;
@@ -83,30 +89,28 @@ type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   availableQty: number;
 };
 
-
-// UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'executedQty' | 'subItems' | 'orderQty' > & {
-    id: string;
-    isBreakdown: boolean;
-    orderQty: number;
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
-    availableQty: number;
-    // UI state as strings
-    billedQty: string;
-    totalAmount: string;
-    rate: string;
-    executedQty: string;
-    subItems: EnrichedSubItem[];
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'executedQty' | 'subItems' | 'orderQty'> & {
+  id: string;
+  isBreakdown: boolean;
+  orderQty: number;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
+  availableQty: number;
+  billedQty: string;
+  totalAmount: string;
+  rate: string;
+  executedQty: string;
+  subItems: EnrichedSubItem[];
+  boqItemId?: string;
+  boqSlNo?: string;
 };
-
 
 type AdvanceDeductionItem = {
   id: string;
-  reference: string; // ProformaBill ID
+  reference: string;
   deductionType: 'amount' | 'percentage';
-  deductionValue: number; // raw amount or percentage
-  amount: number; // final calculated deduction amount
+  deductionValue: number;
+  amount: number;
 };
 
 const initialBillDetails = {
@@ -166,7 +170,6 @@ export default function CreateBillPage() {
           toast({ title: "Error", description: "Project not found.", variant: "destructive" });
           return;
         }
-
         setCurrentProject(project);
 
         const subsQuery = query(collectionGroup(db, 'subcontractors'));
@@ -180,27 +183,21 @@ export default function CreateBillPage() {
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
-          getDocs(proformaBillsQuery)
+          getDocs(proformaBillsQuery),
         ]);
 
         if (!mounted) return;
 
-        const allSubs = subsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Subcontractor));
-        const projectWorkOrders = woSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WorkOrder));
+        const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Subcontractor));
+        const projectWorkOrders = woSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as WorkOrder));
 
         const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
         setAllWorkOrders(projectWorkOrders);
-        
-        const jmcEntriesForProject = jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry));
-        setJmcEntries(jmcEntriesForProject);
 
-        const billsForProject = billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill));
-        setBills(billsForProject);
-        
-        const proformasForProject = proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill));
-        setProformaBills(proformasForProject);
-
+        setJmcEntries(jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+        setBills(billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill)));
+        setProformaBills(proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill)));
       } catch (err: any) {
         console.error('Error fetching project data', err);
         toast({ title: 'Error', description: err?.message || 'Failed to fetch project data', variant: 'destructive' });
@@ -208,7 +205,6 @@ export default function CreateBillPage() {
     };
 
     fetchProjectAndData();
-
     return () => { mounted = false; };
   }, [projectSlug, toast]);
 
@@ -218,16 +214,12 @@ export default function CreateBillPage() {
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
-    setDetails(prev => ({
-        ...prev,
-        subcontractorId,
-        workOrderId: '',
-    }));
+    setDetails(prev => ({ ...prev, subcontractorId, workOrderId: '' }));
     setSelectedWorkOrder(null);
     setItems([]);
   };
@@ -241,24 +233,19 @@ export default function CreateBillPage() {
   const availableProformaBills = useMemo(() => {
     const deductedAmounts: Record<string, number> = {};
     bills.forEach(bill => {
-      (bill.advanceDeductions || []).forEach(deduction => {
-        deductedAmounts[deduction.reference] = (deductedAmounts[deduction.reference] || 0) + (deduction.amount || 0);
+      (bill.advanceDeductions || []).forEach(d => {
+        deductedAmounts[d.reference] = (deductedAmounts[d.reference] || 0) + (d.amount || 0);
       });
     });
 
-    const workOrderProformas = proformaBills.filter(proforma => proforma.workOrderId === details.workOrderId);
-
+    const workOrderProformas = proformaBills.filter(p => p.workOrderId === details.workOrderId);
     return workOrderProformas
-      .map(proforma => {
-        const totalDeducted = deductedAmounts[proforma.id] || 0;
-        const remainingBalance = (proforma.payableAmount || 0) - totalDeducted;
-        return {
-          ...proforma,
-          totalDeducted,
-          remainingBalance,
-        };
+      .map(p => {
+        const totalDeducted = deductedAmounts[p.id] || 0;
+        const remainingBalance = (p.payableAmount || 0) - totalDeducted;
+        return { ...p, totalDeducted, remainingBalance };
       })
-      .filter(proforma => (proforma.remainingBalance || 0) > 0);
+      .filter(p => (p.remainingBalance || 0) > 0);
   }, [proformaBills, bills, details.workOrderId]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,11 +263,7 @@ export default function CreateBillPage() {
       item.billedQty = '';
       item.totalAmount = '';
     } else if (billedQtyNum > availableQty) {
-      toast({
-        title: 'Quantity Exceeded',
-        description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
-        variant: 'destructive',
-      });
+      toast({ title: 'Quantity Exceeded', description: `Billed quantity cannot be more than available (${availableQty}).`, variant: 'destructive' });
       item.billedQty = String(availableQty);
     } else {
       item.billedQty = String(billedQtyNum);
@@ -290,25 +273,18 @@ export default function CreateBillPage() {
     const rateNum = toNumber(item.rate);
 
     if (item.isBreakdown && item.subItems) {
-        item.subItems = item.subItems.map(si => {
-            const qtyPerSet = toNumber(si.quantity);
-            const subItemBilledQty = currentBilledQty * qtyPerSet;
-            const subItemRate = toNumber(si.rate);
-            return {
-                ...si,
-                billedQty: String(subItemBilledQty),
-                totalAmount: String(subItemBilledQty * subItemRate)
-            };
-        });
-        item.totalAmount = String(item.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount), 0));
+      item.subItems = item.subItems.map(si => {
+        const qtyPerSet = toNumber(si.quantity);
+        const subItemBilledQty = currentBilledQty * qtyPerSet;
+        const subItemRate = toNumber(si.rate);
+        return { ...si, billedQty: String(subItemBilledQty), totalAmount: String(subItemBilledQty * subItemRate) };
+      });
+      item.totalAmount = String(item.subItems.reduce((s, si) => s + toNumber(si.totalAmount), 0));
     } else {
-        if (!isNaN(rateNum)) {
-            item.totalAmount = String(currentBilledQty * rateNum);
-        } else {
-            item.totalAmount = '';
-        }
+      if (!isNaN(rateNum)) item.totalAmount = String(currentBilledQty * rateNum);
+      else item.totalAmount = '';
     }
-    
+
     newItems[index] = item;
     setItems(newItems);
   };
@@ -327,157 +303,138 @@ export default function CreateBillPage() {
     } else {
       const availableQty = subItem.availableQty;
       if (billedQtyNum > availableQty) {
-        toast({ title: 'Quantity Exceeded', description: `Billed quantity for sub-item cannot exceed available quantity (${availableQty}).`, variant: 'destructive' });
+        toast({ title: 'Quantity Exceeded', description: `Sub-item billed qty cannot exceed available (${availableQty}).`, variant: 'destructive' });
         subItem.billedQty = String(availableQty);
       } else {
         subItem.billedQty = String(billedQtyNum);
       }
 
       const rateNum = toNumber(subItem.rate);
-      if (!isNaN(rateNum) && subItem.billedQty) {
-        subItem.totalAmount = (toNumber(subItem.billedQty) * rateNum).toFixed(2);
-      } else {
-        subItem.totalAmount = '';
-      }
+      subItem.totalAmount = !isNaN(rateNum) && subItem.billedQty ? (toNumber(subItem.billedQty) * rateNum).toFixed(2) : '';
     }
 
     mainItem.subItems[subIndex] = subItem;
-    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
-    
+    mainItem.totalAmount = mainItem.subItems.reduce((s, si) => s + toNumber(si.totalAmount || '0'), 0).toFixed(2);
+
     newItems[itemIndex] = mainItem;
     setItems(newItems);
   };
 
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
     const existingJmcIds = new Set(items.map(i => i.jmcItemId));
-    const filteredAdd = selectedWoItems.filter(woItem => !existingJmcIds.has(woItem.id));
+    const filteredAdd = selectedWoItems.filter(wo => !existingJmcIds.has(wo.id));
 
     const newBillItems: EnrichedBillItem[] = filteredAdd.map(woItem => {
       const totalJmcCertifiedForBoqItem = jmcEntries
-        .flatMap(jmc => jmc.items || [])
-        .filter(jmcItem => jmcItem.boqSlNo === woItem.boqSlNo)
-        .reduce((sum, item) => sum + (item.certifiedQty || 0), 0);
+        .flatMap(j => j.items || [])
+        .filter(jItem => jItem.boqSlNo === woItem.boqSlNo)
+        .reduce((s, it) => s + (it.certifiedQty || 0), 0);
 
       const alreadyBilledForWoItem = bills
-        .filter(bill => bill.workOrderId === details.workOrderId)
-        .flatMap(bill => bill.items || [])
-        .filter(billItem => billItem.jmcItemId === woItem.id)
-        .reduce((sum, item) => sum + (item.billedQty || 0), 0);
-        
-      const availableForBilling = woItem.orderQty - alreadyBilledForWoItem;
+        .filter(b => b.workOrderId === details.workOrderId)
+        .flatMap(b => b.items || [])
+        .filter(bi => bi.jmcItemId === woItem.id)
+        .reduce((s, it) => s + (it.billedQty || 0), 0);
+
+      const availableForBilling = Math.max(0, (woItem.orderQty || 0) - alreadyBilledForWoItem);
 
       return {
         id: nanoid(),
         jmcItemId: woItem.id,
         jmcEntryId: '',
         jmcNo: '',
-        boqItemId: woItem.boqItemId,
+        boqItemId: (woItem as any).boqItemId || '',
         boqSlNo: woItem.boqSlNo || '',
-        description: woItem.description,
-        unit: woItem.unit,
-        orderQty: woItem.orderQty,
-        rate: String(woItem.rate),
+        description: woItem.description || '',
+        unit: woItem.unit || '',
+        orderQty: toNumber(woItem.orderQty),
+        rate: String((woItem as any).rate || 0),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
-        availableQty: Math.max(0, availableForBilling),
+        availableQty: availableForBilling,
         billedQty: '',
         totalAmount: '',
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-        executedQty: String(woItem.orderQty),
+        executedQty: String(woItem.orderQty || 0),
         subItems: (woItem.subItems || []).map(si => {
-          const subItemQtyPerSet = toNumber(si.quantity);
-          const subItemAvailable = Math.max(0, availableForBilling * subItemQtyPerSet);
+          const qtyPerSet = toNumber((si as any).quantity);
+          const subItemAvailable = Math.max(0, availableForBilling * qtyPerSet);
           return {
             ...si,
             id: nanoid(),
             billedQty: '',
             totalAmount: '',
-            rate: String(si.rate),
-            quantity: String(subItemQtyPerSet),
+            rate: String((si as any).rate || 0),
+            quantity: String(qtyPerSet),
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
-          };
+          } as EnrichedSubItem;
         }),
-      };
+      } as EnrichedBillItem;
     });
 
     setItems(prev => [...prev, ...newBillItems]);
   };
 
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
-  };
+  const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
   const toggleRowExpansion = (itemId: string) => {
     setExpandedRows(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
+      if (newSet.has(itemId)) newSet.delete(itemId);
+      else newSet.add(itemId);
       return newSet;
     });
   };
 
   const handleAdvanceChange = (id: string, field: keyof AdvanceDeductionItem | 'reference' | 'deductionType' | 'deductionValue', value: any) => {
-    setAdvanceDeductions(prev => {
-      return prev.map(adv => {
-        if (adv.id !== id) return adv;
-        const newAdv = { ...adv };
+    setAdvanceDeductions(prev => prev.map(adv => {
+      if (adv.id !== id) return adv;
+      const newAdv = { ...adv };
+      if (field === 'reference') {
+        newAdv.reference = String(value || '');
+        newAdv.deductionType = 'amount';
+        newAdv.deductionValue = 0;
+        newAdv.amount = 0;
+      } else if (field === 'deductionType') {
+        newAdv.deductionType = value === 'percentage' ? 'percentage' : 'amount';
+      } else if (field === 'deductionValue') {
+        newAdv.deductionValue = toNumber(value);
+      } else if (field === 'amount') {
+        newAdv.amount = toNumber(value);
+      }
 
-        if (field === 'reference') {
-          newAdv.reference = String(value || '');
-          newAdv.deductionType = 'amount';
-          newAdv.deductionValue = 0;
-          newAdv.amount = 0;
-        } else if (field === 'deductionType') {
-          newAdv.deductionType = value === 'percentage' ? 'percentage' : 'amount';
-        } else if (field === 'deductionValue') {
-          newAdv.deductionValue = toNumber(value);
-        } else if (field === 'amount') {
-          newAdv.amount = toNumber(value);
-        }
+      const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
+      const maxAmount = selectedProforma?.remainingBalance || 0;
 
-        const selectedProforma = availableProformaBills.find(p => p.id === newAdv.reference);
-        const maxAmount = selectedProforma?.remainingBalance || 0;
+      if (newAdv.deductionType === 'amount') {
+        newAdv.amount = Math.min(maxAmount, toNumber(newAdv.deductionValue));
+        newAdv.deductionValue = newAdv.amount;
+      } else {
+        const calculated = (maxAmount * toNumber(newAdv.deductionValue)) / 100;
+        newAdv.amount = Math.min(maxAmount, calculated);
+      }
 
-        if (newAdv.deductionType === 'amount') {
-          newAdv.amount = Math.min(maxAmount, toNumber(newAdv.deductionValue));
-          newAdv.deductionValue = newAdv.amount;
-        } else { // percentage
-          const percent = toNumber(newAdv.deductionValue);
-          const calculated = (maxAmount * percent) / 100;
-          newAdv.amount = Math.min(maxAmount, calculated);
-        }
-
-        if (newAdv.amount > maxAmount) {
-          newAdv.amount = maxAmount;
-          if (newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
-        }
-
-        return newAdv;
-      });
-    });
+      if (newAdv.amount > maxAmount) {
+        newAdv.amount = maxAmount;
+        if (newAdv.deductionType === 'amount') newAdv.deductionValue = maxAmount;
+      }
+      return newAdv;
+    }));
   };
 
-  const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
-  };
+  const addAdvanceField = () => setAdvanceDeductions(prev => [...prev, { id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   const removeAdvanceField = (id: string) => {
-    if (advanceDeductions.length > 1) {
-      setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
-    } else {
-      setAdvanceDeductions([{ id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
-    }
+    if (advanceDeductions.length > 1) setAdvanceDeductions(prev => prev.filter(a => a.id !== id));
+    else setAdvanceDeductions([{ id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
 
   const financials = useMemo(() => {
-    const subtotal = items.reduce((sum, item) => sum + toNumber(item.totalAmount || '0'), 0);
+    const subtotal = items.reduce((s, it) => s + toNumber(it.totalAmount || '0'), 0);
     const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
-    const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + toNumber(adv.amount || 0), 0);
+    const totalAdvanceDeduction = advanceDeductions.reduce((s, adv) => s + toNumber(adv.amount || 0), 0);
     const grossAmount = subtotal + finalGstAmount;
     const totalDeductions = finalRetentionAmount + totalAdvanceDeduction + otherDeduction;
     const netPayable = grossAmount - totalDeductions;
@@ -497,27 +454,29 @@ export default function CreateBillPage() {
       if (!workflowSnap.exists()) throw new Error('Billing workflow not found.');
 
       const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
-      if (steps.length === 0) throw new Error('Billing workflow has no steps.');
+      if (!steps || steps.length === 0) throw new Error('Billing workflow has no steps.');
       const firstStep = steps[0];
 
       const itemsToSave: BillItem[] = items.map(it => ({
         jmcItemId: it.jmcItemId,
         jmcEntryId: it.jmcEntryId,
         jmcNo: it.jmcNo,
-        boqItemId: it.boqItemId,
-        boqSlNo: it.boqSlNo,
-        description: it.description,
-        unit: it.unit,
+        boqItemId: it.boqItemId || '',
+        boqSlNo: it.boqSlNo || '',
+        description: it.description || '',
+        unit: it.unit || '',
         rate: toNumber(it.rate),
-        orderQty: it.orderQty,
         executedQty: toNumber(it.executedQty),
         billedQty: toNumber(it.billedQty),
         totalAmount: toNumber(it.totalAmount),
-        subItems: (it.subItems || []).map(({ id, ...rest }) => ({
-          ...rest,
-          quantity: toNumber(rest.quantity),
-          rate: toNumber(rest.rate),
-          totalAmount: toNumber(rest.totalAmount),
+        subItems: (it.subItems || []).map(si => ({
+          id: si.id || nanoid(),
+          slNo: si.slNo,
+          name: si.name,
+          unit: si.unit,
+          quantity: toNumber(si.quantity),
+          rate: toNumber(si.rate),
+          totalAmount: toNumber(si.totalAmount),
         })),
       }));
 
@@ -536,7 +495,7 @@ export default function CreateBillPage() {
         otherDeduction: financials.otherDeduction,
         advanceDeductions: advanceDeductions
           .filter(adv => adv.reference && adv.amount > 0)
-          .map(({ id, ...rest }) => rest),
+          .map(adv => ({ id: adv.id || nanoid(), reference: adv.reference, amount: adv.amount, deductionType: adv.deductionType, deductionValue: adv.deductionValue })),
         totalDeductions: financials.totalDeductions,
         netPayable: financials.netPayable,
         totalAmount: financials.netPayable,
@@ -548,7 +507,7 @@ export default function CreateBillPage() {
         assignees: [],
         history: [],
       };
-      
+
       const tempForAssignment = { ...billData, amount: billData.netPayable, date: billData.billDate };
       const assignees = await getAssigneeForStep(firstStep, tempForAssignment as any);
       if (!assignees || assignees.length === 0) throw new Error(`Could not find assignee for step: ${firstStep.name}`);
@@ -567,16 +526,14 @@ export default function CreateBillPage() {
       };
       billData.history = [initialLog];
 
-      if (!currentProject) throw new Error("Project ID is missing");
-      
-      const billCollectionRef = collection(db, 'projects', currentProject.id, 'bills');
-      await addDoc(billCollectionRef, billData);
-      
+      if (!currentProject) throw new Error('Project ID is missing');
+
+      await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+
       toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
       router.push(`/subcontractors-management/${projectSlug}/billing`);
-
     } catch (error: any) {
-      console.error("Error creating bill: ", error);
+      console.error('Error creating bill:', error);
       toast({ title: 'Save Failed', description: error?.message || 'An error occurred while saving the bill.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
@@ -585,16 +542,34 @@ export default function CreateBillPage() {
 
   const formatCurrency = (amount: string | number) => {
     const num = parseFloat(String(amount));
-    if (isNaN(num)) {
-      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(0);
-    }
+    if (isNaN(num)) return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(0);
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
 
-  const selectedAdvanceReferences = useMemo(
-    () => new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)),
-    [advanceDeductions]
-  );
+  // alreadyAddedItems for selector expects WorkOrderItem[] (numbers for rate etc.)
+  const alreadyAddedWorkOrderItems = useMemo<WorkOrderItem[]>(() => {
+    return items.map(it => ({
+      id: it.jmcItemId || it.id,
+      boqItemId: (it as any).boqItemId || '',
+      description: it.description || '',
+      unit: it.unit || '',
+      orderQty: toNumber(it.orderQty),
+      rate: toNumber(it.rate),
+      totalAmount: toNumber(it.totalAmount),
+      boqSlNo: it.boqSlNo || '',
+      subItems: (it.subItems || []).map(si => ({
+        id: si.id,
+        slNo: si.slNo,
+        name: si.name,
+        unit: si.unit,
+        quantity: toNumber(si.quantity),
+        rate: toNumber(si.rate),
+        totalAmount: toNumber(si.totalAmount),
+      })),
+    }));
+  }, [items]);
+
+  const selectedAdvanceReferences = useMemo(() => new Set(advanceDeductions.map(ad => ad.reference).filter(Boolean)), [advanceDeductions]);
 
   return (
     <>
@@ -602,7 +577,7 @@ export default function CreateBillPage() {
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-              <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
+              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
             </Link>
             <h1 className="text-2xl font-bold">Bill Entry</h1>
           </div>
@@ -625,27 +600,27 @@ export default function CreateBillPage() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="workOrderId">Work Order No</Label>
-                <Select
-                  value={details.workOrderId}
-                  onValueChange={(value) => setDetails(prev => ({ ...prev, workOrderId: value }))}
-                  disabled={!details.subcontractorId}
-                >
+                <Select value={details.workOrderId} onValueChange={(v) => setDetails(prev => ({ ...prev, workOrderId: v }))} disabled={!details.subcontractorId}>
                   <SelectTrigger id="workOrderId"><SelectValue placeholder="Select a Work Order" /></SelectTrigger>
                   <SelectContent>
                     {filteredWorkOrders.map(wo => <SelectItem key={wo.id} value={wo.id}>{wo.workOrderNo}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label>Subcontractor Name</Label>
                 <Input value={selectedWorkOrder?.subcontractorName || ''} readOnly className="bg-muted" />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="billNo">Bill No</Label>
                 <Input id="billNo" name="billNo" value={details.billNo} onChange={handleDetailChange} />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="billDate">Bill Date</Label>
                 <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
@@ -661,7 +636,7 @@ export default function CreateBillPage() {
                 <CardTitle>Bill Items</CardTitle>
                 <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
               </div>
-              <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+              <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
               </Button>
             </div>
@@ -704,14 +679,7 @@ export default function CreateBillPage() {
                         <TableCell>{item.alreadyBilledQty}</TableCell>
                         <TableCell className="font-semibold">{item.availableQty}</TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            value={item.billedQty}
-                            onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)}
-                            max={item.availableQty}
-                            className="w-24"
-                            disabled={item.isBreakdown}
-                          />
+                          <Input type="number" value={item.billedQty} onChange={(e) => handleItemChange(index, 'billedQty', e.target.value)} max={item.availableQty} className="w-24" disabled={item.isBreakdown} />
                         </TableCell>
                         <TableCell>{formatCurrency(item.rate)}</TableCell>
                         <TableCell>{formatCurrency(item.totalAmount)}</TableCell>
@@ -721,6 +689,7 @@ export default function CreateBillPage() {
                           </Button>
                         </TableCell>
                       </TableRow>
+
                       {expandedRows.has(item.id) && item.isBreakdown && (
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
                           <TableCell colSpan={12} className="p-0">
@@ -746,12 +715,7 @@ export default function CreateBillPage() {
                                       <TableCell>{sub.quantity}</TableCell>
                                       <TableCell className="font-semibold">{sub.availableQty}</TableCell>
                                       <TableCell>
-                                        <Input
-                                          type="number"
-                                          className="w-24"
-                                          value={sub.billedQty}
-                                          onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)}
-                                        />
+                                        <Input type="number" className="w-24" value={sub.billedQty} onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)} />
                                       </TableCell>
                                       <TableCell>{formatCurrency(sub.rate)}</TableCell>
                                       <TableCell>{formatCurrency(sub.totalAmount)}</TableCell>
@@ -787,7 +751,9 @@ export default function CreateBillPage() {
                   <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(toNumber(e.target.value))} className="mt-2" />
                 )}
               </div>
+
               <Separator />
+
               <div>
                 <Label>Deductions</Label>
                 <div className="space-y-4 mt-2">
@@ -803,21 +769,17 @@ export default function CreateBillPage() {
                       <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(toNumber(e.target.value))} className="mt-2" />
                     )}
                   </div>
+
                   <div className="space-y-2">
                     <Label>Advance Deductions</Label>
-                    {advanceDeductions.map((adv) => {
+                    {advanceDeductions.map(adv => {
                       const selectedProforma = availableProformaBills.find(p => p.id === adv.reference);
                       return (
                         <Card key={adv.id} className="p-4 space-y-3">
                           <div className="flex items-start gap-2">
                             <div className="flex-grow space-y-2">
-                              <Select
-                                value={adv.reference}
-                                onValueChange={(value) => handleAdvanceChange(adv.id, 'reference', value)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select Proforma/Advance" />
-                                </SelectTrigger>
+                              <Select value={adv.reference} onValueChange={(v) => handleAdvanceChange(adv.id, 'reference' as any, v)}>
+                                <SelectTrigger><SelectValue placeholder="Select Proforma/Advance" /></SelectTrigger>
                                 <SelectContent>
                                   {availableProformaBills.map(proforma => (
                                     <SelectItem key={proforma.id} value={proforma.id} disabled={selectedAdvanceReferences.has(proforma.id) && proforma.id !== adv.reference}>
@@ -826,22 +788,21 @@ export default function CreateBillPage() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType', v)} className="flex gap-4 pt-2">
+
+                              <RadioGroup value={adv.deductionType} onValueChange={(v) => handleAdvanceChange(adv.id, 'deductionType' as any, v)} className="flex gap-4 pt-2">
                                 <div className="flex items-center space-x-2"><RadioGroupItem value="amount" id={`adv-type-amount-${adv.id}`} /><Label htmlFor={`adv-type-amount-${adv.id}`}>Amount</Label></div>
                                 <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id={`adv-type-percent-${adv.id}`} /><Label htmlFor={`adv-type-percent-${adv.id}`}>Percentage</Label></div>
                               </RadioGroup>
+
                               <div className="flex items-center gap-2">
-                                <Input
-                                  type="number"
-                                  placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'}
-                                  value={adv.deductionValue}
-                                  onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue', e.target.value)}
-                                />
+                                <Input type="number" placeholder={adv.deductionType === 'amount' ? 'Amount to Deduct' : 'Percentage to Deduct'} value={adv.deductionValue} onChange={(e) => handleAdvanceChange(adv.id, 'deductionValue' as any, e.target.value)} />
                                 {adv.deductionType === 'percentage' && <span className="text-muted-foreground">%</span>}
                               </div>
                             </div>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+
+                            <Button variant="ghost" size="icon" onClick={() => removeAdvanceField(adv.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                           </div>
+
                           {selectedProforma && (
                             <div className="text-xs text-muted-foreground space-y-1 bg-muted p-2 rounded-md">
                               <div className="flex justify-between"><span>Total Proforma Value:</span> <span>{formatCurrency(selectedProforma.payableAmount || 0)}</span></div>
@@ -853,43 +814,26 @@ export default function CreateBillPage() {
                         </Card>
                       );
                     })}
-                    <Button type="button" variant="outline" size="sm" onClick={addAdvanceField} className="mt-2">
-                      <Plus className="mr-2 h-4 w-4" /> Add Advance
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={addAdvanceField} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Advance</Button>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="otherDeduction">Other Deductions</Label>
-                    <Input
-                      id="otherDeduction"
-                      type="number"
-                      placeholder="Enter other deductions"
-                      value={otherDeduction}
-                      onChange={(e) => setOtherDeduction(toNumber(e.target.value))}
-                    />
+                    <Input id="otherDeduction" type="number" placeholder="Enter other deductions" value={otherDeduction} onChange={(e) => setOtherDeduction(toNumber(e.target.value))} />
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-              <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
-              <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
-              <Separator />
-              <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
-              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
-              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
-              <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
-              <Separator />
-              <div className="flex justify-between items-center font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
-            </div>
-          </CardContent>
+
+            </CardContent>
         </Card>
       </div>
+
       <WorkOrderItemSelectorDialog
         isOpen={isSelectorOpen}
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={alreadyAddedWorkOrderItems}
       />
     </>
   );

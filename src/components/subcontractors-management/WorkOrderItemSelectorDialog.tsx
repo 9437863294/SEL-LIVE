@@ -1,149 +1,191 @@
-
+// /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { useState, useEffect, useMemo, Fragment, useId } from 'react';
+import Link from 'next/link';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import type { WorkOrder, WorkOrderItem, BillItem } from '@/lib/types';
-import type { CheckedState } from '@radix-ui/react-checkbox';
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  query,
+  serverTimestamp,
+  getDoc,
+  Timestamp,
+  collectionGroup,
+} from 'firebase/firestore';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import type {
+  WorkOrderItem,
+  JmcEntry,
+  Project,
+  Bill,
+  ProformaBill,
+  WorkflowStep,
+  ActionLog,
+  Subcontractor,
+  SubItem,
+  BillItem,
+} from '@/lib/types';
+import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
+import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+
+const slugify = (text: string) => {
+  if (!text) return '';
+  return text
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+};
+
+const toNumber = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const nanoid = () => {
+  try {
+    // @ts-ignore
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return (crypto as any).randomUUID();
+  } catch (e) { /* ignore */ }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+};
+
+type EnrichedSubItem = SubItem & {
+  id: string;
+  billedQty: string;
+  totalAmount: string;
+  rate: string; // UI uses strings
+  quantity: string;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
+  availableQty: number;
+};
+
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'executedQty' | 'subItems' | 'orderQty'> & {
+  id: string;
+  isBreakdown: boolean;
+  orderQty: number;
+  jmcCertifiedQty: number;
+  alreadyBilledQty: number;
+  availableQty: number;
+  billedQty: string;
+  totalAmount: string;
+  rate: string;
+  executedQty: string;
+  subItems: EnrichedSubItem[];
+  boqItemId?: string;
+  boqSlNo?: string;
+};
+
+type AdvanceDeductionItem = {
+  id: string;
+  reference: string; // proforma id
+  deductionType: 'amount' | 'percentage';
+  deductionValue: number;
+  amount: number;
+};
 
 interface WorkOrderItemSelectorDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
+  workOrder: { items: WorkOrderItem[] } | null;
   onConfirm: (selectedItems: WorkOrderItem[]) => void;
-  workOrder: WorkOrder | null;
-  alreadyAddedItems?: BillItem[];
+  alreadyAddedItems?: WorkOrderItem[];
 }
 
-export function WorkOrderItemSelectorDialog({
+export default function WorkOrderItemSelectorDialog({
   isOpen,
   onOpenChange,
-  onConfirm,
   workOrder,
+  onConfirm,
   alreadyAddedItems = [],
 }: WorkOrderItemSelectorDialogProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const addedItemIds = useMemo(
-    () => new Set(alreadyAddedItems.map((it) => it.jmcItemId)), // jmcItemId holds the WorkOrderItem ID here
-    [alreadyAddedItems]
-  );
-
-  const availableItems = useMemo(() => {
-    if (!workOrder) return [];
-    return workOrder.items.filter((item) => !addedItemIds.has(item.id));
-  }, [workOrder, addedItemIds]);
-  
-  // Reset selection when dialog opens or items change
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
       setSelectedIds(new Set());
     }
   }, [isOpen]);
 
-  const allOnPageSelected =
-    availableItems.length > 0 && availableItems.every((it) => selectedIds.has(it.id));
-  const noneSelected = availableItems.every((it) => !selectedIds.has(it.id));
-  const selectAllState: CheckedState =
-    allOnPageSelected ? true : noneSelected ? false : 'indeterminate';
+  const availableItems = useMemo(() => {
+    if (!workOrder) return [];
+    const addedIds = new Set(alreadyAddedItems.map(item => item.id));
+    return workOrder.items.filter(item => !addedIds.has(item.id));
+  }, [workOrder, alreadyAddedItems]);
 
-  const handleSelectAll = (checked: CheckedState) => {
-    setSelectedIds(new Set(checked ? availableItems.map((i) => i.id) : []));
-  };
-
-  const handleSelectRow = (id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
+  const handleSelect = (itemId: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(itemId);
+      } else {
+        newSet.delete(itemId);
+      }
+      return newSet;
     });
   };
-  
+
   const handleConfirm = () => {
-    if (!workOrder) return;
-    const selectedWoItems = workOrder.items.filter((item) => selectedIds.has(item.id));
-    onConfirm(selectedWoItems);
+    const selected = workOrder?.items.filter(item => selectedIds.has(item.id)) || [];
+    onConfirm(selected);
     onOpenChange(false);
   };
-  
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Select Items from Work Order</DialogTitle>
-          <DialogDescription>
-            Choose items to add to the bill. Items already added are not shown.
-          </DialogDescription>
+          <DialogTitle>Select Work Order Items</DialogTitle>
+          <DialogDescription>Select items to add to the bill. Already added items are not shown.</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="h-96 border rounded-md">
+        <div className="max-h-[60vh] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]">
-                    <Checkbox
-                        aria-label="Select all"
-                        checked={selectAllState}
-                        onCheckedChange={handleSelectAll}
-                    />
-                </TableHead>
+                <TableHead className="w-12"></TableHead>
+                <TableHead>BOQ Sl. No.</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Ordered Qty</TableHead>
+                <TableHead>Order Qty</TableHead>
                 <TableHead>Rate</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {availableItems.length > 0 ? (
-                availableItems.map((item) => (
-                    <TableRow key={item.id} onClick={() => handleSelectRow(item.id, !selectedIds.has(item.id))} className="cursor-pointer">
-                        <TableCell>
-                            <Checkbox
-                                checked={selectedIds.has(item.id)}
-                                onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                            />
-                        </TableCell>
-                        <TableCell>{item.description}</TableCell>
-                        <TableCell>{item.orderQty} {item.unit}</TableCell>
-                        <TableCell>{formatCurrency(item.rate)}</TableCell>
-                    </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    No available items in this work order.
+              {availableItems.map(item => (
+                <TableRow key={item.id} onClick={() => handleSelect(item.id, !selectedIds.has(item.id))} className="cursor-pointer">
+                  <TableCell>
+                    <Checkbox checked={selectedIds.has(item.id)} />
                   </TableCell>
+                  <TableCell>{item.boqSlNo}</TableCell>
+                  <TableCell>{item.description}</TableCell>
+                  <TableCell>{item.orderQty}</TableCell>
+                  <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.rate)}</TableCell>
                 </TableRow>
-              )}
+              ))}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
         <DialogFooter>
-          <DialogClose asChild>
-            <Button type="button" variant="outline">Cancel</Button>
-          </DialogClose>
-          <Button type="button" onClick={handleConfirm} disabled={selectedIds.size === 0}>
-            Add {selectedIds.size} Selected Item{selectedIds.size === 1 ? '' : 's'}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleConfirm} disabled={selectedIds.size === 0}>
+            Add {selectedIds.size} Selected Item(s)
           </Button>
         </DialogFooter>
       </DialogContent>
