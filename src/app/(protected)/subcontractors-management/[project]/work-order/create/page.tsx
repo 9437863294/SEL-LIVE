@@ -169,7 +169,9 @@ export default function CreateWorkOrderPage() {
     if (!item.isBreakdown) {
       item.totalAmount = (item.orderQty || 0) * (item.rate || 0);
     } else {
-      item.totalAmount = item.subItems.reduce((sum, si) => sum + ((si.quantity || 0) * (si.rate || 0)), 0) * (item.orderQty || 0);
+      const subItemsTotal = item.subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0);
+      item.rate = subItemsTotal; // The rate of the main item IS the sum of sub-item totals.
+      item.totalAmount = subItemsTotal * (item.orderQty || 0);
     }
 
     newItems[index] = item;
@@ -189,8 +191,10 @@ export default function CreateWorkOrderPage() {
     
     subItem.totalAmount = (subItem.quantity || 0) * (subItem.rate || 0);
     
-    // Recalculate main item total from sub-items and main item's multiplier
-    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0) * (mainItem.orderQty || 0);
+    // Recalculate main item rate and total from sub-items and main item's multiplier
+    const subItemsTotal = mainItem.subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0);
+    mainItem.rate = subItemsTotal;
+    mainItem.totalAmount = subItemsTotal * (mainItem.orderQty || 0);
     
     setItems(newItems);
   };
@@ -206,7 +210,9 @@ export default function CreateWorkOrderPage() {
     if(newItems[itemIndex].subItems.length > 1) {
         newItems[itemIndex].subItems = newItems[itemIndex].subItems.filter(si => si.id !== subItemId);
         // Recalculate main item total
-        newItems[itemIndex].totalAmount = newItems[itemIndex].subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0) * (newItems[itemIndex].orderQty || 0);
+        const subItemsTotal = newItems[itemIndex].subItems.reduce((sum, si) => sum + (si.totalAmount || 0), 0);
+        newItems[itemIndex].rate = subItemsTotal;
+        newItems[itemIndex].totalAmount = subItemsTotal * (newItems[itemIndex].orderQty || 0);
         setItems(newItems);
     }
   };
@@ -246,7 +252,7 @@ export default function CreateWorkOrderPage() {
       subItems: (boqItem.bom && boqItem.bom.length > 0)
         ? boqItem.bom.map(b => ({
             id: nanoid(),
-            slNo: b.markNo, // Use markNo as the serial number for sub-items
+            slNo: b.markNo,
             name: `${getItemDescription(b)}`,
             unit: 'Kg',
             quantity: b.qtyPerSet,
@@ -411,7 +417,6 @@ export default function CreateWorkOrderPage() {
                             <TableHead className="w-12"></TableHead>
                             <TableHead>BOQ Sl.No</TableHead>
                             <TableHead className="w-1/3">Description</TableHead>
-                            <TableHead>Unit</TableHead>
                             <TableHead>BOQ Qty</TableHead>
                             <TableHead>BOQ Rate</TableHead>
                             <TableHead>Break Down</TableHead>
@@ -447,12 +452,11 @@ export default function CreateWorkOrderPage() {
                                         />
                                     </TableCell>
                                     <TableCell><p className="line-clamp-2" title={item.description}>{item.description}</p></TableCell>
-                                    <TableCell><Input value={item.unit} readOnly className="bg-muted min-w-[80px]"/></TableCell>
                                     <TableCell>{boqItem ? (boqItem as any).QTY || 0 : 'N/A'}</TableCell>
                                     <TableCell>{formatCurrency(boqRate)}</TableCell>
                                     <TableCell><Switch checked={item.isBreakdown} onCheckedChange={(checked) => handleItemChange(index, 'isBreakdown', checked)} /></TableCell>
                                     <TableCell><Input type="number" value={item.orderQty} onChange={(e) => handleItemChange(index, 'orderQty', e.target.value)} className={cn("min-w-[100px]")}/></TableCell>
-                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "bg-muted line-through")} disabled={item.isBreakdown}/></TableCell>
+                                    <TableCell><Input type="number" value={item.rate} onChange={(e) => handleItemChange(index, 'rate', e.target.value)} className={cn("min-w-[120px]", item.isBreakdown && "bg-muted line-through")} readOnly={item.isBreakdown}/></TableCell>
                                     <TableCell><Input value={formatCurrency(item.totalAmount)} readOnly className="bg-muted min-w-[150px]"/></TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -517,3 +521,4 @@ export default function CreateWorkOrderPage() {
   );
 }
 
+```)
