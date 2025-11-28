@@ -84,6 +84,38 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
           return '/insurance';
       case 'Store & Stock Management':
           return '/store-stock-management';
+      case 'User Management':
+        return '/settings/user-management';
+      case 'Role Management':
+        return '/settings/role-management';
+      case 'Serial No. Config':
+        return '/settings/serial-no-configuration';
+      case 'Working Hrs':
+        return '/settings/working-hours';
+      case 'Appearance':
+        return '/settings/appearance';
+      case 'Email Authorization':
+        return '/settings/email-authorization';
+      case 'Login Expiry':
+        return '/settings/login-expiry';
+      case 'Manage Department':
+        return '/settings/department';
+      case 'Manage Project':
+        return '/settings/project';
+      case 'Manage Accounts':
+        return '/settings/expenses/accounts';
+      case 'Department-wise Serial Number':
+        return '/settings/expenses/department-serial-no';
+      case 'Policy Holders':
+        return '/insurance/policy-holders';
+      case 'Insurance Companies':
+        return '/insurance/companies';
+      case 'Policy Category':
+        return '/insurance/settings/policy-category';
+      case 'Projects and Properties':
+        return '/insurance/settings/assets';
+      case 'Help':
+        return '/insurance/settings/help';
       default:
         return `/${slugify(moduleTitle)}`;
     }
