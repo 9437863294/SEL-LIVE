@@ -83,24 +83,26 @@ const toNumber = (v: any) => {
 type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   billedQty: string;
   totalAmount: string;
+  rate: string;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
-  rate: string;
 };
 
 // UI-specific type for main bill items with string inputs
 type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty'> & {
   id: string; // For client-side keying
+  boqItemId: string;
   orderQty: number;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
+  isBreakdown: boolean;
+  subItems: EnrichedSubItem[];
+  // UI-specific string versions for inputs
   billedQty: string;
   totalAmount: string;
   rate: string;
-  isBreakdown: boolean;
-  subItems: EnrichedSubItem[];
   executedQty: string;
 };
 
@@ -332,7 +334,7 @@ export default function CreateBillPage() {
 
     mainItem.subItems[subIndex] = subItem;
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
-    mainItem.billedQty = '1';
+    mainItem.billedQty = String(1); // Main item qty is now just a multiplier
 
     newItems[itemIndex] = mainItem;
     setItems(newItems);
@@ -358,19 +360,23 @@ export default function CreateBillPage() {
       const mainItemAvailableSets = woItem.orderQty - alreadyBilledForWoItem;
 
       return {
-        ...woItem,
         id: makeUUID(),
         jmcItemId: woItem.id,
         jmcEntryId: '', 
         jmcNo: '',
-        executedQty: String(woItem.orderQty),
+        boqItemId: woItem.boqItemId,
+        boqSlNo: woItem.boqSlNo,
+        description: woItem.description,
+        unit: woItem.unit,
+        orderQty: woItem.orderQty,
+        rate: String(woItem.rate),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
         availableQty: Math.max(0, availableForBilling),
         billedQty: '',
         totalAmount: '',
-        rate: String(woItem.rate),
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
+        executedQty: String(woItem.orderQty),
         subItems: (woItem.subItems || []).map(si => {
           const subItemQtyPerSet = si.quantity;
           const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
@@ -379,10 +385,10 @@ export default function CreateBillPage() {
             id: makeUUID(),
             billedQty: '',
             totalAmount: '',
+            rate: String(si.rate),
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
-            rate: String(si.rate),
           };
         }),
       };
@@ -487,16 +493,16 @@ export default function CreateBillPage() {
       const firstStep = steps[0];
 
       const itemsToSave: BillItem[] = items.map(it => ({
-          jmcItemId: it.jmcItemId,
-          jmcEntryId: it.jmcEntryId,
-          jmcNo: it.jmcNo,
-          boqSlNo: it.boqSlNo || '',
-          description: it.description,
-          unit: it.unit,
-          rate: toNumber(it.rate),
-          executedQty: toNumber(it.executedQty),
-          billedQty: toNumber(it.billedQty),
-          totalAmount: toNumber(it.totalAmount),
+        jmcItemId: it.jmcItemId,
+        jmcEntryId: it.jmcEntryId,
+        jmcNo: it.jmcNo,
+        boqSlNo: it.boqSlNo || '',
+        description: it.description,
+        unit: it.unit,
+        rate: toNumber(it.rate),
+        executedQty: toNumber(it.executedQty),
+        billedQty: toNumber(it.billedQty),
+        totalAmount: toNumber(it.totalAmount),
       }));
 
       const billData: Omit<Bill, 'id'> = {
@@ -864,7 +870,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items as BillItem[]}
+        alreadyAddedItems={items}
       />
     </>
   );

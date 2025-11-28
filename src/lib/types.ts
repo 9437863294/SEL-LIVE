@@ -1052,6 +1052,6 @@ export interface WorkOrderItem {
   orderQty: number;
   rate: number;
   totalAmount: number;
-  boqSlNo?: string;
+  boqSlNo: string;
   subItems?: SubItem[];
 }
