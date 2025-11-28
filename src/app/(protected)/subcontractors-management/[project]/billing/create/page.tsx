@@ -1,8 +1,7 @@
-
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -63,16 +62,6 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 };
 
-const makeUUID = () => {
-  try {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-      // @ts-ignore
-      return (crypto as any).randomUUID();
-    }
-  } catch (e) { /* ignore */ }
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-};
-
 const toNumber = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -91,11 +80,9 @@ type EnrichedSubItem = SubItem & {
 
 
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems' | 'jmcItemId' | 'jmcEntryId' | 'jmcNo'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty' | 'subItems' | 'jmcItemId' > & {
   id: string; // For client-side keying
   jmcItemId: string;
-  jmcEntryId: string;
-  jmcNo: string;
   boqItemId: string;
   orderQty: number;
   jmcCertifiedQty: number;
@@ -155,9 +142,8 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
-  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([
-    { id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 },
-  ]);
+  const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
+  const advanceDeductionId = useId();
 
   useEffect(() => {
     let mounted = true;
@@ -191,7 +177,7 @@ export default function CreateBillPage() {
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
-          getDocs(proformaBillsQuery)
+          getDocs(proformaSnap)
         ]);
 
         if (!mounted) return;
@@ -364,12 +350,12 @@ export default function CreateBillPage() {
       const mainItemAvailableSets = woItem.orderQty - alreadyBilledForWoItem;
 
       return {
-        id: makeUUID(),
+        id: nanoid(),
         jmcItemId: woItem.id || '',
         jmcEntryId: '', 
         jmcNo: '',
         boqItemId: woItem.boqItemId || '',
-        boqSlNo: woItem.boqSlNo,
+        boqSlNo: woItem.boqSlNo || '',
         description: woItem.description || '',
         unit: woItem.unit || '',
         orderQty: woItem.orderQty || 0,
@@ -386,7 +372,7 @@ export default function CreateBillPage() {
           const subItemAvailable = Math.max(0, mainItemAvailableSets * subItemQtyPerSet);
           return {
             ...si,
-            id: makeUUID(),
+            id: nanoid(),
             billedQty: '',
             totalAmount: '',
             rate: String(si.rate),
@@ -459,13 +445,13 @@ export default function CreateBillPage() {
   };
 
   const addAdvanceField = () => {
-    setAdvanceDeductions(prev => [...prev, { id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    setAdvanceDeductions(prev => [...prev, { id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   };
   const removeAdvanceField = (id: string) => {
     if (advanceDeductions.length > 1) {
       setAdvanceDeductions(prev => prev.filter(adv => adv.id !== id));
     } else {
-      setAdvanceDeductions([{ id: makeUUID(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+      setAdvanceDeductions([{ id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
     }
   };
 
@@ -500,13 +486,15 @@ export default function CreateBillPage() {
         jmcItemId: it.jmcItemId,
         jmcEntryId: it.jmcEntryId,
         jmcNo: it.jmcNo,
-        boqSlNo: it.boqSlNo || '',
+        boqItemId: it.boqItemId,
+        boqSlNo: it.boqSlNo,
         description: it.description,
         unit: it.unit,
         rate: toNumber(it.rate),
         executedQty: toNumber(it.executedQty),
         billedQty: toNumber(it.billedQty),
         totalAmount: toNumber(it.totalAmount),
+        subItems: it.subItems?.map(({ id, ...rest }) => ({...rest}))
       }));
 
       const billData: Omit<Bill, 'id'> = {
@@ -557,7 +545,8 @@ export default function CreateBillPage() {
 
       if (!currentProject) throw new Error("Project ID is missing");
       
-      await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+      const billCollectionRef = collection(db, 'projects', currentProject.id, 'bills');
+      await addDoc(billCollectionRef, billData);
       
       toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
       router.push(`/subcontractors-management/${projectSlug}/billing`);
@@ -879,5 +868,3 @@ export default function CreateBillPage() {
     </>
   );
 }
-
-    
