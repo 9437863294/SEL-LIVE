@@ -1,4 +1,5 @@
 
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -78,32 +79,28 @@ const toNumber = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Local UI-specific types that use strings for form inputs
-type EnrichedSubItem = SubItem & {
-  id: string; // Ensure client-side key
+// UI-specific type for sub-items with string inputs
+type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   billedQty: string;
   totalAmount: string;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
+  rate: string;
 };
 
-// This type is for the component's state, using strings for form inputs
-type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
-  id: string;
-  jmcItemId: string;
-  jmcEntryId: string;
-  jmcNo: string;
-  billedQty: string;       // string for input
-  totalAmount: string;     // string for display
-  rate: string;            // string for display
+// UI-specific type for main bill items with string inputs
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'billedQty' | 'totalAmount' | 'executedQty'> & {
+  id: string; // For client-side keying
   orderQty: number;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
+  billedQty: string;
+  totalAmount: string;
+  rate: string;
   isBreakdown: boolean;
   subItems: EnrichedSubItem[];
-  boqItemId?: string;
   executedQty: string;
 };
 
@@ -189,7 +186,7 @@ export default function CreateBillPage() {
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery)
-        ]);
+        ]) as [QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>, QuerySnapshot<DocumentData>];
 
         if (!mounted) return;
 
@@ -373,7 +370,6 @@ export default function CreateBillPage() {
         billedQty: '',
         totalAmount: '',
         rate: String(woItem.rate),
-        orderQty: woItem.orderQty,
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
         subItems: (woItem.subItems || []).map(si => {
           const subItemQtyPerSet = si.quantity;
@@ -386,8 +382,8 @@ export default function CreateBillPage() {
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
-            rate: si.rate,
-          } as EnrichedSubItem;
+            rate: String(si.rate),
+          };
         }),
       };
     });
@@ -868,7 +864,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items as BillItem[]}
       />
     </>
   );

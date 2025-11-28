@@ -513,7 +513,7 @@ export interface Bill {
   retentionPercentage: number | null;
   retentionAmount: number;
   otherDeduction: number;
-  advanceDeductions: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number }[];
+  advanceDeductions?: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number; }[];
   totalDeductions: number;
   netPayable: number;
   totalAmount: number;
