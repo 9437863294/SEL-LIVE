@@ -1,4 +1,3 @@
-
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -74,27 +73,28 @@ const makeUUID = () => {
 };
 
 // UI-specific type for sub-items with string-based numbers
-type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
+type EnrichedSubItem = SubItem & {
     billedQty: string;
     totalAmount: string;
-    quantity: string;
-    rate: string;
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
     availableQty: number;
 };
 
 // UI-specific type for main items with string-based numbers
-type EnrichedBillItem = Omit<WorkOrderItem, 'orderQty' | 'rate' | 'totalAmount' | 'subItems'> & {
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
-    availableQty: number;
-    billedQty: string;
+type EnrichedBillItem = Omit<OriginalBillItem, 'rate' | 'totalAmount' | 'billedQty' | 'orderQty' | 'executedQty'> & {
+    id: string; // Client-side unique ID for react keys
     orderQty: string;
     rate: string;
     totalAmount: string;
+    billedQty: string;
+    executedQty: string;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
     isBreakdown: boolean;
     subItems: EnrichedSubItem[];
+    boqItemId: string; // from WorkOrderItem
 };
 
 
@@ -142,7 +142,6 @@ export default function CreateBillPage() {
   const [retentionPercentage, setRetentionPercentage] = useState<number>(5);
   const [manualRetentionAmount, setManualRetentionAmount] = useState<number>(0);
   const [otherDeduction, setOtherDeduction] = useState<number>(0);
-
   const [advanceDeductions, setAdvanceDeductions] = useState<AdvanceDeductionItem[]>([]);
 
   useEffect(() => {
@@ -331,6 +330,11 @@ export default function CreateBillPage() {
 
         return {
             ...woItem,
+            id: woItem.id, // Use the WorkOrderItem ID as the client-side key
+            jmcItemId: woItem.id, // This links it back to the WorkOrderItem
+            jmcEntryId: '', // These are not known at this stage
+            jmcNo: '',      // These are not known at this stage
+            executedQty: String(availableForBilling),
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
             availableQty: Math.max(0, availableForBilling),
@@ -339,7 +343,7 @@ export default function CreateBillPage() {
             totalAmount: '',
             billedQty: '',
             isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-            subItems: (woItem.subItems || []).map(si => ({ ...si, billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0, quantity: String(si.quantity), rate: String(si.rate) })),
+            subItems: (woItem.subItems || []).map(si => ({ ...si, id: makeUUID(), billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0 })),
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
@@ -435,12 +439,11 @@ export default function CreateBillPage() {
         const firstStep = steps[0];
         
         const itemsToSave: OriginalBillItem[] = items.map(it => {
-            const { jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
+            const { id, boqItemId, jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
             return {
                 ...rest,
                 billedQty: String(it.billedQty || '0'),
                 totalAmount: String(it.totalAmount || '0'),
-                executedQty: String(availableQty), // Save the available qty as the executed for this context
             };
         });
 
@@ -459,13 +462,7 @@ export default function CreateBillPage() {
             otherDeduction: financials.otherDeduction,
             advanceDeductions: advanceDeductions
                 .filter(adv => adv.reference && adv.amount > 0)
-                .map(adv => ({
-                    id: adv.id,
-                    reference: adv.reference,
-                    amount: adv.amount,
-                    deductionType: adv.deductionType,
-                    deductionValue: adv.deductionValue,
-                })),
+                .map(({id, ...rest}) => rest),
             totalDeductions: financials.totalDeductions,
             netPayable: financials.netPayable,
             totalAmount: financials.netPayable,
@@ -805,7 +802,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items.map(i => ({...i, jmcItemId: i.id} as OriginalBillItem))}
+        alreadyAddedItems={items}
       />
     </>
   );
