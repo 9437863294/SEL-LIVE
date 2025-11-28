@@ -68,7 +68,6 @@ const toNumber = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// This needs to be a unique ID generation that works on client side
 const nanoid = () => crypto.randomUUID();
 
 
@@ -86,11 +85,8 @@ type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
 
 
 // UI-specific type for main bill items with string inputs
-type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'executedQty' | 'subItems' | 'orderQty' > & {
     id: string;
-    jmcItemId: string;
-    jmcEntryId: string;
-    jmcNo: string;
     isBreakdown: boolean;
     orderQty: number;
     jmcCertifiedQty: number;
@@ -290,13 +286,29 @@ export default function CreateBillPage() {
       item.billedQty = String(billedQtyNum);
     }
 
+    const currentBilledQty = toNumber(item.billedQty);
     const rateNum = toNumber(item.rate);
-    if (!isNaN(rateNum) && item.billedQty) {
-      item.totalAmount = (toNumber(item.billedQty) * rateNum).toFixed(2);
-    } else {
-      item.totalAmount = '';
-    }
 
+    if (item.isBreakdown && item.subItems) {
+        item.subItems = item.subItems.map(si => {
+            const qtyPerSet = toNumber(si.quantity);
+            const subItemBilledQty = currentBilledQty * qtyPerSet;
+            const subItemRate = toNumber(si.rate);
+            return {
+                ...si,
+                billedQty: String(subItemBilledQty),
+                totalAmount: String(subItemBilledQty * subItemRate)
+            };
+        });
+        item.totalAmount = String(item.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount), 0));
+    } else {
+        if (!isNaN(rateNum)) {
+            item.totalAmount = String(currentBilledQty * rateNum);
+        } else {
+            item.totalAmount = '';
+        }
+    }
+    
     newItems[index] = item;
     setItems(newItems);
   };
@@ -331,8 +343,7 @@ export default function CreateBillPage() {
 
     mainItem.subItems[subIndex] = subItem;
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
-    mainItem.billedQty = '1';
-
+    
     newItems[itemIndex] = mainItem;
     setItems(newItems);
   };
@@ -357,11 +368,11 @@ export default function CreateBillPage() {
 
       return {
         id: nanoid(),
-        jmcItemId: woItem.id || '',
+        jmcItemId: woItem.id,
         jmcEntryId: '',
         jmcNo: '',
         boqItemId: woItem.boqItemId,
-        boqSlNo: woItem.boqSlNo,
+        boqSlNo: woItem.boqSlNo || '',
         description: woItem.description,
         unit: woItem.unit,
         orderQty: woItem.orderQty,
@@ -382,10 +393,10 @@ export default function CreateBillPage() {
             billedQty: '',
             totalAmount: '',
             rate: String(si.rate),
+            quantity: String(subItemQtyPerSet),
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
-            quantity: String(subItemQtyPerSet)
           };
         }),
       };
@@ -498,6 +509,7 @@ export default function CreateBillPage() {
         description: it.description,
         unit: it.unit,
         rate: toNumber(it.rate),
+        orderQty: it.orderQty,
         executedQty: toNumber(it.executedQty),
         billedQty: toNumber(it.billedQty),
         totalAmount: toNumber(it.totalAmount),
