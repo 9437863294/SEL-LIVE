@@ -21,6 +21,8 @@ import {
   getDoc,
   Timestamp,
   collectionGroup,
+  WriteBatch,
+  writeBatch,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -71,19 +73,25 @@ const makeUUID = () => {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 };
 
-type EnrichedSubItem = SubItem & {
-    jmcCertifiedQty: number;
-    alreadyBilledQty: number;
-    availableQty: number;
+// UI-specific type for sub-items with string-based numbers
+type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
     billedQty: string;
     totalAmount: string;
+    quantity: string;
+    rate: string;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
 };
 
-type EnrichedBillItem = Omit<WorkOrderItem, 'subItems'> & {
+// UI-specific type for main items with string-based numbers
+type EnrichedBillItem = Omit<WorkOrderItem, 'orderQty' | 'rate' | 'totalAmount' | 'subItems'> & {
     jmcCertifiedQty: number;
     alreadyBilledQty: number;
     availableQty: number;
     billedQty: string;
+    orderQty: string;
+    rate: string;
     totalAmount: string;
     isBreakdown: boolean;
     subItems: EnrichedSubItem[];
@@ -167,17 +175,17 @@ export default function CreateBillPage() {
           getDocs(proformaBillsQuery)
         ]);
         
-        const allSubs = subsSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as Subcontractor));
-        const projectWorkOrders = woSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as WorkOrder));
+        const allSubs = subsSnap.docs.map((d) => ({id: d.id, ...d.data()} as Subcontractor));
+        const projectWorkOrders = woSnap.docs.map((d) => ({id: d.id, ...d.data()} as WorkOrder));
         
         const subIdsWithProjectWo = new Set(projectWorkOrders.map(wo => wo.subcontractorId));
         
         setSubcontractors(allSubs.filter(sub => subIdsWithProjectWo.has(sub.id)));
         setAllWorkOrders(projectWorkOrders);
 
-        setJmcEntries(jmcSnap.docs.map((d: any) => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
-        setBills(billsSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as Bill)).filter((b: Bill) => b.projectId === project.id));
-        setProformaBills(proformaSnap.docs.map((d: any) => ({id: d.id, ...d.data()} as ProformaBill)).filter((p: ProformaBill) => p.projectId === project.id));
+        setJmcEntries(jmcSnap.docs.map((d) => d.data() as JmcEntry).filter(jmc => jmc.projectId === project.id));
+        setBills(billsSnap.docs.map((d) => ({id: d.id, ...d.data()} as Bill)).filter((b) => b.projectId === project.id));
+        setProformaBills(proformaSnap.docs.map((d) => ({id: d.id, ...d.data()} as ProformaBill)).filter((p) => p.projectId === project.id));
     };
     fetchProjectAndData();
   }, [projectSlug, toast]);
@@ -253,12 +261,12 @@ export default function CreateBillPage() {
               description: `Billed quantity cannot be more than available quantity (${availableQty}).`,
               variant: 'destructive',
           });
-          item.billedQty = availableQty.toString();
+          item.billedQty = String(availableQty);
       } else {
           item.billedQty = value;
       }
       
-      const rate = item.rate;
+      const rate = parseFloat(item.rate);
       if(!isNaN(rate) && item.billedQty) {
           item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
       } else {
@@ -276,15 +284,22 @@ export default function CreateBillPage() {
 
     const subItem = mainItem.subItems[subIndex];
     const billedQty = parseFloat(value);
-
+    
     if (isNaN(billedQty) || billedQty < 0) {
-        subItem.billedQty = '';
-        subItem.totalAmount = '';
+      subItem.billedQty = '';
+      subItem.totalAmount = '';
     } else {
-        subItem.billedQty = value;
-        const rate = subItem.rate;
-        if (!isNaN(rate)) {
-            subItem.totalAmount = (billedQty * rate).toFixed(2);
+        const availableQty = subItem.availableQty;
+        if(billedQty > availableQty) {
+            toast({ title: 'Quantity Exceeded', description: `Billed quantity for sub-item cannot exceed available quantity (${availableQty}).`, variant: 'destructive'});
+            subItem.billedQty = String(availableQty);
+        } else {
+            subItem.billedQty = value;
+        }
+
+        const rate = parseFloat(subItem.rate);
+        if (!isNaN(rate) && subItem.billedQty) {
+            subItem.totalAmount = (parseFloat(subItem.billedQty) * rate).toFixed(2);
         } else {
             subItem.totalAmount = '';
         }
@@ -292,6 +307,8 @@ export default function CreateBillPage() {
     
     // Recalculate main item's total amount from its sub-items
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + parseFloat(si.totalAmount || '0'), 0).toFixed(2);
+    // The main item's billedQty should probably be a sum or representation too, for now it's just a display of the main multiplier
+    mainItem.billedQty = '1'; // Or however you want to represent a "set" being billed
 
     setItems(newItems);
   };
@@ -317,10 +334,12 @@ export default function CreateBillPage() {
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
             availableQty: Math.max(0, availableForBilling),
-            billedQty: '',
+            orderQty: String(woItem.orderQty),
+            rate: String(woItem.rate),
             totalAmount: '',
+            billedQty: '',
             isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-            subItems: (woItem.subItems || []).map(si => ({ ...si, billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0 })),
+            subItems: (woItem.subItems || []).map(si => ({ ...si, billedQty: '', totalAmount: '', jmcCertifiedQty: 0, alreadyBilledQty: 0, availableQty: 0, quantity: String(si.quantity), rate: String(si.rate) })),
         };
       });
       setItems(prev => [...prev, ...newBillItems]);
@@ -415,18 +434,15 @@ export default function CreateBillPage() {
         if(steps.length === 0) throw new Error('Billing workflow has no steps.');
         const firstStep = steps[0];
         
-        const itemsToSave: OriginalBillItem[] = items.map(it => ({
-            jmcItemId: it.id,
-            jmcEntryId: '',
-            jmcNo: '',
-            boqSlNo: it.boqSlNo || '',
-            description: it.description,
-            unit: it.unit,
-            rate: String(it.rate),
-            executedQty: String(it.availableQty || '0'),
-            billedQty: String(it.billedQty || '0'),
-            totalAmount: String(it.totalAmount || '0'),
-        }));
+        const itemsToSave: OriginalBillItem[] = items.map(it => {
+            const { jmcCertifiedQty, alreadyBilledQty, availableQty, isBreakdown, subItems, ...rest } = it;
+            return {
+                ...rest,
+                billedQty: String(it.billedQty || '0'),
+                totalAmount: String(it.totalAmount || '0'),
+                executedQty: String(availableQty), // Save the available qty as the executed for this context
+            };
+        });
 
         const billData: Omit<Bill, 'id'> = {
             ...details,
@@ -679,20 +695,11 @@ export default function CreateBillPage() {
                     <div>
                         <Label>GST</Label>
                         <RadioGroup value={gstType} onValueChange={(v) => setGstType(v as any)} className="flex gap-4 mt-2">
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="percentage" id="gst-percentage" />
-                              <Label htmlFor="gst-percentage">By Percentage</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="manual" id="gst-manual" />
-                              <Label htmlFor="gst-manual">Manual Entry</Label>
-                            </div>
+                            <div className="flex items-center space-x-2"><RadioGroupItem value="percentage" id="gst-percentage" /><Label htmlFor="gst-percentage">Percentage</Label></div>
+                            <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="gst-manual" /><Label htmlFor="gst-manual">Manual</Label></div>
                         </RadioGroup>
                         {gstType === 'percentage' ? (
-                            <div className="flex items-center gap-2 mt-2">
-                                <Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} />
-                                <span className="text-muted-foreground">%</span>
-                            </div>
+                            <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="GST %" value={gstPercentage} onChange={e => setGstPercentage(parseFloat(e.target.value) || 0)} /><span className="text-muted-foreground">%</span></div>
                         ) : (
                             <Input type="number" placeholder="Enter GST Amount" value={gstAmount} onChange={e => setGstAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
                         )}
@@ -708,10 +715,7 @@ export default function CreateBillPage() {
                                     <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="ret-manual" /><Label htmlFor="ret-manual">Manual</Label></div>
                                 </RadioGroup>
                                 {retentionType === 'percentage' ? (
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(parseFloat(e.target.value) || 0)} />
-                                        <span className="text-muted-foreground">%</span>
-                                    </div>
+                                    <div className="flex items-center gap-2 mt-2"><Input type="number" placeholder="Retention %" value={retentionPercentage} onChange={e => setRetentionPercentage(parseFloat(e.target.value) || 0)} /><span className="text-muted-foreground">%</span></div>
                                 ) : (
                                     <Input type="number" placeholder="Enter Retention Amount" value={manualRetentionAmount} onChange={e => setManualRetentionAmount(parseFloat(e.target.value) || 0)} className="mt-2" />
                                 )}
