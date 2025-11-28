@@ -88,23 +88,25 @@ type EnrichedSubItem = SubItem & {
   availableQty: number;
 };
 
+// This type is for the component's state, using strings for form inputs
 type EnrichedBillItem = Omit<WorkOrderItem, 'id' | 'subItems' | 'rate' | 'totalAmount' | 'orderQty'> & {
-  id: string; // UI id
+  id: string;
   jmcItemId: string;
   jmcEntryId: string;
   jmcNo: string;
-  billedQty: string;
-  totalAmount: string;
-  rate: string;
-  orderQty: string;
+  billedQty: string;       // string for input
+  totalAmount: string;     // string for display
+  rate: string;            // string for display
+  orderQty: number;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
   availableQty: number;
   isBreakdown: boolean;
   subItems: EnrichedSubItem[];
   boqItemId?: string;
-  executedQty: string; // Explicitly add missing property
+  executedQty: string;
 };
+
 
 type AdvanceDeductionItem = {
   id: string;
@@ -331,7 +333,7 @@ export default function CreateBillPage() {
       }
     }
 
-    mainItem.subItems = mainItem.subItems.map((si, idx) => idx === subIndex ? subItem : si);
+    mainItem.subItems[subIndex] = subItem;
     mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount || '0'), 0).toFixed(2);
     mainItem.billedQty = '1';
 
@@ -371,7 +373,7 @@ export default function CreateBillPage() {
         billedQty: '',
         totalAmount: '',
         rate: String(woItem.rate),
-        orderQty: String(woItem.orderQty),
+        orderQty: woItem.orderQty,
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
         subItems: (woItem.subItems || []).map(si => {
           const subItemQtyPerSet = si.quantity;
@@ -866,9 +868,8 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items as any}
+        alreadyAddedItems={items}
       />
     </>
   );
 }
-
