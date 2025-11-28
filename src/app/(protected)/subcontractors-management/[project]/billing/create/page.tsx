@@ -162,7 +162,7 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsQuery),
+          getDocs(billsSnap),
           getDocs(proformaBillsQuery)
         ]);
         
@@ -241,7 +241,7 @@ export default function CreateBillPage() {
       const newItems = [...items];
       const item = newItems[index];
       const billedQty = parseFloat(value);
-      const availableQty = parseFloat(item.executedQty);
+      const availableQty = parseFloat(String(item.executedQty));
       
       if(isNaN(billedQty) || billedQty < 0) {
         item.billedQty = '';
@@ -268,6 +268,33 @@ export default function CreateBillPage() {
       setItems(newItems);
   };
   
+  const handleSubItemChange = (itemIndex: number, subIndex: number, value: string) => {
+    const newItems = [...items];
+    const mainItem = newItems[itemIndex];
+    if (!mainItem.isBreakdown || !mainItem.subItems) return;
+
+    const subItem = mainItem.subItems[subIndex];
+    const billedQty = parseFloat(value);
+
+    if (isNaN(billedQty) || billedQty < 0) {
+        subItem.billedQty = '';
+        subItem.totalAmount = '';
+    } else {
+        subItem.billedQty = value;
+        const rate = parseFloat(String(subItem.rate));
+        if (!isNaN(rate)) {
+            subItem.totalAmount = (billedQty * rate).toFixed(2);
+        } else {
+            subItem.totalAmount = '';
+        }
+    }
+    
+    // Recalculate main item's total amount from its sub-items
+    mainItem.totalAmount = mainItem.subItems.reduce((sum, si) => sum + parseFloat(si.totalAmount || '0'), 0).toFixed(2);
+
+    setItems(newItems);
+  };
+
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
       const newBillItems: EnrichedBillItem[] = selectedWoItems.map(woItem => {
           
@@ -621,7 +648,7 @@ export default function CreateBillPage() {
                                                                 type="number"
                                                                 className="w-24"
                                                                 value={sub.billedQty}
-                                                                // onChange={(e) => handleSubItemChange(index, subIndex, 'billedQty', e.target.value)}
+                                                                onChange={(e) => handleSubItemChange(index, subIndex, e.target.value)}
                                                             />
                                                           </TableCell>
                                                       </TableRow>
@@ -790,7 +817,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items.map(i => ({...i, jmcItemId: i.id} as BillItem))}
       />
     </>
   );
