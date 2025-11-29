@@ -20,6 +20,14 @@ import { Loader2, Plus, Search, ArrowUpDown } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 import { cn } from '@/lib/utils';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 interface CustomAssemblyDialogProps {
   isOpen: boolean;
@@ -104,13 +112,14 @@ export function CustomAssemblyDialog({ isOpen, onOpenChange, onConfirm, boqItems
             case 'boqSlNo': cmp = collator.compare(getSlNo(a), getSlNo(b)); break;
             case 'description': cmp = collator.compare(getItemDescription(a), getItemDescription(b)); break;
             case 'qty': cmp = collator.compare(getBoqQty(a), getBoqQty(b)); break;
-            case 'rate':
+            case 'rate': {
                 const rateKeyA = findRateKey(a);
                 const rateKeyB = findRateKey(b);
                 const rateA = getRateNumber(rateKeyA ? a[rateKeyA] : 0);
                 const rateB = getRateNumber(rateKeyB ? b[rateKeyB] : 0);
                 cmp = rateA - rateB;
                 break;
+            }
             default: break;
         }
         if (cmp === 0) return collator.compare(getErpSlNo(a), getErpSlNo(b));
