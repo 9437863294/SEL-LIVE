@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -258,39 +259,39 @@ export default function CreateBillPage() {
 
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
     const newItems = [...items];
-    const item = { ...newItems[index] };
+    const item = newItems[index];
     const billedQtyNum = toNumber(value);
-    const availableQty = item.availableQty;
-
+    
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       item.billedQty = '';
-    } else if (billedQtyNum > availableQty) {
-      toast({ title: 'Quantity Exceeded', description: `Billed quantity cannot be more than available (${availableQty}).`, variant: 'destructive' });
-      item.billedQty = String(availableQty);
+    } else if (billedQtyNum > item.availableQty) {
+      toast({ title: 'Quantity Exceeded', description: `Billed quantity cannot be more than available (${item.availableQty}).`, variant: 'destructive' });
+      item.billedQty = String(item.availableQty);
     } else {
       item.billedQty = String(billedQtyNum);
     }
-
-    const currentBilledQty = toNumber(item.billedQty);
-    const rateNum = toNumber(item.rate);
-
+  
+    // For breakdown items, update sub-items based on parent change
     if (item.isBreakdown && item.subItems) {
+      const parentBilledQty = toNumber(item.billedQty);
       item.subItems = item.subItems.map(si => {
-        const qtyPerSet = toNumber(si.quantity);
-        const subItemBilledQty = currentBilledQty * qtyPerSet;
-        const subItemRate = toNumber(si.rate);
-        return { ...si, billedQty: String(subItemBilledQty), totalAmount: String(subItemBilledQty * subItemRate) };
+        const subItemBilledQty = parentBilledQty * toNumber(si.quantity);
+        return {
+          ...si,
+          billedQty: String(subItemBilledQty),
+          totalAmount: String(subItemBilledQty * toNumber(si.rate))
+        };
       });
-      item.totalAmount = String(item.subItems.reduce((s, si) => s + toNumber(si.totalAmount), 0));
+      // The total amount of the parent is the sum of its sub-items' totals
+      item.totalAmount = String(item.subItems.reduce((sum, si) => sum + toNumber(si.totalAmount), 0));
     } else {
-      if (!isNaN(rateNum)) item.totalAmount = String(currentBilledQty * rateNum);
-      else item.totalAmount = '';
+      item.totalAmount = String(toNumber(item.billedQty) * toNumber(item.rate));
     }
-
+  
     newItems[index] = item;
     setItems(newItems);
   };
-
+  
   const handleSubItemChange = (itemIndex: number, subIndex: number, value: string) => {
     const newItems = [...items];
     const mainItem = newItems[itemIndex];
@@ -301,37 +302,32 @@ export default function CreateBillPage() {
   
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       subItem.billedQty = '';
-      subItem.totalAmount = '';
+    } else if (billedQtyNum > subItem.availableQty) {
+      toast({ title: 'Quantity Exceeded', description: `Sub-item billed qty cannot exceed available (${subItem.availableQty}).`, variant: 'destructive' });
+      subItem.billedQty = String(subItem.availableQty);
     } else {
-      const availableQty = subItem.availableQty;
-      if (billedQtyNum > availableQty) {
-        toast({ title: 'Quantity Exceeded', description: `Sub-item billed qty cannot exceed available (${availableQty}).`, variant: 'destructive' });
-        subItem.billedQty = String(availableQty);
-      } else {
-        subItem.billedQty = String(billedQtyNum);
-      }
-  
-      const rateNum = toNumber(subItem.rate);
-      subItem.totalAmount = !isNaN(rateNum) ? (toNumber(subItem.billedQty) * rateNum).toFixed(2) : '';
+      subItem.billedQty = String(billedQtyNum);
     }
-    
-    // Determine the number of complete sets possible from the billed sub-items
-    const setQuantities = mainItem.subItems.map(si => {
-      const qtyPerSet = toNumber(si.quantity);
-      if (qtyPerSet <= 0) return Infinity; // Avoid division by zero
-      return Math.floor(toNumber(si.billedQty) / qtyPerSet);
-    });
-    
-    const possibleCompleteSets = Math.min(...setQuantities);
-    mainItem.billedQty = String(possibleCompleteSets);
   
-    // Recalculate total amount from sub-items, NOT based on parent qty
-    mainItem.totalAmount = mainItem.subItems.reduce((s, si) => s + toNumber(si.totalAmount || '0'), 0).toFixed(2);
+    subItem.totalAmount = String(toNumber(subItem.billedQty) * toNumber(subItem.rate));
+    
+    // Recalculate main item total from sub-items
+    const subItemsTotalValue = mainItem.subItems.reduce((s, si) => s + toNumber(si.totalAmount || '0'), 0);
+    mainItem.totalAmount = String(subItemsTotalValue);
+  
+    // The rate of the main item is the value of one "set"
+    const valueOfOneSet = mainItem.subItems.reduce((s, si) => s + (toNumber(si.quantity) * toNumber(si.rate)), 0);
+    if (valueOfOneSet > 0) {
+      // The billed qty of the parent is now a fractional representation of the work done.
+      mainItem.billedQty = (subItemsTotalValue / valueOfOneSet).toFixed(3);
+    } else {
+      mainItem.billedQty = '0';
+    }
   
     newItems[itemIndex] = mainItem;
     setItems(newItems);
   };
-  
+
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
     const existingJmcIds = new Set(items.map(i => i.jmcItemId));
     const filteredAdd = selectedWoItems.filter(wo => !existingJmcIds.has(wo.id));
@@ -353,7 +349,7 @@ export default function CreateBillPage() {
       return {
         id: nanoid(),
         jmcItemId: woItem.id,
-        jmcEntryId: '', // These are empty initially
+        jmcEntryId: '', 
         jmcNo: '',
         boqItemId: woItem.boqItemId,
         boqSlNo: woItem.boqSlNo,
@@ -370,8 +366,6 @@ export default function CreateBillPage() {
         executedQty: availableForBilling,
         subItems: (woItem.subItems || []).map(si => {
           const qtyPerSet = toNumber(si.quantity);
-          // Sub-item availability should be based on its own JMC/Bill history if tracked, or derived
-          // For now, let's assume it's derived from the main item's availability
           const subItemAvailable = Math.max(0, availableForBilling * qtyPerSet);
           return {
             ...si,
@@ -381,7 +375,7 @@ export default function CreateBillPage() {
             rate: String(si.rate),
             quantity: String(qtyPerSet),
             jmcCertifiedQty: 0,
-            alreadyBilledQty: 0, // This would need a more complex lookup
+            alreadyBilledQty: 0, 
             availableQty: subItemAvailable,
           };
         }),
@@ -475,7 +469,7 @@ export default function CreateBillPage() {
         jmcEntryId: it.jmcEntryId,
         jmcNo: it.jmcNo,
         boqItemId: it.boqItemId || '',
-        boqSlNo: it.boqSlNo || '',
+        boqSlNo: it.boqSlNo,
         description: it.description || '',
         unit: it.unit || '',
         rate: toNumber(it.rate),
@@ -559,7 +553,7 @@ export default function CreateBillPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
 
-  const alreadyAddedWorkOrderItems = useMemo<WorkOrderItem[]>(() => {
+  const alreadyAddedWorkOrderItems = useMemo(() => {
     return items.map(it => ({
       id: it.jmcItemId,
       boqItemId: it.boqItemId || '',
@@ -569,7 +563,7 @@ export default function CreateBillPage() {
       rate: toNumber(it.rate),
       totalAmount: toNumber(it.totalAmount),
       boqSlNo: it.boqSlNo,
-      subItems: it.subItems.map(si => ({
+      subItems: (it.subItems || []).map(si => ({
         id: si.id,
         slNo: si.slNo,
         name: si.name,
@@ -635,7 +629,7 @@ export default function CreateBillPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="billDate">Bill Date</Label>
-                <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
+                <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
               </div>
             </div>
           </CardContent>
